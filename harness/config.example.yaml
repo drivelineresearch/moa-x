@@ -1,0 +1,46 @@
+# MoA-X harness config — copy to harness/config.yaml to activate.
+#
+# Every knob here has a built-in default inside run_moa.py. This file
+# just lets you override without passing 15 CLI flags. CLI flags still
+# win over this file, and environment variables (MOA_*) win over the
+# file but lose to CLI flags.
+#
+# Supported providers are {codex, claude-code, gemini}. Do not add
+# others — the adapters are not wired for them. If you need a new
+# provider, open a design discussion.
+
+providers:
+  codex:
+    # Path or name on PATH. Defaults to "codex".
+    bin: codex
+    # Model id. Defaults to "gpt-5.4".
+    model: gpt-5.4
+    # Reasoning effort: low | medium | high | xhigh. Defaults to "high".
+    effort: high
+    # Wall-clock cap in seconds. Default scales with effort
+    # (xhigh=1500, high=1200, medium/low=900). Set explicitly to override.
+    # timeout: 1500
+
+  gemini:
+    bin: gemini
+    model: gemini-2.5-pro
+    # gemini has no effort knob.
+    # Wall-clock cap in seconds (default 1200).
+    # timeout: 1200
+
+  # The `claude` provider binary runs as the sonnet proposer in Layer 1.
+  # Opus aggregation happens in the parent Claude Code REPL, not here.
+  claude:
+    bin: claude
+    model: claude-sonnet-4-6
+    # timeout: 1200
+
+# Layer / role selection. Each list is a subset of {codex, gemini, sonnet}
+# (note: "sonnet" is the claude CLI in sonnet mode). Defaults run all
+# three proposers and both non-Anthropic refiners.
+layers:
+  proposers: [codex, gemini, sonnet]
+  refiners: [codex, gemini]
+  # Set true to skip the refinement layer entirely (3-proposer ensemble
+  # straight to aggregator). Default false.
+  skip_refinement: false

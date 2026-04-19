@@ -1,0 +1,179 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MoA Refiner Output (Broadcast)",
+  "description": "Schema returned by a refiner agent at Layer 2. Under paper-faithful broadcast refinement, a single refiner sees ALL proposer outputs (codex + gemini + sonnet) and produces one refinement document that cross-verifies claims across all of them. The refiner is NOT one of the proposers whose plan is under review -- it is an independent verifier from a different lab.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "agent_id",
+    "reviewing",
+    "overall_verdict",
+    "per_proposer_verdicts",
+    "cross_proposer_observations",
+    "verifications",
+    "agreements",
+    "disagreements",
+    "missing_steps",
+    "incorrect_steps",
+    "synthesis_recommendation",
+    "additional_research"
+  ],
+  "properties": {
+    "agent_id": {
+      "type": "string",
+      "enum": ["codex", "gemini"],
+      "description": "Identifier of the refiner agent. Only codex and gemini act as refiners in v2 -- sonnet is a proposer-only, and Opus (the parent session) is the aggregator. This keeps Layer 2 to two non-Anthropic labs so the verification is independent of both the sonnet proposer and the Opus aggregator."
+    },
+    "reviewing": {
+      "type": "array",
+      "description": "Identifiers of the proposer outputs this refiner is reviewing. Under broadcast refinement this should contain ALL successful proposer outputs from Layer 1.",
+      "minItems": 1,
+      "maxItems": 3,
+      "items": {
+        "type": "string",
+        "enum": ["codex", "gemini", "sonnet"]
+      }
+    },
+    "overall_verdict": {
+      "type": "string",
+      "enum": ["converge_with_changes", "diverge_strongly", "accept_best_with_minor_edits", "reject_all"],
+      "description": "Top-level judgment after reading all proposals. converge_with_changes = proposers largely agree and you endorse a merged plan. diverge_strongly = proposers disagree on fundamentals and the aggregator will need to choose. accept_best_with_minor_edits = one proposer is clearly strongest, follow their plan with tweaks. reject_all = none of the proposals are workable as written."
+    },
+    "per_proposer_verdicts": {
+      "type": "array",
+      "description": "Individual verdict on each proposer's plan. Exactly one entry per proposer in `reviewing`.",
+      "minItems": 1,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["proposer", "verdict", "summary"],
+        "properties": {
+          "proposer": {
+            "type": "string",
+            "enum": ["codex", "gemini", "sonnet"]
+          },
+          "verdict": {
+            "type": "string",
+            "enum": ["accept_as_is", "accept_with_changes", "reject"],
+            "description": "Your verdict on this specific proposer's plan."
+          },
+          "summary": {
+            "type": "string",
+            "description": "One or two sentences stating what this proposer got right and what you would change.",
+            "minLength": 20
+          }
+        }
+      }
+    },
+    "cross_proposer_observations": {
+      "type": "array",
+      "description": "Observations that only emerge when you read multiple proposals together. Examples: proposers agree on X which boosts confidence; two propose approach A while one proposes approach B and here is why A wins; proposer X cites a file that proposer Y shows does not exist.",
+      "items": {"type": "string"}
+    },
+    "verifications": {
+      "type": "array",
+      "description": "Per-claim verification of evidence entries across proposer outputs. Identify which proposer's evidence you are verifying. Verify against the actual repo and against external sources. Mark each as verified, unverified, or contradicted. Prioritize verifying claims that proposers disagree on.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["proposer", "claim_index_path", "status", "actual_finding", "source_url"],
+        "properties": {
+          "proposer": {
+            "type": "string",
+            "enum": ["codex", "gemini", "sonnet"],
+            "description": "Which proposer's evidence this entry is verifying."
+          },
+          "claim_index_path": {
+            "type": "string",
+            "description": "Path identifying which evidence entry this verifies, e.g. 'plan[2].evidence[0]'."
+          },
+          "status": {
+            "type": "string",
+            "enum": ["verified", "unverified", "contradicted"],
+            "description": "verified = checked and true. unverified = could not check. contradicted = checked and false."
+          },
+          "actual_finding": {
+            "type": "string",
+            "description": "What you actually found when you tried to verify this claim. Be specific."
+          },
+          "source_url": {
+            "type": ["string", "null"],
+            "description": "External URL or local file:line reference that supports your finding. Null when the finding required no external source (e.g. when status is unverified and you could not check)."
+          }
+        }
+      }
+    },
+    "agreements": {
+      "type": "array",
+      "description": "Specific points across the proposals you agree with. Call out which proposer(s) made each point.",
+      "items": {"type": "string"}
+    },
+    "disagreements": {
+      "type": "array",
+      "description": "Specific points you disagree with. Each disagreement must name which proposer made the claim, why you disagree, and what to do instead.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["proposer", "point", "why", "what_to_do_instead"],
+        "properties": {
+          "proposer": {
+            "type": "string",
+            "enum": ["codex", "gemini", "sonnet"]
+          },
+          "point": {"type": "string"},
+          "why": {"type": "string"},
+          "what_to_do_instead": {"type": "string"}
+        }
+      }
+    },
+    "missing_steps": {
+      "type": "array",
+      "description": "Things NONE of the proposers covered but should have. Each item should be a concrete step.",
+      "items": {"type": "string"}
+    },
+    "incorrect_steps": {
+      "type": "array",
+      "description": "Steps one or more proposers included that are wrong as stated. Name the proposer, the step, and what is wrong about it.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["proposer", "step_index", "what_is_wrong"],
+        "properties": {
+          "proposer": {
+            "type": "string",
+            "enum": ["codex", "gemini", "sonnet"]
+          },
+          "step_index": {
+            "type": "integer",
+            "description": "Zero-based index into that proposer's plan array."
+          },
+          "what_is_wrong": {"type": "string"}
+        }
+      }
+    },
+    "synthesis_recommendation": {
+      "type": "string",
+      "description": "A short (2-5 sentence) recommendation to the aggregator on how to synthesize the final plan given what you found. This is your concrete guidance for how the aggregator should merge or choose between proposals.",
+      "minLength": 80
+    },
+    "additional_research": {
+      "type": "array",
+      "description": "External sources you consulted during refinement that no proposer cited. Include at least 2 fresh sources (aim for 5+).",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["url", "title", "what_it_adds"],
+        "properties": {
+          "url": {"type": "string"},
+          "title": {"type": "string"},
+          "what_it_adds": {
+            "type": "string",
+            "description": "What this source contributes that the proposers' research did not."
+          }
+        }
+      }
+    }
+  }
+}

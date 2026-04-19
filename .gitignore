@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtualenv / secrets
+.env
+.env.local
+.env.*.local
+
+# MoA session artifacts
+.moa/
+
+# Claude Code agent worktrees (ephemeral)
+.claude/
+
+# Logs
+*.log
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+*~

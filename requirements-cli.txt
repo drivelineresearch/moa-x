@@ -1,0 +1,18 @@
+# requirements-cli.txt
+#
+# The three external CLIs used by the MoA-X harness.
+# These CLIs are NOT pip-installable — each has its own install mechanism.
+#
+# ── Install ───────────────────────────────────────────────────────────────────
+
+# codex CLI (OpenAI)
+#   install:  npm i -g @openai/codex
+#   auth:     codex login   (creates ~/.codex/auth.json)
+
+# gemini CLI (Google)
+#   install:  npm i -g @google/gemini-cli
+#   auth:     gemini        (interactive OAuth; creates ~/.gemini/)
+
+# claude CLI (Anthropic / Claude Code)
+#   install:  see https://docs.claude.com/en/docs/claude-code/quickstart
+#   auth:     claude        (interactive OAuth; creates ~/.claude/)

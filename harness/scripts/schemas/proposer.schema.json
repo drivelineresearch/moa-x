@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MoA Proposer Output",
+  "description": "Schema returned by a proposer agent (codex, gemini, or sonnet) at Layer 1 of the mixture-of-agents pipeline. All three proposers produce this same shape so the orchestrator can stitch them together for the refiner and aggregator layers.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "agent_id",
+    "summary",
+    "plan",
+    "open_questions",
+    "alternatives_rejected",
+    "research_sources"
+  ],
+  "properties": {
+    "agent_id": {
+      "type": "string",
+      "enum": ["codex", "gemini", "sonnet"],
+      "description": "Identifier of the proposer agent that produced this output. codex = gpt-5.4 @ xhigh. gemini = gemini-2.5-pro. sonnet = claude-sonnet-4-6."
+    },
+    "summary": {
+      "type": "string",
+      "description": "One to two paragraph plain-language overview of the proposed approach. No markdown headings.",
+      "minLength": 50
+    },
+    "plan": {
+      "type": "array",
+      "description": "Ordered list of steps the implementer should take. Each step must be concrete enough to act on.",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["step", "why", "files_touched", "evidence", "risks"],
+        "properties": {
+          "step": {
+            "type": "string",
+            "description": "Imperative action the implementer should take. Start with a verb."
+          },
+          "why": {
+            "type": "string",
+            "description": "Reasoning for this step. Why is it necessary, what does it unlock?"
+          },
+          "files_touched": {
+            "type": "array",
+            "description": "Repo-relative file paths this step would create, modify, or read. Use path:line format when a specific line is relevant.",
+            "items": {"type": "string"}
+          },
+          "evidence": {
+            "type": "array",
+            "description": "Claims this step depends on, each backed by either a code citation or an external source. Refiners will verify these.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["type", "file", "line", "url", "snippet", "claim"],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": ["code", "external"],
+                  "description": "code = citation from the local repo. external = citation from a web source."
+                },
+                "file": {
+                  "type": ["string", "null"],
+                  "description": "Repo-relative path. Required when type=code; set to null when type=external."
+                },
+                "line": {
+                  "type": ["integer", "null"],
+                  "description": "Line number in the file. Required when type=code; set to null when type=external."
+                },
+                "url": {
+                  "type": ["string", "null"],
+                  "description": "URL of the external source. Required when type=external; set to null when type=code."
+                },
+                "snippet": {
+                  "type": ["string", "null"],
+                  "description": "Short verbatim quote from the source that supports the claim. Required for external; optional-but-null for code."
+                },
+                "claim": {
+                  "type": "string",
+                  "description": "What this evidence proves or supports. Always required."
+                }
+              }
+            }
+          },
+          "risks": {
+            "type": "array",
+            "description": "Things that could go wrong with this step, dependencies it has, or assumptions it makes.",
+            "items": {"type": "string"}
+          }
+        }
+      }
+    },
+    "open_questions": {
+      "type": "array",
+      "description": "Questions the spec does not answer that the implementer will need resolved before proceeding.",
+      "items": {"type": "string"}
+    },
+    "alternatives_rejected": {
+      "type": "array",
+      "description": "Approaches you considered and rejected. Naming what you ruled out is as valuable as naming what you chose.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["approach", "reason"],
+        "properties": {
+          "approach": {"type": "string"},
+          "reason": {"type": "string"}
+        }
+      }
+    },
+    "research_sources": {
+      "type": "array",
+      "description": "External sources you consulted while building this plan. Include at least 2 (aim for 5+). Mix of official docs, blog posts, GitHub repos, papers, Stack Overflow answers, anything authoritative.",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["url", "title", "summary", "relevance"],
+        "properties": {
+          "url": {"type": "string"},
+          "title": {"type": "string"},
+          "summary": {
+            "type": "string",
+            "description": "What this source says, in your own words."
+          },
+          "relevance": {
+            "type": "string",
+            "description": "Why this source matters to the plan you proposed."
+          }
+        }
+      }
+    }
+  }
+}
