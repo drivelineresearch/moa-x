@@ -2,7 +2,9 @@
 
 MoA-X runs inside **Claude Code** as a skill. You can also invoke the
 orchestrator directly from a shell. Either way, you need three vendor
-CLIs on your PATH, each authenticated against its subscription plan.
+CLIs on your PATH, each authenticated. Any auth path the CLI itself
+supports is fine. Subscription (OAuth / keychain) is what I run;
+API-key auth works too.
 
 ## 1. Install the three CLIs
 
@@ -19,9 +21,12 @@ gemini            # run interactively once to complete OAuth
 # See https://docs.claude.com/en/docs/claude-code/quickstart
 ```
 
-Subscription plans only; no API keys. If your shell has
-`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `GEMINI_API_KEY` set for
-other tools, that's fine. MoA-X ignores them.
+Subscription auth is the path I use and what the docs lead with. If
+you'd rather bill through an API key, each vendor CLI already handles
+that on its own; MoA-X defers to whatever auth state the CLI is in
+when you invoke it. Better API-billing ergonomics (cost surfacing,
+per-layer accounting, a `MOA_MAX_COST` knob) are on the open wish
+list. See the PR-wanted section of the top-level README.
 
 ## 2. Verify
 
@@ -61,9 +66,9 @@ You'll need to write the scout brief JSON yourself and read
 plan. See [`docs/usage.md`](usage.md#running-standalone) for the
 format and the manual aggregation step.
 
-PRs that improve the standalone path, or add support for OpenCode or
-other agent harnesses, are welcome. See
-[`CONTRIBUTING.md`](../CONTRIBUTING.md).
+PRs that improve the standalone path, add support for OpenCode or
+other agent harnesses, or make API-billed auth first-class are all
+welcome. See [`CONTRIBUTING.md`](../CONTRIBUTING.md).
 
 ## Offline tests
 

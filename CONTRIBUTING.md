@@ -3,13 +3,16 @@
 Thanks for wanting to contribute. This project is built to run inside
 **Claude Code** as a skill (`/mixture-of-agents`). Standalone `python3`
 works too, but the skill path is what we exercise most. PRs that
-improve the non-Claude-Code runner (OpenCode, other harnesses, other
-model providers) are very welcome; see below.
+improve the non-Claude-Code runner (OpenCode, other harnesses), add
+API-billing ergonomics, or bring in other model providers (including
+Chinese-lab frontier models) are especially welcome. The top-level
+README has a more specific wishlist.
 
 ## Dev environment
 
 ```bash
-# 1. Install the three external CLIs (subscription plans, not API keys):
+# 1. Install the three external CLIs. Any auth the CLI itself supports
+#    works — subscription OAuth (what I use) or API key both fine.
 npm i -g @openai/codex          && codex login
 npm i -g @google/gemini-cli     && gemini       # interactive OAuth once
 # claude CLI: see https://docs.claude.com/en/docs/claude-code/quickstart
@@ -35,19 +38,33 @@ New tests must run offline so CI stays credential-free.
 
 ## Where help is especially welcome
 
-- Making MoA-X run well outside Claude Code: OpenCode, other agent
-  harnesses, a plain shell. Right now the Claude Code skill path is
-  the best-trodden, so PRs that close the gap for other runners are
-  genuinely useful.
-- Additional model / provider support beyond `codex`, `claude`, and
-  `gemini`. Open an issue first so we can talk through auth and
-  adapter shape before you build it; adding a provider touches the
-  orchestrator, preflight, and prompt assumptions.
+- First-class API-billing support. The adapters currently assume
+  subscription auth. Making `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` /
+  `GEMINI_API_KEY` a supported, documented path (with cost surfacing
+  in the manifest and a `MOA_MAX_COST` ceiling) is a priority.
+- Running outside Claude Code: OpenCode, aider, codex-as-harness,
+  roo/cline/continue, or a plain shell. The Claude Code skill path
+  is the best-trodden today.
+- Chinese-lab models: DeepSeek, Qwen, Kimi, GLM, MiniMax. The
+  cross-lab diversity argument is weaker when all three providers
+  are US-based; a Chinese proposer would test and strengthen it.
+- More providers generally: xAI Grok, Mistral, anything with a
+  credible coding story. Open an issue first so we can talk through
+  auth and adapter shape; adding a provider touches the orchestrator,
+  preflight, and prompt assumptions.
 - Adapter robustness: timeouts, subprocess-tree teardown, clearer
   error diagnostics. See `harness/scripts/adapters/`.
 - Offline test coverage, especially around config precedence and
   adapter error paths.
 - Docs that clear up confusion you hit while getting started.
+
+## How to submit a PR
+
+You don't have to fork. If you have push access to the repo, just
+push a topic branch and open a PR against `main`. If you don't,
+fork the repo, push your branch there, and open a cross-repo PR.
+Either works from the reviewer's side; forks are the right default
+for external contributors who want the work in their own namespace.
 
 ## License
 

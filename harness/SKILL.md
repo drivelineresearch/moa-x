@@ -12,8 +12,8 @@ description: |
   plan" or "second opinion from another lab", (3) the user explicitly says
   "run MoA on this", (4) high-stakes architecture work where one model's blind
   spots could be expensive. Do NOT auto-activate for trivial tasks; this skill
-  takes 6-12 minutes wall-clock and burns subscription quota across three
-  external CLIs.
+  takes 6-12 minutes wall-clock and spends real quota (subscription or
+  API-billed) across three external CLIs.
 author: Kyle Boddy
 version: 0.2.3
 allowed-tools:
@@ -42,7 +42,7 @@ everything into a final actionable plan.
 - The user pastes a substantial spec and explicitly asks for "deep planning",
   "second opinions", "MoA", or "let's run multiple models on this"
 - A high-stakes architectural decision where catching one blind spot is worth
-  6-12 minutes and a chunk of subscription quota
+  6-12 minutes and a chunk of quota (subscription or API)
 
 ## When NOT to use this skill
 
@@ -167,8 +167,7 @@ The brief MUST contain these top-level fields:
 Show the brief to the user (rendered as markdown for readability) and ask
 via `AskUserQuestion`: "Scout brief looks like this. Run codex + gemini +
 sonnet proposers (3 parallel) + codex + gemini broadcast refiners (2
-parallel, each sees all 3 proposals) now? Estimated 6-12 minutes wall-clock.
-All three CLIs run on subscription plans so there is no per-call cost."
+parallel, each sees all 3 proposals) now? Estimated 6-12 minutes wall-clock."
 
 Do not run the orchestrator until the user says yes.
 
@@ -261,9 +260,11 @@ the whole point of the planning phase was deliberation.
    layer outputs, the synthesis input, and the final plan. The user should
    be able to re-aggregate from the artifacts later or audit any run.
 
-7. **No dollar caps.** Codex, gemini, and sonnet run on subscription plans.
-   The constraint is wall-clock and quality, not per-call cost. There is
-   no `MOA_MAX_COST` env var.
+7. **No built-in dollar caps.** The orchestrator doesn't meter spend
+   today. On subscription plans there's nothing to meter; on API-billed
+   CLIs you inherit whatever account-level limits you configured. A
+   `MOA_MAX_COST` knob would be a welcome contribution. Until then the
+   constraints the orchestrator enforces are wall-clock and quality.
 
 8. **Read-only discipline is non-negotiable.** All three proposers and both
    refiners are instructed via prompt (and for codex, via sandbox) that they

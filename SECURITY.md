@@ -21,8 +21,9 @@ and credit you in the advisory unless you prefer otherwise.
 
 ## Scope
 
-MoA-X is a thin orchestrator around three external subscription CLIs
-(`codex`, `gemini`, `claude`). Reports in scope:
+MoA-X is a thin orchestrator around three external vendor CLIs
+(`codex`, `gemini`, `claude`), however each one is authenticated.
+Reports in scope:
 
 - Command injection, path traversal, or similar in the orchestrator or
   adapters (`harness/scripts/`)
@@ -37,4 +38,4 @@ Reports out of scope (please take these upstream):
 
 - Vulnerabilities in the codex / gemini / claude CLIs themselves
 - Vulnerabilities in the underlying LLM APIs
-- Issues specific to subscription auth state managed by those CLIs
+- Issues specific to auth state (subscription or API) managed by those CLIs

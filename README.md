@@ -11,7 +11,6 @@
   <img src="https://img.shields.io/badge/python-3.11%2B-blue.svg" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/runner-Claude%20Code-8b5cf6.svg" alt="Claude Code">
   <img src="https://img.shields.io/badge/providers-codex%20%7C%20claude--code%20%7C%20gemini-informational" alt="supported CLIs">
-  <img src="https://img.shields.io/badge/auth-subscription%20only-brightgreen.svg" alt="subscription-only">
 </p>
 
 A small, CLI-native take on the 2024
@@ -25,8 +24,10 @@ write an independent plan. Two of them then refine in broadcast mode
 aggregates the whole thing into one plan you can act on.
 
 Built to run **inside Claude Code** as a skill. Standalone Python works
-too. PRs that improve the non-Claude-Code path (OpenCode, other agent
-harnesses, other providers) are very welcome.
+too. The harness currently wires up the three vendor CLIs on their
+subscription plans, which is what I personally run. API-based auth,
+alternative harnesses, and other model providers are all fair game.
+See "PRs we'd love to see" below.
 
 ## TL;DR
 
@@ -84,6 +85,33 @@ harness/               orchestrator, adapters, prompts, schemas
   scripts/             orchestrator + adapters + config + tests
 requirements-cli.txt   install/auth notes for the three CLIs
 ```
+
+## PRs we'd love to see
+
+The current harness is shaped around what I use day-to-day. These are
+the directions that would expand who MoA-X is useful for, and I'd
+prioritize reviewing PRs that land any of them:
+
+- **API-billing support** for codex, gemini, and claude. Right now
+  the adapters assume each CLI is logged in against a subscription
+  plan. Shops that run through `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`
+  / `GEMINI_API_KEY` should be a first-class path.
+- **OpenCode and other agent harnesses.** The orchestrator runs fine
+  from a plain shell, but the scout + aggregation steps are tailored
+  to Claude Code. PRs that close the gap for OpenCode (or aider,
+  codex-as-harness, roo, continue, cline, etc.) are welcome.
+- **Chinese-lab models.** DeepSeek, Qwen, Kimi, GLM, MiniMax. The
+  whole argument for MoA is cross-lab diversity, and the current
+  lineup is US-only. Routing one proposer through a Chinese frontier
+  model would test the thesis in the place it most deserves testing.
+- **More providers generally.** xAI Grok, Mistral, any model with a
+  credible coding-bench story. Each provider needs its own adapter,
+  preflight, and prompt-assumption review; open an issue first so we
+  can talk through auth shape, then build.
+- **Cost observability** for API-billed runs: token accounting in the
+  manifest, a `MOA_MAX_COST` ceiling, per-layer spend breakdowns.
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the PR protocol.
 
 ## Status
 

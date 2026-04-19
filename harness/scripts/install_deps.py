@@ -14,6 +14,7 @@ Run with any system Python:
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -84,12 +85,15 @@ def main() -> int:
         print(f"  claude CLI: {info} — OK")
         claude_dir = Path.home() / ".claude"
         has_oauth = claude_dir.exists() and (claude_dir / "settings.json").exists()
+        has_api_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
         if has_oauth:
             print("    auth: ~/.claude/settings.json present (subscription OAuth) — OK")
+        elif has_api_key:
+            print("    auth: ANTHROPIC_API_KEY set (API-billed) — OK")
         else:
-            print("    auth: ~/.claude/settings.json MISSING")
+            print("    auth: ~/.claude/settings.json MISSING and ANTHROPIC_API_KEY unset")
             print("    fix:  claude  (run interactively once to complete subscription login)")
-            print("    note: API keys (ANTHROPIC_API_KEY) are not supported by MoA-X — subscription OAuth only")
+            print("    or:   export ANTHROPIC_API_KEY=... for API-billed runs")
             failures += 1
     else:
         print(f"  claude CLI: {info} — FAIL")

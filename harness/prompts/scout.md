@@ -92,9 +92,11 @@ Render the brief in markdown for human review. Then ask via `AskUserQuestion`:
 parallel) + codex + gemini broadcast refiners (2 parallel, each sees all 3
 proposals) now? Estimated 6-12 minutes wall-clock."
 
-Do not include a dollar cost estimate — codex and gemini run on subscription
-plans; sonnet runs on the same Claude Code auth as this session, so cost
-is covered by the user's existing Claude subscription.
+A dollar cost estimate is optional. If the user is on subscription
+plans (the common case), there's nothing to estimate. If they're
+running any of the CLIs on API-billed auth, surface that you can't
+predict exact spend without token accounting, which the orchestrator
+doesn't meter yet.
 
 ### 8. On approval, hand off to the orchestrator
 Invoke the Python orchestrator via the Bash tool:

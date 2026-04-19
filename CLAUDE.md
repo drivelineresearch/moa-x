@@ -44,18 +44,27 @@ tests must run offline so CI stays credential-free.
 
 ## Hard rules
 
-1. **Subscription-CLI auth only.** No `ANTHROPIC_API_KEY`,
-   `OPENAI_API_KEY`, or `GEMINI_API_KEY` in the MoA pipeline. If a
-   proposed change routes through an API key, it's the wrong change.
-2. **Supported providers are `codex`, `claude-code`, and `gemini`.**
-   Not a TODO. Adding a provider requires a design discussion first;
-   see `CONTRIBUTING.md`.
-3. **Preserve lab independence at refinement and aggregation.** Layer
+1. **Preserve lab independence at refinement and aggregation.** Layer
    2 uses `{codex, gemini}` and the aggregator is Opus so verification
    is independent of both the Sonnet proposer and the Opus aggregator.
    Moving Sonnet into Layer 2 defeats the design.
-4. **Don't commit `.moa/` session artifacts.** Already gitignored; just
+2. **Don't commit `.moa/` session artifacts.** Already gitignored; just
    don't fight it.
+
+## Soft defaults (open to change via PR)
+
+- **Default auth is subscription CLI.** That's what I run and what
+  the docs lead with. API-billed auth (`ANTHROPIC_API_KEY`,
+  `OPENAI_API_KEY`, `GEMINI_API_KEY`) is a welcome contribution path.
+  The claude adapter already accepts either. PRs that make API-billed
+  runs first-class (cost accounting in the manifest, a `MOA_MAX_COST`
+  ceiling, docs updates) are wanted.
+- **Default provider set is `{codex, claude-code, gemini}`.** It's
+  the set the orchestrator, preflight, and prompts are shaped around.
+  It's a default, not a cap. Other providers (OpenCode-driven models,
+  Chinese-lab frontier models like DeepSeek / Qwen / Kimi / GLM /
+  MiniMax, xAI, Mistral) are on the PR wishlist. Open an issue first
+  so we can talk through adapter shape.
 
 ## Config surface
 

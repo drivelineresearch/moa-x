@@ -79,41 +79,43 @@ Three labs (OpenAI + Google + Anthropic), not more, not fewer.
   copies of the same model). Three independent labs cover the
   current frontier.
 - **Adding more labs costs wall-clock and auth complexity.** Each
-  provider needs its own adapter, preflight, and subscription-auth
-  story. A fourth provider right now would stretch the codebase
-  thin without moving the quality bar much.
-- **`{codex, claude-code, gemini}` are a hard architectural constraint,**
-  not a TODO. The orchestrator, preflight, and prompt assumptions
-  are all shaped around this set. PRs that add providers need a
-  design conversation up front. See
+  provider needs its own adapter, preflight, and auth story (whether
+  that's subscription OAuth or an API key).
+- **`{codex, claude-code, gemini}` is the default set.** It isn't a
+  hard cap. The orchestrator, preflight, and prompt assumptions are
+  shaped around this trio, so PRs that add providers (OpenCode, a
+  fourth frontier lab, a Chinese-lab model, xAI, Mistral) should open
+  an issue first so we can talk through the adapter shape. A
+  Chinese-lab proposer in particular would sharpen the cross-lab
+  diversity argument, since today's three are all US-based. See
   [`CONTRIBUTING.md`](../CONTRIBUTING.md).
-
-## Why subscription-CLI auth
-
-All three providers run on subscription plans via their native CLIs
-(`codex`, `gemini`, `claude`), not via API keys and SDKs. Reasons:
-
-- **Predictable cost.** Subscription pricing means you aren't
-  rate-limited on a per-token budget in the middle of a run.
-- **Subprocess isolation.** Each call runs in its own process group
-  with its own TMPDIR. Auth state stays out of the orchestrator
-  process's environment.
-- **No key material in env vars.** The MoA pipeline never reads
-  `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `GEMINI_API_KEY`. If you
-  have those set for other tools, that's fine. MoA-X ignores them.
 
 ## Why CLI, not SDK
 
 Each vendor CLI already handles auth, retries, tool routing, and
 model-specific quirks. An SDK integration would duplicate all of
 that inside MoA-X and drift as vendors change their clients. The
-CLI surface is more stable and enforces the subscription-auth path
-by construction.
+CLI surface is also more stable, and it lets the orchestrator stay
+agnostic to how the user is billed: whatever auth the CLI is in
+when invoked (subscription OAuth, keychain, or `*_API_KEY` env
+var) is the auth MoA-X uses. Each CLI call also runs in its own
+process group with its own TMPDIR, so auth state stays out of the
+orchestrator process's environment.
+
+First-class API-billing support (cost accounting in the manifest,
+a spend ceiling, per-layer breakdowns) is an open direction we'd
+happily take PRs on. See the top-level README's PR wishlist.
 
 ## Non-goals
 
 - **Chat-answer benchmarks.** MoA-X is for planning, not Q&A.
 - **Eval / benchmark tooling.** Earlier iterations had
   tau-bench/terminal-bench adapters; they're gone.
-- **API-key fallback paths.** See subscription rationale above.
-- **More than three providers.** See "Why these three" above.
+
+Previously this list also called "API-key fallback" and "more than
+three providers" non-goals. Neither is anymore. API billing is a
+path we want to support better, and a fourth provider (especially a
+Chinese-lab model) is on the PR wishlist. The one hard constraint
+that remains is the lab-independence invariant at refinement and
+aggregation (see "Why sonnet is proposer-only" above); any new
+provider has to slot in without collapsing that.

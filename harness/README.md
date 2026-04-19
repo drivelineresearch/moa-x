@@ -89,9 +89,6 @@ aggregator) is adapted from the paper but tuned for:
   at least 6-8 web searches and cite 5+ external sources.
 - **CLI-first workflow.** Runs entirely from inside Claude Code,
   with no separate web UI or deploy.
-- **Subscription billing.** codex, gemini, and sonnet all run on
-  subscription plans, so there's no per-call dollar cap to worry
-  about.
 
 ## Install
 
@@ -218,9 +215,12 @@ what each agent had. Older runs have a scalar.
   override the defaults so they converge on the same vendor, you've
   defeated the whole purpose of MoA.
 - **Claude `--bare` mode is not used for sonnet.** `--bare` requires
-  `ANTHROPIC_API_KEY` and skips OAuth/keychain auth. Subscription
-  users must use full mode. The ~27K-token startup context tax is
-  the cost of compatibility.
+  `ANTHROPIC_API_KEY` and skips OAuth/keychain auth, which means
+  subscription-only users would be locked out. The adapter accepts
+  either auth path, so the default stays on full mode. The ~27K-token
+  startup context tax is the cost of that compatibility. A PR that
+  detects an API key in the environment and opts into `--bare` for
+  the faster path is welcome.
 
 ## Background
 
