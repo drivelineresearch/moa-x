@@ -1353,14 +1353,14 @@ def main() -> int:
                         help="Skip refiner layer.")
     parser.add_argument("--proposers",
                         default=os.environ.get("MOA_PROPOSERS"),
-                        help="Comma-separated subset of {codex,gemini,sonnet} "
-                             "to spawn as proposers. Default: all three. "
-                             "Adapters not listed are NOT initialized.")
+                        help="Comma-separated subset of provider names from your resolved "
+                             "layer (built-ins codex/gemini/sonnet plus any user-named "
+                             "providers from harness/config.yaml). Default: all configured.")
     parser.add_argument("--refiners",
                         default=os.environ.get("MOA_REFINERS"),
-                        help="Comma-separated subset of {codex,gemini} for the "
-                             "refiner layer. Default: both. sonnet is not a "
-                             "valid refiner (lab-independence constraint).")
+                        help="Comma-separated subset of provider names from your resolved "
+                             "refiner layer (built-ins codex/gemini plus any user-named "
+                             "providers from harness/config.yaml). Default: all configured.")
     parser.add_argument("--self-moa", action="store_true", default=False,
                         help="Run in self-MoA mode: three sonnet proposers + two "
                              "sonnet refiners (named instances) instead of the "
@@ -1434,30 +1434,6 @@ def main() -> int:
                 print(f"  - {v}", file=sys.stderr)
             return 2
 
-    # Resolve proposer / refiner filter. The CLI flag (when set) subsets
-    # the default PROPOSER_AGENTS / REFINER_AGENTS tuples. Invalid names
-    # raise loudly — catching typos here prevents silently running a
-    # different arm than the config declares.
-    def _parse_subset(raw: "Optional[str]", valid: tuple[str, ...], label: str) -> set[str]:
-        if raw is None:
-            return set(valid)
-        requested = {s.strip() for s in raw.split(",") if s.strip()}
-        invalid = requested - set(valid)
-        if invalid:
-            print(
-                f"ERROR: --{label} contains invalid adapter(s): {sorted(invalid)}. "
-                f"Valid: {list(valid)}.",
-                file=sys.stderr,
-            )
-            sys.exit(2)
-        if not requested:
-            print(
-                f"ERROR: --{label} was empty after parsing. Pass at least one adapter.",
-                file=sys.stderr,
-            )
-            sys.exit(2)
-        return requested
-
     # self-moa is routed entirely through the instance-keyed path; --proposers
     # and --refiners are adapter-name flags that don't apply to it.
     if args.self_moa:
@@ -1471,9 +1447,10 @@ def main() -> int:
             for s in (args.self_moa_refiners or "sonnet-r1,sonnet-r2").split(",")
             if s.strip()
         ]
-    else:
-        enabled_proposers = _parse_subset(args.proposers, PROPOSER_AGENTS, "proposers")
-        enabled_refiners = _parse_subset(args.refiners, REFINER_AGENTS, "refiners")
+    # Load resolved provider config (named providers from YAML + builtins).
+    # Done outside the self-moa branch so it's available if needed in future;
+    # the self-moa branch ignores it entirely.
+    loaded_cfg = harness_config.load_resolved_config()
 
     with _global_lock():
         if args.self_moa:
@@ -1592,91 +1569,99 @@ def main() -> int:
                   flush=True)
             return 0
 
-        # ---------- moa-x / single-best path ----------
-        # Preflight: verify all 3 CLIs. At least 1 must succeed for Layer 1;
-        # at least 1 of {codex, gemini} must succeed for Layer 2. Adapters
-        # excluded via --proposers / --refiners are marked unavailable so
-        # they are neither preflighted nor spawned.
-        #
-        # --skip-layer2 suppresses refiner preflight entirely: when layer 2
-        # will not run, a dummy refiner entry in --refiners must not gate
-        # the whole arm on a codex/gemini install we are not going to use.
-        skipping_layer2 = args.skip_layer2
-        codex_needed = "codex" in enabled_proposers or (
-            not skipping_layer2 and "codex" in enabled_refiners
-        )
-        gemini_needed = "gemini" in enabled_proposers or (
-            not skipping_layer2 and "gemini" in enabled_refiners
-        )
-        if codex_needed:
-            codex_ok, codex_msg = codex_adapter.check_available()
-        else:
-            codex_ok, codex_msg = False, "excluded via --proposers / --refiners"
-        if gemini_needed:
-            gemini_ok, gemini_msg = gemini_adapter.check_available()
-        else:
-            gemini_ok, gemini_msg = False, "excluded via --proposers / --refiners"
-        if "sonnet" in enabled_proposers:
-            sonnet_ok, sonnet_msg = claude_adapter.check_available()
-        else:
-            sonnet_ok, sonnet_msg = False, "excluded via --proposers"
+        # ---------- moa-x / cross-lab path ----------
+        # Apply CLI flag overrides to BUILTIN entries that are referenced in
+        # layers. Each --<provider>-model flag mutates the resolved provider's
+        # model if that provider is currently scheduled to run. User-named
+        # providers are not affected by these flags (use MOA_<NAME>_MODEL env
+        # var instead, which config.py already handles at resolve time).
+        def _apply_model_override(providers, name, model):
+            return [
+                harness_config.ResolvedProvider(name=p.name, harness=p.harness, model=model)
+                if p.name == name else p
+                for p in providers
+            ]
 
-        # Layer-specific availability: an adapter is "available" for a
-        # layer only if (a) it passed its CLI preflight AND (b) it was
-        # explicitly enabled for THAT layer via --proposers / --refiners.
-        # Keeping these separate prevents an adapter that's excluded from
-        # one layer from being spawned in the other.
-        available_proposers = {
-            "codex": codex_ok and "codex" in enabled_proposers,
-            "gemini": gemini_ok and "gemini" in enabled_proposers,
-            "sonnet": sonnet_ok and "sonnet" in enabled_proposers,
-        }
-        available_refiners = {
-            "codex": codex_ok and "codex" in enabled_refiners,
-            "gemini": gemini_ok and "gemini" in enabled_refiners,
-        }
-        # Legacy shape expected by run_layer1 / run_layer2 call sites that
-        # still read `available[agent]`. Each uses its own layer-appropriate
-        # dict below; this top-level `available` is only kept for the
-        # all-CLIs-down check and log lines.
-        available = {
-            "codex": available_proposers["codex"] or available_refiners["codex"],
-            "gemini": available_proposers["gemini"] or available_refiners["gemini"],
-            "sonnet": available_proposers["sonnet"],
-        }
+        loaded_cfg_proposers = list(loaded_cfg.proposers)
+        loaded_cfg_refiners = list(loaded_cfg.refiners)
 
-        # Layer 1 (proposers) must have at least one runnable adapter;
-        # otherwise we have nothing to plan with and should bail. Layer 2
-        # can be skipped entirely with --skip-layer2, so we only enforce
-        # refiner availability below in the layer-2 branch.
-        if not any(available_proposers.values()):
-            print(
-                "ERROR: no proposer CLIs are ready.\n"
-                f"  codex:  {codex_msg}\n"
-                f"  gemini: {gemini_msg}\n"
-                f"  sonnet: {sonnet_msg}",
-                file=sys.stderr,
-            )
+        if args.codex_model and args.codex_model != "gpt-5.4":
+            loaded_cfg_proposers = _apply_model_override(loaded_cfg_proposers, "codex", args.codex_model)
+            loaded_cfg_refiners = _apply_model_override(loaded_cfg_refiners, "codex", args.codex_model)
+
+        if args.gemini_model and args.gemini_model != "gemini-2.5-pro":
+            loaded_cfg_proposers = _apply_model_override(loaded_cfg_proposers, "gemini", args.gemini_model)
+            loaded_cfg_refiners = _apply_model_override(loaded_cfg_refiners, "gemini", args.gemini_model)
+
+        if args.sonnet_model and args.sonnet_model != "claude-sonnet-4-6":
+            loaded_cfg_proposers = _apply_model_override(loaded_cfg_proposers, "sonnet", args.sonnet_model)
+
+        # --proposers / --refiners are name subsets. With named providers,
+        # valid names are the union of all resolved providers in each layer.
+        def _filter_subset(providers, raw, label):
+            if raw is None:
+                return providers
+            requested = {s.strip() for s in raw.split(",") if s.strip()}
+            valid_names = {p.name for p in providers}
+            invalid = requested - valid_names
+            if invalid:
+                print(
+                    f"ERROR: --{label} contains names not in the resolved layer: {sorted(invalid)}. "
+                    f"Valid for this layer: {sorted(valid_names)}.",
+                    file=sys.stderr,
+                )
+                sys.exit(2)
+            return [p for p in providers if p.name in requested]
+
+        final_proposers = _filter_subset(loaded_cfg_proposers, args.proposers, "proposers")
+        final_refiners = _filter_subset(loaded_cfg_refiners, args.refiners, "refiners")
+        if not final_proposers:
+            print("ERROR: --proposers resolved to empty list", file=sys.stderr)
+            return 2
+
+        # Preflight: check each unique harness used in the union of layers.
+        # --skip-layer2 suppresses refiner harnesses from being checked when
+        # layer 2 will not run, so a missing codex/gemini install doesn't gate
+        # the whole run when we're not going to use it.
+        harnesses_for_proposers = {p.harness for p in final_proposers}
+        harnesses_for_refiners = (
+            set() if args.skip_layer2 or loaded_cfg.skip_refinement
+            else {p.harness for p in final_refiners}
+        )
+        needed_harnesses = harnesses_for_proposers | harnesses_for_refiners
+        available: dict[str, bool] = {}
+        for harness in sorted(needed_harnesses):
+            if harness == "codex":
+                ok, msg = codex_adapter.check_available()
+            elif harness == "gemini":
+                ok, msg = gemini_adapter.check_available()
+            elif harness == "claude":
+                ok, msg = claude_adapter.check_available()
+            elif harness == "cursor":
+                ok, msg = cursor_adapter.check_available()
+            else:
+                ok, msg = False, f"unknown harness {harness!r}"
+            available[harness] = ok
+            print(f"[orchestrator] preflight {harness}: {'OK' if ok else 'FAIL'} — {msg}", flush=True)
+
+        if not any(available.get(p.harness, False) for p in final_proposers):
+            print("ERROR: no proposers passed preflight; cannot run", file=sys.stderr)
             return 3
 
-        for agent, (ok, msg) in (
-            ("codex", (codex_ok, codex_msg)),
-            ("gemini", (gemini_ok, gemini_msg)),
-            ("sonnet", (sonnet_ok, sonnet_msg)),
-        ):
-            if not ok:
-                print(f"WARNING: {agent} unavailable ({msg}). Proceeding without it.",
-                      file=sys.stderr)
+        # Build harness-keyed timeout map for the dispatch helper.
+        timeout_for_harness = {
+            "codex": codex_timeout,
+            "gemini": gemini_timeout,
+            "claude": sonnet_timeout,
+            "cursor": _int_env("MOA_CURSOR_TIMEOUT") or sonnet_timeout,
+        }
 
         started_at = time.time()
+        print(f"[orchestrator] arm: cross-lab", flush=True)
         print(f"[orchestrator] session: {scout_brief.get('session_id', 'unknown')}", flush=True)
         print(f"[orchestrator] repo: {repo_path}", flush=True)
-        print(f"[orchestrator] codex:  {args.codex_model} @ {args.codex_effort}  "
-              f"({'ready' if codex_ok else 'SKIP'})", flush=True)
-        print(f"[orchestrator] gemini: {args.gemini_model}  "
-              f"({'ready' if gemini_ok else 'SKIP'})", flush=True)
-        print(f"[orchestrator] sonnet: {args.sonnet_model}  "
-              f"({'ready' if sonnet_ok else 'SKIP'})", flush=True)
+        print(f"[orchestrator] proposers: {[p.name for p in final_proposers]}", flush=True)
+        print(f"[orchestrator] refiners:  {[p.name for p in final_refiners]}", flush=True)
         print(
             f"[orchestrator] timeouts: codex={codex_timeout}s "
             f"gemini={gemini_timeout}s sonnet={sonnet_timeout}s"
@@ -1687,10 +1672,10 @@ def main() -> int:
         # Snapshot the resolved config for the manifest so post-mortems can
         # see exactly what models/effort/timeout the session ran with.
         config_snapshot = {
-            "codex_model": args.codex_model,
+            "arm": "cross-lab",
+            "proposers": [{"name": p.name, "harness": p.harness, "model": p.model} for p in final_proposers],
+            "refiners": [{"name": p.name, "harness": p.harness, "model": p.model} for p in final_refiners],
             "codex_effort": args.codex_effort,
-            "gemini_model": args.gemini_model,
-            "sonnet_model": args.sonnet_model,
             "timeout_seconds": {
                 "codex": codex_timeout,
                 "gemini": gemini_timeout,
@@ -1706,16 +1691,12 @@ def main() -> int:
             scout_brief=scout_brief,
             repo_path=repo_path,
             session_dir=session_dir,
-            codex_timeout=codex_timeout,
-            gemini_timeout=gemini_timeout,
-            sonnet_timeout=sonnet_timeout,
-            codex_model=args.codex_model,
-            gemini_model=args.gemini_model,
-            sonnet_model=args.sonnet_model,
+            proposers=final_proposers,
+            timeout_for_harness=timeout_for_harness,
             codex_effort=args.codex_effort,
-            available=available_proposers,
+            available=available,
         )
-        # Per-agent progress lines are now printed inside run_layer1 as each
+        # Per-agent progress lines are printed inside run_layer1 as each
         # future resolves, so we don't repeat them here.
 
         successful_layer1 = [r for r in layer1 if r.success]
@@ -1733,9 +1714,9 @@ def main() -> int:
             )
             return 4
 
-        if len(successful_layer1) < len(PROPOSER_AGENTS):
-            missing = [a for a in PROPOSER_AGENTS if not any(r.agent_id == a and r.success for r in layer1)]
-            print(f"[orchestrator] DEGRADED: only {len(successful_layer1)}/{len(PROPOSER_AGENTS)} "
+        if len(successful_layer1) < len(final_proposers):
+            missing = [p.name for p in final_proposers if not any(r.agent_id == p.name and r.success for r in layer1)]
+            print(f"[orchestrator] DEGRADED: only {len(successful_layer1)}/{len(final_proposers)} "
                   f"proposers succeeded. Missing: {missing}", flush=True)
 
         # ---------- Layer 2: broadcast refiners ----------
@@ -1744,18 +1725,21 @@ def main() -> int:
         if args.skip_layer2:
             print("[orchestrator] Layer 2: SKIPPED (--skip-layer2)", flush=True)
             layer2_mode = "skipped"
-        elif not any(available_refiners.values()):
+        elif loaded_cfg.skip_refinement:
+            print("[orchestrator] Layer 2: SKIPPED (skip_refinement set in config)", flush=True)
+            layer2_mode = "skipped"
+        elif not any(available.get(p.harness, False) for p in final_refiners):
             print("[orchestrator] Layer 2: SKIPPED (no refiners available — either "
-                  "both preflights failed or --refiners excluded them)",
+                  "preflights failed or --refiners excluded them)",
                   file=sys.stderr)
             layer2_mode = "skipped"
         else:
             # Paper-faithful broadcast refinement assumes 2+ proposers for
             # cross-proposer critique. With only 1 successful proposer the
             # refiners effectively become single-source reviewers, so label
-            # the run as degraded. Kyle's call: still run Layer 2 for the
-            # second opinion, but tag the manifest and synthesis-input so
-            # the Opus aggregator applies lower confidence.
+            # the run as degraded. Still run Layer 2 for the second opinion,
+            # but tag the manifest and synthesis-input so the Opus aggregator
+            # applies lower confidence.
             if len(successful_layer1) < 2:
                 layer2_mode = "degraded_non_broadcast"
                 print(
@@ -1769,12 +1753,10 @@ def main() -> int:
                 layer1_results=layer1,
                 repo_path=repo_path,
                 session_dir=session_dir,
-                codex_timeout=codex_timeout,
-                gemini_timeout=gemini_timeout,
-                codex_model=args.codex_model,
-                gemini_model=args.gemini_model,
+                refiners=final_refiners,
+                timeout_for_harness=timeout_for_harness,
                 codex_effort=args.codex_effort,
-                available=available_refiners,
+                available=available,
             )
             # Per-agent progress is printed inside run_layer2 as each future
             # resolves, so no sorted-print block needed here.
