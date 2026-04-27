@@ -100,8 +100,6 @@ REFINER_PROMPT_PATH = PROMPTS_DIR / "refiner.md"
 
 LOCK_FILE = Path(tempfile.gettempdir()) / "moa.lock"
 
-PROPOSER_AGENTS = ("codex", "gemini", "sonnet")
-REFINER_AGENTS = ("codex", "gemini")
 
 
 # ---------------------------------------------------------------------------
@@ -1051,19 +1049,17 @@ def write_synthesis_input(
     layer2: list[LayerResult],
     session_dir: Path,
     layer2_mode: str = "broadcast",
-    proposer_agent_ids: Optional[tuple[str, ...]] = None,
-    refiner_agent_ids: Optional[tuple[str, ...]] = None,
+    proposer_agent_ids: tuple[str, ...],
+    refiner_agent_ids: tuple[str, ...],
 ) -> Path:
     """Write the synthesis-input.md file the parent Claude session reads.
 
-    proposer_agent_ids / refiner_agent_ids default to the moa-x constants.
-    For self-moa, pass the instance IDs (sonnet-a/b/c, sonnet-r1/r2) so
-    the synthesis file iterates over actual instance identities, not adapter
-    names. moa-x behavior is unchanged (None → original constants).
+    proposer_agent_ids / refiner_agent_ids are required. For self-moa,
+    pass the instance IDs (sonnet-a/b/c, sonnet-r1/r2) so the synthesis
+    file iterates over actual instance identities, not adapter names.
+    For normal moa-x runs, pass IDs derived from final_proposers /
+    final_refiners (tuple(p.name for p in final_proposers), etc.).
     """
-    _proposer_ids = proposer_agent_ids if proposer_agent_ids is not None else PROPOSER_AGENTS
-    _refiner_ids = refiner_agent_ids if refiner_agent_ids is not None else REFINER_AGENTS
-
     output_path = session_dir / "synthesis-input.md"
     parts: list[str] = []
 
@@ -1071,11 +1067,11 @@ def write_synthesis_input(
     parts.append("")
     parts.append(f"**Session**: `{scout_brief.get('session_id', 'unknown')}`")
     parts.append("")
-    proposer_list = " + ".join(_proposer_ids)
-    refiner_list = " + ".join(_refiner_ids)
+    proposer_list = " + ".join(proposer_agent_ids)
+    refiner_list = " + ".join(refiner_agent_ids)
     parts.append(
-        f"**Architecture**: {len(_proposer_ids)} proposers ({proposer_list}) → "
-        f"{len(_refiner_ids)} broadcast refiners ({refiner_list}, each saw all proposals) → "
+        f"**Architecture**: {len(proposer_agent_ids)} proposers ({proposer_list}) → "
+        f"{len(refiner_agent_ids)} broadcast refiners ({refiner_list}, each saw all proposals) → "
         "Opus aggregator (this session)"
     )
     parts.append("")
@@ -1101,7 +1097,7 @@ def write_synthesis_input(
     parts.append("## Layer 1 — Proposers (parallel)")
     parts.append("")
 
-    for agent in _proposer_ids:
+    for agent in proposer_agent_ids:
         agent_results = [r for r in layer1 if r.agent_id == agent]
         if not agent_results:
             parts.append(f"### {agent} proposer")
@@ -1146,7 +1142,7 @@ def write_synthesis_input(
         parts.append("_No refiners ran (insufficient successful proposers, or --skip-layer2)._")
         parts.append("")
 
-    for agent in _refiner_ids:
+    for agent in refiner_agent_ids:
         agent_results = [r for r in layer2 if r.agent_id == agent]
         if not agent_results:
             continue
@@ -1437,12 +1433,12 @@ def main() -> int:
     # self-moa is routed entirely through the instance-keyed path; --proposers
     # and --refiners are adapter-name flags that don't apply to it.
     if args.self_moa:
-        self_moa_proposer_ids = [
+        self_moaproposer_agent_ids = [
             s.strip()
             for s in (args.self_moa_proposers or "sonnet-a,sonnet-b,sonnet-c").split(",")
             if s.strip()
         ]
-        self_moa_refiner_ids = [
+        self_moarefiner_agent_ids = [
             s.strip()
             for s in (args.self_moa_refiners or "sonnet-r1,sonnet-r2").split(",")
             if s.strip()
@@ -1467,8 +1463,8 @@ def main() -> int:
             print(f"[orchestrator] arm: self-moa", flush=True)
             print(f"[orchestrator] session: {scout_brief.get('session_id', 'unknown')}", flush=True)
             print(f"[orchestrator] repo: {repo_path}", flush=True)
-            print(f"[orchestrator] proposers: {self_moa_proposer_ids}", flush=True)
-            print(f"[orchestrator] refiners:  {self_moa_refiner_ids}", flush=True)
+            print(f"[orchestrator] proposers: {self_moaproposer_agent_ids}", flush=True)
+            print(f"[orchestrator] refiners:  {self_moarefiner_agent_ids}", flush=True)
             print(f"[orchestrator] sonnet model: {args.sonnet_model}  ready", flush=True)
             print(
                 f"[orchestrator] timeouts: sonnet={sonnet_timeout}s"
@@ -1479,8 +1475,8 @@ def main() -> int:
             config_snapshot = {
                 "arm": "self-moa",
                 "sonnet_model": args.sonnet_model,
-                "proposer_instances": self_moa_proposer_ids,
-                "refiner_instances": self_moa_refiner_ids,
+                "proposer_instances": self_moaproposer_agent_ids,
+                "refiner_instances": self_moarefiner_agent_ids,
                 "timeout_seconds": {
                     "sonnet": sonnet_timeout,
                     "master_override": args.timeout,
@@ -1495,7 +1491,7 @@ def main() -> int:
                 session_dir=session_dir,
                 sonnet_timeout=sonnet_timeout,
                 sonnet_model=args.sonnet_model,
-                instances=self_moa_proposer_ids,
+                instances=self_moaproposer_agent_ids,
             )
 
             successful_layer1 = [r for r in layer1 if r.success]
@@ -1534,7 +1530,7 @@ def main() -> int:
                     session_dir=session_dir,
                     sonnet_timeout=sonnet_timeout,
                     sonnet_model=args.sonnet_model,
-                    instances=self_moa_refiner_ids,
+                    instances=self_moarefiner_agent_ids,
                 )
 
             synthesis_path = write_synthesis_input(
@@ -1543,8 +1539,8 @@ def main() -> int:
                 layer2=layer2,
                 session_dir=session_dir,
                 layer2_mode=layer2_mode,
-                proposer_agent_ids=tuple(self_moa_proposer_ids),
-                refiner_agent_ids=tuple(self_moa_refiner_ids),
+                proposer_agent_ids=tuple(self_moaproposer_agent_ids),
+                refiner_agent_ids=tuple(self_moarefiner_agent_ids),
             )
             manifest_path = write_manifest(
                 session_dir=session_dir,
@@ -1768,6 +1764,8 @@ def main() -> int:
             layer2=layer2,
             session_dir=session_dir,
             layer2_mode=layer2_mode,
+            proposer_agent_ids=tuple(p.name for p in final_proposers),
+            refiner_agent_ids=tuple(p.name for p in final_refiners),
         )
         manifest_path = write_manifest(
             session_dir=session_dir,
