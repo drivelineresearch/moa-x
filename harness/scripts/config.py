@@ -215,6 +215,29 @@ def _yaml_to_env(cfg: dict[str, Any]) -> dict[str, str]:
     return env
 
 
+def _user_providers_from_yaml(cfg: dict[str, Any]) -> dict[str, dict]:
+    """Extract the `providers:` block from a parsed YAML config.
+
+    Returns a name → spec dict where spec is a mapping with at least
+    `harness` and `model` keys. Validation of harness/model values
+    happens at resolve_provider() time, not here.
+    """
+    raw = cfg.get("providers") or {}
+    if not isinstance(raw, dict):
+        raise ValueError(
+            "harness/config.yaml: top-level `providers:` must be a mapping"
+        )
+    out: dict[str, dict] = {}
+    for name, spec in raw.items():
+        if not isinstance(spec, dict):
+            raise ValueError(
+                f"harness/config.yaml: provider {name!r} must be a mapping with "
+                f"`harness:` and `model:` keys; got {type(spec).__name__}"
+            )
+        out[str(name)] = dict(spec)
+    return out
+
+
 def apply_config_to_env(
     *,
     config_path: Optional[Path] = None,

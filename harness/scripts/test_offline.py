@@ -675,6 +675,35 @@ def test_config_resolve_unknown_name_raises() -> bool:
     return _ok(False, "expected ValueError")
 
 
+def test_config_yaml_providers_block() -> bool:
+    print("\n[19] config: harness/config.yaml `providers:` block parses into user_providers")
+    import tempfile, textwrap
+    from pathlib import Path as _Path
+    from config import _load_yaml, _user_providers_from_yaml
+    yaml_text = textwrap.dedent("""
+        providers:
+          cursor-grok: {harness: cursor, model: grok-4.20}
+          cursor-gpt:  {harness: cursor, model: gpt-5.5}
+        layers:
+          proposers: [codex, gemini, cursor-grok]
+    """)
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        f.write(yaml_text)
+        tmp_path = _Path(f.name)
+    try:
+        cfg = _load_yaml(tmp_path)
+        user_providers = _user_providers_from_yaml(cfg)
+        ok = (
+            "cursor-grok" in user_providers
+            and user_providers["cursor-grok"]["harness"] == "cursor"
+            and user_providers["cursor-grok"]["model"] == "grok-4.20"
+            and "cursor-gpt" in user_providers
+        )
+        return _ok(ok, f"got: {user_providers}")
+    finally:
+        tmp_path.unlink()
+
+
 def main() -> int:
     print("Mixture-of-Agents — offline smoke test (v2: 3 proposers + broadcast refiners)")
     print("=" * 72)
@@ -704,6 +733,7 @@ def main() -> int:
         test_config_resolve_builtin_codex,
         test_config_resolve_builtin_sonnet_uses_claude_harness,
         test_config_resolve_unknown_name_raises,
+        test_config_yaml_providers_block,
     ]
     results = [t() for t in tests]
     print("\n" + "=" * 72)
