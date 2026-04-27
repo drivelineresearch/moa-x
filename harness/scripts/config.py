@@ -27,11 +27,17 @@ Typical usage:
     from config import resolve_bin
     bin_path = resolve_bin("codex")   # → $MOA_CODEX_BIN or "codex"
 
+    # Resolve a named provider to a triple:
+    from config import resolve_provider
+    rp = resolve_provider("codex", user_providers={})
+    # rp.name == "codex", rp.harness == "codex", rp.model == "gpt-5.4"
+
 The config.yaml schema is documented in harness/config.example.yaml.
 """
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
@@ -55,9 +61,6 @@ _DEFAULT_BINS = {
     "gemini": "gemini",
     "claude": "claude",
 }
-
-
-from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
