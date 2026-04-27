@@ -82,6 +82,7 @@ if str(SCRIPT_DIR) not in sys.path:
 from adapters import codex as codex_adapter  # noqa: E402
 from adapters import gemini as gemini_adapter  # noqa: E402
 from adapters import claude as claude_adapter  # noqa: E402
+from adapters import cursor as cursor_adapter  # noqa: E402
 from adapters.claude import TEMPERATURE_DIVERSITY_SHIM  # noqa: E402
 import config as harness_config  # noqa: E402
 
@@ -519,9 +520,10 @@ def _run_codex(
     timeout: int,
     reasoning_effort: str,
     model: str,
+    agent_id: str = "codex",
     reviewing: Optional[list[str]] = None,
 ) -> LayerResult:
-    log_file = session_dir / f"layer{layer}" / f"codex-{role}.log"
+    log_file = session_dir / f"layer{layer}" / f"{agent_id}-{role}.log"
     result = codex_adapter.run(
         prompt=prompt,
         schema_path=schema_path,
@@ -532,7 +534,7 @@ def _run_codex(
         log_file=log_file,
     )
     layer_result = LayerResult(
-        agent_id="codex",
+        agent_id=agent_id,
         layer=layer,
         role=role,
         reviewing=reviewing,
@@ -556,9 +558,10 @@ def _run_gemini(
     session_dir: Path,
     timeout: int,
     model: str,
+    agent_id: str = "gemini",
     reviewing: Optional[list[str]] = None,
 ) -> LayerResult:
-    log_file = session_dir / f"layer{layer}" / f"gemini-{role}.log"
+    log_file = session_dir / f"layer{layer}" / f"{agent_id}-{role}.log"
     result = gemini_adapter.run(
         prompt=prompt,
         repo_path=repo_path,
@@ -567,7 +570,7 @@ def _run_gemini(
         log_file=log_file,
     )
     layer_result = LayerResult(
-        agent_id="gemini",
+        agent_id=agent_id,
         layer=layer,
         role=role,
         reviewing=reviewing,
@@ -591,9 +594,10 @@ def _run_sonnet(
     session_dir: Path,
     timeout: int,
     model: str,
+    agent_id: str = "sonnet",
     reviewing: Optional[list[str]] = None,
 ) -> LayerResult:
-    log_file = session_dir / f"layer{layer}" / f"sonnet-{role}.log"
+    log_file = session_dir / f"layer{layer}" / f"{agent_id}-{role}.log"
     result = claude_adapter.run(
         prompt=prompt,
         schema_path=schema_path,
@@ -603,7 +607,7 @@ def _run_sonnet(
         log_file=log_file,
     )
     layer_result = LayerResult(
-        agent_id="sonnet",
+        agent_id=agent_id,
         layer=layer,
         role=role,
         reviewing=reviewing,
@@ -615,6 +619,106 @@ def _run_sonnet(
     )
     _finalize_result(layer_result, result.payload, schema_path, session_dir)
     return layer_result
+
+
+def _run_cursor(
+    *,
+    layer: int,
+    role: str,
+    prompt: str,
+    schema_path: Path,
+    repo_path: Path,
+    session_dir: Path,
+    timeout: int,
+    model: str,
+    agent_id: str,
+    reviewing: Optional[list[str]] = None,
+) -> LayerResult:
+    """Invoke the cursor adapter and lift its result into a LayerResult."""
+    log_file = session_dir / f"layer{layer}" / f"{agent_id}-{role}.log"
+    result = cursor_adapter.run(
+        prompt=prompt,
+        repo_path=repo_path,
+        model=model,
+        timeout_seconds=timeout,
+        log_file=log_file,
+    )
+    layer_result = LayerResult(
+        agent_id=agent_id,
+        layer=layer,
+        role=role,
+        reviewing=reviewing,
+        success=result.success,
+        payload=result.payload,
+        duration_seconds=result.duration_seconds,
+        error=result.error_message,
+        log_path=str(log_file.relative_to(session_dir)),
+    )
+    _finalize_result(layer_result, result.payload, schema_path, session_dir)
+    return layer_result
+
+
+def _dispatch_provider(
+    *,
+    provider: "harness_config.ResolvedProvider",
+    layer: int,
+    role: str,
+    prompt: str,
+    repo_path: Path,
+    session_dir: Path,
+    timeout_for_harness: dict[str, int],
+    codex_effort: str,
+    reviewing: Optional[list[str]] = None,
+) -> LayerResult:
+    """Route a ResolvedProvider to the right _run_* function.
+
+    timeout_for_harness maps harness name to timeout seconds, since each
+    harness has its own default timeout knob. codex_effort applies only
+    to the codex harness; ignored otherwise.
+    """
+    h = provider.harness
+    if h == "codex":
+        return _run_codex(
+            layer=layer, role=role, prompt=prompt,
+            schema_path=PROPOSER_SCHEMA_PATH if "proposer" in role else REFINER_SCHEMA_PATH,
+            repo_path=repo_path, session_dir=session_dir,
+            timeout=timeout_for_harness["codex"],
+            reasoning_effort=codex_effort,
+            model=provider.model,
+            agent_id=provider.name,
+            reviewing=reviewing,
+        )
+    if h == "gemini":
+        return _run_gemini(
+            layer=layer, role=role, prompt=prompt,
+            schema_path=PROPOSER_SCHEMA_PATH if "proposer" in role else REFINER_SCHEMA_PATH,
+            repo_path=repo_path, session_dir=session_dir,
+            timeout=timeout_for_harness["gemini"],
+            model=provider.model,
+            agent_id=provider.name,
+            reviewing=reviewing,
+        )
+    if h == "claude":
+        return _run_sonnet(
+            layer=layer, role=role, prompt=prompt,
+            schema_path=PROPOSER_SCHEMA_PATH if "proposer" in role else REFINER_SCHEMA_PATH,
+            repo_path=repo_path, session_dir=session_dir,
+            timeout=timeout_for_harness["claude"],
+            model=provider.model,
+            agent_id=provider.name,
+            reviewing=reviewing,
+        )
+    if h == "cursor":
+        return _run_cursor(
+            layer=layer, role=role, prompt=prompt,
+            schema_path=PROPOSER_SCHEMA_PATH if "proposer" in role else REFINER_SCHEMA_PATH,
+            repo_path=repo_path, session_dir=session_dir,
+            timeout=timeout_for_harness.get("cursor", 1200),
+            model=provider.model,
+            agent_id=provider.name,
+            reviewing=reviewing,
+        )
+    raise ValueError(f"unknown harness {h!r} for provider {provider.name!r}")
 
 
 def _run_sonnet_instance(
