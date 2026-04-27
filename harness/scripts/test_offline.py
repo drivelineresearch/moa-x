@@ -725,6 +725,35 @@ def test_config_resolve_layer_unknown_fails_loud() -> bool:
     return _ok(False, "expected ValueError")
 
 
+def test_config_load_resolved_end_to_end() -> bool:
+    print("\n[22] config.load_resolved_config resolves YAML into proposer/refiner provider lists")
+    import tempfile, textwrap
+    from pathlib import Path as _Path
+    from config import load_resolved_config
+    yaml_text = textwrap.dedent("""
+        providers:
+          cursor-grok: {harness: cursor, model: grok-4.20}
+        layers:
+          proposers: [codex, gemini, cursor-grok]
+          refiners:  [codex, gemini]
+    """)
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        f.write(yaml_text)
+        tmp_path = _Path(f.name)
+    try:
+        loaded = load_resolved_config(config_path=tmp_path, dotenv_path=_Path("/nonexistent"))
+        prop_names = [p.name for p in loaded.proposers]
+        ref_harnesses = [p.harness for p in loaded.refiners]
+        ok = (
+            prop_names == ["codex", "gemini", "cursor-grok"]
+            and ref_harnesses == ["codex", "gemini"]
+            and loaded.skip_refinement is False
+        )
+        return _ok(ok, f"got proposers={prop_names} refiners={ref_harnesses} skip={loaded.skip_refinement}")
+    finally:
+        tmp_path.unlink()
+
+
 def main() -> int:
     print("Mixture-of-Agents — offline smoke test (v2: 3 proposers + broadcast refiners)")
     print("=" * 72)
@@ -757,6 +786,7 @@ def main() -> int:
         test_config_yaml_providers_block,
         test_config_resolve_layer_mixed,
         test_config_resolve_layer_unknown_fails_loud,
+        test_config_load_resolved_end_to_end,
     ]
     results = [t() for t in tests]
     print("\n" + "=" * 72)

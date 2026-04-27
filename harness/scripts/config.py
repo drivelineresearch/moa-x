@@ -252,6 +252,73 @@ def _user_providers_from_yaml(cfg: dict[str, Any]) -> dict[str, dict]:
     return out
 
 
+@dataclass(frozen=True)
+class LoadedConfig:
+    """Fully resolved config ready for run_moa.py to dispatch from."""
+    proposers: list[ResolvedProvider]
+    refiners: list[ResolvedProvider]
+    skip_refinement: bool
+
+
+# Default layer assignments when no YAML / env override is set.
+_DEFAULT_PROPOSERS = ["codex", "gemini", "sonnet"]
+_DEFAULT_REFINERS = ["codex", "gemini"]
+
+
+def load_resolved_config(
+    *,
+    config_path: Optional[Path] = None,
+    dotenv_path: Optional[Path] = None,
+) -> LoadedConfig:
+    """Load YAML + .env and resolve all named providers in the layer assignments.
+
+    Caller is responsible for having previously called apply_config_to_env()
+    so MOA_PROPOSERS / MOA_REFINERS env vars (if set) are visible. The
+    `dotenv_path` argument is currently unused by this function (env state
+    has already been applied) but is reserved for future use; pass it for
+    parity with apply_config_to_env.
+    """
+    cfg_path = config_path or DEFAULT_CONFIG_PATH
+    cfg = _load_yaml(cfg_path)
+    user_providers = _user_providers_from_yaml(cfg)
+
+    proposer_names = _resolve_layer_names(
+        env_key="MOA_PROPOSERS",
+        yaml_value=(cfg.get("layers") or {}).get("proposers"),
+        default=_DEFAULT_PROPOSERS,
+    )
+    refiner_names = _resolve_layer_names(
+        env_key="MOA_REFINERS",
+        yaml_value=(cfg.get("layers") or {}).get("refiners"),
+        default=_DEFAULT_REFINERS,
+    )
+
+    proposers = resolve_layer(proposer_names, user_providers=user_providers)
+    refiners = resolve_layer(refiner_names, user_providers=user_providers)
+
+    skip_refinement = bool(os.environ.get("MOA_SKIP_LAYER2")) or bool(
+        (cfg.get("layers") or {}).get("skip_refinement")
+    )
+
+    return LoadedConfig(
+        proposers=proposers,
+        refiners=refiners,
+        skip_refinement=skip_refinement,
+    )
+
+
+def _resolve_layer_names(
+    *, env_key: str, yaml_value: Any, default: list[str]
+) -> list[str]:
+    """Pick layer names from env > yaml > default."""
+    env_val = os.environ.get(env_key)
+    if env_val:
+        return [s.strip() for s in env_val.split(",") if s.strip()]
+    if isinstance(yaml_value, list):
+        return [str(s) for s in yaml_value]
+    return list(default)
+
+
 def apply_config_to_env(
     *,
     config_path: Optional[Path] = None,
