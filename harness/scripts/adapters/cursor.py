@@ -122,5 +122,85 @@ def run(
 
 
 def _extract_payload(stdout: str) -> Optional[dict]:
-    """Stub — implemented in Phase 4.2."""
-    raise NotImplementedError("Implemented in Phase 4.2")
+    """Extract the inner JSON object from cursor-agent --output-format json.
+
+    Cursor's outer envelope:
+        {"type": "result", "is_error": <bool>, "result": "<text>",
+         "usage": {...}, "session_id": "...", ...}
+
+    When `is_error: true`, returns None — the orchestrator will surface
+    the result text as the error message via run()'s caller.
+
+    Otherwise extracts JSON from `result`, which may contain:
+      - bare JSON (preferred — when prompt instructs no fences)
+      - fenced JSON (```json ... ```)
+      - JSON with surrounding prose
+    """
+    if not stdout:
+        return None
+
+    # Step 1: parse the outer wrapper
+    outer = None
+    try:
+        outer = json.loads(stdout)
+    except json.JSONDecodeError:
+        # Sometimes cursor emits leading log lines before the JSON
+        first_brace = stdout.find("{")
+        if first_brace >= 0:
+            try:
+                outer = json.loads(stdout[first_brace:])
+            except json.JSONDecodeError:
+                pass
+
+    if not isinstance(outer, dict):
+        return None
+    if outer.get("is_error"):
+        return None
+
+    result_text = outer.get("result")
+    if not isinstance(result_text, str) or not result_text.strip():
+        return None
+
+    # Step 2: extract JSON from the inner text. Try fences first, then
+    # balanced top-level objects (longest-first, gemini-style).
+    candidates: list[str] = []
+    for match in re.finditer(r"```(?:json)?\s*\n(.*?)\n```", result_text, re.DOTALL):
+        candidates.append(match.group(1).strip())
+
+    # Bare top-level JSON object scan
+    text = result_text
+    for start in range(len(text)):
+        if text[start] != "{":
+            continue
+        depth = 0
+        in_string = False
+        escape = False
+        for end in range(start, len(text)):
+            ch = text[end]
+            if escape:
+                escape = False
+                continue
+            if ch == "\\":
+                escape = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    candidates.append(text[start : end + 1])
+                    break
+
+    candidates.sort(key=len, reverse=True)
+    for cand in candidates:
+        try:
+            return json.loads(cand)
+        except (json.JSONDecodeError, ValueError):
+            continue
+
+    return None

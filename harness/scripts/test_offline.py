@@ -240,6 +240,41 @@ SAMPLE_CLAUDE_STDOUT_FENCED = json.dumps(
 )
 
 
+SAMPLE_CURSOR_STDOUT_SUCCESS = json.dumps({
+    "type": "result",
+    "subtype": "success",
+    "is_error": False,
+    "duration_ms": 8394,
+    "result": json.dumps(VALID_PROPOSER_CODEX),  # the model returned bare JSON
+    "session_id": "abc-123",
+    "request_id": "req-456",
+    "usage": {"inputTokens": 100, "outputTokens": 500,
+              "cacheReadTokens": 0, "cacheWriteTokens": 0},
+})
+
+SAMPLE_CURSOR_STDOUT_FENCED = json.dumps({
+    "type": "result",
+    "subtype": "success",
+    "is_error": False,
+    "duration_ms": 8394,
+    "result": "Here is the JSON:\n```json\n" + json.dumps(VALID_PROPOSER_CODEX) + "\n```",
+    "session_id": "abc-123",
+    "request_id": "req-456",
+    "usage": {"inputTokens": 100, "outputTokens": 500,
+              "cacheReadTokens": 0, "cacheWriteTokens": 0},
+})
+
+SAMPLE_CURSOR_STDOUT_ERROR = json.dumps({
+    "type": "result",
+    "subtype": "error",
+    "is_error": True,
+    "duration_ms": 100,
+    "result": "rate limit exceeded; please try again in 60 seconds",
+    "session_id": "abc-123",
+    "request_id": "req-456",
+})
+
+
 def _make_valid_broadcast_refiner(agent_id: str) -> dict:
     """Build a valid broadcast-refiner payload (sees all 3 proposers)."""
     return {
@@ -446,6 +481,27 @@ def test_claude_extractor_fallback_to_fenced_result() -> bool:
     matches = found and payload.get("agent_id") == "sonnet"
     return _check("fenced payload found and matches", matches,
                   f"agent_id={payload.get('agent_id') if isinstance(payload, dict) else None}")
+
+
+def test_cursor_extractor_finds_payload_in_bare_result() -> bool:
+    print("\n[N] cursor._extract_payload returns inner JSON from bare result text")
+    from adapters import cursor as cursor_adapter
+    payload = cursor_adapter._extract_payload(SAMPLE_CURSOR_STDOUT_SUCCESS)
+    ok = payload is not None and payload.get("agent_id") == "codex"
+    return _ok(ok, f"got {payload!r}")
+
+def test_cursor_extractor_handles_fenced_json() -> bool:
+    print("\n[N] cursor._extract_payload pulls JSON out of ```json fences in result text")
+    from adapters import cursor as cursor_adapter
+    payload = cursor_adapter._extract_payload(SAMPLE_CURSOR_STDOUT_FENCED)
+    ok = payload is not None and payload.get("agent_id") == "codex"
+    return _ok(ok, f"got {payload!r}")
+
+def test_cursor_extractor_returns_none_on_is_error() -> bool:
+    print("\n[N] cursor._extract_payload returns None when envelope is_error=true")
+    from adapters import cursor as cursor_adapter
+    payload = cursor_adapter._extract_payload(SAMPLE_CURSOR_STDOUT_ERROR)
+    return _ok(payload is None, f"got {payload!r}")
 
 
 def test_refiner_schema_validator_broadcast_codex() -> bool:
@@ -798,6 +854,9 @@ def main() -> int:
         test_config_resolve_layer_unknown_fails_loud,
         test_config_load_resolved_end_to_end,
         test_cursor_check_available_returns_tuple,
+        test_cursor_extractor_finds_payload_in_bare_result,
+        test_cursor_extractor_handles_fenced_json,
+        test_cursor_extractor_returns_none_on_is_error,
     ]
     results = [t() for t in tests]
     print("\n" + "=" * 72)
