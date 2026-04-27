@@ -352,12 +352,14 @@ def test_schema_validator_rejects_missing_field() -> bool:
     return _check("flagged missing 'plan' field", has_plan_error, f"errors={errors[:3]}")
 
 
-def test_schema_validator_rejects_bad_enum() -> bool:
-    print("\n[4] Schema validator rejects payload with bad enum value (claude not in enum)")
+def test_schema_validator_rejects_bad_agent_id_pattern() -> bool:
+    print("\n[4] Schema validator rejects agent_id that violates the regex pattern")
     schema = run_moa._load_schema(run_moa.PROPOSER_SCHEMA_PATH)
-    errors = run_moa._validate_against_schema(INVALID_PROPOSER_PAYLOAD_BAD_ENUM, schema)
-    has_enum_error = any("enum" in e or "claude" in e for e in errors)
-    return _check("flagged enum violation", has_enum_error, f"errors={errors[:3]}")
+    bad_payload = _make_valid_proposer("Bad Name!")  # uppercase + space + bang
+    errors = run_moa._validate_against_schema(bad_payload, schema)
+    print(f"  errors: {errors}")
+    has_pattern_error = any("pattern" in e for e in errors)
+    return _check("expected pattern violation", has_pattern_error, "saw: " + str(errors))
 
 
 def test_schema_validator_rejects_missing_evidence_key() -> bool:
@@ -658,7 +660,7 @@ def main() -> int:
         test_schema_validator_accepts_valid_codex_payload,
         test_schema_validator_accepts_valid_sonnet_payload,
         test_schema_validator_rejects_missing_field,
-        test_schema_validator_rejects_bad_enum,
+        test_schema_validator_rejects_bad_agent_id_pattern,
         test_schema_validator_rejects_missing_evidence_key,
         test_strict_mode_lint_clean_on_current_schemas,
         test_strict_mode_lint_catches_violation,

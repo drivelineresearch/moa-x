@@ -52,6 +52,7 @@ import argparse
 import contextlib
 import json
 import os
+import re
 import sys
 import tempfile
 import time
@@ -246,6 +247,9 @@ def _validate_against_schema(payload: Any, schema: dict, path: str = "$") -> lis
             enum = schema.get("enum")
             if enum is not None and payload not in enum:
                 errors.append(f"{path}: value '{payload}' not in enum {enum}")
+            pattern = schema.get("pattern")
+            if pattern is not None and not re.fullmatch(pattern, payload):
+                errors.append(f"{path}: value '{payload}' does not match pattern '{pattern}'")
 
     elif expected == "integer":
         if not isinstance(payload, int) or isinstance(payload, bool):
