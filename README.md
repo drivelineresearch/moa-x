@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license">
   <img src="https://img.shields.io/badge/python-3.11%2B-blue.svg" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/runner-Claude%20Code-8b5cf6.svg" alt="Claude Code">
-  <img src="https://img.shields.io/badge/providers-codex%20%7C%20claude--code%20%7C%20gemini-informational" alt="supported CLIs">
+  <img src="https://img.shields.io/badge/providers-codex%20%7C%20claude--code%20%7C%20gemini%20%7C%20cursor-informational" alt="supported CLIs">
 </p>
 
 A small, CLI-native take on the 2024
@@ -24,10 +24,10 @@ write an independent plan. Two of them then refine in broadcast mode
 aggregates the whole thing into one plan you can act on.
 
 Built to run **inside Claude Code** as a skill. Standalone Python works
-too. The harness currently wires up the three vendor CLIs on their
-subscription plans, which is what I personally run. API-based auth,
-alternative harnesses, and other model providers are all fair game.
-See "PRs we'd love to see" below.
+too. The harness ships three built-in CLI providers (`codex`, `gemini`,
+`claude`) plus optional Cursor CLI support as a fourth lane. API-based
+auth and alternative harnesses are all fair game. See "PRs we'd love
+to see" below.
 
 ## TL;DR
 
@@ -105,9 +105,10 @@ prioritize reviewing PRs that land any of them:
   lineup is US-only. Routing one proposer through a Chinese frontier
   model would test the thesis in the place it most deserves testing.
 - **More providers generally.** xAI Grok, Mistral, any model with a
-  credible coding-bench story. Each provider needs its own adapter,
-  preflight, and prompt-assumption review; open an issue first so we
-  can talk through auth shape, then build.
+  credible coding-bench story. Cursor CLI is already supported as a
+  fourth lane (see `docs/install.md`). Additional native adapters need
+  their own adapter, preflight, and prompt-assumption review; open an
+  issue first so we can talk through auth shape, then build.
 - **Cost observability** for API-billed runs: token accounting in the
   manifest, a `MOA_MAX_COST` ceiling, per-layer spend breakdowns.
 

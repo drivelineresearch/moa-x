@@ -28,6 +28,23 @@ when you invoke it. Better API-billing ergonomics (cost surfacing,
 per-layer accounting, a `MOA_MAX_COST` knob) are on the open wish
 list. See the PR-wanted section of the top-level README.
 
+### Optional: Cursor CLI (fourth provider)
+
+The Cursor CLI (`cursor-agent`) is optional. It's a single binary that
+routes to OpenAI, Anthropic, Google, xAI, and Moonshot models — useful
+if you want a 4th lane in the ensemble or want to consolidate around
+one CLI for billing.
+
+```bash
+curl https://cursor.com/install -fsS | bash
+cursor-agent login    # subscription
+# or
+export CURSOR_API_KEY=...    # API-billed
+```
+
+Then add a `providers:` block to `harness/config.yaml`. See
+`harness/config.example.yaml` for examples.
+
 ## 2. Verify
 
 ```bash
