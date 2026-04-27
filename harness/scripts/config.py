@@ -57,6 +57,63 @@ _DEFAULT_BINS = {
 }
 
 
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class ResolvedProvider:
+    """A provider resolved from a layer config entry to a concrete invocation triple."""
+    name: str         # user-facing label, used as agent_id in payloads
+    harness: str      # which adapter handles the call: codex, gemini, claude, cursor
+    model: str        # model id passed to the harness
+
+
+# Built-in named providers. Existing configs that reference codex/gemini/sonnet
+# resolve through this table for back-compat. User-defined providers in
+# harness/config.yaml under `providers:` are layered on top in resolve_provider.
+BUILTIN_PROVIDERS: dict[str, ResolvedProvider] = {
+    "codex":  ResolvedProvider(name="codex",  harness="codex",  model="gpt-5.4"),
+    "gemini": ResolvedProvider(name="gemini", harness="gemini", model="gemini-2.5-pro"),
+    "sonnet": ResolvedProvider(name="sonnet", harness="claude", model="claude-sonnet-4-6"),
+}
+
+
+def resolve_provider(name: str, *, user_providers: dict[str, dict]) -> ResolvedProvider:
+    """Resolve a provider name to a ResolvedProvider triple.
+
+    Lookup order:
+      1. user_providers (from harness/config.yaml `providers:` block)
+      2. BUILTIN_PROVIDERS (codex, gemini, sonnet)
+
+    Then env-var overrides MOA_<NAME>_MODEL apply.
+
+    Raises ValueError if the name resolves nowhere.
+    """
+    if name in user_providers:
+        spec = user_providers[name]
+        if not isinstance(spec, dict) or "harness" not in spec or "model" not in spec:
+            raise ValueError(
+                f"user provider {name!r} must be a mapping with 'harness' and 'model' keys; "
+                f"got {spec!r}"
+            )
+        rp = ResolvedProvider(name=name, harness=spec["harness"], model=spec["model"])
+    elif name in BUILTIN_PROVIDERS:
+        rp = BUILTIN_PROVIDERS[name]
+    else:
+        valid = sorted(set(BUILTIN_PROVIDERS) | set(user_providers))
+        raise ValueError(
+            f"unknown provider name {name!r}; valid names: {valid}"
+        )
+
+    # MOA_<NAME>_MODEL env override. Name is uppercased with - → _.
+    env_key = f"MOA_{name.upper().replace('-', '_')}_MODEL"
+    override_model = os.environ.get(env_key)
+    if override_model:
+        rp = ResolvedProvider(name=rp.name, harness=rp.harness, model=override_model)
+
+    return rp
+
+
 def resolve_bin(provider: str) -> str:
     """Return the binary name/path for a provider.
 

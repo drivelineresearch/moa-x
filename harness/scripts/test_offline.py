@@ -330,6 +330,12 @@ def _check(label: str, condition: bool, detail: str = "") -> bool:
     return condition
 
 
+def _ok(condition: bool, detail: str = "") -> bool:
+    status = PASS if condition else FAIL
+    print(f"  [{status}]" + (f"  -- {detail}" if detail else ""))
+    return condition
+
+
 def test_schema_validator_accepts_valid_codex_payload() -> bool:
     print("\n[1] Schema validator accepts a valid codex proposer payload")
     schema = run_moa._load_schema(run_moa.PROPOSER_SCHEMA_PATH)
@@ -644,6 +650,31 @@ def test_skill_assets_present() -> bool:
     return _check("no missing assets", len(missing) == 0, f"missing={missing}")
 
 
+def test_config_resolve_builtin_codex() -> bool:
+    print("\n[16] config.resolve_provider returns built-in codex triple")
+    from config import resolve_provider
+    rp = resolve_provider("codex", user_providers={})
+    ok = (rp.name == "codex" and rp.harness == "codex" and rp.model == "gpt-5.4")
+    return _ok(ok, f"got {rp}")
+
+def test_config_resolve_builtin_sonnet_uses_claude_harness() -> bool:
+    print("\n[17] config.resolve_provider: sonnet name maps to claude harness")
+    from config import resolve_provider
+    rp = resolve_provider("sonnet", user_providers={})
+    ok = (rp.name == "sonnet" and rp.harness == "claude" and rp.model == "claude-sonnet-4-6")
+    return _ok(ok, f"got {rp}")
+
+def test_config_resolve_unknown_name_raises() -> bool:
+    print("\n[18] config.resolve_provider raises on unknown name")
+    from config import resolve_provider
+    try:
+        resolve_provider("nonexistent-name", user_providers={})
+    except ValueError as e:
+        return _ok("nonexistent-name" in str(e) and "codex" in str(e),
+                   f"error message should list valid names; got: {e}")
+    return _ok(False, "expected ValueError")
+
+
 def main() -> int:
     print("Mixture-of-Agents — offline smoke test (v2: 3 proposers + broadcast refiners)")
     print("=" * 72)
@@ -670,6 +701,9 @@ def main() -> int:
         test_config_precedence_env_over_dotenv_over_yaml,
         test_self_moa_argparse_smoke,
         test_skill_assets_present,
+        test_config_resolve_builtin_codex,
+        test_config_resolve_builtin_sonnet_uses_claude_harness,
+        test_config_resolve_unknown_name_raises,
     ]
     results = [t() for t in tests]
     print("\n" + "=" * 72)
