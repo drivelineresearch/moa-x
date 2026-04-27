@@ -643,6 +643,7 @@ def test_skill_assets_present() -> bool:
         skill_dir / "scripts" / "adapters" / "codex.py",
         skill_dir / "scripts" / "adapters" / "gemini.py",
         skill_dir / "scripts" / "adapters" / "claude.py",
+        skill_dir / "scripts" / "adapters" / "cursor.py",
         skill_dir / "scripts" / "schemas" / "proposer.schema.json",
         skill_dir / "scripts" / "schemas" / "refiner.schema.json",
     ]
@@ -754,6 +755,15 @@ def test_config_load_resolved_end_to_end() -> bool:
         tmp_path.unlink()
 
 
+def test_cursor_check_available_returns_tuple() -> bool:
+    print("\n[23] cursor.check_available returns (bool, str) tuple")
+    from adapters import cursor as cursor_adapter
+    result = cursor_adapter.check_available()
+    ok = (isinstance(result, tuple) and len(result) == 2
+          and isinstance(result[0], bool) and isinstance(result[1], str))
+    return _ok(ok, f"got {result}")
+
+
 def main() -> int:
     print("Mixture-of-Agents — offline smoke test (v2: 3 proposers + broadcast refiners)")
     print("=" * 72)
@@ -787,6 +797,7 @@ def main() -> int:
         test_config_resolve_layer_mixed,
         test_config_resolve_layer_unknown_fails_loud,
         test_config_load_resolved_end_to_end,
+        test_cursor_check_available_returns_tuple,
     ]
     results = [t() for t in tests]
     print("\n" + "=" * 72)
