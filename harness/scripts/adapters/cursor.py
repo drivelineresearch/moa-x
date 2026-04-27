@@ -118,7 +118,158 @@ def run(
     Note: Cursor has no --output-schema flag. Schema validation happens
     orchestrator-side after this returns, same as gemini.
     """
-    raise NotImplementedError("Implemented in Phase 4.3")
+    start = time.monotonic()
+    stdout_captured = ""
+    stderr_captured = ""
+    tmpdir: Optional[str] = None
+
+    # Prepend read-only directive (gemini-style; --sandbox covers exec, not FS).
+    full_prompt = READ_ONLY_RULE + "\n\n" + prompt
+
+    try:
+        tmpdir = tempfile.mkdtemp(prefix="moa-cursor-")
+        env = os.environ.copy()
+        env["TMPDIR"] = tmpdir
+        env["XDG_CACHE_HOME"] = str(Path(tmpdir) / "cache")
+        env["PYTHONDONTWRITEBYTECODE"] = "1"
+
+        cmd = [
+            _cursor_bin(),
+            "-p",
+            "--model", model,
+            "--output-format", "json",
+            "--force",  # bypass workspace-trust prompt; alias of --yolo
+            "--",
+            full_prompt,
+        ]
+
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdin=None,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=env,
+                cwd=str(repo_path),
+                start_new_session=True,
+            )
+            try:
+                stdout_text, stderr_text = proc.communicate(timeout=timeout_seconds)
+                duration = time.monotonic() - start
+                stdout_captured = stdout_text or ""
+                stderr_captured = stderr_text or ""
+            except subprocess.TimeoutExpired:
+                kill_proc_tree(proc)
+                try:
+                    stdout_text, stderr_text = proc.communicate(timeout=5)
+                    stdout_captured = stdout_text or ""
+                    stderr_captured = (stderr_text or "") + f"\n[orchestrator] timeout after {timeout_seconds}s"
+                except Exception:
+                    stdout_captured = ""
+                    stderr_captured = f"[orchestrator] timeout after {timeout_seconds}s; could not drain pipes"
+                duration = time.monotonic() - start
+                return CursorResult(
+                    success=False, payload=None, raw_stdout=stdout_captured,
+                    raw_stderr=stderr_captured, exit_code=-1,
+                    duration_seconds=duration,
+                    error_message=f"timeout after {timeout_seconds}s",
+                )
+        except FileNotFoundError as e:
+            duration = time.monotonic() - start
+            stderr_captured = f"cursor-agent binary not found on PATH: {e}"
+            return CursorResult(
+                success=False, payload=None, raw_stdout="",
+                raw_stderr=stderr_captured, exit_code=-1,
+                duration_seconds=duration,
+                error_message=f"cursor-agent binary not found: {e}",
+            )
+        except OSError as e:
+            duration = time.monotonic() - start
+            stderr_captured = f"OSError launching cursor-agent: {e}"
+            return CursorResult(
+                success=False, payload=None, raw_stdout="",
+                raw_stderr=stderr_captured, exit_code=-1,
+                duration_seconds=duration,
+                error_message=f"OSError launching cursor-agent: {e}",
+            )
+
+        if proc.returncode != 0:
+            return CursorResult(
+                success=False, payload=None, raw_stdout=stdout_captured,
+                raw_stderr=stderr_captured, exit_code=proc.returncode,
+                duration_seconds=duration,
+                error_message=f"cursor-agent exited with code {proc.returncode}",
+            )
+
+        # Surface in-envelope errors specifically before generic extract.
+        envelope_error = _envelope_error_message(stdout_captured)
+        if envelope_error is not None:
+            return CursorResult(
+                success=False, payload=None, raw_stdout=stdout_captured,
+                raw_stderr=stderr_captured, exit_code=proc.returncode,
+                duration_seconds=duration,
+                error_message=envelope_error,
+            )
+
+        payload = _extract_payload(stdout_captured)
+        if payload is None:
+            return CursorResult(
+                success=False, payload=None, raw_stdout=stdout_captured,
+                raw_stderr=stderr_captured, exit_code=proc.returncode,
+                duration_seconds=duration,
+                error_message=_diagnose_failure(stdout_captured, stderr_captured),
+            )
+
+        return CursorResult(
+            success=True, payload=payload, raw_stdout=stdout_captured,
+            raw_stderr=stderr_captured, exit_code=0,
+            duration_seconds=duration,
+        )
+    finally:
+        _write_log_file(log_file, stdout_captured, stderr_captured)
+        if tmpdir is not None:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def _envelope_error_message(stdout: str) -> Optional[str]:
+    """Return a user-facing message if the outer envelope reports is_error.
+
+    Returns None when the envelope is fine (or unparseable — let the
+    generic _diagnose_failure path handle that).
+    """
+    if not stdout:
+        return None
+    try:
+        outer = json.loads(stdout)
+    except json.JSONDecodeError:
+        first_brace = stdout.find("{")
+        if first_brace < 0:
+            return None
+        try:
+            outer = json.loads(stdout[first_brace:])
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(outer, dict) or not outer.get("is_error"):
+        return None
+    msg = outer.get("result") or outer.get("error") or "(no message in envelope)"
+    return f"cursor-agent reported is_error: {msg}"
+
+
+def _diagnose_failure(stdout: str, stderr: str) -> str:
+    """Mirror gemini._diagnose_empty_response: produce a specific error message."""
+    stderr_lower = (stderr or "").lower()
+    quota_hit = any(p in stderr_lower for p in ("rate limit", "quota", "429", "exceeded"))
+    auth_hit = any(p in stderr_lower for p in ("unauthorized", "401", "invalid api key", "not authenticated"))
+    if not stdout or not stdout.strip():
+        return "cursor-agent produced empty stdout"
+    if quota_hit:
+        return ("cursor-agent hit rate-limit / quota errors (see stderr). "
+                "Check your Cursor subscription dashboard or CURSOR_API_KEY budget.")
+    if auth_hit:
+        return ("cursor-agent authentication error (see stderr). "
+                "Re-run `cursor-agent login` or set CURSOR_API_KEY.")
+    return "could not extract payload from cursor-agent result text"
 
 
 def _extract_payload(stdout: str) -> Optional[dict]:
