@@ -21,8 +21,8 @@
   "properties": {
     "agent_id": {
       "type": "string",
-      "enum": ["codex", "gemini"],
-      "description": "Identifier of the refiner agent. Only codex and gemini act as refiners in v2 -- sonnet is a proposer-only, and Opus (the parent session) is the aggregator. This keeps Layer 2 to two non-Anthropic labs so the verification is independent of both the sonnet proposer and the Opus aggregator."
+      "pattern": "^[a-z][a-z0-9-]{0,31}$",
+      "description": "Identifier of the refiner agent. Lowercase, dash-separated, 1-32 chars. Default refiners are codex and gemini; CLAUDE.md recommends keeping refiner labs disjoint from the aggregator (Anthropic) but this is no longer schema-enforced — see CLAUDE.md for the convention."
     },
     "reviewing": {
       "type": "array",

@@ -458,17 +458,8 @@ def test_refiner_schema_validator_broadcast_gemini() -> bool:
     return _check("no errors", len(errors) == 0, f"errors={errors[:3]}")
 
 
-def test_refiner_schema_rejects_sonnet_as_refiner() -> bool:
-    print("\n[12] Refiner schema rejects sonnet as refiner (only codex/gemini allowed)")
-    schema = run_moa._load_schema(run_moa.REFINER_SCHEMA_PATH)
-    payload = _make_valid_broadcast_refiner("sonnet")
-    errors = run_moa._validate_against_schema(payload, schema)
-    has_enum_error = any("enum" in e or "sonnet" in e for e in errors)
-    return _check("flagged sonnet in agent_id", has_enum_error, f"errors={errors[:3]}")
-
-
 def test_evidence_cross_field_rejects_code_with_null_file() -> bool:
-    print("\n[13a] _validate_evidence_cross_fields rejects type=code with null file")
+    print("\n[12a] _validate_evidence_cross_fields rejects type=code with null file")
     payload = {
         "plan": [
             {
@@ -484,7 +475,7 @@ def test_evidence_cross_field_rejects_code_with_null_file() -> bool:
 
 
 def test_evidence_cross_field_rejects_external_with_null_url() -> bool:
-    print("\n[13b] _validate_evidence_cross_fields rejects type=external with null url")
+    print("\n[12b] _validate_evidence_cross_fields rejects type=external with null url")
     payload = {
         "plan": [
             {
@@ -500,13 +491,13 @@ def test_evidence_cross_field_rejects_external_with_null_url() -> bool:
 
 
 def test_evidence_cross_field_accepts_valid_payload() -> bool:
-    print("\n[13c] _validate_evidence_cross_fields accepts the valid fixture")
+    print("\n[12c] _validate_evidence_cross_fields accepts the valid fixture")
     errors = run_moa._validate_evidence_cross_fields(VALID_PROPOSER_CODEX)
     return _check("no errors on valid proposer payload", len(errors) == 0, f"errors={errors[:3]}")
 
 
 def test_unsupported_keyword_warning() -> bool:
-    print("\n[13d] _validate_against_schema warns on unsupported keywords (anyOf, if, oneOf)")
+    print("\n[12d] _validate_against_schema warns on unsupported keywords (anyOf, if, oneOf)")
     import warnings
     # Reset dedup cache so this test is reproducible
     run_moa._warned_keywords.clear()
@@ -526,7 +517,7 @@ def test_unsupported_keyword_warning() -> bool:
 
 
 def test_manifest_config_section_present() -> bool:
-    print("\n[13e] write_manifest includes a `config` section")
+    print("\n[12e] write_manifest includes a `config` section")
     import inspect
     sig = inspect.signature(run_moa.write_manifest)
     has_config_param = "config" in sig.parameters
@@ -535,7 +526,7 @@ def test_manifest_config_section_present() -> bool:
 
 
 def test_config_precedence_env_over_dotenv_over_yaml() -> bool:
-    print("\n[14] config loader precedence: shell env > .env > config.yaml")
+    print("\n[13] config loader precedence: shell env > .env > config.yaml")
     import config
     import os
     import tempfile
@@ -604,7 +595,7 @@ def test_config_precedence_env_over_dotenv_over_yaml() -> bool:
 
 
 def test_self_moa_argparse_smoke() -> bool:
-    print("\n[15] run_moa --help lists --self-moa flag (post-load_arm.py regression)")
+    print("\n[14] run_moa --help lists --self-moa flag (post-load_arm.py regression)")
     import re
     import subprocess
     proc = subprocess.run(
@@ -631,7 +622,7 @@ def test_self_moa_argparse_smoke() -> bool:
 
 
 def test_skill_assets_present() -> bool:
-    print("\n[13] All required skill assets present on disk")
+    print("\n[15] All required skill assets present on disk")
     skill_dir = SCRIPT_DIR.parent
     assets = [
         skill_dir / "SKILL.md",
@@ -671,7 +662,6 @@ def main() -> int:
         test_claude_extractor_fallback_to_fenced_result,
         test_refiner_schema_validator_broadcast_codex,
         test_refiner_schema_validator_broadcast_gemini,
-        test_refiner_schema_rejects_sonnet_as_refiner,
         test_evidence_cross_field_rejects_code_with_null_file,
         test_evidence_cross_field_rejects_external_with_null_url,
         test_evidence_cross_field_accepts_valid_payload,
