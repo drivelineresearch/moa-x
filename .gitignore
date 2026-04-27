@@ -16,6 +16,9 @@ venv/
 # MoA session artifacts
 .moa/
 
+# Working files (specs, plans, scratch) — not part of upstream PR
+tmp/
+
 # Claude Code agent worktrees (ephemeral)
 .claude/
 
