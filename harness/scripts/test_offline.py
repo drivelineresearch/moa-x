@@ -704,6 +704,27 @@ def test_config_yaml_providers_block() -> bool:
         tmp_path.unlink()
 
 
+def test_config_resolve_layer_mixed() -> bool:
+    print("\n[20] config.resolve_layer resolves mixed builtin + user-named names")
+    from config import resolve_layer
+    user = {"cursor-grok": {"harness": "cursor", "model": "grok-4.20"}}
+    resolved = resolve_layer(["codex", "gemini", "cursor-grok"], user_providers=user)
+    names = [r.name for r in resolved]
+    harnesses = [r.harness for r in resolved]
+    ok = (names == ["codex", "gemini", "cursor-grok"]
+          and harnesses == ["codex", "gemini", "cursor"])
+    return _ok(ok, f"got names={names} harnesses={harnesses}")
+
+def test_config_resolve_layer_unknown_fails_loud() -> bool:
+    print("\n[21] config.resolve_layer raises on unknown name with helpful error")
+    from config import resolve_layer
+    try:
+        resolve_layer(["codex", "typo-name"], user_providers={})
+    except ValueError as e:
+        return _ok("typo-name" in str(e), f"error should mention bad name; got: {e}")
+    return _ok(False, "expected ValueError")
+
+
 def main() -> int:
     print("Mixture-of-Agents — offline smoke test (v2: 3 proposers + broadcast refiners)")
     print("=" * 72)
@@ -734,6 +755,8 @@ def main() -> int:
         test_config_resolve_builtin_sonnet_uses_claude_harness,
         test_config_resolve_unknown_name_raises,
         test_config_yaml_providers_block,
+        test_config_resolve_layer_mixed,
+        test_config_resolve_layer_unknown_fails_loud,
     ]
     results = [t() for t in tests]
     print("\n" + "=" * 72)

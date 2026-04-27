@@ -117,6 +117,20 @@ def resolve_provider(name: str, *, user_providers: dict[str, dict]) -> ResolvedP
     return rp
 
 
+def resolve_layer(
+    names: list[str],
+    *,
+    user_providers: dict[str, dict],
+) -> list[ResolvedProvider]:
+    """Resolve a list of provider names to ResolvedProvider records.
+
+    Order is preserved. Duplicates are kept (caller handles self-moa-style
+    suffixing). Raises ValueError on the first unknown name with the list
+    of valid options.
+    """
+    return [resolve_provider(name, user_providers=user_providers) for name in names]
+
+
 def resolve_bin(provider: str) -> str:
     """Return the binary name/path for a provider.
 
