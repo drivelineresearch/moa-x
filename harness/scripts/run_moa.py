@@ -907,64 +907,41 @@ def run_layer1(
     scout_brief: dict,
     repo_path: Path,
     session_dir: Path,
-    codex_timeout: int,
-    gemini_timeout: int,
-    sonnet_timeout: int,
-    codex_model: str,
-    gemini_model: str,
-    sonnet_model: str,
+    proposers: list["harness_config.ResolvedProvider"],
+    timeout_for_harness: dict[str, int],
     codex_effort: str,
     available: dict[str, bool],
 ) -> list[LayerResult]:
-    """Run codex + gemini + sonnet proposers in parallel.
+    """Run the proposer layer in parallel.
 
-    Only spawns agents that passed the preflight check (available[id] == True).
+    Each provider in `proposers` is dispatched to its harness's _run_* function.
+    `available` is a {harness_name -> bool} preflight result; providers whose
+    harness failed preflight are skipped.
     """
     schema = _load_schema(PROPOSER_SCHEMA_PATH)
-
     results: list[LayerResult] = []
-    with ThreadPoolExecutor(max_workers=len(PROPOSER_AGENTS)) as pool:
+
+    runnable = [p for p in proposers if available.get(p.harness, False)]
+
+    if not runnable:
+        print("[orchestrator] WARN: no proposers available after preflight", flush=True)
+        return results
+
+    with ThreadPoolExecutor(max_workers=len(runnable)) as pool:
         futures: dict = {}
-        if available.get("codex"):
-            prompt = _build_proposer_prompt(scout_brief, schema, "codex")
+        for provider in runnable:
+            prompt = _build_proposer_prompt(scout_brief, schema, provider.name)
             futures[pool.submit(
-                _run_codex,
+                _dispatch_provider,
+                provider=provider,
                 layer=1,
                 role="proposer",
                 prompt=prompt,
-                schema_path=PROPOSER_SCHEMA_PATH,
                 repo_path=repo_path,
                 session_dir=session_dir,
-                timeout=codex_timeout,
-                reasoning_effort=codex_effort,
-                model=codex_model,
-            )] = "codex"
-        if available.get("gemini"):
-            prompt = _build_proposer_prompt(scout_brief, schema, "gemini")
-            futures[pool.submit(
-                _run_gemini,
-                layer=1,
-                role="proposer",
-                prompt=prompt,
-                schema_path=PROPOSER_SCHEMA_PATH,
-                repo_path=repo_path,
-                session_dir=session_dir,
-                timeout=gemini_timeout,
-                model=gemini_model,
-            )] = "gemini"
-        if available.get("sonnet"):
-            prompt = _build_proposer_prompt(scout_brief, schema, "sonnet")
-            futures[pool.submit(
-                _run_sonnet,
-                layer=1,
-                role="proposer",
-                prompt=prompt,
-                schema_path=PROPOSER_SCHEMA_PATH,
-                repo_path=repo_path,
-                session_dir=session_dir,
-                timeout=sonnet_timeout,
-                model=sonnet_model,
-            )] = "sonnet"
+                timeout_for_harness=timeout_for_harness,
+                codex_effort=codex_effort,
+            )] = provider.name
 
         for future in as_completed(futures):
             agent_id = futures[future]
@@ -980,9 +957,6 @@ def run_layer1(
                         error=f"orchestrator exception: {e}\n{traceback.format_exc()}",
                     )
                 )
-            # Print progress as soon as each future resolves so users see
-            # the ensemble unfold in real time instead of waiting for all
-            # three proposers to finish before any line appears.
             r = results[-1]
             status = "OK" if r.success else "FAIL"
             print(
@@ -1001,70 +975,42 @@ def run_layer2(
     layer1_results: list[LayerResult],
     repo_path: Path,
     session_dir: Path,
-    codex_timeout: int,
-    gemini_timeout: int,
-    codex_model: str,
-    gemini_model: str,
+    refiners: list["harness_config.ResolvedProvider"],
+    timeout_for_harness: dict[str, int],
     codex_effort: str,
     available: dict[str, bool],
 ) -> list[LayerResult]:
-    """Run broadcast refiners in parallel.
-
-    codex and gemini each receive ALL successful proposer outputs. This is
-    paper-faithful MoA broadcast refinement, distinct from the v1 cross-pair
-    design (where each refiner saw only the OTHER proposer's output).
-
-    Only codex and gemini act as refiners -- sonnet is proposer-only, and
-    Opus (parent session) is the Layer 3 aggregator. This keeps the
-    verification lab-independent from both the sonnet proposer and the Opus
-    aggregator.
-    """
+    """Run the refiner layer in parallel (broadcast — each refiner sees all proposers)."""
     schema = _load_schema(REFINER_SCHEMA_PATH)
-
-    successful_proposers = [
-        r for r in layer1_results if r.success and r.payload is not None
-    ]
-    if not successful_proposers:
-        return []
-
-    proposer_ids_seen = [r.agent_id for r in successful_proposers]
-
     results: list[LayerResult] = []
-    with ThreadPoolExecutor(max_workers=len(REFINER_AGENTS)) as pool:
+
+    successful = [r for r in layer1_results if r.success and r.payload is not None]
+    if not successful:
+        print("[orchestrator] WARN: no successful proposers; skipping refiner layer", flush=True)
+        return results
+    proposer_ids = [r.agent_id for r in successful]
+
+    runnable = [p for p in refiners if available.get(p.harness, False)]
+    if not runnable:
+        print("[orchestrator] WARN: no refiners available after preflight", flush=True)
+        return results
+
+    with ThreadPoolExecutor(max_workers=len(runnable)) as pool:
         futures: dict = {}
-        if available.get("codex"):
-            prompt = _build_refiner_prompt(
-                scout_brief, successful_proposers, "codex", schema
-            )
+        for provider in runnable:
+            prompt = _build_refiner_prompt(scout_brief, successful, provider.name, schema)
             futures[pool.submit(
-                _run_codex,
+                _dispatch_provider,
+                provider=provider,
                 layer=2,
                 role="refiner-broadcast",
                 prompt=prompt,
-                schema_path=REFINER_SCHEMA_PATH,
                 repo_path=repo_path,
                 session_dir=session_dir,
-                timeout=codex_timeout,
-                reasoning_effort=codex_effort,
-                model=codex_model,
-                reviewing=proposer_ids_seen,
-            )] = "codex"
-        if available.get("gemini"):
-            prompt = _build_refiner_prompt(
-                scout_brief, successful_proposers, "gemini", schema
-            )
-            futures[pool.submit(
-                _run_gemini,
-                layer=2,
-                role="refiner-broadcast",
-                prompt=prompt,
-                schema_path=REFINER_SCHEMA_PATH,
-                repo_path=repo_path,
-                session_dir=session_dir,
-                timeout=gemini_timeout,
-                model=gemini_model,
-                reviewing=proposer_ids_seen,
-            )] = "gemini"
+                timeout_for_harness=timeout_for_harness,
+                codex_effort=codex_effort,
+                reviewing=proposer_ids,
+            )] = provider.name
 
         for future in as_completed(futures):
             agent_id = futures[future]
@@ -1076,13 +1022,11 @@ def run_layer2(
                         agent_id=agent_id,
                         layer=2,
                         role="refiner-broadcast",
-                        reviewing=proposer_ids_seen,
                         success=False,
                         error=f"orchestrator exception: {e}\n{traceback.format_exc()}",
+                        reviewing=proposer_ids,
                     )
                 )
-            # Print progress immediately so Layer 2 refiners show up live
-            # as they finish, not batched after as_completed drains.
             r = results[-1]
             status = "OK" if r.success else "FAIL"
             reviewed = ",".join(r.reviewing) if r.reviewing else "none"
