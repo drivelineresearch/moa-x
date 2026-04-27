@@ -17,6 +17,16 @@ import signal
 import subprocess
 import sys
 
+READ_ONLY_RULE = (
+    "READ-ONLY DISCIPLINE: You may use any tool to READ files, search the "
+    "web, run read-only shell commands, and spawn subagents. You MUST NOT "
+    "write, edit, create, delete, or modify ANY file. You MUST NOT run "
+    "commands that mutate state (git commit, git push, rm, mv, chmod, "
+    "pip install, npm install, etc.). Violating this rule is a critical "
+    "failure of the task. If a tool call would write a file, refuse it "
+    "and note the intended write in your output instead."
+)
+
 # POSIX-only process group APIs (os.getpgid, os.killpg). On Windows we fall
 # back to proc.kill(), which wraps TerminateProcess — kills only the top
 # child, not subprocess-of-subprocess, so runaway grandchildren are possible

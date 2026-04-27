@@ -47,18 +47,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from adapters import kill_proc_tree  # shared POSIX+Windows timeout handler
-
-
-READ_ONLY_RULE = (
-    "READ-ONLY DISCIPLINE: You may use any tool to READ files, search the "
-    "web, run read-only shell commands, and spawn subagents. You MUST NOT "
-    "write, edit, create, delete, or modify ANY file. You MUST NOT run "
-    "commands that mutate state (git commit, git push, rm, mv, chmod, "
-    "pip install, npm install, etc.). Violating this rule is a critical "
-    "failure of the task. If a tool call would write a file, refuse it "
-    "and note the intended write in your output instead."
-)
+from adapters import READ_ONLY_RULE, kill_proc_tree  # shared POSIX+Windows timeout handler
 
 # The claude CLI has no --temperature flag. For self-moa, each proposer/refiner
 # instance injects this directive to approximate temperature=0.7 diversity.
