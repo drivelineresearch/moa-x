@@ -1,46 +1,48 @@
 # MoA-X harness config — copy to harness/config.yaml to activate.
 #
-# Every knob here has a built-in default inside run_moa.py. This file
-# just lets you override without passing 15 CLI flags. CLI flags still
-# win over this file, and environment variables (MOA_*) win over the
-# file but lose to CLI flags.
+# Two top-level sections:
+#   providers:  optional user-defined named providers (extends the built-ins)
+#   layers:     which providers run at which layer
 #
-# Supported providers are {codex, claude-code, gemini}. Do not add
-# others — the adapters are not wired for them. If you need a new
-# provider, open a design discussion.
-
-providers:
-  codex:
-    # Path or name on PATH. Defaults to "codex".
-    bin: codex
-    # Model id. Defaults to "gpt-5.4".
-    model: gpt-5.4
-    # Reasoning effort: low | medium | high | xhigh. Defaults to "high".
-    effort: high
-    # Wall-clock cap in seconds. Default scales with effort
-    # (xhigh=1500, high=1200, medium/low=900). Set explicitly to override.
-    # timeout: 1500
-
-  gemini:
-    bin: gemini
-    model: gemini-2.5-pro
-    # gemini has no effort knob.
-    # Wall-clock cap in seconds (default 1200).
-    # timeout: 1200
-
-  # The `claude` provider binary runs as the sonnet proposer in Layer 1.
-  # Opus aggregation happens in the parent Claude Code REPL, not here.
-  claude:
-    bin: claude
-    model: claude-sonnet-4-6
-    # timeout: 1200
-
-# Layer / role selection. Each list is a subset of {codex, gemini, sonnet}
-# (note: "sonnet" is the claude CLI in sonnet mode). Defaults run all
-# three proposers and both non-Anthropic refiners.
+# Built-in named providers (no need to declare):
+#   codex   → {harness: codex,  model: gpt-5.4}                # OpenAI via codex CLI
+#   gemini  → {harness: gemini, model: gemini-2.5-pro}         # Google via gemini CLI
+#   sonnet  → {harness: claude, model: claude-sonnet-4-6}      # Anthropic via claude CLI
+#
+# Override built-in models via:
+#   --codex-model / --gemini-model / --sonnet-model CLI flags, or
+#   MOA_CODEX_MODEL / MOA_GEMINI_MODEL / MOA_SONNET_MODEL env vars.
+#
+# User-named providers (e.g. via the Cursor CLI which routes to many labs):
+# providers:
+#   cursor-gpt:    {harness: cursor, model: gpt-5.5}
+#   cursor-sonnet: {harness: cursor, model: claude-sonnet-4-6}
+#   cursor-grok:   {harness: cursor, model: grok-4.20}
+#
+# Layer assignments: subset of (built-in names ∪ user-named providers).
 layers:
   proposers: [codex, gemini, sonnet]
-  refiners: [codex, gemini]
-  # Set true to skip the refinement layer entirely (3-proposer ensemble
-  # straight to aggregator). Default false.
+  refiners:  [codex, gemini]
+  # Set true to skip the refinement layer entirely.
   skip_refinement: false
+
+# Example: 4-lane proposer mix using one extra Cursor lane:
+#
+# providers:
+#   cursor-grok: {harness: cursor, model: grok-4.20}
+# layers:
+#   proposers: [codex, gemini, sonnet, cursor-grok]
+#   refiners:  [codex, gemini]
+#
+# Example: one CLI delivering everything (uncomment to use):
+#
+# providers:
+#   c-gpt:    {harness: cursor, model: gpt-5.5}
+#   c-sonnet: {harness: cursor, model: claude-sonnet-4-6}
+#   c-gemini: {harness: cursor, model: gemini-3.1-pro}
+# layers:
+#   proposers: [c-gpt, c-sonnet, c-gemini]
+#   refiners:  [c-gpt, c-gemini]
+#
+# CLAUDE.md recommends keeping refiner labs disjoint from the aggregator
+# (Anthropic). This is no longer harness-enforced — see the doc for context.

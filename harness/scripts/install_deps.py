@@ -100,6 +100,27 @@ def main() -> int:
         print("    fix:  see https://docs.claude.com/en/docs/claude-code/quickstart")
         failures += 1
 
+    # ---- cursor CLI (optional, for the cursor adapter) ----
+    ok, info = _check("cursor-agent", ["cursor-agent", "--version"])
+    if ok:
+        print(f"  cursor-agent CLI: {info} — OK (optional)")
+        cursor_dir = Path.home() / ".cursor"
+        has_subscription = cursor_dir.exists()
+        has_api_key = bool(os.environ.get("CURSOR_API_KEY"))
+        if has_subscription:
+            print("    auth: ~/.cursor/ present (subscription) — OK")
+        elif has_api_key:
+            print("    auth: CURSOR_API_KEY set (API-billed) — OK")
+        else:
+            print("    auth: ~/.cursor/ MISSING and CURSOR_API_KEY unset")
+            print("    fix:  cursor-agent login")
+            print("    or:   export CURSOR_API_KEY=...")
+            # NOT a failure — cursor is optional
+    else:
+        print("  cursor-agent CLI: not installed (optional — install if you want to use the cursor adapter)")
+        print("    install: curl https://cursor.com/install -fsS | bash")
+        # NOT a failure — cursor is optional
+
     # ---- skill assets ----
     skill_dir = Path(__file__).resolve().parent.parent
     required = [
@@ -108,6 +129,7 @@ def main() -> int:
         skill_dir / "scripts" / "adapters" / "codex.py",
         skill_dir / "scripts" / "adapters" / "gemini.py",
         skill_dir / "scripts" / "adapters" / "claude.py",
+        skill_dir / "scripts" / "adapters" / "cursor.py",
         skill_dir / "scripts" / "schemas" / "proposer.schema.json",
         skill_dir / "scripts" / "schemas" / "refiner.schema.json",
         skill_dir / "prompts" / "scout.md",
