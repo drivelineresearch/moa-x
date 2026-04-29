@@ -1658,6 +1658,16 @@ def main() -> int:
         print(f"[orchestrator] repo: {repo_path}", flush=True)
         print(f"[orchestrator] proposers: {[p.name for p in final_proposers]}", flush=True)
         print(f"[orchestrator] refiners:  {[p.name for p in final_refiners]}", flush=True)
+        # Aggregator runs in the parent Claude Code session (harness=claude). Refiners that
+        # share that harness give up the cross-lab independence the design recommends.
+        # Warn but don't block — see CLAUDE.md hard rules.
+        same_lab_refiners = [p.name for p in final_refiners if p.harness == "claude"]
+        if same_lab_refiners:
+            print(
+                f"[orchestrator] WARN: refiners {same_lab_refiners} share the aggregator's "
+                "harness (claude); cross-lab refinement is recommended (see CLAUDE.md)",
+                flush=True,
+            )
         print(
             f"[orchestrator] timeouts: codex={codex_timeout}s "
             f"gemini={gemini_timeout}s sonnet={sonnet_timeout}s"
