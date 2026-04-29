@@ -44,7 +44,7 @@ Add your own under `providers:` in `harness/config.yaml`:
 
 ```yaml
 providers:
-  cursor-grok: {harness: cursor, model: grok-4.20}
+  cursor-grok: {harness: cursor, model: grok-4-20}
 ```
 
 Then reference the name in `layers:`:
@@ -60,7 +60,7 @@ using the name uppercased with `-` → `_`:
 
 | Pattern | Example | What it does |
 |---|---|---|
-| `MOA_<NAME>_MODEL` | `MOA_CURSOR_GROK_MODEL=grok-4.21` | Override model for that provider |
+| `MOA_<NAME>_MODEL` | `MOA_CURSOR_GROK_MODEL=grok-4-20-thinking` | Override model for that provider |
 | `MOA_<NAME>_TIMEOUT` | `MOA_CURSOR_GROK_TIMEOUT=900` | Wall-clock cap in seconds |
 
 ## Two file shapes
@@ -91,7 +91,7 @@ Then edit. Example:
 
 ```yaml
 providers:
-  cursor-grok: {harness: cursor, model: grok-4.20}
+  cursor-grok: {harness: cursor, model: grok-4-20}
 layers:
   proposers: [codex, gemini, sonnet, cursor-grok]
   refiners:  [codex, gemini]
@@ -128,7 +128,7 @@ CLI flag equivalents exist for every row here. Run
 ```yaml
 # harness/config.yaml
 providers:
-  cursor-grok: {harness: cursor, model: grok-4.20}
+  cursor-grok: {harness: cursor, model: grok-4-20}
 layers:
   proposers: [codex, gemini, sonnet, cursor-grok]
   refiners:  [codex, gemini]
@@ -141,8 +141,8 @@ Adds a fourth proposer lane without touching the three built-ins.
 ```yaml
 # harness/config.yaml
 providers:
-  c-gpt:    {harness: cursor, model: gpt-5.5}
-  c-sonnet: {harness: cursor, model: claude-sonnet-4-6}
+  c-gpt:    {harness: cursor, model: gpt-5.5-medium}
+  c-sonnet: {harness: cursor, model: claude-4.5-sonnet}
   c-gemini: {harness: cursor, model: gemini-3.1-pro}
 layers:
   proposers: [c-gpt, c-sonnet, c-gemini]

@@ -15,9 +15,9 @@
 #
 # User-named providers (e.g. via the Cursor CLI which routes to many labs):
 # providers:
-#   cursor-gpt:    {harness: cursor, model: gpt-5.5}
+#   cursor-gpt:    {harness: cursor, model: gpt-5.5-medium}
 #   cursor-sonnet: {harness: cursor, model: claude-sonnet-4-6}
-#   cursor-grok:   {harness: cursor, model: grok-4.20}
+#   cursor-grok:   {harness: cursor, model: grok-4-20}
 #
 # Layer assignments: subset of (built-in names ∪ user-named providers).
 layers:
@@ -29,7 +29,7 @@ layers:
 # Example: 4-lane proposer mix using one extra Cursor lane:
 #
 # providers:
-#   cursor-grok: {harness: cursor, model: grok-4.20}
+#   cursor-grok: {harness: cursor, model: grok-4-20}
 # layers:
 #   proposers: [codex, gemini, sonnet, cursor-grok]
 #   refiners:  [codex, gemini]
@@ -37,7 +37,7 @@ layers:
 # Example: one CLI delivering everything (uncomment to use):
 #
 # providers:
-#   c-gpt:    {harness: cursor, model: gpt-5.5}
+#   c-gpt:    {harness: cursor, model: gpt-5.5-medium}
 #   c-sonnet: {harness: cursor, model: claude-sonnet-4-6}
 #   c-gemini: {harness: cursor, model: gemini-3.1-pro}
 # layers:
