@@ -732,6 +732,60 @@ def test_config_resolve_unknown_name_raises() -> bool:
     return _ok(False, "expected ValueError")
 
 
+def test_config_resolve_user_provider_yaml_timeout() -> bool:
+    print("\n[18b] config.resolve_provider picks up `timeout:` from YAML user_provider entry")
+    from config import resolve_provider
+    user = {"slow-grok": {"harness": "cursor", "model": "grok-4-20", "timeout": 1800}}
+    rp = resolve_provider("slow-grok", user_providers=user)
+    return _ok(rp.timeout == 1800 and rp.model == "grok-4-20", f"got {rp}")
+
+
+def test_config_resolve_env_timeout_override() -> bool:
+    print("\n[18c] config.resolve_provider honors MOA_<NAME>_TIMEOUT env override")
+    import os as _os
+    from config import resolve_provider
+    key = "MOA_SLOW_GROK_TIMEOUT"
+    prior = _os.environ.get(key)
+    _os.environ[key] = "2400"
+    try:
+        user = {"slow-grok": {"harness": "cursor", "model": "grok-4-20", "timeout": 1800}}
+        rp = resolve_provider("slow-grok", user_providers=user)
+        return _ok(rp.timeout == 2400, f"env should win over YAML; got timeout={rp.timeout}")
+    finally:
+        if prior is None:
+            _os.environ.pop(key, None)
+        else:
+            _os.environ[key] = prior
+
+
+def test_config_resolve_env_timeout_malformed_raises() -> bool:
+    print("\n[18d] config.resolve_provider raises on non-integer MOA_<NAME>_TIMEOUT")
+    import os as _os
+    from config import resolve_provider
+    key = "MOA_SLOW_GROK_TIMEOUT"
+    prior = _os.environ.get(key)
+    _os.environ[key] = "not-a-number"
+    try:
+        user = {"slow-grok": {"harness": "cursor", "model": "grok-4-20"}}
+        try:
+            resolve_provider("slow-grok", user_providers=user)
+        except ValueError as e:
+            return _ok("integer" in str(e), f"got {e}")
+        return _ok(False, "expected ValueError")
+    finally:
+        if prior is None:
+            _os.environ.pop(key, None)
+        else:
+            _os.environ[key] = prior
+
+
+def test_config_builtin_timeout_is_none() -> bool:
+    print("\n[18e] config: built-in providers have timeout=None (CLI flag path stays in charge)")
+    from config import resolve_provider
+    rp = resolve_provider("codex", user_providers={})
+    return _ok(rp.timeout is None, f"built-in codex should have timeout=None; got {rp.timeout}")
+
+
 def test_config_yaml_providers_block() -> bool:
     print("\n[19] config: harness/config.yaml `providers:` block parses into user_providers")
     import tempfile, textwrap
@@ -849,6 +903,10 @@ def main() -> int:
         test_config_resolve_builtin_codex,
         test_config_resolve_builtin_sonnet_uses_claude_harness,
         test_config_resolve_unknown_name_raises,
+        test_config_resolve_user_provider_yaml_timeout,
+        test_config_resolve_env_timeout_override,
+        test_config_resolve_env_timeout_malformed_raises,
+        test_config_builtin_timeout_is_none,
         test_config_yaml_providers_block,
         test_config_resolve_layer_mixed,
         test_config_resolve_layer_unknown_fails_loud,

@@ -670,17 +670,23 @@ def _dispatch_provider(
 ) -> LayerResult:
     """Route a ResolvedProvider to the right _run_* function.
 
-    timeout_for_harness maps harness name to timeout seconds, since each
-    harness has its own default timeout knob. codex_effort applies only
-    to the codex harness; ignored otherwise.
+    Per-call timeout precedence (highest first):
+      1. provider.timeout — set by `MOA_<NAME>_TIMEOUT` env var or
+         `providers.<name>.timeout` in harness/config.yaml
+      2. timeout_for_harness[provider.harness] — set by --codex-timeout /
+         --gemini-timeout / --sonnet-timeout CLI flags or their MOA_*_TIMEOUT
+         env equivalents
+
+    codex_effort applies only to the codex harness; ignored otherwise.
     """
     h = provider.harness
+    timeout = provider.timeout if provider.timeout is not None else timeout_for_harness[h]
     if h == "codex":
         return _run_codex(
             layer=layer, role=role, prompt=prompt,
             schema_path=PROPOSER_SCHEMA_PATH if "proposer" in role else REFINER_SCHEMA_PATH,
             repo_path=repo_path, session_dir=session_dir,
-            timeout=timeout_for_harness["codex"],
+            timeout=timeout,
             reasoning_effort=codex_effort,
             model=provider.model,
             agent_id=provider.name,
@@ -691,7 +697,7 @@ def _dispatch_provider(
             layer=layer, role=role, prompt=prompt,
             schema_path=PROPOSER_SCHEMA_PATH if "proposer" in role else REFINER_SCHEMA_PATH,
             repo_path=repo_path, session_dir=session_dir,
-            timeout=timeout_for_harness["gemini"],
+            timeout=timeout,
             model=provider.model,
             agent_id=provider.name,
             reviewing=reviewing,
@@ -701,7 +707,7 @@ def _dispatch_provider(
             layer=layer, role=role, prompt=prompt,
             schema_path=PROPOSER_SCHEMA_PATH if "proposer" in role else REFINER_SCHEMA_PATH,
             repo_path=repo_path, session_dir=session_dir,
-            timeout=timeout_for_harness["claude"],
+            timeout=timeout,
             model=provider.model,
             agent_id=provider.name,
             reviewing=reviewing,
@@ -711,7 +717,7 @@ def _dispatch_provider(
             layer=layer, role=role, prompt=prompt,
             schema_path=PROPOSER_SCHEMA_PATH if "proposer" in role else REFINER_SCHEMA_PATH,
             repo_path=repo_path, session_dir=session_dir,
-            timeout=timeout_for_harness.get("cursor", 1200),
+            timeout=timeout,
             model=provider.model,
             agent_id=provider.name,
             reviewing=reviewing,

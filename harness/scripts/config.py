@@ -65,15 +65,25 @@ _DEFAULT_BINS = {
 
 @dataclass(frozen=True)
 class ResolvedProvider:
-    """A provider resolved from a layer config entry to a concrete invocation triple."""
-    name: str         # user-facing label, used as agent_id in payloads
-    harness: str      # which adapter handles the call: codex, gemini, claude, cursor
-    model: str        # model id passed to the harness
+    """A provider resolved from a layer config entry to an invocation record.
+
+    `timeout` is per-provider in seconds. None means "use the harness-level
+    default" (set by --codex-timeout / --gemini-timeout / --sonnet-timeout
+    CLI flags or their MOA_*_TIMEOUT env equivalents). User-named providers
+    can set their own timeout via `providers.<name>.timeout` in
+    harness/config.yaml or MOA_<NAME>_TIMEOUT env var.
+    """
+    name: str                         # user-facing label, used as agent_id in payloads
+    harness: str                      # which adapter handles the call: codex, gemini, claude, cursor
+    model: str                        # model id passed to the harness
+    timeout: Optional[int] = None     # per-provider timeout in seconds; None → harness default
 
 
 # Built-in named providers. Existing configs that reference codex/gemini/sonnet
 # resolve through this table for back-compat. User-defined providers in
 # harness/config.yaml under `providers:` are layered on top in resolve_provider.
+# Built-ins always carry timeout=None so the existing CLI flag / harness-level
+# env path (MOA_CODEX_TIMEOUT etc.) continues to apply.
 BUILTIN_PROVIDERS: dict[str, ResolvedProvider] = {
     "codex":  ResolvedProvider(name="codex",  harness="codex",  model="gpt-5.4"),
     "gemini": ResolvedProvider(name="gemini", harness="gemini", model="gemini-2.5-pro"),
@@ -82,15 +92,23 @@ BUILTIN_PROVIDERS: dict[str, ResolvedProvider] = {
 
 
 def resolve_provider(name: str, *, user_providers: dict[str, dict]) -> ResolvedProvider:
-    """Resolve a provider name to a ResolvedProvider triple.
+    """Resolve a provider name to a ResolvedProvider record.
 
     Lookup order:
       1. user_providers (from harness/config.yaml `providers:` block)
       2. BUILTIN_PROVIDERS (codex, gemini, sonnet)
 
-    Then env-var overrides MOA_<NAME>_MODEL apply.
+    Then env-var overrides apply per-field:
+      - MOA_<NAME>_MODEL overrides .model
+      - MOA_<NAME>_TIMEOUT overrides .timeout
 
-    Raises ValueError if the name resolves nowhere.
+    Built-in providers always resolve with timeout=None so the existing
+    --codex-timeout / --gemini-timeout / --sonnet-timeout CLI flag path
+    continues to apply at the harness level. Set MOA_<NAME>_TIMEOUT or a
+    YAML `timeout:` field to override per-provider.
+
+    Raises ValueError if the name resolves nowhere or if a timeout value
+    is malformed.
     """
     if name in user_providers:
         spec = user_providers[name]
@@ -99,7 +117,18 @@ def resolve_provider(name: str, *, user_providers: dict[str, dict]) -> ResolvedP
                 f"user provider {name!r} must be a mapping with 'harness' and 'model' keys; "
                 f"got {spec!r}"
             )
-        rp = ResolvedProvider(name=name, harness=spec["harness"], model=spec["model"])
+        yaml_timeout = spec.get("timeout")
+        if yaml_timeout is not None and not isinstance(yaml_timeout, int):
+            raise ValueError(
+                f"user provider {name!r} `timeout:` must be an integer (seconds); "
+                f"got {yaml_timeout!r}"
+            )
+        rp = ResolvedProvider(
+            name=name,
+            harness=spec["harness"],
+            model=spec["model"],
+            timeout=yaml_timeout,
+        )
     elif name in BUILTIN_PROVIDERS:
         rp = BUILTIN_PROVIDERS[name]
     else:
@@ -108,11 +137,21 @@ def resolve_provider(name: str, *, user_providers: dict[str, dict]) -> ResolvedP
             f"unknown provider name {name!r}; valid names: {valid}"
         )
 
-    # MOA_<NAME>_MODEL env override. Name is uppercased with - → _.
-    env_key = f"MOA_{name.upper().replace('-', '_')}_MODEL"
-    override_model = os.environ.get(env_key)
+    env_prefix = f"MOA_{name.upper().replace('-', '_')}"
+
+    override_model = os.environ.get(f"{env_prefix}_MODEL")
     if override_model:
-        rp = ResolvedProvider(name=rp.name, harness=rp.harness, model=override_model)
+        rp = ResolvedProvider(name=rp.name, harness=rp.harness, model=override_model, timeout=rp.timeout)
+
+    override_timeout_raw = os.environ.get(f"{env_prefix}_TIMEOUT")
+    if override_timeout_raw:
+        try:
+            override_timeout = int(override_timeout_raw)
+        except ValueError as e:
+            raise ValueError(
+                f"{env_prefix}_TIMEOUT must be an integer (seconds); got {override_timeout_raw!r}"
+            ) from e
+        rp = ResolvedProvider(name=rp.name, harness=rp.harness, model=rp.model, timeout=override_timeout)
 
     return rp
 
