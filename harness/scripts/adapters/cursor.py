@@ -1,16 +1,21 @@
 """Cursor CLI adapter (multi-lab via cursor-agent).
 
-Invokes `cursor-agent -p` headlessly with --output-format json. Cursor's
-JSON envelope is structurally identical to claude-cli's outer envelope
-without --json-schema set:
+Invokes `cursor-agent -p --mode plan` headlessly with
+--output-format json. Cursor's JSON envelope is structurally identical
+to claude-cli's outer envelope without --json-schema set:
 
     {"type": "result", "is_error": false, "result": "<MODEL TEXT>",
      "usage": {"inputTokens": ..., "outputTokens": ...}, ...}
 
-Cursor has no native --output-schema equivalent, so the orchestrator
-validates the parsed payload against the proposer/refiner schema
-Python-side (gemini-style). The adapter just extracts the inner JSON
-from the `result` text.
+Read-only discipline is enforced by `--mode plan`, which is a CLI-level
+guarantee: the model cannot invoke write/edit tools. This replaces the
+prompt-rule directive that gemini and claude adapters use (those CLIs
+have no equivalent flag). See docs/cursor.md.
+
+Cursor has no --output-schema equivalent (codex-style hard schema
+enforcement), so the orchestrator validates the parsed payload against
+the proposer/refiner schema Python-side (gemini-style). The adapter
+just extracts the inner JSON from the `result` text.
 
 Subprocess isolation: each call gets its own TMPDIR via env override.
 Cursor session/auth state lives under ~/.cursor/ which is shared
@@ -30,7 +35,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from adapters import READ_ONLY_RULE, kill_proc_tree
+from adapters import kill_proc_tree
 
 
 @dataclass
@@ -105,7 +110,8 @@ def run(
     """Invoke cursor-agent -p with the given prompt.
 
     Args:
-        prompt: The full prompt text. Read-only directive is prepended.
+        prompt: The full prompt text. Read-only enforcement is via
+            --mode plan at the CLI level, not via prompt prepend.
         repo_path: Working directory; passed via Popen cwd=.
         model: Model id (e.g. "gpt-5.5", "claude-sonnet-4-6", "grok-4.20").
         timeout_seconds: Hard wall-clock cap. Default 1200s, matching siblings.
@@ -123,9 +129,6 @@ def run(
     stderr_captured = ""
     tmpdir: Optional[str] = None
 
-    # Prepend read-only directive (gemini-style; --sandbox covers exec, not FS).
-    full_prompt = READ_ONLY_RULE + "\n\n" + prompt
-
     try:
         tmpdir = tempfile.mkdtemp(prefix="moa-cursor-")
         env = os.environ.copy()
@@ -133,14 +136,18 @@ def run(
         env["XDG_CACHE_HOME"] = str(Path(tmpdir) / "cache")
         env["PYTHONDONTWRITEBYTECODE"] = "1"
 
+        # --mode plan gives CLI-level read-only enforcement (the model literally
+        # cannot invoke write/edit tools). --trust bypasses the first-run
+        # workspace-trust prompt in headless mode. See docs/cursor.md.
         cmd = [
             _cursor_bin(),
             "-p",
             "--model", model,
+            "--mode", "plan",
             "--output-format", "json",
-            "--force",  # bypass workspace-trust prompt; alias of --yolo
+            "--trust",
             "--",
-            full_prompt,
+            prompt,
         ]
 
         try:
