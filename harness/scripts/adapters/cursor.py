@@ -58,8 +58,11 @@ def _cursor_bin() -> str:
 def check_available() -> tuple[bool, str]:
     """Verify cursor-agent CLI is on PATH and authenticated.
 
-    Cursor stores subscription auth under ~/.cursor/. API-billed mode uses
-    CURSOR_API_KEY in the environment. Either is acceptable.
+    Subscription auth lives under ~/.cursor/; API-billed mode uses
+    CURSOR_API_KEY. Both pass through `cursor-agent whoami`, which
+    exits 0 with the user's identity when authenticated. We use whoami
+    as the real auth probe so stale tokens / expired sessions surface
+    here instead of N seconds into a real call.
     """
     bin_name = _cursor_bin()
     if not shutil.which(bin_name):
@@ -68,16 +71,30 @@ def check_available() -> tuple[bool, str]:
             "install: curl https://cursor.com/install -fsS | bash, "
             "or set MOA_CURSOR_BIN)"
         )
-    cursor_dir = Path.home() / ".cursor"
-    has_subscription = cursor_dir.exists()
-    has_api_key = bool(os.environ.get("CURSOR_API_KEY"))
-    if not (has_subscription or has_api_key):
-        return False, (
-            "cursor-agent not authenticated (run: cursor-agent login, "
-            "or set CURSOR_API_KEY)"
+
+    try:
+        proc = subprocess.run(
+            [bin_name, "whoami"],
+            capture_output=True,
+            text=True,
+            timeout=15,
         )
-    auth_mode = "subscription" if has_subscription else "API-billed"
-    return True, f"ok ({auth_mode})"
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
+        return False, f"cursor-agent whoami probe failed: {e}"
+
+    if proc.returncode != 0:
+        msg = (proc.stderr or proc.stdout or "").strip().splitlines()
+        first_line = msg[0] if msg else "(no output)"
+        return False, (
+            f"cursor-agent not authenticated ({first_line}; "
+            "run: cursor-agent login, or set CURSOR_API_KEY)"
+        )
+
+    has_api_key = bool(os.environ.get("CURSOR_API_KEY"))
+    auth_mode = "API-billed" if has_api_key else "subscription"
+    identity = (proc.stdout or "").strip().splitlines()
+    detail = identity[0] if identity else f"ok ({auth_mode})"
+    return True, f"{detail} ({auth_mode})"
 
 
 def _write_log_file(log_file: Optional[Path], stdout: str, stderr: str) -> None:
