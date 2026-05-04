@@ -26,12 +26,12 @@
     },
     "reviewing": {
       "type": "array",
-      "description": "Identifiers of the proposer outputs this refiner is reviewing. Under broadcast refinement this should contain ALL successful proposer outputs from Layer 1.",
+      "description": "Identifiers of the proposer outputs this refiner is reviewing. Under broadcast refinement this should contain ALL successful proposer outputs from Layer 1. Same pattern as agent_id (lowercase, dash-separated, 1-32 chars) so user-named providers from harness/config.yaml validate.",
       "minItems": 1,
       "maxItems": 3,
       "items": {
         "type": "string",
-        "enum": ["codex", "gemini", "sonnet"]
+        "pattern": "^[a-z][a-z0-9-]{0,31}$"
       }
     },
     "overall_verdict": {
@@ -51,7 +51,7 @@
         "properties": {
           "proposer": {
             "type": "string",
-            "enum": ["codex", "gemini", "sonnet"]
+            "pattern": "^[a-z][a-z0-9-]{0,31}$"
           },
           "verdict": {
             "type": "string",
@@ -81,7 +81,7 @@
         "properties": {
           "proposer": {
             "type": "string",
-            "enum": ["codex", "gemini", "sonnet"],
+            "pattern": "^[a-z][a-z0-9-]{0,31}$",
             "description": "Which proposer's evidence this entry is verifying."
           },
           "claim_index_path": {
@@ -119,7 +119,7 @@
         "properties": {
           "proposer": {
             "type": "string",
-            "enum": ["codex", "gemini", "sonnet"]
+            "pattern": "^[a-z][a-z0-9-]{0,31}$"
           },
           "point": {"type": "string"},
           "why": {"type": "string"},
@@ -142,7 +142,7 @@
         "properties": {
           "proposer": {
             "type": "string",
-            "enum": ["codex", "gemini", "sonnet"]
+            "pattern": "^[a-z][a-z0-9-]{0,31}$"
           },
           "step_index": {
             "type": "integer",

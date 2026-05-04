@@ -520,6 +520,57 @@ def test_refiner_schema_validator_broadcast_gemini() -> bool:
     return _check("no errors", len(errors) == 0, f"errors={errors[:3]}")
 
 
+def test_refiner_schema_accepts_user_named_provider_refs() -> bool:
+    """Regression: when proposers are user-named (e.g. all routed through cursor as
+    c-gpt / c-gemini / c-opus), the refiner echoes those IDs back in `reviewing`,
+    `per_proposer_verdicts[].proposer`, `verifications[].proposer`, etc. The
+    schema must accept them — Phase 1.2 only loosened the top-level agent_id;
+    five proposer-id reference sites needed the same loosening."""
+    print("\n[11b] Refiner schema accepts user-named provider refs (c-gpt, c-gemini, c-opus)")
+    schema = run_moa._load_schema(run_moa.REFINER_SCHEMA_PATH)
+    payload = _make_valid_broadcast_refiner("c-gpt")
+    payload["reviewing"] = ["c-gpt", "c-gemini", "c-opus"]
+    payload["per_proposer_verdicts"] = [
+        {"proposer": "c-gpt",    "verdict": "accept_with_changes",
+         "summary": "Strong plan; missing metrics step, TTL too aggressive."},
+        {"proposer": "c-gemini", "verdict": "accept_with_changes",
+         "summary": "Solid evidence citations; suggests wrong library version."},
+        {"proposer": "c-opus",   "verdict": "accept_as_is",
+         "summary": "Cleanest plan with best risk analysis and real file citations."},
+    ]
+    payload["verifications"] = [
+        {"proposer": "c-gpt", "claim_index_path": "plan[0].evidence[0]",
+         "status": "verified", "actual_finding": "File exists at line 42.",
+         "source_url": "app/services/intended_zones.py:42"},
+        {"proposer": "c-gemini", "claim_index_path": "plan[1].evidence[0]",
+         "status": "unverified", "actual_finding": "Could not locate cited file.",
+         "source_url": None},
+    ]
+    payload["disagreements"] = [
+        {"proposer": "c-gemini", "point": "TTL of 60s is too aggressive",
+         "why": "We saw cache thrashing in a similar service",
+         "what_to_do_instead": "Start at 5 minutes and tune down"},
+    ]
+    payload["incorrect_steps"] = [
+        {"proposer": "c-gemini", "step_index": 2,
+         "what_is_wrong": "Cites redis-py 4.0 API which is no longer current"},
+    ]
+    errors = run_moa._validate_against_schema(payload, schema)
+    return _check("no errors with user-named provider refs", len(errors) == 0, f"errors={errors[:3]}")
+
+
+def test_refiner_schema_rejects_malformed_proposer_ref() -> bool:
+    """Negative: confirm the new pattern enforcement actually fires — a
+    proposer reference with uppercase/space/punctuation must be rejected."""
+    print("\n[11c] Refiner schema rejects malformed proposer ref (regex pattern fires)")
+    schema = run_moa._load_schema(run_moa.REFINER_SCHEMA_PATH)
+    payload = _make_valid_broadcast_refiner("codex")
+    payload["reviewing"] = ["Bad Name!", "gemini", "sonnet"]   # uppercase + space + bang
+    errors = run_moa._validate_against_schema(payload, schema)
+    has_pattern_error = any("pattern" in e for e in errors)
+    return _check("flagged pattern violation in reviewing[]", has_pattern_error, f"errors={errors[:3]}")
+
+
 def test_evidence_cross_field_rejects_code_with_null_file() -> bool:
     print("\n[12a] _validate_evidence_cross_fields rejects type=code with null file")
     payload = {
@@ -892,6 +943,8 @@ def main() -> int:
         test_claude_extractor_fallback_to_fenced_result,
         test_refiner_schema_validator_broadcast_codex,
         test_refiner_schema_validator_broadcast_gemini,
+        test_refiner_schema_accepts_user_named_provider_refs,
+        test_refiner_schema_rejects_malformed_proposer_ref,
         test_evidence_cross_field_rejects_code_with_null_file,
         test_evidence_cross_field_rejects_external_with_null_url,
         test_evidence_cross_field_accepts_valid_payload,
