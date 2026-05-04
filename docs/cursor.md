@@ -234,6 +234,33 @@ orchestrator pick this up automatically. No further configuration is
 needed; the first-run trust prompt that interactive users see is
 bypassed in headless mode.
 
+## Preflight (`install_deps.py`) is config-aware
+
+`python3 harness/scripts/install_deps.py` reads your `harness/config.yaml`
+(via the same `load_resolved_config()` path the orchestrator uses) and
+checks only what your config actually needs:
+
+- **Required harnesses** = `{p.harness for p in proposers + refiners}`.
+  Harnesses not referenced in any layer are reported as "unused" and
+  skipped — no failure for codex/gemini/claude not being installed if
+  your config is cursor-only.
+- **Schema coherence**: every resolved provider name is regex-tested
+  against the proposer/refiner schemas' `agent_id` patterns. Catches
+  the kind of mismatch that surfaces when user-named providers run
+  against schemas hardcoded to lab names.
+- **Cursor model availability**: each cursor provider's `model:` is
+  checked against `cursor-agent --list-models`. Catches the most
+  common typo class (friendly names vs machine ids:
+  `gpt-5.5` vs `gpt-5.5-medium`, `grok-4.20` vs `grok-4-20`).
+- **Auth probe**: each needed harness's `check_available()` runs (which
+  for cursor uses `cursor-agent whoami`). Stale tokens / expired
+  sessions surface here, before a real run wastes wall-clock.
+
+If `harness/config.yaml` doesn't exist, preflight falls back to the
+built-in default ensemble (`proposers: [codex, gemini, sonnet]`,
+`refiners: [codex, gemini]`), which preserves the legacy "is the moa-x
+shipped baseline ready?" diagnostic.
+
 ## What this integration does NOT cover
 
 - **Worktree isolation.** Cursor exposes `--worktree` for this; the

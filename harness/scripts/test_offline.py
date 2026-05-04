@@ -734,6 +734,62 @@ def test_self_moa_argparse_smoke() -> bool:
     )
 
 
+def test_install_deps_default_config_only_needs_default_harnesses() -> bool:
+    """install_deps.py without harness/config.yaml resolves to the default
+    proposers/refiners and only needs codex/gemini/claude — not cursor."""
+    print("\n[14b] install_deps: default config → needed harnesses {codex, gemini, claude}")
+    from config import load_resolved_config
+    import tempfile
+    from pathlib import Path as _Path
+    # Force "no config.yaml" by passing a nonexistent path
+    loaded = load_resolved_config(config_path=_Path("/tmp/install_deps_no_yaml_xx_DOES_NOT_EXIST.yaml"))
+    needed = {p.harness for p in loaded.proposers + loaded.refiners}
+    return _ok(needed == {"codex", "gemini", "claude"}, f"got {sorted(needed)}")
+
+
+def test_install_deps_cursor_only_config_skips_other_harnesses() -> bool:
+    """A cursor-only config means the preflight only needs the cursor harness."""
+    print("\n[14c] install_deps: cursor-only config → needed harnesses == {cursor}")
+    import tempfile, textwrap
+    from pathlib import Path as _Path
+    from config import load_resolved_config
+    yaml_text = textwrap.dedent("""
+        providers:
+          c-gpt:    {harness: cursor, model: gpt-5.5-medium}
+          c-gemini: {harness: cursor, model: gemini-3.1-pro}
+        layers:
+          proposers: [c-gpt, c-gemini]
+          refiners:  [c-gpt]
+    """)
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        f.write(yaml_text)
+        tmp_path = _Path(f.name)
+    try:
+        loaded = load_resolved_config(config_path=tmp_path)
+        needed = {p.harness for p in loaded.proposers + loaded.refiners}
+        return _ok(needed == {"cursor"}, f"got {sorted(needed)}")
+    finally:
+        tmp_path.unlink()
+
+
+def test_install_deps_schema_coherence_catches_bad_name() -> bool:
+    """Schema coherence in install_deps must reject names that don't match the
+    agent_id regex pattern. Regression for the c-gpt-style mismatch + uppercase
+    typos in user configs."""
+    print("\n[14d] install_deps: schema coherence catches names that violate the regex")
+    import json as _json, re as _re
+    from pathlib import Path as _Path
+    schema = _json.loads((SCRIPT_DIR / "schemas" / "proposer.schema.json").read_text())
+    pattern = schema["properties"]["agent_id"]["pattern"]
+    rx = _re.compile(pattern)
+    good_names = ["c-gpt", "cursor-grok", "codex", "sonnet-a"]
+    bad_names = ["Bad_Name", "C-GPT", "has space", "9-starts-with-digit", "way-too-long-name-that-exceeds-32-chars"]
+    good_pass = all(rx.fullmatch(n) for n in good_names)
+    bad_fail = not any(rx.fullmatch(n) for n in bad_names)
+    return _ok(good_pass and bad_fail,
+               f"good_pass={good_pass} bad_fail={bad_fail}; pattern={pattern!r}")
+
+
 def test_skill_assets_present() -> bool:
     print("\n[15] All required skill assets present on disk")
     skill_dir = SCRIPT_DIR.parent
@@ -952,6 +1008,9 @@ def main() -> int:
         test_manifest_config_section_present,
         test_config_precedence_env_over_dotenv_over_yaml,
         test_self_moa_argparse_smoke,
+        test_install_deps_default_config_only_needs_default_harnesses,
+        test_install_deps_cursor_only_config_skips_other_harnesses,
+        test_install_deps_schema_coherence_catches_bad_name,
         test_skill_assets_present,
         test_config_resolve_builtin_codex,
         test_config_resolve_builtin_sonnet_uses_claude_harness,
