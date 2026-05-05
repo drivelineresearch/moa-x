@@ -156,6 +156,13 @@ def run(
         # --mode plan gives CLI-level read-only enforcement (the model literally
         # cannot invoke write/edit tools). --trust bypasses the first-run
         # workspace-trust prompt in headless mode. See docs/cursor.md.
+        #
+        # Prompt is sent via stdin, NOT as a positional argv entry. Refiner
+        # prompts include the scout brief plus every proposer's full output
+        # (tens of KB) and can exceed ARG_MAX on macOS/Linux. cursor-agent
+        # reads stdin when no positional prompt is given. Codex does the
+        # same; gemini doesn't (it forces -p <prompt> with the same risk —
+        # tracked separately).
         cmd = [
             _cursor_bin(),
             "-p",
@@ -163,14 +170,12 @@ def run(
             "--mode", "plan",
             "--output-format", "json",
             "--trust",
-            "--",
-            prompt,
         ]
 
         try:
             proc = subprocess.Popen(
                 cmd,
-                stdin=None,
+                stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
@@ -179,7 +184,7 @@ def run(
                 start_new_session=True,
             )
             try:
-                stdout_text, stderr_text = proc.communicate(timeout=timeout_seconds)
+                stdout_text, stderr_text = proc.communicate(input=prompt, timeout=timeout_seconds)
                 duration = time.monotonic() - start
                 stdout_captured = stdout_text or ""
                 stderr_captured = stderr_text or ""
