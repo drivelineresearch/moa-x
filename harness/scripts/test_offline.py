@@ -274,6 +274,29 @@ SAMPLE_CURSOR_STDOUT_ERROR = json.dumps({
     "request_id": "req-456",
 })
 
+# Empirically observed: cursor-agent reports a success envelope but result is
+# empty. No quota / auth signal in stderr. The transient pattern that drives
+# the redispatch user prompt.
+SAMPLE_CURSOR_STDOUT_TRANSIENT_EMPTY = json.dumps({
+    "type": "result",
+    "subtype": "success",
+    "is_error": False,
+    "duration_ms": 4321,
+    "result": "",
+    "session_id": "abc-123",
+    "request_id": "req-456",
+    "usage": {"inputTokens": 100, "outputTokens": 0,
+              "cacheReadTokens": 0, "cacheWriteTokens": 0},
+})
+
+# Same envelope shape but with a quota signal in stderr — should NOT be
+# treated as transient since redispatch won't help.
+SAMPLE_CURSOR_STDERR_QUOTA = "rate limit exceeded for your plan; retry after 60s\n"
+
+# Gemini: outer envelope present, but `response` field is empty and stderr
+# is clean. Mirrors the cursor transient pattern.
+SAMPLE_GEMINI_STDOUT_TRANSIENT_EMPTY = json.dumps({"response": "", "stats": {}})
+
 
 def _make_valid_broadcast_refiner(agent_id: str) -> dict:
     """Build a valid broadcast-refiner payload (sees all 3 proposers)."""
@@ -502,6 +525,177 @@ def test_cursor_extractor_returns_none_on_is_error() -> bool:
     from adapters import cursor as cursor_adapter
     payload = cursor_adapter._extract_payload(SAMPLE_CURSOR_STDOUT_ERROR)
     return _ok(payload is None, f"got {payload!r}")
+
+
+def test_cursor_diagnose_failure_flags_transient_empty() -> bool:
+    print("\n[N] cursor._diagnose_failure flags empty result + clean stderr as transient_empty")
+    from adapters import cursor as cursor_adapter
+    msg, transient = cursor_adapter._diagnose_failure(
+        SAMPLE_CURSOR_STDOUT_TRANSIENT_EMPTY, ""
+    )
+    return _ok(transient is True and "transient" in msg.lower(),
+               f"transient={transient}, msg={msg!r}")
+
+
+def test_cursor_diagnose_failure_quota_is_not_transient() -> bool:
+    print("\n[N] cursor._diagnose_failure does NOT flag transient when quota signal in stderr")
+    from adapters import cursor as cursor_adapter
+    msg, transient = cursor_adapter._diagnose_failure(
+        SAMPLE_CURSOR_STDOUT_TRANSIENT_EMPTY, SAMPLE_CURSOR_STDERR_QUOTA
+    )
+    return _ok(transient is False and "rate-limit" in msg.lower(),
+               f"transient={transient}, msg={msg!r}")
+
+
+def test_cursor_diagnose_failure_empty_stdout_is_not_transient() -> bool:
+    print("\n[N] cursor._diagnose_failure does NOT flag transient when stdout is entirely empty")
+    from adapters import cursor as cursor_adapter
+    msg, transient = cursor_adapter._diagnose_failure("", "")
+    return _ok(transient is False and "empty stdout" in msg.lower(),
+               f"transient={transient}, msg={msg!r}")
+
+
+def test_cursor_result_carries_transient_empty_field() -> bool:
+    print("\n[N] CursorResult dataclass exposes transient_empty (default False)")
+    from adapters import cursor as cursor_adapter
+    r = cursor_adapter.CursorResult(
+        success=True, payload={}, raw_stdout="", raw_stderr="",
+        exit_code=0, duration_seconds=1.0,
+    )
+    return _ok(r.transient_empty is False, f"got {r.transient_empty!r}")
+
+
+def test_gemini_diagnose_flags_transient_empty() -> bool:
+    print("\n[N] gemini._diagnose_empty_response flags empty response + clean stderr as transient")
+    from adapters import gemini as gemini_adapter
+    msg, transient = gemini_adapter._diagnose_empty_response(
+        SAMPLE_GEMINI_STDOUT_TRANSIENT_EMPTY, ""
+    )
+    return _ok(transient is True and "transient" in msg.lower(),
+               f"transient={transient}, msg={msg!r}")
+
+
+def test_gemini_diagnose_quota_is_not_transient() -> bool:
+    print("\n[N] gemini._diagnose_empty_response treats quota-stderr as non-transient")
+    from adapters import gemini as gemini_adapter
+    msg, transient = gemini_adapter._diagnose_empty_response(
+        SAMPLE_GEMINI_STDOUT_TRANSIENT_EMPTY,
+        "you have exhausted your capacity for the gemini-2.5-flash-lite utility model",
+    )
+    return _ok(transient is False and "quota" in msg.lower(),
+               f"transient={transient}, msg={msg!r}")
+
+
+def test_gemini_result_carries_transient_empty_field() -> bool:
+    print("\n[N] GeminiResult dataclass exposes transient_empty (default False)")
+    from adapters import gemini as gemini_adapter
+    r = gemini_adapter.GeminiResult(
+        success=True, payload={}, raw_stdout="", raw_stderr="",
+        exit_code=0, duration_seconds=1.0,
+    )
+    return _ok(r.transient_empty is False, f"got {r.transient_empty!r}")
+
+
+def test_layer_result_carries_transient_empty_field() -> bool:
+    print("\n[N] LayerResult dataclass exposes transient_empty (default False)")
+    r = run_moa.LayerResult(agent_id="cursor-grok", layer=1, role="proposer")
+    return _ok(r.transient_empty is False, f"got {r.transient_empty!r}")
+
+
+def test_manifest_summary_includes_transient_empty_arrays() -> bool:
+    print("\n[N] write_manifest summary surfaces transient_empty proposer/refiner names")
+    import tempfile, shutil, json as _json
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        layer1 = [
+            run_moa.LayerResult(agent_id="codex", layer=1, role="proposer", success=True),
+            run_moa.LayerResult(agent_id="cursor-grok", layer=1, role="proposer",
+                                success=False, transient_empty=True,
+                                error="cursor-agent returned empty result text"),
+        ]
+        layer2 = [
+            run_moa.LayerResult(agent_id="gemini", layer=2, role="refiner-broadcast",
+                                success=False, transient_empty=True),
+        ]
+        run_moa.write_manifest(
+            session_dir=tmp,
+            scout_brief={"session_id": "smoke"},
+            layer1=layer1, layer2=layer2,
+            started_at=0.0, finished_at=1.0,
+            config={}, layer2_mode="broadcast",
+        )
+        manifest = _json.loads((tmp / "manifest.json").read_text())
+        summary = manifest["summary"]
+        ok = (summary["transient_empty_proposers"] == ["cursor-grok"]
+              and summary["transient_empty_refiners"] == ["gemini"])
+        return _ok(ok, f"summary={summary!r}")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_layer1_manifest_round_trip_via_load() -> bool:
+    print("\n[N] write_layer1_manifest + load_layer_results_from_manifest round-trip")
+    import tempfile, shutil
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        # Pretend codex succeeded and wrote a payload file; cursor-grok went transient.
+        (tmp / "layer1").mkdir(parents=True, exist_ok=True)
+        payload_file = tmp / "layer1" / "codex-proposer.json"
+        payload_file.write_text('{"agent_id": "codex", "summary": "ok"}', encoding="utf-8")
+        layer1 = [
+            run_moa.LayerResult(
+                agent_id="codex", layer=1, role="proposer", success=True,
+                schema_valid=True, duration_seconds=12.3,
+                json_path="layer1/codex-proposer.json",
+                log_path="layer1/codex-proposer.log",
+            ),
+            run_moa.LayerResult(
+                agent_id="cursor-grok", layer=1, role="proposer", success=False,
+                duration_seconds=4.5, transient_empty=True,
+                error="cursor-agent returned empty result text under a success envelope",
+            ),
+        ]
+        manifest_path = run_moa.write_layer1_manifest(
+            session_dir=tmp,
+            scout_brief={"session_id": "smoke"},
+            layer1=layer1,
+            started_at=0.0, finished_at=10.0,
+            config={"arm": "cross-lab"},
+        )
+        loaded = run_moa.load_layer_results_from_manifest(manifest_path, "layer1", tmp)
+        codex = next(r for r in loaded if r.agent_id == "codex")
+        cursor_grok = next(r for r in loaded if r.agent_id == "cursor-grok")
+        ok = (
+            codex.success and codex.payload is not None and codex.payload.get("agent_id") == "codex"
+            and cursor_grok.transient_empty is True
+            and cursor_grok.payload is None
+        )
+        return _ok(ok, f"codex.payload={codex.payload!r}, "
+                       f"cursor_grok.transient_empty={cursor_grok.transient_empty}")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_parse_redispatch_arg_validates_names() -> bool:
+    print("\n[N] parse_redispatch_arg rejects names not in the layer (sys.exit 2)")
+    import contextlib, io
+    valid = ["codex", "gemini", "cursor-grok"]
+    # Happy path
+    names = run_moa.parse_redispatch_arg("codex,cursor-grok", valid, "proposers")
+    if names != ["codex", "cursor-grok"]:
+        return _ok(False, f"happy path returned {names!r}")
+    # Empty / None → None
+    if run_moa.parse_redispatch_arg(None, valid, "proposers") is not None:
+        return _ok(False, "None input did not return None")
+    # Invalid name → sys.exit(2)
+    err = io.StringIO()
+    with contextlib.redirect_stderr(err):
+        try:
+            run_moa.parse_redispatch_arg("codex,bogus", valid, "proposers")
+            return _ok(False, "did not exit on invalid name")
+        except SystemExit as e:
+            ok = e.code == 2 and "bogus" in err.getvalue()
+            return _ok(ok, f"exit_code={e.code}, stderr={err.getvalue()!r}")
 
 
 def test_refiner_schema_validator_broadcast_codex() -> bool:
@@ -1027,6 +1221,17 @@ def main() -> int:
         test_cursor_extractor_finds_payload_in_bare_result,
         test_cursor_extractor_handles_fenced_json,
         test_cursor_extractor_returns_none_on_is_error,
+        test_cursor_diagnose_failure_flags_transient_empty,
+        test_cursor_diagnose_failure_quota_is_not_transient,
+        test_cursor_diagnose_failure_empty_stdout_is_not_transient,
+        test_cursor_result_carries_transient_empty_field,
+        test_gemini_diagnose_flags_transient_empty,
+        test_gemini_diagnose_quota_is_not_transient,
+        test_gemini_result_carries_transient_empty_field,
+        test_layer_result_carries_transient_empty_field,
+        test_manifest_summary_includes_transient_empty_arrays,
+        test_layer1_manifest_round_trip_via_load,
+        test_parse_redispatch_arg_validates_names,
     ]
     results = [t() for t in tests]
     print("\n" + "=" * 72)
