@@ -193,40 +193,85 @@ all {N} proposals) now? Estimated 6-12 minutes wall-clock."
 
 Do not run the orchestrator until the user says yes.
 
-### Step 1+2 — Run the orchestrator
-On approval, invoke the Python orchestrator via Bash. It runs Layers 1 and 2:
-```bash
-python3 ~/.claude/skills/mixture-of-agents/scripts/run_moa.py \
-  --scout-brief .moa/<session_id>/scout-brief.json
-```
+### Step 1+2 — Run the orchestrator (phase-split for redispatch)
+The orchestrator splits Layers 1 and 2 into separate invocations so the
+parent session can intercept transient-empty failures (cursor / gemini
+returning a success envelope but no model output — empirically recoverable
+on a single retry) and ask the user whether to redispatch or proceed.
 
 The Gemini model defaults to `gemini-2.5-pro`. Override via `MOA_GEMINI_MODEL`
 env var or `--gemini-model`. Note: `gemini-3.1-pro-preview` is available but
 very flaky (frequent timeouts, empty responses). Avoid unless testing.
 
-The orchestrator will:
-1. Acquire `/tmp/moa.lock` (only one MoA run per machine at a time)
-2. Preflight codex + gemini + claude; proceed with any that are ready
-3. Spawn all 3 proposers in parallel
-4. Validate each proposer's output against the schema
-5. Spawn codex + gemini broadcast refiners in parallel, each receiving the
-   full set of successful proposer outputs
-6. Validate each refiner's output
-7. Write `.moa/<session_id>/synthesis-input.md` and `.moa/<session_id>/manifest.json`
-8. Print the synthesis input path and exit
-
-It will print progress lines like:
+#### Step 1 — Run Layer 1 (proposers)
+```bash
+python3 ~/.claude/skills/mixture-of-agents/scripts/run_moa.py \
+  --scout-brief .moa/<session_id>/scout-brief.json \
+  --phase layer1
 ```
-[orchestrator]   codex proposer: OK (143.2s)
-[orchestrator]   gemini proposer: OK (98.4s)
-[orchestrator]   sonnet proposer: OK (112.6s)
+
+When this returns, parse the orchestrator's output for the line:
+```
+[orchestrator] transient-empty proposers: <name1>,<name2>
+```
+This line is only emitted when at least one proposer hit the transient
+empty-envelope pattern. Equivalent data lives in
+`.moa/<session_id>/layer1-manifest.json` under
+`summary.transient_empty_proposers`.
+
+#### Step 1b — Decision point: redispatch / proceed / cancel
+If `transient_empty_proposers` is non-empty, ask the user via
+`AskUserQuestion`. Render names + the error messages from the manifest's
+`layer1[*].error` field so the user sees what actually failed:
+
+- **Redispatch [names]** — re-run those proposers and loop back to this
+  decision point:
+  ```bash
+  python3 ~/.claude/skills/mixture-of-agents/scripts/run_moa.py \
+    --scout-brief .moa/<session_id>/scout-brief.json \
+    --phase layer1 --redispatch <name1>,<name2>
+  ```
+- **Proceed without them** — continue to Step 2 with what succeeded. The
+  refiners will broadcast over fewer proposers; if `<2` succeeded the
+  manifest is marked `degraded_non_broadcast` and the aggregator applies
+  lower confidence.
+- **Cancel** — stop. Surface the failure summary to the user.
+
+If `transient_empty_proposers` is empty but other proposers failed (quota,
+auth, schema, timeout), do not offer redispatch — those won't recover on
+retry. Surface them and continue (or cancel if the user prefers).
+
+#### Step 2 — Run Layer 2 (refiners)
+```bash
+python3 ~/.claude/skills/mixture-of-agents/scripts/run_moa.py \
+  --scout-brief .moa/<session_id>/scout-brief.json \
+  --phase layer2
+```
+
+Layer 2 reads the Layer 1 outputs from disk, runs broadcast refiners in
+parallel, writes `.moa/<session_id>/synthesis-input.md` and the final
+`manifest.json`. Same progress lines as before:
+```
 [orchestrator]   codex refiner (saw codex,gemini,sonnet): OK (76.1s)
 [orchestrator]   gemini refiner (saw codex,gemini,sonnet): OK (65.3s)
 ```
 
+#### Step 2b — Decision point for refiners
+Same loop as Step 1b but for refiners. Watch for:
+```
+[orchestrator] transient-empty refiners: <names>
+```
+or `summary.transient_empty_refiners` in the final `manifest.json`.
+
+Redispatch with `--phase layer2 --redispatch <names>` (re-runs only those
+refiners; previously successful refiners are kept). Or proceed (one good
+refiner is enough; the aggregator handles partial refiner output) or cancel.
+
 Failure modes the orchestrator handles:
-- One proposer fails, others succeed → refiners see the ones that worked
-- All proposers fail → exits with code 4, no synthesis happens
+- One proposer fails (non-transient), others succeed → refiners see the ones that worked
+- All proposers fail → `--phase layer1` writes the manifest and exits 0; the
+  parent session asks the user. `--phase all` (legacy single-shot) still exits
+  with code 4.
 - One refiner fails → proceeds with one refiner output; aggregator handles it
 - Schema validation fails → that agent's run is marked unsuccessful, manifest records why
 

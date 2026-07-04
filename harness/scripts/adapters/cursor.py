@@ -48,6 +48,11 @@ class CursorResult:
     exit_code: int
     duration_seconds: float
     error_message: Optional[str] = None
+    # True when the failure looks like a transient empty-envelope: cursor
+    # returned subtype:success / is_error:false but result was empty, and
+    # neither stderr nor envelope showed quota/auth signal. This pattern is
+    # recoverable by re-dispatch; the orchestrator surfaces it to the user.
+    transient_empty: bool = False
 
 
 def _cursor_bin() -> str:
@@ -243,11 +248,13 @@ def run(
 
         payload = _extract_payload(stdout_captured)
         if payload is None:
+            msg, transient = _diagnose_failure(stdout_captured, stderr_captured)
             return CursorResult(
                 success=False, payload=None, raw_stdout=stdout_captured,
                 raw_stderr=stderr_captured, exit_code=proc.returncode,
                 duration_seconds=duration,
-                error_message=_diagnose_failure(stdout_captured, stderr_captured),
+                error_message=msg,
+                transient_empty=transient,
             )
 
         return CursorResult(
@@ -285,20 +292,62 @@ def _envelope_error_message(stdout: str) -> Optional[str]:
     return f"cursor-agent reported is_error: {msg}"
 
 
-def _diagnose_failure(stdout: str, stderr: str) -> str:
-    """Mirror gemini._diagnose_empty_response: produce a specific error message."""
+def _diagnose_failure(stdout: str, stderr: str) -> tuple[str, bool]:
+    """Diagnose why _extract_payload failed. Returns (message, transient_empty).
+
+    transient_empty=True only when:
+      * envelope parsed cleanly with success semantics (no is_error)
+      * `result` text is empty / whitespace
+      * stderr shows no quota / auth / rate-limit signal
+
+    Empirically this is the dominant cursor-agent flake: the run reports
+    success but yields no model output. A single retry recovers cleanly.
+    """
     stderr_lower = (stderr or "").lower()
     quota_hit = any(p in stderr_lower for p in ("rate limit", "quota", "429", "exceeded"))
     auth_hit = any(p in stderr_lower for p in ("unauthorized", "401", "invalid api key", "not authenticated"))
     if not stdout or not stdout.strip():
-        return "cursor-agent produced empty stdout"
+        return "cursor-agent produced empty stdout", False
     if quota_hit:
         return ("cursor-agent hit rate-limit / quota errors (see stderr). "
-                "Check your Cursor subscription dashboard or CURSOR_API_KEY budget.")
+                "Check your Cursor subscription dashboard or CURSOR_API_KEY budget."), False
     if auth_hit:
         return ("cursor-agent authentication error (see stderr). "
-                "Re-run `cursor-agent login` or set CURSOR_API_KEY.")
-    return "could not extract payload from cursor-agent result text"
+                "Re-run `cursor-agent login` or set CURSOR_API_KEY."), False
+
+    envelope_result = _envelope_result_text(stdout)
+    if envelope_result is not None and not envelope_result.strip():
+        return (
+            "cursor-agent returned empty result text under a success envelope "
+            "(no quota or auth signal). Likely transient — re-dispatch typically recovers."
+        ), True
+
+    return "could not extract payload from cursor-agent result text", False
+
+
+def _envelope_result_text(stdout: str) -> Optional[str]:
+    """Return the `result` field text from the cursor envelope, or None.
+
+    None means the envelope is unparseable or doesn't carry a string `result`
+    field. An empty string ("") is meaningful: the envelope parsed but the
+    model produced no output (the transient pattern).
+    """
+    if not stdout:
+        return None
+    try:
+        outer = json.loads(stdout)
+    except json.JSONDecodeError:
+        first_brace = stdout.find("{")
+        if first_brace < 0:
+            return None
+        try:
+            outer = json.loads(stdout[first_brace:])
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(outer, dict):
+        return None
+    result = outer.get("result")
+    return result if isinstance(result, str) else None
 
 
 def _extract_payload(stdout: str) -> Optional[dict]:

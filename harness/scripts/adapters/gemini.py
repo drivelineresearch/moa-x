@@ -42,6 +42,11 @@ class GeminiResult:
     exit_code: int
     duration_seconds: float
     error_message: Optional[str] = None
+    # True when the failure looks like a transient empty-envelope: gemini
+    # returned a JSON envelope with empty `response` text and stderr showed
+    # no quota/auth signal. Recoverable by re-dispatch; the orchestrator
+    # surfaces it to the user.
+    transient_empty: bool = False
 
 
 # Minimum gemini-cli version that supports `--approval-mode yolo` (the
@@ -294,11 +299,13 @@ def run(
 
         payload = _extract_inner_json(stdout_captured)
         if payload is None:
+            msg, transient = _diagnose_empty_response(stdout_captured, stderr_captured)
             return GeminiResult(
                 success=False, payload=None, raw_stdout=stdout_captured,
                 raw_stderr=stderr_captured, exit_code=proc.returncode,
                 duration_seconds=duration,
-                error_message=_diagnose_empty_response(stdout_captured, stderr_captured),
+                error_message=msg,
+                transient_empty=transient,
             )
 
         return GeminiResult(
@@ -312,8 +319,12 @@ def run(
             shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-def _diagnose_empty_response(stdout: str, stderr: str) -> str:
+def _diagnose_empty_response(stdout: str, stderr: str) -> tuple[str, bool]:
     """Produce a specific error message when JSON extraction fails.
+
+    Returns (message, transient_empty). transient_empty=True only when the
+    envelope has an empty `response` field AND stderr shows no quota /
+    auth signal — i.e., a likely transient flake recoverable by re-dispatch.
 
     The generic "could not extract inner JSON" message hides common root
     causes. Inspect stdout + stderr for known failure signatures and
@@ -321,8 +332,8 @@ def _diagnose_empty_response(stdout: str, stderr: str) -> str:
 
     Signatures we recognize:
       * `response` field present but empty in the outer envelope (gemini
-        formatting stage dropped the text — usually quota exhaustion on
-        the utility model)
+        formatting stage dropped the text — transient when no quota signal,
+        usually quota exhaustion on the utility model when stderr says so)
       * "exhausted your capacity" / "quota" / "rate limit" in stderr
       * authentication errors in stderr
       * stdout entirely empty
@@ -358,28 +369,28 @@ def _diagnose_empty_response(stdout: str, stderr: str) -> str:
         pass
 
     if not stdout or not stdout.strip():
-        return "gemini produced empty stdout (no envelope at all)"
+        return "gemini produced empty stdout (no envelope at all)", False
     if empty_response and quota_hit:
         return (
             "gemini returned empty response field — utility-model quota "
             "exhausted during tool/formatting steps (see stderr for retry "
             "messages). Try re-running after quota reset, or reduce prompt "
             "complexity / research budget."
-        )
+        ), False
     if empty_response:
         return (
             "gemini returned empty response field — the model ran but the CLI "
-            "envelope stripped the output. Check stderr for auth, quota, or "
-            "tool-loop errors."
-        )
+            "envelope stripped the output. No quota/auth signal in stderr; "
+            "likely transient — re-dispatch typically recovers."
+        ), True
     if quota_hit:
         return (
             "gemini hit quota / rate-limit errors during the run "
             "(see stderr). Final envelope may be truncated or unparseable."
-        )
+        ), False
     if auth_hit:
-        return "gemini authentication error (see stderr). Re-run `gemini` interactively to re-auth."
-    return "could not extract inner JSON from gemini response wrapper"
+        return "gemini authentication error (see stderr). Re-run `gemini` interactively to re-auth.", False
+    return "could not extract inner JSON from gemini response wrapper", False
 
 
 def _extract_inner_json(stdout: str) -> Optional[dict]:

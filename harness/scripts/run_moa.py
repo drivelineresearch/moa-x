@@ -120,6 +120,12 @@ class LayerResult:
     error: Optional[str] = None
     log_path: Optional[str] = None
     json_path: Optional[str] = None
+    # True when the failure was an empty-envelope transient (cursor/gemini
+    # only). Stays False for codex/claude (their schema enforcement makes
+    # empty-but-success-shaped envelopes impossible) and for any non-empty
+    # failure mode like quota, auth, timeout, or schema invalidation.
+    # The orchestrator uses this to drive the redispatch user prompt.
+    transient_empty: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -546,6 +552,14 @@ def _run_codex(
     return layer_result
 
 
+def _has_transient_empty(adapter_result: Any) -> bool:
+    """Read the transient_empty flag off any adapter result, defaulting to False.
+
+    Only cursor/gemini set this; codex/claude adapters don't have the field.
+    """
+    return bool(getattr(adapter_result, "transient_empty", False))
+
+
 def _run_gemini(
     *,
     layer: int,
@@ -577,6 +591,7 @@ def _run_gemini(
         duration_seconds=result.duration_seconds,
         error=result.error_message,
         log_path=str(log_file.relative_to(session_dir)),
+        transient_empty=_has_transient_empty(result),
     )
     _finalize_result(layer_result, result.payload, schema_path, session_dir)
     return layer_result
@@ -651,6 +666,7 @@ def _run_cursor(
         duration_seconds=result.duration_seconds,
         error=result.error_message,
         log_path=str(log_file.relative_to(session_dir)),
+        transient_empty=_has_transient_empty(result),
     )
     _finalize_result(layer_result, result.payload, schema_path, session_dir)
     return layer_result
@@ -1227,6 +1243,12 @@ def write_manifest(
             "layer1_failures": sum(1 for r in layer1 if not r.success),
             "layer2_successes": sum(1 for r in layer2 if r.success),
             "layer2_failures": sum(1 for r in layer2 if not r.success),
+            "transient_empty_proposers": [
+                r.agent_id for r in layer1 if r.transient_empty
+            ],
+            "transient_empty_refiners": [
+                r.agent_id for r in layer2 if r.transient_empty
+            ],
         },
     }
     # asdict turns LayerResult into a dict but payload is too large for the
@@ -1236,6 +1258,131 @@ def write_manifest(
             entry.pop("payload", None)
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     return manifest_path
+
+
+# ---------------------------------------------------------------------------
+# Phase-split helpers (--phase layer1 / --phase layer2 / --redispatch)
+# ---------------------------------------------------------------------------
+
+LAYER1_MANIFEST_NAME = "layer1-manifest.json"
+
+
+def write_layer1_manifest(
+    *,
+    session_dir: Path,
+    scout_brief: dict,
+    layer1: list[LayerResult],
+    started_at: float,
+    finished_at: float,
+    config: Optional[dict] = None,
+) -> Path:
+    """Bridge file written by `--phase layer1` for the parent session to inspect.
+
+    Distinct from manifest.json (which is the final per-session manifest)
+    so a partial Layer-1-only run can't be mistaken for a complete session.
+    The parent reads `summary.transient_empty_proposers` from this file to
+    drive the redispatch user prompt.
+    """
+    path = session_dir / LAYER1_MANIFEST_NAME
+    manifest = {
+        "session_id": scout_brief.get("session_id", "unknown"),
+        "phase": "layer1",
+        "config": config or {},
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "duration_seconds": finished_at - started_at,
+        "layer1": [asdict(r) for r in layer1],
+        "summary": {
+            "layer1_successes": sum(1 for r in layer1 if r.success),
+            "layer1_failures": sum(1 for r in layer1 if not r.success),
+            "transient_empty_proposers": [
+                r.agent_id for r in layer1 if r.transient_empty
+            ],
+        },
+    }
+    for entry in manifest["layer1"]:
+        entry.pop("payload", None)
+    path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    return path
+
+
+def load_layer_results_from_manifest(
+    manifest_path: Path, layer_key: str, session_dir: Path
+) -> list[LayerResult]:
+    """Reconstruct LayerResult objects from an already-written manifest.
+
+    Loads payloads from the per-agent .json files on disk so refiner prompt
+    construction has the same content it would have had in a single-shot run.
+    Missing payload files are tolerated (the entry is still returned with
+    payload=None) so a partial session can still be inspected.
+    """
+    if not manifest_path.exists():
+        return []
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    out: list[LayerResult] = []
+    for entry in manifest.get(layer_key, []):
+        result = LayerResult(
+            agent_id=entry["agent_id"],
+            layer=entry["layer"],
+            role=entry["role"],
+            reviewing=entry.get("reviewing"),
+            success=entry["success"],
+            schema_valid=entry.get("schema_valid", False),
+            duration_seconds=entry.get("duration_seconds", 0.0),
+            error=entry.get("error"),
+            log_path=entry.get("log_path"),
+            json_path=entry.get("json_path"),
+            transient_empty=entry.get("transient_empty", False),
+        )
+        if result.success and result.json_path:
+            payload_file = session_dir / result.json_path
+            if payload_file.exists():
+                try:
+                    result.payload = json.loads(payload_file.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    pass
+        out.append(result)
+    return out
+
+
+def print_transient_summary(layer_label: str, results: list[LayerResult]) -> None:
+    """Emit a parse-friendly line for the parent session.
+
+    Format is stable: `[orchestrator] transient-empty <label>: name1,name2`
+    No-op when the layer has zero transient-empty entries.
+    """
+    transient = [r.agent_id for r in results if r.transient_empty]
+    if transient:
+        print(
+            f"[orchestrator] transient-empty {layer_label}: {','.join(transient)}",
+            flush=True,
+        )
+
+
+def parse_redispatch_arg(
+    raw: Optional[str], valid_names: list[str], label: str
+) -> Optional[list[str]]:
+    """Split `--redispatch` and validate each name belongs to the layer.
+
+    Returns None when raw is empty/None. Exits the process with code 2 on
+    invalid names so we surface bad CLI input loudly instead of silently
+    no-op'ing on a typo'd provider.
+    """
+    if not raw:
+        return None
+    names = [s.strip() for s in raw.split(",") if s.strip()]
+    if not names:
+        return None
+    valid = set(valid_names)
+    invalid = [n for n in names if n not in valid]
+    if invalid:
+        print(
+            f"ERROR: --redispatch names not in {label}: {invalid}. "
+            f"Valid: {sorted(valid)}.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+    return names
 
 
 # ---------------------------------------------------------------------------
@@ -1378,7 +1525,27 @@ def main() -> int:
                         help="Comma-separated ordered list of self-MoA refiner "
                              "instance IDs (e.g. sonnet-r1,sonnet-r2). Only used "
                              "when --self-moa is set; defaults to sonnet-r1,sonnet-r2.")
+    parser.add_argument("--phase", choices=["all", "layer1", "layer2"], default="all",
+                        help="Which phase to run. Default 'all' = single-shot (existing "
+                             "behavior). Use 'layer1' to run proposers only and write "
+                             "layer1-manifest.json so the parent session can surface "
+                             "transient-empty failures and decide redispatch vs proceed; "
+                             "then run 'layer2' to do refiners + synthesis-input.md from "
+                             "the existing layer1 outputs. Cross-lab path only — self-moa "
+                             "ignores this flag and always runs single-shot.")
+    parser.add_argument("--redispatch", default=None,
+                        help="Comma-separated provider names to re-run within the current "
+                             "phase. Requires --phase layer1 or --phase layer2. The named "
+                             "providers replace their previous entries; agents that already "
+                             "succeeded are kept as-is.")
     args = parser.parse_args()
+
+    if args.redispatch and args.phase == "all":
+        print(
+            "ERROR: --redispatch requires --phase layer1 or --phase layer2.",
+            file=sys.stderr,
+        )
+        return 2
 
     # Resolve per-agent timeouts. --timeout (master) wins over everything;
     # otherwise use the per-agent default, which for codex is effort-aware.
@@ -1697,13 +1864,157 @@ def main() -> int:
             "repo_path": str(repo_path),
         }
 
-        # ---------- Layer 1: parallel proposers ----------
-        print("[orchestrator] Layer 1: spawning proposers in parallel...", flush=True)
-        layer1 = run_layer1(
+        # ---------- Phase: layer2 only (refiners from existing layer1) ----------
+        if args.phase == "layer2":
+            layer1_manifest_path = session_dir / LAYER1_MANIFEST_NAME
+            if not layer1_manifest_path.exists():
+                print(
+                    f"ERROR: --phase layer2 requires {LAYER1_MANIFEST_NAME} in "
+                    f"{session_dir}. Run --phase layer1 first.",
+                    file=sys.stderr,
+                )
+                return 2
+
+            layer1 = load_layer_results_from_manifest(
+                layer1_manifest_path, "layer1", session_dir
+            )
+            if not [r for r in layer1 if r.success]:
+                print(
+                    "[orchestrator] FATAL: existing layer1 has no successful "
+                    "proposers; cannot run layer2.",
+                    file=sys.stderr,
+                )
+                return 4
+
+            redispatch_refiner_names = parse_redispatch_arg(
+                args.redispatch, [p.name for p in final_refiners], "refiners"
+            )
+
+            existing_layer2: list[LayerResult] = []
+            final_manifest_path = session_dir / "manifest.json"
+            if redispatch_refiner_names and final_manifest_path.exists():
+                existing_layer2 = load_layer_results_from_manifest(
+                    final_manifest_path, "layer2", session_dir
+                )
+
+            refiners_to_run = (
+                [p for p in final_refiners if p.name in redispatch_refiner_names]
+                if redispatch_refiner_names else final_refiners
+            )
+
+            layer2: list[LayerResult] = []
+            layer2_mode = "broadcast"
+            if args.skip_layer2:
+                print("[orchestrator] Layer 2: SKIPPED (--skip-layer2)", flush=True)
+                layer2_mode = "skipped"
+            elif loaded_cfg.skip_refinement:
+                print("[orchestrator] Layer 2: SKIPPED (skip_refinement set in config)", flush=True)
+                layer2_mode = "skipped"
+            elif not any(available.get(p.harness, False) for p in refiners_to_run):
+                print(
+                    "[orchestrator] Layer 2: SKIPPED (no refiners available — either "
+                    "preflights failed or --refiners excluded them)",
+                    file=sys.stderr,
+                )
+                layer2_mode = "skipped"
+            else:
+                successful_layer1 = [r for r in layer1 if r.success]
+                if len(successful_layer1) < 2:
+                    layer2_mode = "degraded_non_broadcast"
+                    print(
+                        f"[orchestrator] Layer 2: DEGRADED_NON_BROADCAST "
+                        f"(only {len(successful_layer1)} proposer succeeded)",
+                        flush=True,
+                    )
+                print(
+                    f"[orchestrator] Layer 2: spawning {[p.name for p in refiners_to_run]} "
+                    "in parallel..."
+                    + (" (redispatch)" if redispatch_refiner_names else ""),
+                    flush=True,
+                )
+                layer2 = run_layer2(
+                    scout_brief=scout_brief,
+                    layer1_results=layer1,
+                    repo_path=repo_path,
+                    session_dir=session_dir,
+                    refiners=refiners_to_run,
+                    timeout_for_harness=timeout_for_harness,
+                    codex_effort=args.codex_effort,
+                    available=available,
+                )
+
+            if redispatch_refiner_names:
+                kept = [r for r in existing_layer2 if r.agent_id not in redispatch_refiner_names]
+                layer2 = kept + layer2
+
+            print_transient_summary("refiners", layer2)
+
+            synthesis_path = write_synthesis_input(
+                scout_brief=scout_brief,
+                layer1=layer1,
+                layer2=layer2,
+                session_dir=session_dir,
+                layer2_mode=layer2_mode,
+                proposer_agent_ids=tuple(p.name for p in final_proposers),
+                refiner_agent_ids=tuple(p.name for p in final_refiners),
+            )
+            manifest_path = write_manifest(
+                session_dir=session_dir,
+                scout_brief=scout_brief,
+                layer1=layer1,
+                layer2=layer2,
+                started_at=started_at,
+                finished_at=time.time(),
+                config=config_snapshot,
+                layer2_mode=layer2_mode,
+            )
+            elapsed = time.time() - started_at
+            print(f"[orchestrator] DONE in {elapsed:.1f}s", flush=True)
+            print(f"[orchestrator] synthesis input: {synthesis_path}", flush=True)
+            print(f"[orchestrator] manifest:        {manifest_path}", flush=True)
+            print()
+            print("Next: parent Claude session reads synthesis-input.md and aggregates "
+                  "in-place per harness/prompts/aggregator.md "
+                  "(or ~/.claude/skills/mixture-of-agents/prompts/aggregator.md "
+                  "when running as the installed skill)",
+                  flush=True)
+            return 0
+
+        # ---------- Layer 1: parallel proposers (phase = all or layer1) ----------
+        existing_layer1: list[LayerResult] = []
+        redispatch_proposer_names: Optional[list[str]] = None
+        if args.redispatch:
+            # --redispatch with --phase all was rejected at arg-parse time, so
+            # we're necessarily in --phase layer1 here.
+            layer1_manifest_path = session_dir / LAYER1_MANIFEST_NAME
+            if not layer1_manifest_path.exists():
+                print(
+                    f"ERROR: --redispatch requires existing {LAYER1_MANIFEST_NAME} "
+                    f"in {session_dir}.",
+                    file=sys.stderr,
+                )
+                return 2
+            existing_layer1 = load_layer_results_from_manifest(
+                layer1_manifest_path, "layer1", session_dir
+            )
+            redispatch_proposer_names = parse_redispatch_arg(
+                args.redispatch, [p.name for p in final_proposers], "proposers"
+            )
+            proposers_to_run = [p for p in final_proposers if p.name in redispatch_proposer_names]
+        else:
+            proposers_to_run = final_proposers
+
+        print(
+            f"[orchestrator] Layer 1: spawning {[p.name for p in proposers_to_run]} "
+            "in parallel..."
+            + (" (redispatch)" if redispatch_proposer_names else ""),
+            flush=True,
+        )
+        layer1_new = run_layer1(
             scout_brief=scout_brief,
             repo_path=repo_path,
             session_dir=session_dir,
-            proposers=final_proposers,
+            proposers=proposers_to_run,
             timeout_for_harness=timeout_for_harness,
             codex_effort=args.codex_effort,
             available=available,
@@ -1711,6 +2022,38 @@ def main() -> int:
         # Per-agent progress lines are printed inside run_layer1 as each
         # future resolves, so we don't repeat them here.
 
+        if redispatch_proposer_names:
+            kept = [r for r in existing_layer1 if r.agent_id not in redispatch_proposer_names]
+            layer1 = kept + layer1_new
+        else:
+            layer1 = layer1_new
+
+        print_transient_summary("proposers", layer1)
+
+        # ---------- Phase: layer1 only (write bridge manifest + exit) ----------
+        if args.phase == "layer1":
+            layer1_manifest_path = write_layer1_manifest(
+                session_dir=session_dir,
+                scout_brief=scout_brief,
+                layer1=layer1,
+                started_at=started_at,
+                finished_at=time.time(),
+                config=config_snapshot,
+            )
+            elapsed = time.time() - started_at
+            print(f"[orchestrator] LAYER1 DONE in {elapsed:.1f}s", flush=True)
+            print(f"[orchestrator] layer1 manifest: {layer1_manifest_path}", flush=True)
+            print()
+            print(
+                "Next: parent session inspects layer1 manifest. If "
+                "transient_empty_proposers is non-empty, ask the user whether to "
+                "redispatch (re-invoke --phase layer1 --redispatch <names>) or "
+                "proceed (--phase layer2). See harness/SKILL.md.",
+                flush=True,
+            )
+            return 0
+
+        # phase == "all": continue with the existing single-shot flow.
         successful_layer1 = [r for r in layer1 if r.success]
         if not successful_layer1:
             print("[orchestrator] FATAL: no proposers succeeded; aborting.", file=sys.stderr)
@@ -1732,7 +2075,7 @@ def main() -> int:
                   f"proposers succeeded. Missing: {missing}", flush=True)
 
         # ---------- Layer 2: broadcast refiners ----------
-        layer2: list[LayerResult] = []
+        layer2 = []
         layer2_mode = "broadcast"
         if args.skip_layer2:
             print("[orchestrator] Layer 2: SKIPPED (--skip-layer2)", flush=True)
@@ -1770,6 +2113,7 @@ def main() -> int:
                 codex_effort=args.codex_effort,
                 available=available,
             )
+            print_transient_summary("refiners", layer2)
             # Per-agent progress is printed inside run_layer2 as each future
             # resolves, so no sorted-print block needed here.
 
