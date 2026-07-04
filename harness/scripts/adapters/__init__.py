@@ -12,10 +12,13 @@ not from each other.
 """
 from __future__ import annotations
 
+import json
 import os
+import re
 import signal
 import subprocess
 import sys
+from typing import Optional
 
 READ_ONLY_RULE = (
     "READ-ONLY DISCIPLINE: You may use any tool to READ files, search the "
@@ -64,3 +67,69 @@ def kill_proc_tree(proc: subprocess.Popen) -> None:
             proc.kill()
         except OSError:
             pass
+
+
+def extract_json_from_text(text: str, *, max_scan: int = 200_000) -> Optional[dict]:
+    """Pull the largest valid JSON object out of a free-text model response.
+
+    Shared by the adapters whose CLIs have no native schema enforcement
+    (cursor, opencode) — their model text may wrap the payload in markdown
+    fences or surround it with prose. Strategy, longest-match-first:
+
+      1. Collect the contents of every ```json ... ``` (or bare ``` ... ```)
+         fenced block.
+      2. Scan for balanced top-level `{...}` objects, respecting strings and
+         escapes so braces inside string literals don't miscount depth.
+      3. Try to json.loads each candidate longest-first; return the first
+         that parses.
+
+    `max_scan` caps the balanced-object scan to the LAST N characters. The
+    scan is O(n²) in the worst case and the schema payload is always near the
+    end of the response, so this keeps a multi-hundred-KB tool-use log from
+    stalling the parser. Returns None if nothing parses.
+    """
+    if not text:
+        return None
+
+    candidates: list[str] = []
+    for match in re.finditer(r"```(?:json)?\s*\n(.*?)\n```", text, re.DOTALL):
+        candidates.append(match.group(1).strip())
+
+    scan_text = text[-max_scan:] if len(text) > max_scan else text
+    for start in range(len(scan_text)):
+        if scan_text[start] != "{":
+            continue
+        depth = 0
+        in_string = False
+        escape = False
+        for end in range(start, len(scan_text)):
+            ch = scan_text[end]
+            if escape:
+                escape = False
+                continue
+            if ch == "\\":
+                escape = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    candidates.append(scan_text[start : end + 1])
+                    break
+
+    candidates.sort(key=len, reverse=True)
+    for cand in candidates:
+        try:
+            parsed = json.loads(cand)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+
+    return None

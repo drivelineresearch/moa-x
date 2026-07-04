@@ -74,7 +74,7 @@ class ResolvedProvider:
     harness/config.yaml or MOA_<NAME>_TIMEOUT env var.
     """
     name: str                         # user-facing label, used as agent_id in payloads
-    harness: str                      # which adapter handles the call: codex, gemini, claude, cursor
+    harness: str                      # which adapter handles the call: codex, gemini, claude, cursor, opencode
     model: str                        # model id passed to the harness
     timeout: Optional[int] = None     # per-provider timeout in seconds; None → harness default
 
@@ -85,9 +85,11 @@ class ResolvedProvider:
 # Built-ins always carry timeout=None so the existing CLI flag / harness-level
 # env path (MOA_CODEX_TIMEOUT etc.) continues to apply.
 BUILTIN_PROVIDERS: dict[str, ResolvedProvider] = {
-    "codex":  ResolvedProvider(name="codex",  harness="codex",  model="gpt-5.4"),
-    "gemini": ResolvedProvider(name="gemini", harness="gemini", model="gemini-2.5-pro"),
-    "sonnet": ResolvedProvider(name="sonnet", harness="claude", model="claude-sonnet-4-6"),
+    "codex":  ResolvedProvider(name="codex",  harness="codex",    model="gpt-5.4"),
+    "gemini": ResolvedProvider(name="gemini", harness="gemini",   model="gemini-2.5-pro"),
+    "sonnet": ResolvedProvider(name="sonnet", harness="claude",   model="claude-sonnet-4-6"),
+    "glm":    ResolvedProvider(name="glm",    harness="opencode", model="zhipuai/glm-5.2"),
+    "kimi":   ResolvedProvider(name="kimi",   harness="opencode", model="moonshotai/kimi-k2.7-code"),
 }
 
 

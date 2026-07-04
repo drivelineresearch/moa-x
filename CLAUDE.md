@@ -32,7 +32,7 @@ blind spots tend to get caught by another lab's model.
 # Verify toolchain (checks codex/gemini/claude install + auth)
 python3 harness/scripts/install_deps.py
 
-# Offline tests (23/23 must pass; no network, no external CLIs)
+# Offline tests (all must pass; no network, no external CLIs)
 python3 harness/scripts/test_offline.py
 
 # Run the skill (inside Claude Code, from any project dir)

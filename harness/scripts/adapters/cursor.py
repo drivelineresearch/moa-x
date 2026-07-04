@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import shutil
 import subprocess
 import tempfile
@@ -35,7 +34,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from adapters import kill_proc_tree
+from adapters import extract_json_from_text, kill_proc_tree
 
 
 @dataclass
@@ -390,46 +389,6 @@ def _extract_payload(stdout: str) -> Optional[dict]:
     if not isinstance(result_text, str) or not result_text.strip():
         return None
 
-    # Step 2: extract JSON from the inner text. Try fences first, then
-    # balanced top-level objects (longest-first, gemini-style).
-    candidates: list[str] = []
-    for match in re.finditer(r"```(?:json)?\s*\n(.*?)\n```", result_text, re.DOTALL):
-        candidates.append(match.group(1).strip())
-
-    # Bare top-level JSON object scan
-    text = result_text
-    for start in range(len(text)):
-        if text[start] != "{":
-            continue
-        depth = 0
-        in_string = False
-        escape = False
-        for end in range(start, len(text)):
-            ch = text[end]
-            if escape:
-                escape = False
-                continue
-            if ch == "\\":
-                escape = True
-                continue
-            if ch == '"':
-                in_string = not in_string
-                continue
-            if in_string:
-                continue
-            if ch == "{":
-                depth += 1
-            elif ch == "}":
-                depth -= 1
-                if depth == 0:
-                    candidates.append(text[start : end + 1])
-                    break
-
-    candidates.sort(key=len, reverse=True)
-    for cand in candidates:
-        try:
-            return json.loads(cand)
-        except (json.JSONDecodeError, ValueError):
-            continue
-
-    return None
+    # Step 2: extract the JSON payload from the inner text (fences or a bare
+    # balanced object, longest-first). Shared with the opencode adapter.
+    return extract_json_from_text(result_text)

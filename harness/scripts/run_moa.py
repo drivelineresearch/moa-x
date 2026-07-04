@@ -83,6 +83,7 @@ from adapters import codex as codex_adapter  # noqa: E402
 from adapters import gemini as gemini_adapter  # noqa: E402
 from adapters import claude as claude_adapter  # noqa: E402
 from adapters import cursor as cursor_adapter  # noqa: E402
+from adapters import opencode as opencode_adapter  # noqa: E402
 from adapters.claude import TEMPERATURE_DIVERSITY_SHIM  # noqa: E402
 import config as harness_config  # noqa: E402
 
@@ -672,6 +673,44 @@ def _run_cursor(
     return layer_result
 
 
+def _run_opencode(
+    *,
+    layer: int,
+    role: str,
+    prompt: str,
+    schema_path: Path,
+    repo_path: Path,
+    session_dir: Path,
+    timeout: int,
+    model: str,
+    agent_id: str,
+    reviewing: Optional[list[str]] = None,
+) -> LayerResult:
+    """Invoke the opencode adapter and lift its result into a LayerResult."""
+    log_file = session_dir / f"layer{layer}" / f"{agent_id}-{role}.log"
+    result = opencode_adapter.run(
+        prompt=prompt,
+        repo_path=repo_path,
+        model=model,
+        timeout_seconds=timeout,
+        log_file=log_file,
+    )
+    layer_result = LayerResult(
+        agent_id=agent_id,
+        layer=layer,
+        role=role,
+        reviewing=reviewing,
+        success=result.success,
+        payload=result.payload,
+        duration_seconds=result.duration_seconds,
+        error=result.error_message,
+        log_path=str(log_file.relative_to(session_dir)),
+        transient_empty=_has_transient_empty(result),
+    )
+    _finalize_result(layer_result, result.payload, schema_path, session_dir)
+    return layer_result
+
+
 def _dispatch_provider(
     *,
     provider: "harness_config.ResolvedProvider",
@@ -730,6 +769,16 @@ def _dispatch_provider(
         )
     if h == "cursor":
         return _run_cursor(
+            layer=layer, role=role, prompt=prompt,
+            schema_path=PROPOSER_SCHEMA_PATH if "proposer" in role else REFINER_SCHEMA_PATH,
+            repo_path=repo_path, session_dir=session_dir,
+            timeout=timeout,
+            model=provider.model,
+            agent_id=provider.name,
+            reviewing=reviewing,
+        )
+    if h == "opencode":
+        return _run_opencode(
             layer=layer, role=role, prompt=prompt,
             schema_path=PROPOSER_SCHEMA_PATH if "proposer" in role else REFINER_SCHEMA_PATH,
             repo_path=repo_path, session_dir=session_dir,
@@ -1808,6 +1857,8 @@ def main() -> int:
                 ok, msg = claude_adapter.check_available()
             elif harness == "cursor":
                 ok, msg = cursor_adapter.check_available()
+            elif harness == "opencode":
+                ok, msg = opencode_adapter.check_available()
             else:
                 ok, msg = False, f"unknown harness {harness!r}"
             available[harness] = ok
@@ -1823,6 +1874,7 @@ def main() -> int:
             "gemini": gemini_timeout,
             "claude": sonnet_timeout,
             "cursor": _int_env("MOA_CURSOR_TIMEOUT") or sonnet_timeout,
+            "opencode": _int_env("MOA_OPENCODE_TIMEOUT") or sonnet_timeout,
         }
 
         started_at = time.time()

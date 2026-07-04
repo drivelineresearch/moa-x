@@ -46,7 +46,7 @@ if TYPE_CHECKING:
     from config import LoadedConfig, ResolvedProvider
 
 
-ALL_HARNESSES = ("codex", "gemini", "claude", "cursor")
+ALL_HARNESSES = ("codex", "gemini", "claude", "cursor", "opencode")
 
 
 def _check(label: str, cmd: list[str]) -> tuple[bool, str]:
@@ -95,18 +95,22 @@ def _check_needed_harnesses(loaded_cfg: "LoadedConfig", failures: list[str]) -> 
     from adapters import gemini as gemini_adapter
     from adapters import claude as claude_adapter
     from adapters import cursor as cursor_adapter
+    from adapters import opencode as opencode_adapter
 
     adapter_for = {
         "codex": codex_adapter,
         "gemini": gemini_adapter,
         "claude": claude_adapter,
         "cursor": cursor_adapter,
+        "opencode": opencode_adapter,
     }
     install_hint = {
         "codex":  "npm i -g @openai/codex && codex login",
         "gemini": "npm i -g @google/gemini-cli  (then run interactively once to log in)",
         "claude": "see https://docs.claude.com/en/docs/claude-code/quickstart",
         "cursor": "curl https://cursor.com/install -fsS | bash  (then: cursor-agent login)",
+        "opencode": "curl -fsSL https://opencode.ai/install | bash  (then: opencode auth login, "
+                    "or export ZHIPU_API_KEY / MOONSHOT_API_KEY / FIREWORKS_API_KEY)",
     }
 
     for harness in sorted(needed):

@@ -293,6 +293,16 @@ SAMPLE_CURSOR_STDOUT_TRANSIENT_EMPTY = json.dumps({
 # treated as transient since redispatch won't help.
 SAMPLE_CURSOR_STDERR_QUOTA = "rate limit exceeded for your plan; retry after 60s\n"
 
+# OpenCode emits the model's final text straight to stdout (no JSON envelope),
+# so the shared extractor runs directly on it. Payload may be bare or fenced;
+# empty stdout under a clean exit is the transient flake.
+SAMPLE_OPENCODE_STDOUT_BARE = json.dumps(VALID_PROPOSER_CODEX)
+SAMPLE_OPENCODE_STDOUT_FENCED = (
+    "I read the repo and here is the plan:\n\n```json\n"
+    + json.dumps(VALID_PROPOSER_CODEX) + "\n```\n"
+)
+SAMPLE_OPENCODE_STDERR_QUOTA = "Error: 429 quota exceeded for provider zhipuai\n"
+
 # Gemini: outer envelope present, but `response` field is empty and stderr
 # is clean. Mirrors the cursor transient pattern.
 SAMPLE_GEMINI_STDOUT_TRANSIENT_EMPTY = json.dumps({"response": "", "stats": {}})
@@ -1175,6 +1185,69 @@ def test_cursor_check_available_returns_tuple() -> bool:
     return _ok(ok, f"got {result}")
 
 
+def test_opencode_extractor_finds_bare_payload() -> bool:
+    print("\n[N] adapters.extract_json_from_text pulls bare JSON from opencode text output")
+    from adapters import extract_json_from_text
+    payload = extract_json_from_text(SAMPLE_OPENCODE_STDOUT_BARE)
+    return _ok(payload is not None and payload.get("agent_id") == "codex", f"got {payload!r}")
+
+
+def test_opencode_extractor_handles_fenced_and_prose() -> bool:
+    print("\n[N] extract_json_from_text pulls fenced JSON out of surrounding prose")
+    from adapters import extract_json_from_text
+    payload = extract_json_from_text(SAMPLE_OPENCODE_STDOUT_FENCED)
+    return _ok(payload is not None and payload.get("agent_id") == "codex", f"got {payload!r}")
+
+
+def test_opencode_diagnose_empty_is_transient() -> bool:
+    print("\n[N] opencode._diagnose_failure flags empty stdout + clean stderr as transient")
+    from adapters import opencode as opencode_adapter
+    msg, transient = opencode_adapter._diagnose_failure("", "")
+    return _ok(transient is True and "transient" in msg.lower(), f"transient={transient}, msg={msg!r}")
+
+
+def test_opencode_diagnose_quota_is_not_transient() -> bool:
+    print("\n[N] opencode._diagnose_failure does NOT flag transient when quota in stderr")
+    from adapters import opencode as opencode_adapter
+    msg, transient = opencode_adapter._diagnose_failure("", SAMPLE_OPENCODE_STDERR_QUOTA)
+    return _ok(transient is False and "quota" in msg.lower(), f"transient={transient}, msg={msg!r}")
+
+
+def test_opencode_result_carries_transient_empty_field() -> bool:
+    print("\n[N] OpenCodeResult dataclass exposes transient_empty (default False)")
+    from adapters import opencode as opencode_adapter
+    r = opencode_adapter.OpenCodeResult(
+        success=True, payload={}, raw_stdout="", raw_stderr="",
+        exit_code=0, duration_seconds=1.0,
+    )
+    return _ok(r.transient_empty is False, f"got {r.transient_empty!r}")
+
+
+def test_opencode_check_available_returns_tuple() -> bool:
+    print("\n[N] opencode.check_available returns (bool, str) tuple")
+    from adapters import opencode as opencode_adapter
+    result = opencode_adapter.check_available()
+    ok = (isinstance(result, tuple) and len(result) == 2
+          and isinstance(result[0], bool) and isinstance(result[1], str))
+    return _ok(ok, f"got {result}")
+
+
+def test_config_resolve_builtin_glm_uses_opencode() -> bool:
+    print("\n[N] config.resolve_provider: glm maps to opencode harness / zhipuai model")
+    from config import resolve_provider
+    rp = resolve_provider("glm", user_providers={})
+    ok = (rp.name == "glm" and rp.harness == "opencode" and rp.model == "zhipuai/glm-5.2")
+    return _ok(ok, f"got {rp}")
+
+
+def test_config_resolve_builtin_kimi_uses_opencode() -> bool:
+    print("\n[N] config.resolve_provider: kimi maps to opencode harness / moonshot model")
+    from config import resolve_provider
+    rp = resolve_provider("kimi", user_providers={})
+    ok = (rp.name == "kimi" and rp.harness == "opencode" and rp.model == "moonshotai/kimi-k2.7-code")
+    return _ok(ok, f"got {rp}")
+
+
 def main() -> int:
     print("Mixture-of-Agents — offline smoke test (v2: 3 proposers + broadcast refiners)")
     print("=" * 72)
@@ -1225,6 +1298,14 @@ def main() -> int:
         test_cursor_diagnose_failure_quota_is_not_transient,
         test_cursor_diagnose_failure_empty_stdout_is_not_transient,
         test_cursor_result_carries_transient_empty_field,
+        test_opencode_extractor_finds_bare_payload,
+        test_opencode_extractor_handles_fenced_and_prose,
+        test_opencode_diagnose_empty_is_transient,
+        test_opencode_diagnose_quota_is_not_transient,
+        test_opencode_result_carries_transient_empty_field,
+        test_opencode_check_available_returns_tuple,
+        test_config_resolve_builtin_glm_uses_opencode,
+        test_config_resolve_builtin_kimi_uses_opencode,
         test_gemini_diagnose_flags_transient_empty,
         test_gemini_diagnose_quota_is_not_transient,
         test_gemini_result_carries_transient_empty_field,
