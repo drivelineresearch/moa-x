@@ -25,7 +25,9 @@ Read-only discipline is enforced two ways: the shared READ_ONLY_RULE is
 prepended to the prompt, and a `permission` block that denies `edit` and
 all `bash` (writes and reads alike — the model still has the native
 read/grep/glob/webfetch tools for repo grounding) is written to a temp
-config pointed at by OPENCODE_CONFIG. Explicit `deny` survives `--auto`.
+config pointed at by OPENCODE_CONFIG (which opencode MERGES into its config
+chain, it does not replace the user's global config). Explicit `deny` is
+honored even under `--dangerously-skip-permissions`.
 
 Subprocess isolation: each call gets its own TMPDIR and config file via
 env override. OpenCode auth/session state lives under
@@ -59,7 +61,8 @@ _PROVIDER_KEY_ENVS = (
 
 # Read-only permission policy handed to opencode via OPENCODE_CONFIG. Denying
 # edit + bash outright still leaves the native read/grep/glob/webfetch tools,
-# which is all a planning proposer needs. `deny` is honored even under --auto.
+# which is all a planning proposer needs. `deny` is honored even under
+# --dangerously-skip-permissions.
 _READONLY_CONFIG = {
     "$schema": "https://opencode.ai/config.json",
     "permission": {
@@ -198,7 +201,7 @@ def run(
         # Prompt goes in a file (see module docstring). Keep it inside the
         # session's .moa/ dir (next to log_file) when we have one, so opencode
         # reads it as a project-local file; otherwise fall back to the tmpdir
-        # and rely on --auto to approve the external read.
+        # (--dangerously-skip-permissions auto-approves the external read).
         full_prompt = READ_ONLY_RULE + "\n\n" + prompt
         if log_file is not None:
             prompt_file = log_file.with_name(log_file.stem + ".prompt.md")
@@ -207,16 +210,21 @@ def run(
             prompt_file = Path(tmpdir) / "opencode-prompt.md"
         prompt_file.write_text(full_prompt, encoding="utf-8")
 
+        # Arg order matters: `-f/--file` is a greedy yargs ARRAY option, so the
+        # positional message must come BEFORE it (or -f would swallow the
+        # message string as a second "file" and error "File not found"). Keep
+        # -f last with nothing after it. `--dangerously-skip-permissions`
+        # auto-approves any permission not explicitly denied by OPENCODE_CONFIG
+        # (which denies edit + bash), so reads/webfetch work but writes can't.
         cmd = [
             _opencode_bin(),
             "run",
-            "-m", model,
-            "--dir", str(repo_path),
-            "-q",           # suppress spinner so stdout is just the model text
-            "--auto",       # auto-approve everything not explicitly denied
-            "-f", str(prompt_file),
             "Read the attached file in full and follow its instructions exactly. "
             "Output only the requested JSON object.",
+            "-m", model,
+            "--dir", str(repo_path),
+            "--dangerously-skip-permissions",
+            "-f", str(prompt_file),
         ]
 
         try:
