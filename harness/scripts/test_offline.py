@@ -1112,6 +1112,15 @@ def test_opencode_extractor_handles_fenced_and_prose() -> bool:
     return _ok(payload is not None and payload.get("agent_id") == "codex", f"got {payload!r}")
 
 
+def test_extractor_handles_bare_object_larger_than_scan_window() -> bool:
+    print("\n[N] extract_json_from_text returns a bare JSON object bigger than the 200KB scan window")
+    from adapters import extract_json_from_text
+    big = json.dumps({"agent_id": "glm", "summary": "x" * 300_000, "plan": []})
+    payload = extract_json_from_text(big)
+    return _ok(payload is not None and payload.get("agent_id") == "glm",
+               f"len={len(big)}, got dict={isinstance(payload, dict)}")
+
+
 def test_opencode_diagnose_empty_is_transient() -> bool:
     print("\n[N] opencode._diagnose_failure flags empty stdout + clean stderr as transient")
     from adapters import opencode as opencode_adapter
@@ -1274,6 +1283,7 @@ def main() -> int:
         test_cursor_result_carries_transient_empty_field,
         test_opencode_extractor_finds_bare_payload,
         test_opencode_extractor_handles_fenced_and_prose,
+        test_extractor_handles_bare_object_larger_than_scan_window,
         test_opencode_diagnose_empty_is_transient,
         test_opencode_diagnose_quota_is_not_transient,
         test_opencode_result_carries_transient_empty_field,

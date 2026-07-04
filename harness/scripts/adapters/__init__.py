@@ -76,6 +76,11 @@ def extract_json_from_text(text: str, *, max_scan: int = 200_000) -> Optional[di
     (cursor, opencode) — their model text may wrap the payload in markdown
     fences or surround it with prose. Strategy, longest-match-first:
 
+      0. Fast path: if the whole (stripped) text is a single JSON object,
+         return it. This is the common case (the model output IS the JSON)
+         and it works regardless of size — important because the balanced
+         scan below is windowed and would otherwise miss a bare object whose
+         opening brace falls before the window.
       1. Collect the contents of every ```json ... ``` (or bare ``` ... ```)
          fenced block.
       2. Scan for balanced top-level `{...}` objects, respecting strings and
@@ -84,12 +89,21 @@ def extract_json_from_text(text: str, *, max_scan: int = 200_000) -> Optional[di
          that parses.
 
     `max_scan` caps the balanced-object scan to the LAST N characters. The
-    scan is O(n²) in the worst case and the schema payload is always near the
-    end of the response, so this keeps a multi-hundred-KB tool-use log from
+    scan is O(n²) in the worst case and an embedded payload sits near the end
+    of the response, so this keeps a multi-hundred-KB tool-use log from
     stalling the parser. Returns None if nothing parses.
     """
     if not text:
         return None
+
+    stripped = text.strip()
+    if stripped.startswith("{"):
+        try:
+            whole = json.loads(stripped)
+        except (json.JSONDecodeError, ValueError):
+            whole = None
+        if isinstance(whole, dict):
+            return whole
 
     candidates: list[str] = []
     for match in re.finditer(r"```(?:json)?\s*\n(.*?)\n```", text, re.DOTALL):
