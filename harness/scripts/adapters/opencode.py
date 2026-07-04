@@ -12,7 +12,7 @@ text goes straight to stdout, so we pull the inner JSON payload with the
 shared `extract_json_from_text` helper (fenced or bare top-level object,
 longest-first) and validate it orchestrator-side. There is no
 `--output-schema` equivalent, so this adapter is schema-unenforced like
-the gemini/cursor adapters were.
+the cursor adapter.
 
 Prompt delivery: OpenCode does NOT read stdin (the feature request was
 declined upstream) and a single argv entry is capped at MAX_ARG_STRLEN
@@ -82,7 +82,7 @@ class OpenCodeResult:
     error_message: Optional[str] = None
     # True when the run exited cleanly but produced no parseable payload and
     # stderr showed no quota/auth signal — the transient empty-output flake a
-    # single re-dispatch usually recovers. Mirrors the cursor/gemini field so
+    # single re-dispatch usually recovers. Mirrors the cursor field so
     # the orchestrator's redispatch path treats all schema-unenforced harnesses
     # uniformly.
     transient_empty: bool = False

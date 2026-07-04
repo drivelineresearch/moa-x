@@ -9,13 +9,13 @@ to claude-cli's outer envelope without --json-schema set:
 
 Read-only discipline is enforced by `--mode plan`, which is a CLI-level
 guarantee: the model cannot invoke write/edit tools. This replaces the
-prompt-rule directive that gemini and claude adapters use (those CLIs
-have no equivalent flag). See docs/cursor.md.
+prompt-rule directive the claude/opencode adapters use (those CLIs have
+no equivalent flag). See docs/cursor.md.
 
 Cursor has no --output-schema equivalent (codex-style hard schema
 enforcement), so the orchestrator validates the parsed payload against
-the proposer/refiner schema Python-side (gemini-style). The adapter
-just extracts the inner JSON from the `result` text.
+the proposer/refiner schema Python-side. The adapter just extracts the
+inner JSON from the `result` text via the shared extract_json_from_text.
 
 Subprocess isolation: each call gets its own TMPDIR via env override.
 Cursor session/auth state lives under ~/.cursor/ which is shared
@@ -143,7 +143,7 @@ def run(
         CursorResult with parsed inner payload (or None on failure).
 
     Note: Cursor has no --output-schema flag. Schema validation happens
-    orchestrator-side after this returns, same as gemini.
+    orchestrator-side after this returns.
     """
     start = time.monotonic()
     stdout_captured = ""
@@ -165,8 +165,7 @@ def run(
         # prompts include the scout brief plus every proposer's full output
         # (tens of KB) and can exceed ARG_MAX on macOS/Linux. cursor-agent
         # reads stdin when no positional prompt is given. Codex does the
-        # same; gemini doesn't (it forces -p <prompt> with the same risk —
-        # tracked separately).
+        # same; opencode can't (no stdin) so it takes the prompt by file.
         cmd = [
             _cursor_bin(),
             "-p",

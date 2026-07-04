@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """test_offline.py — offline smoke test for the orchestrator's parsing layers.
 
-Exercises the JSON Schema validator, the codex/gemini/claude JSON extractors,
-and the broadcast-refiner payload shape without calling any external CLI.
+Exercises the JSON Schema validator, the codex/claude/cursor/opencode JSON
+extractors, and the broadcast-refiner payload shape without calling any CLI.
 Run before end-to-end to confirm parsing logic is sound.
 
 Usage:
@@ -21,7 +21,6 @@ sys.path.insert(0, str(SCRIPT_DIR))
 
 import run_moa  # noqa: E402
 from adapters import codex as codex_adapter  # noqa: E402
-from adapters import gemini as gemini_adapter  # noqa: E402
 from adapters import claude as claude_adapter  # noqa: E402
 
 PASS = "\033[32mPASS\033[0m"
@@ -81,11 +80,11 @@ def _make_valid_proposer(agent_id: str) -> dict:
 
 
 VALID_PROPOSER_CODEX = _make_valid_proposer("codex")
-VALID_PROPOSER_GEMINI = _make_valid_proposer("gemini")
+VALID_PROPOSER_GLM = _make_valid_proposer("glm")
 VALID_PROPOSER_SONNET = _make_valid_proposer("sonnet")
 
 INVALID_PROPOSER_PAYLOAD_MISSING_FIELD = {
-    "agent_id": "gemini",
+    "agent_id": "glm",
     "summary": "x" * 80,
     # plan missing
     "open_questions": [],
@@ -94,7 +93,7 @@ INVALID_PROPOSER_PAYLOAD_MISSING_FIELD = {
 }
 
 INVALID_PROPOSER_PAYLOAD_BAD_ENUM = {
-    "agent_id": "claude",  # not in enum (should be sonnet/codex/gemini)
+    "agent_id": "claude",  # valid pattern, but not a configured provider name
     "summary": "x" * 80,
     "plan": [
         {
@@ -168,38 +167,6 @@ SAMPLE_CODEX_STDOUT = (
     + "\n"
     "tokens used\n"
     "12345\n"
-)
-
-
-SAMPLE_GEMINI_STDOUT = json.dumps(
-    {
-        "session_id": "fake-session-id",
-        "response": (
-            "Here is the plan you requested.\n\n"
-            "```json\n"
-            + json.dumps(VALID_PROPOSER_GEMINI)
-            + "\n```\n"
-        ),
-        "stats": {
-            "models": {
-                "gemini-2.5-pro": {
-                    "api": {"totalRequests": 1, "totalErrors": 0, "totalLatencyMs": 9000},
-                    "tokens": {"input": 5000, "prompt": 9000, "candidates": 2000, "total": 11000, "cached": 0, "thoughts": 100, "tool": 0},
-                }
-            },
-        },
-    }
-)
-
-
-SAMPLE_GEMINI_STDOUT_NO_FENCES = json.dumps(
-    {
-        "session_id": "fake-session-id",
-        "response": (
-            "I have analyzed the repo. Here is my plan:\n\n"
-            + json.dumps(VALID_PROPOSER_GEMINI)
-        ),
-    }
 )
 
 
@@ -303,16 +270,11 @@ SAMPLE_OPENCODE_STDOUT_FENCED = (
 )
 SAMPLE_OPENCODE_STDERR_QUOTA = "Error: 429 quota exceeded for provider zhipuai\n"
 
-# Gemini: outer envelope present, but `response` field is empty and stderr
-# is clean. Mirrors the cursor transient pattern.
-SAMPLE_GEMINI_STDOUT_TRANSIENT_EMPTY = json.dumps({"response": "", "stats": {}})
-
-
 def _make_valid_broadcast_refiner(agent_id: str) -> dict:
     """Build a valid broadcast-refiner payload (sees all 3 proposers)."""
     return {
         "agent_id": agent_id,
-        "reviewing": ["codex", "gemini", "sonnet"],
+        "reviewing": ["codex", "glm", "sonnet"],
         "overall_verdict": "converge_with_changes",
         "per_proposer_verdicts": [
             {
@@ -321,7 +283,7 @@ def _make_valid_broadcast_refiner(agent_id: str) -> dict:
                 "summary": "Strong plan; missing metrics step, TTL too aggressive.",
             },
             {
-                "proposer": "gemini",
+                "proposer": "glm",
                 "verdict": "accept_with_changes",
                 "summary": "Solid evidence citations; suggests wrong library version.",
             },
@@ -333,7 +295,7 @@ def _make_valid_broadcast_refiner(agent_id: str) -> dict:
         ],
         "cross_proposer_observations": [
             "All three proposers chose Redis over in-memory cache — strong convergence",
-            "codex and sonnet agree on TTL=300s; gemini suggests 60s (unresolved)",
+            "codex and sonnet agree on TTL=300s; glm suggests 60s (unresolved)",
             "Only sonnet mentions metrics; others missed it",
         ],
         "verifications": [
@@ -345,7 +307,7 @@ def _make_valid_broadcast_refiner(agent_id: str) -> dict:
                 "source_url": "app/services/intended_zones.py:42",
             },
             {
-                "proposer": "gemini",
+                "proposer": "glm",
                 "claim_index_path": "plan[1].evidence[0]",
                 "status": "unverified",
                 "actual_finding": "Could not locate the cited file; may have been renamed.",
@@ -358,7 +320,7 @@ def _make_valid_broadcast_refiner(agent_id: str) -> dict:
         ],
         "disagreements": [
             {
-                "proposer": "gemini",
+                "proposer": "glm",
                 "point": "TTL of 60s is too aggressive",
                 "why": "We saw cache thrashing in a similar service",
                 "what_to_do_instead": "Start at 5 minutes and tune down",
@@ -367,16 +329,16 @@ def _make_valid_broadcast_refiner(agent_id: str) -> dict:
         "missing_steps": ["Add metrics for cache hit rate (only sonnet mentioned this)"],
         "incorrect_steps": [
             {
-                "proposer": "gemini",
+                "proposer": "glm",
                 "step_index": 2,
                 "what_is_wrong": "Cites redis-py 4.0 API which is no longer current",
             }
         ],
         "synthesis_recommendation": (
             "Use sonnet's plan as the base since it is the cleanest and includes "
-            "metrics. Adopt codex's TTL=300s over gemini's 60s (verified via cache "
-            "thrashing research). Pull gemini's evidence citations for the DB hot "
-            "path since they are the most specific. Reject gemini's outdated "
+            "metrics. Adopt codex's TTL=300s over glm's 60s (verified via cache "
+            "thrashing research). Pull glm's evidence citations for the DB hot "
+            "path since they are the most specific. Reject glm's outdated "
             "redis-py API call."
         ),
         "additional_research": [
@@ -480,24 +442,6 @@ def test_codex_extractor_finds_payload_in_framed_output() -> bool:
                   f"agent_id={payload.get('agent_id') if isinstance(payload, dict) else None}")
 
 
-def test_gemini_extractor_finds_payload_in_fenced_response() -> bool:
-    print("\n[6] Gemini inner-JSON extractor finds payload in fenced response wrapper")
-    payload = gemini_adapter._extract_inner_json(SAMPLE_GEMINI_STDOUT)
-    found = isinstance(payload, dict)
-    matches = found and payload.get("agent_id") == "gemini"
-    return _check("inner payload found and matches", matches,
-                  f"agent_id={payload.get('agent_id') if isinstance(payload, dict) else None}")
-
-
-def test_gemini_extractor_finds_payload_without_fences() -> bool:
-    print("\n[7] Gemini inner-JSON extractor finds payload without code fences")
-    payload = gemini_adapter._extract_inner_json(SAMPLE_GEMINI_STDOUT_NO_FENCES)
-    found = isinstance(payload, dict)
-    matches = found and payload.get("agent_id") == "gemini"
-    return _check("inner payload found and matches", matches,
-                  f"agent_id={payload.get('agent_id') if isinstance(payload, dict) else None}")
-
-
 def test_claude_extractor_finds_structured_output() -> bool:
     print("\n[8] Claude extractor reads structured_output (when --json-schema was used)")
     payload = claude_adapter._extract_structured_output(SAMPLE_CLAUDE_STDOUT_STRUCTURED)
@@ -575,37 +519,6 @@ def test_cursor_result_carries_transient_empty_field() -> bool:
     return _ok(r.transient_empty is False, f"got {r.transient_empty!r}")
 
 
-def test_gemini_diagnose_flags_transient_empty() -> bool:
-    print("\n[N] gemini._diagnose_empty_response flags empty response + clean stderr as transient")
-    from adapters import gemini as gemini_adapter
-    msg, transient = gemini_adapter._diagnose_empty_response(
-        SAMPLE_GEMINI_STDOUT_TRANSIENT_EMPTY, ""
-    )
-    return _ok(transient is True and "transient" in msg.lower(),
-               f"transient={transient}, msg={msg!r}")
-
-
-def test_gemini_diagnose_quota_is_not_transient() -> bool:
-    print("\n[N] gemini._diagnose_empty_response treats quota-stderr as non-transient")
-    from adapters import gemini as gemini_adapter
-    msg, transient = gemini_adapter._diagnose_empty_response(
-        SAMPLE_GEMINI_STDOUT_TRANSIENT_EMPTY,
-        "you have exhausted your capacity for the gemini-2.5-flash-lite utility model",
-    )
-    return _ok(transient is False and "quota" in msg.lower(),
-               f"transient={transient}, msg={msg!r}")
-
-
-def test_gemini_result_carries_transient_empty_field() -> bool:
-    print("\n[N] GeminiResult dataclass exposes transient_empty (default False)")
-    from adapters import gemini as gemini_adapter
-    r = gemini_adapter.GeminiResult(
-        success=True, payload={}, raw_stdout="", raw_stderr="",
-        exit_code=0, duration_seconds=1.0,
-    )
-    return _ok(r.transient_empty is False, f"got {r.transient_empty!r}")
-
-
 def test_layer_result_carries_transient_empty_field() -> bool:
     print("\n[N] LayerResult dataclass exposes transient_empty (default False)")
     r = run_moa.LayerResult(agent_id="cursor-grok", layer=1, role="proposer")
@@ -624,7 +537,7 @@ def test_manifest_summary_includes_transient_empty_arrays() -> bool:
                                 error="cursor-agent returned empty result text"),
         ]
         layer2 = [
-            run_moa.LayerResult(agent_id="gemini", layer=2, role="refiner-broadcast",
+            run_moa.LayerResult(agent_id="kimi", layer=2, role="refiner-broadcast",
                                 success=False, transient_empty=True),
         ]
         run_moa.write_manifest(
@@ -637,7 +550,7 @@ def test_manifest_summary_includes_transient_empty_arrays() -> bool:
         manifest = _json.loads((tmp / "manifest.json").read_text())
         summary = manifest["summary"]
         ok = (summary["transient_empty_proposers"] == ["cursor-grok"]
-              and summary["transient_empty_refiners"] == ["gemini"])
+              and summary["transient_empty_refiners"] == ["kimi"])
         return _ok(ok, f"summary={summary!r}")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -689,7 +602,7 @@ def test_layer1_manifest_round_trip_via_load() -> bool:
 def test_parse_redispatch_arg_validates_names() -> bool:
     print("\n[N] parse_redispatch_arg rejects names not in the layer (sys.exit 2)")
     import contextlib, io
-    valid = ["codex", "gemini", "cursor-grok"]
+    valid = ["codex", "glm", "cursor-grok"]
     # Happy path
     names = run_moa.parse_redispatch_arg("codex,cursor-grok", valid, "proposers")
     if names != ["codex", "cursor-grok"]:
@@ -716,10 +629,10 @@ def test_refiner_schema_validator_broadcast_codex() -> bool:
     return _check("no errors", len(errors) == 0, f"errors={errors[:3]}")
 
 
-def test_refiner_schema_validator_broadcast_gemini() -> bool:
-    print("\n[11] Refiner schema validator accepts broadcast gemini refiner payload")
+def test_refiner_schema_validator_broadcast_kimi() -> bool:
+    print("\n[11] Refiner schema validator accepts broadcast kimi refiner payload")
     schema = run_moa._load_schema(run_moa.REFINER_SCHEMA_PATH)
-    payload = _make_valid_broadcast_refiner("gemini")
+    payload = _make_valid_broadcast_refiner("kimi")
     errors = run_moa._validate_against_schema(payload, schema)
     return _check("no errors", len(errors) == 0, f"errors={errors[:3]}")
 
@@ -769,7 +682,7 @@ def test_refiner_schema_rejects_malformed_proposer_ref() -> bool:
     print("\n[11c] Refiner schema rejects malformed proposer ref (regex pattern fires)")
     schema = run_moa._load_schema(run_moa.REFINER_SCHEMA_PATH)
     payload = _make_valid_broadcast_refiner("codex")
-    payload["reviewing"] = ["Bad Name!", "gemini", "sonnet"]   # uppercase + space + bang
+    payload["reviewing"] = ["Bad Name!", "glm", "sonnet"]   # uppercase + space + bang
     errors = run_moa._validate_against_schema(payload, schema)
     has_pattern_error = any("pattern" in e for e in errors)
     return _check("flagged pattern violation in reviewing[]", has_pattern_error, f"errors={errors[:3]}")
@@ -940,15 +853,15 @@ def test_self_moa_argparse_smoke() -> bool:
 
 def test_install_deps_default_config_only_needs_default_harnesses() -> bool:
     """install_deps.py without harness/config.yaml resolves to the default
-    proposers/refiners and only needs codex/gemini/claude — not cursor."""
-    print("\n[14b] install_deps: default config → needed harnesses {codex, gemini, claude}")
+    proposers/refiners and only needs codex/opencode/claude — not cursor."""
+    print("\n[14b] install_deps: default config → needed harnesses {codex, opencode, claude}")
     from config import load_resolved_config
     import tempfile
     from pathlib import Path as _Path
     # Force "no config.yaml" by passing a nonexistent path
     loaded = load_resolved_config(config_path=_Path("/tmp/install_deps_no_yaml_xx_DOES_NOT_EXIST.yaml"))
     needed = {p.harness for p in loaded.proposers + loaded.refiners}
-    return _ok(needed == {"codex", "gemini", "claude"}, f"got {sorted(needed)}")
+    return _ok(needed == {"codex", "opencode", "claude"}, f"got {sorted(needed)}")
 
 
 def test_install_deps_cursor_only_config_skips_other_harnesses() -> bool:
@@ -1008,7 +921,7 @@ def test_skill_assets_present() -> bool:
         skill_dir / "scripts" / "install_deps.py",
         skill_dir / "scripts" / "adapters" / "__init__.py",
         skill_dir / "scripts" / "adapters" / "codex.py",
-        skill_dir / "scripts" / "adapters" / "gemini.py",
+        skill_dir / "scripts" / "adapters" / "opencode.py",
         skill_dir / "scripts" / "adapters" / "claude.py",
         skill_dir / "scripts" / "adapters" / "cursor.py",
         skill_dir / "scripts" / "schemas" / "proposer.schema.json",
@@ -1107,7 +1020,7 @@ def test_config_yaml_providers_block() -> bool:
           cursor-grok: {harness: cursor, model: grok-4.20}
           cursor-gpt:  {harness: cursor, model: gpt-5.5}
         layers:
-          proposers: [codex, gemini, cursor-grok]
+          proposers: [codex, glm, cursor-grok]
     """)
     with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
         f.write(yaml_text)
@@ -1130,11 +1043,11 @@ def test_config_resolve_layer_mixed() -> bool:
     print("\n[20] config.resolve_layer resolves mixed builtin + user-named names")
     from config import resolve_layer
     user = {"cursor-grok": {"harness": "cursor", "model": "grok-4.20"}}
-    resolved = resolve_layer(["codex", "gemini", "cursor-grok"], user_providers=user)
+    resolved = resolve_layer(["codex", "glm", "cursor-grok"], user_providers=user)
     names = [r.name for r in resolved]
     harnesses = [r.harness for r in resolved]
-    ok = (names == ["codex", "gemini", "cursor-grok"]
-          and harnesses == ["codex", "gemini", "cursor"])
+    ok = (names == ["codex", "glm", "cursor-grok"]
+          and harnesses == ["codex", "opencode", "cursor"])
     return _ok(ok, f"got names={names} harnesses={harnesses}")
 
 def test_config_resolve_layer_unknown_fails_loud() -> bool:
@@ -1156,8 +1069,8 @@ def test_config_load_resolved_end_to_end() -> bool:
         providers:
           cursor-grok: {harness: cursor, model: grok-4.20}
         layers:
-          proposers: [codex, gemini, cursor-grok]
-          refiners:  [codex, gemini]
+          proposers: [codex, glm, cursor-grok]
+          refiners:  [codex, kimi]
     """)
     with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
         f.write(yaml_text)
@@ -1167,8 +1080,8 @@ def test_config_load_resolved_end_to_end() -> bool:
         prop_names = [p.name for p in loaded.proposers]
         ref_harnesses = [p.harness for p in loaded.refiners]
         ok = (
-            prop_names == ["codex", "gemini", "cursor-grok"]
-            and ref_harnesses == ["codex", "gemini"]
+            prop_names == ["codex", "glm", "cursor-grok"]
+            and ref_harnesses == ["codex", "opencode"]
             and loaded.skip_refinement is False
         )
         return _ok(ok, f"got proposers={prop_names} refiners={ref_harnesses} skip={loaded.skip_refinement}")
@@ -1260,12 +1173,10 @@ def main() -> int:
         test_strict_mode_lint_clean_on_current_schemas,
         test_strict_mode_lint_catches_violation,
         test_codex_extractor_finds_payload_in_framed_output,
-        test_gemini_extractor_finds_payload_in_fenced_response,
-        test_gemini_extractor_finds_payload_without_fences,
         test_claude_extractor_finds_structured_output,
         test_claude_extractor_fallback_to_fenced_result,
         test_refiner_schema_validator_broadcast_codex,
-        test_refiner_schema_validator_broadcast_gemini,
+        test_refiner_schema_validator_broadcast_kimi,
         test_refiner_schema_accepts_user_named_provider_refs,
         test_refiner_schema_rejects_malformed_proposer_ref,
         test_evidence_cross_field_rejects_code_with_null_file,
@@ -1306,9 +1217,6 @@ def main() -> int:
         test_opencode_check_available_returns_tuple,
         test_config_resolve_builtin_glm_uses_opencode,
         test_config_resolve_builtin_kimi_uses_opencode,
-        test_gemini_diagnose_flags_transient_empty,
-        test_gemini_diagnose_quota_is_not_transient,
-        test_gemini_result_carries_transient_empty_field,
         test_layer_result_carries_transient_empty_field,
         test_manifest_summary_includes_transient_empty_arrays,
         test_layer1_manifest_round_trip_via_load,

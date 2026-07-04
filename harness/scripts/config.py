@@ -13,9 +13,9 @@ Then falls back to built-in defaults inside run_moa.py / the adapters.
 CLI flags passed to run_moa.py still override everything — they are
 parsed after this module populates os.environ.
 
-Supported providers are hard-coded to {codex, claude-code, gemini}
-by design. Adding providers is a separate design discussion, not a
-config edit.
+Harnesses supported by the built-in adapters are {codex, claude, opencode,
+cursor}. Named providers (built-in codex/sonnet/glm/kimi plus user-defined
+entries in harness/config.yaml) map onto those harnesses.
 
 Typical usage:
 
@@ -58,7 +58,6 @@ DEFAULT_DOTENV_PATH = REPO_ROOT / ".env"
 
 _DEFAULT_BINS = {
     "codex": "codex",
-    "gemini": "gemini",
     "claude": "claude",
 }
 
@@ -68,25 +67,24 @@ class ResolvedProvider:
     """A provider resolved from a layer config entry to an invocation record.
 
     `timeout` is per-provider in seconds. None means "use the harness-level
-    default" (set by --codex-timeout / --gemini-timeout / --sonnet-timeout
-    CLI flags or their MOA_*_TIMEOUT env equivalents). User-named providers
+    default" (set by --codex-timeout / --sonnet-timeout CLI flags or their
+    MOA_*_TIMEOUT env equivalents). User-named providers
     can set their own timeout via `providers.<name>.timeout` in
     harness/config.yaml or MOA_<NAME>_TIMEOUT env var.
     """
     name: str                         # user-facing label, used as agent_id in payloads
-    harness: str                      # which adapter handles the call: codex, gemini, claude, cursor, opencode
+    harness: str                      # which adapter handles the call: codex, claude, opencode, cursor
     model: str                        # model id passed to the harness
     timeout: Optional[int] = None     # per-provider timeout in seconds; None → harness default
 
 
-# Built-in named providers. Existing configs that reference codex/gemini/sonnet
+# Built-in named providers. Existing configs that reference codex/sonnet/glm/kimi
 # resolve through this table for back-compat. User-defined providers in
 # harness/config.yaml under `providers:` are layered on top in resolve_provider.
 # Built-ins always carry timeout=None so the existing CLI flag / harness-level
 # env path (MOA_CODEX_TIMEOUT etc.) continues to apply.
 BUILTIN_PROVIDERS: dict[str, ResolvedProvider] = {
     "codex":  ResolvedProvider(name="codex",  harness="codex",    model="gpt-5.4"),
-    "gemini": ResolvedProvider(name="gemini", harness="gemini",   model="gemini-2.5-pro"),
     "sonnet": ResolvedProvider(name="sonnet", harness="claude",   model="claude-sonnet-4-6"),
     "glm":    ResolvedProvider(name="glm",    harness="opencode", model="zhipuai/glm-5.2"),
     "kimi":   ResolvedProvider(name="kimi",   harness="opencode", model="moonshotai/kimi-k2.7-code"),
@@ -98,15 +96,15 @@ def resolve_provider(name: str, *, user_providers: dict[str, dict]) -> ResolvedP
 
     Lookup order:
       1. user_providers (from harness/config.yaml `providers:` block)
-      2. BUILTIN_PROVIDERS (codex, gemini, sonnet)
+      2. BUILTIN_PROVIDERS (codex, sonnet, glm, kimi)
 
     Then env-var overrides apply per-field:
       - MOA_<NAME>_MODEL overrides .model
       - MOA_<NAME>_TIMEOUT overrides .timeout
 
     Built-in providers always resolve with timeout=None so the existing
-    --codex-timeout / --gemini-timeout / --sonnet-timeout CLI flag path
-    continues to apply at the harness level. Set MOA_<NAME>_TIMEOUT or a
+    --codex-timeout / --sonnet-timeout CLI flag path continues to apply at
+    the harness level. Set MOA_<NAME>_TIMEOUT or a
     YAML `timeout:` field to override per-provider.
 
     Raises ValueError if the name resolves nowhere or if a timeout value
@@ -135,6 +133,15 @@ def resolve_provider(name: str, *, user_providers: dict[str, dict]) -> ResolvedP
         rp = BUILTIN_PROVIDERS[name]
     else:
         valid = sorted(set(BUILTIN_PROVIDERS) | set(user_providers))
+        if name == "gemini":
+            raise ValueError(
+                "provider 'gemini' was removed in v0.3.0 (see docs/config.md "
+                "\"Migrating from gemini\"). Route a Gemini model through the "
+                "cursor harness instead — e.g. under `providers:` in "
+                "harness/config.yaml:\n"
+                "    cursor-gemini: {harness: cursor, model: gemini-3.1-pro}\n"
+                f"then add 'cursor-gemini' to your layers. Valid names now: {valid}"
+            )
         raise ValueError(
             f"unknown provider name {name!r}; valid names: {valid}"
         )
@@ -175,8 +182,11 @@ def resolve_layer(
 def resolve_bin(provider: str) -> str:
     """Return the binary name/path for a provider.
 
-    Honors MOA_<PROVIDER>_BIN (e.g. MOA_CODEX_BIN, MOA_CLAUDE_BIN,
-    MOA_GEMINI_BIN) with a default of the bare binary name on PATH.
+    Honors MOA_<PROVIDER>_BIN (e.g. MOA_CODEX_BIN, MOA_CLAUDE_BIN) with a
+    default of the bare binary name on PATH. Only covers harnesses whose
+    binary the orchestrator resolves centrally (codex, claude); the cursor
+    and opencode adapters resolve their own bin via MOA_CURSOR_BIN /
+    MOA_OPENCODE_BIN.
     """
     provider = provider.lower()
     if provider not in _DEFAULT_BINS:
@@ -248,9 +258,9 @@ def _yaml_to_env(cfg: dict[str, Any]) -> dict[str, str]:
         if "bin" in spec:
             env[f"MOA_{key_upper}_BIN"] = str(spec["bin"])
         if "model" in spec:
-            # codex + gemini + sonnet all use the same MOA_*_MODEL naming,
-            # except sonnet is really the `claude` binary in sonnet mode.
-            # We expose MOA_SONNET_MODEL for that role.
+            # Providers use MOA_<NAME>_MODEL naming, except the `claude`
+            # provider is exposed as the SONNET role (it's the claude binary
+            # in sonnet mode). We expose MOA_SONNET_MODEL for that role.
             role = "SONNET" if name.lower() == "claude" else key_upper
             env[f"MOA_{role}_MODEL"] = str(spec["model"])
         if "effort" in spec:
@@ -302,8 +312,8 @@ class LoadedConfig:
 
 
 # Default layer assignments when no YAML / env override is set.
-_DEFAULT_PROPOSERS = ["codex", "gemini", "sonnet"]
-_DEFAULT_REFINERS = ["codex", "gemini"]
+_DEFAULT_PROPOSERS = ["codex", "glm", "sonnet"]
+_DEFAULT_REFINERS = ["codex", "kimi"]
 
 
 def load_resolved_config(

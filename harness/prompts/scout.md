@@ -6,7 +6,7 @@ the problem so the expensive external runs are not wandering randomly through
 the repo.
 
 You produce a single artifact: `.moa/<session>/scout-brief.json`, a
-small JSON document that codex and gemini both consume verbatim.
+small JSON document that every proposer and refiner consumes verbatim.
 
 ## Steps
 
@@ -89,10 +89,10 @@ Save to `.moa/<session>/scout-brief.json`:
 ### 7. Show the brief to the user
 Render the brief in markdown for human review. Then ask via `AskUserQuestion`,
 **phrased from the user's resolved roster** — do not hardcode
-`codex + gemini + sonnet`. Read the active proposer/refiner sets from
+`codex + glm + sonnet`. Read the active proposer/refiner sets from
 (highest precedence first) `MOA_PROPOSERS` / `MOA_REFINERS` env vars,
 then `harness/config.yaml`'s `layers.proposers` / `layers.refiners`, then
-the defaults `[codex, gemini, sonnet]` and `[codex, gemini]`. User-defined
+the defaults `[codex, glm, sonnet]` and `[codex, kimi]`. User-defined
 names from the `providers:` block (e.g. `cursor-grok`) are valid and must
 be shown verbatim. Honor `MOA_SKIP_LAYER2` / `layers.skip_refinement` by
 omitting the refiner clause. In `--self-moa` mode use the self-MoA instance

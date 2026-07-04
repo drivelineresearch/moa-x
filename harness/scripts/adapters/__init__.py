@@ -3,7 +3,7 @@
 Each adapter handles one CLI's quirks: how to invoke it non-interactively,
 how to extract the JSON payload from its output wrapper, how to retry on
 schema validation failure, and how to surface errors. Adapters do NOT
-import each other -- they are independent so a broken gemini install does
+import each other -- they are independent so a broken opencode install does
 not break codex runs.
 
 Shared helpers (used by all 3 adapters) live at the bottom of this file
@@ -34,7 +34,7 @@ READ_ONLY_RULE = (
 # back to proc.kill(), which wraps TerminateProcess — kills only the top
 # child, not subprocess-of-subprocess, so runaway grandchildren are possible
 # on Windows timeouts. This is acceptable: MoA is primarily a macOS/Linux
-# workflow (the codex/gemini/claude CLIs are best supported there).
+# workflow (the codex/claude/opencode/cursor CLIs are best supported there).
 _POSIX = sys.platform != "win32"
 
 

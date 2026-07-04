@@ -6,45 +6,50 @@ Claude Code session (Opus) in the interactive REPL: it writes the
 scout brief before this script runs and reads synthesis-input.md to
 aggregate after this script exits.
 
-This script ONLY runs the external CLIs:
+This script ONLY runs the external CLIs. The roster is config-driven
+(harness/config.yaml + .env + built-in defaults); the default set is:
 
-  Layer 1 (Proposers, 3 in parallel):
-    - codex  (gpt-5.4 @ xhigh)
-    - gemini (gemini-2.5-pro)
-    - sonnet (claude-sonnet-4-6, via `claude -p`)
+  Layer 1 (Proposers, parallel):
+    - codex  (gpt-5.4 @ xhigh, OpenAI via codex CLI)
+    - glm    (glm-5.2, Zhipu via opencode CLI)
+    - sonnet (claude-sonnet-4-6, Anthropic via `claude -p`)
 
-  Layer 2 (Refiners, 2 in parallel, broadcast):
-    - codex  (sees ALL three proposer outputs)
-    - gemini (sees ALL three proposer outputs)
+  Layer 2 (Refiners, parallel, broadcast):
+    - codex  (sees ALL proposer outputs)
+    - kimi   (kimi-k2.7-code, Moonshot via opencode CLI; sees ALL proposer outputs)
 
 Broadcast refinement (each refiner sees every proposer's output) is
-paper-faithful to Wang et al. 2024 (arXiv:2406.04692). Only codex and
-gemini act as refiners -- sonnet is proposer-only, and Opus is the
-aggregator in Layer 3. This keeps Layer 2 to two non-Anthropic labs so
-verification is independent of both the sonnet proposer and the Opus
-aggregator.
+paper-faithful to Wang et al. 2024 (arXiv:2406.04692). The default keeps
+Layer 2 refiners off the Anthropic lab that supplies both the sonnet
+proposer and the Opus aggregator, so verification stays lab-independent.
+This is a recommended default, not a runtime invariant — see CLAUDE.md.
 
 Flow:
     parent REPL        --[scout-brief.json]-->  run_moa.py
-    run_moa.py         --[Layer 1 parallel]-->  codex + gemini + sonnet proposers
-    run_moa.py         --[Layer 2 parallel]-->  codex + gemini broadcast refiners
+    run_moa.py         --[Layer 1 parallel]-->  proposer subprocesses
+    run_moa.py         --[Layer 2 parallel]-->  broadcast refiner subprocesses
     run_moa.py         --[synthesis-input.md + manifest.json]--> .moa/<session>/
     parent REPL        --reads synthesis-input.md + aggregates in place
 
 Usage:
     run_moa.py --scout-brief PATH [--repo PATH] [--timeout SEC]
-               [--codex-timeout SEC] [--gemini-timeout SEC] [--sonnet-timeout SEC]
+               [--codex-timeout SEC] [--sonnet-timeout SEC]
                [--codex-model MODEL] [--codex-effort LEVEL]
-               [--gemini-model MODEL] [--sonnet-model MODEL]
+               [--sonnet-model MODEL]
+               [--proposers a,b,c] [--refiners a,b]
                [--skip-layer2]
 
-Timeout policy (v0.2.3):
+    Per-provider models/timeouts for non-codex/sonnet harnesses (opencode,
+    cursor) are set via MOA_<NAME>_MODEL / MOA_<NAME>_TIMEOUT env vars or the
+    providers: block in harness/config.yaml.
+
+Timeout policy:
     Each external CLI has its own wall-clock cap. Defaults are tuned to the
     observed tail latency of each adapter: codex scales with reasoning
-    effort (xhigh is 3-5 min typical, with a long tail), gemini and sonnet
+    effort (xhigh is 3-5 min typical, with a long tail); opencode and sonnet
     with aggressive research sit around 3-4 min but can spike. Pass
-    `--timeout` as a master override to set all three at once; pass a
-    specific `--<agent>-timeout` to bump just one.
+    `--timeout` as a master override to set all at once; pass a specific
+    `--<agent>-timeout` or MOA_<NAME>_TIMEOUT to bump just one.
 """
 from __future__ import annotations
 
@@ -80,7 +85,6 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from adapters import codex as codex_adapter  # noqa: E402
-from adapters import gemini as gemini_adapter  # noqa: E402
 from adapters import claude as claude_adapter  # noqa: E402
 from adapters import cursor as cursor_adapter  # noqa: E402
 from adapters import opencode as opencode_adapter  # noqa: E402
@@ -110,7 +114,7 @@ LOCK_FILE = Path(tempfile.gettempdir()) / "moa.lock"
 @dataclass
 class LayerResult:
     """Result of a single agent run within a layer."""
-    agent_id: str          # codex | gemini | sonnet
+    agent_id: str          # provider name, e.g. codex | glm | sonnet
     layer: int             # 1 | 2
     role: str              # proposer | refiner-broadcast
     reviewing: Optional[list[str]] = None  # for refiners: proposer ids seen
@@ -121,7 +125,7 @@ class LayerResult:
     error: Optional[str] = None
     log_path: Optional[str] = None
     json_path: Optional[str] = None
-    # True when the failure was an empty-envelope transient (cursor/gemini
+    # True when the failure was an empty-envelope transient (cursor/opencode
     # only). Stays False for codex/claude (their schema enforcement makes
     # empty-but-success-shaped envelopes impossible) and for any non-empty
     # failure mode like quota, auth, timeout, or schema invalidation.
@@ -385,7 +389,7 @@ def _build_refiner_prompt(
 
     Under paper-faithful broadcast refinement, the refiner sees ALL proposer
     outputs (not just one). The refiner_id identifies which refiner is
-    running (codex or gemini).
+    running (e.g. codex or kimi).
     """
     template = REFINER_PROMPT_PATH.read_text(encoding="utf-8")
 
@@ -474,7 +478,7 @@ def _finalize_result(
         return
 
     # Task 2: detect payload agent_id hallucination (e.g. codex returning
-    # agent_id="gemini"). Keep success=True because the content is still
+    # agent_id="glm"). Keep success=True because the content is still
     # valid, but record the mismatch so aggregation can verify attribution.
     payload_agent_id = adapter_payload.get("agent_id")
     if payload_agent_id and payload_agent_id != layer_result.agent_id:
@@ -556,46 +560,10 @@ def _run_codex(
 def _has_transient_empty(adapter_result: Any) -> bool:
     """Read the transient_empty flag off any adapter result, defaulting to False.
 
-    Only cursor/gemini set this; codex/claude adapters don't have the field.
+    Only the schema-unenforced adapters (cursor/opencode) set this; codex/claude
+    adapters don't have the field.
     """
     return bool(getattr(adapter_result, "transient_empty", False))
-
-
-def _run_gemini(
-    *,
-    layer: int,
-    role: str,
-    prompt: str,
-    schema_path: Path,
-    repo_path: Path,
-    session_dir: Path,
-    timeout: int,
-    model: str,
-    agent_id: str = "gemini",
-    reviewing: Optional[list[str]] = None,
-) -> LayerResult:
-    log_file = session_dir / f"layer{layer}" / f"{agent_id}-{role}.log"
-    result = gemini_adapter.run(
-        prompt=prompt,
-        repo_path=repo_path,
-        model=model,
-        timeout_seconds=timeout,
-        log_file=log_file,
-    )
-    layer_result = LayerResult(
-        agent_id=agent_id,
-        layer=layer,
-        role=role,
-        reviewing=reviewing,
-        success=result.success,
-        payload=result.payload,
-        duration_seconds=result.duration_seconds,
-        error=result.error_message,
-        log_path=str(log_file.relative_to(session_dir)),
-        transient_empty=_has_transient_empty(result),
-    )
-    _finalize_result(layer_result, result.payload, schema_path, session_dir)
-    return layer_result
 
 
 def _run_sonnet(
@@ -729,8 +697,7 @@ def _dispatch_provider(
       1. provider.timeout — set by `MOA_<NAME>_TIMEOUT` env var or
          `providers.<name>.timeout` in harness/config.yaml
       2. timeout_for_harness[provider.harness] — set by --codex-timeout /
-         --gemini-timeout / --sonnet-timeout CLI flags or their MOA_*_TIMEOUT
-         env equivalents
+         --sonnet-timeout CLI flags or their MOA_*_TIMEOUT env equivalents
 
     codex_effort applies only to the codex harness; ignored otherwise.
     """
@@ -743,16 +710,6 @@ def _dispatch_provider(
             repo_path=repo_path, session_dir=session_dir,
             timeout=timeout,
             reasoning_effort=codex_effort,
-            model=provider.model,
-            agent_id=provider.name,
-            reviewing=reviewing,
-        )
-    if h == "gemini":
-        return _run_gemini(
-            layer=layer, role=role, prompt=prompt,
-            schema_path=PROPOSER_SCHEMA_PATH if "proposer" in role else REFINER_SCHEMA_PATH,
-            repo_path=repo_path, session_dir=session_dir,
-            timeout=timeout,
             model=provider.model,
             agent_id=provider.name,
             reviewing=reviewing,
@@ -1279,7 +1236,7 @@ def write_manifest(
     manifest_path = session_dir / "manifest.json"
     manifest = {
         "session_id": scout_brief.get("session_id", "unknown"),
-        "architecture_version": "v2-broadcast-3proposer",
+        "architecture_version": "v3-named-roster",
         "config": config or {},
         "layer2_mode": layer2_mode,
         "started_at": started_at,
@@ -1511,9 +1468,9 @@ def main() -> int:
     parser.add_argument("--repo", type=Path, default=None,
                         help="Repo root to pass to CLIs. Defaults to scout_brief.repo_path or cwd.")
     parser.add_argument("--timeout", type=int, default=None,
-                        help="Master wall-clock cap in seconds, applied to all three "
-                             "CLIs. Overrides the per-agent defaults (and any "
-                             "--codex-timeout / --gemini-timeout / --sonnet-timeout). "
+                        help="Master wall-clock cap in seconds, applied to every "
+                             "CLI. Overrides the per-agent defaults (and any "
+                             "--codex-timeout / --sonnet-timeout / MOA_<NAME>_TIMEOUT). "
                              "Leave unset to use the per-agent defaults tuned to each "
                              "CLI's observed tail latency.")
     parser.add_argument("--codex-timeout", type=int,
@@ -1521,10 +1478,6 @@ def main() -> int:
                         help="Wall-clock cap for codex calls, in seconds. Default "
                              "scales with --codex-effort: xhigh=1500, high=1200, "
                              "medium/low=900. A single --timeout overrides this.")
-    parser.add_argument("--gemini-timeout", type=int,
-                        default=_int_env("MOA_GEMINI_TIMEOUT") or 1200,
-                        help="Wall-clock cap for gemini calls, in seconds (default 1200). "
-                             "A single --timeout overrides this.")
     parser.add_argument("--sonnet-timeout", type=int,
                         default=_int_env("MOA_SONNET_TIMEOUT") or 1200,
                         help="Wall-clock cap for sonnet calls, in seconds (default 1200). "
@@ -1539,10 +1492,6 @@ def main() -> int:
                              "--codex-effort xhigh if you need maximum quality "
                              "and can tolerate longer runs. The default "
                              "--codex-timeout scales with this flag.")
-    parser.add_argument("--gemini-model",
-                        default=os.environ.get("MOA_GEMINI_MODEL") or "gemini-2.5-pro",
-                        help="Gemini model id. Default gemini-2.5-pro (override via "
-                             "MOA_GEMINI_MODEL env var).")
     parser.add_argument("--sonnet-model",
                         default=os.environ.get("MOA_SONNET_MODEL") or "claude-sonnet-4-6")
     parser.add_argument("--skip-layer2",
@@ -1552,12 +1501,12 @@ def main() -> int:
     parser.add_argument("--proposers",
                         default=os.environ.get("MOA_PROPOSERS"),
                         help="Comma-separated subset of provider names from your resolved "
-                             "layer (built-ins codex/gemini/sonnet plus any user-named "
+                             "layer (built-ins codex/glm/sonnet/kimi plus any user-named "
                              "providers from harness/config.yaml). Default: all configured.")
     parser.add_argument("--refiners",
                         default=os.environ.get("MOA_REFINERS"),
                         help="Comma-separated subset of provider names from your resolved "
-                             "refiner layer (built-ins codex/gemini plus any user-named "
+                             "refiner layer (built-ins codex/kimi plus any user-named "
                              "providers from harness/config.yaml). Default: all configured.")
     parser.add_argument("--self-moa", action="store_true", default=False,
                         help="Run in self-MoA mode: three sonnet proposers + two "
@@ -1600,14 +1549,13 @@ def main() -> int:
     # otherwise use the per-agent default, which for codex is effort-aware.
     _codex_effort_defaults = {"low": 900, "medium": 900, "high": 1200, "xhigh": 1500}
     if args.timeout is not None:
-        codex_timeout = gemini_timeout = sonnet_timeout = args.timeout
+        codex_timeout = sonnet_timeout = args.timeout
     else:
         codex_timeout = (
             args.codex_timeout
             if args.codex_timeout is not None
             else _codex_effort_defaults[args.codex_effort]
         )
-        gemini_timeout = args.gemini_timeout
         sonnet_timeout = args.sonnet_timeout
 
     if not args.scout_brief.exists():
@@ -1807,10 +1755,6 @@ def main() -> int:
             loaded_cfg_proposers = _apply_model_override(loaded_cfg_proposers, "codex", args.codex_model)
             loaded_cfg_refiners = _apply_model_override(loaded_cfg_refiners, "codex", args.codex_model)
 
-        if args.gemini_model and args.gemini_model != "gemini-2.5-pro":
-            loaded_cfg_proposers = _apply_model_override(loaded_cfg_proposers, "gemini", args.gemini_model)
-            loaded_cfg_refiners = _apply_model_override(loaded_cfg_refiners, "gemini", args.gemini_model)
-
         if args.sonnet_model and args.sonnet_model != "claude-sonnet-4-6":
             loaded_cfg_proposers = _apply_model_override(loaded_cfg_proposers, "sonnet", args.sonnet_model)
 
@@ -1839,7 +1783,7 @@ def main() -> int:
 
         # Preflight: check each unique harness used in the union of layers.
         # --skip-layer2 suppresses refiner harnesses from being checked when
-        # layer 2 will not run, so a missing codex/gemini install doesn't gate
+        # layer 2 will not run, so a missing refiner-harness install doesn't gate
         # the whole run when we're not going to use it.
         harnesses_for_proposers = {p.harness for p in final_proposers}
         harnesses_for_refiners = (
@@ -1851,8 +1795,6 @@ def main() -> int:
         for harness in sorted(needed_harnesses):
             if harness == "codex":
                 ok, msg = codex_adapter.check_available()
-            elif harness == "gemini":
-                ok, msg = gemini_adapter.check_available()
             elif harness == "claude":
                 ok, msg = claude_adapter.check_available()
             elif harness == "cursor":
@@ -1871,7 +1813,6 @@ def main() -> int:
         # Build harness-keyed timeout map for the dispatch helper.
         timeout_for_harness = {
             "codex": codex_timeout,
-            "gemini": gemini_timeout,
             "claude": sonnet_timeout,
             "cursor": _int_env("MOA_CURSOR_TIMEOUT") or sonnet_timeout,
             "opencode": _int_env("MOA_OPENCODE_TIMEOUT") or sonnet_timeout,
@@ -1895,7 +1836,8 @@ def main() -> int:
             )
         print(
             f"[orchestrator] timeouts: codex={codex_timeout}s "
-            f"gemini={gemini_timeout}s sonnet={sonnet_timeout}s"
+            f"sonnet={sonnet_timeout}s (opencode/cursor default to sonnet's "
+            f"unless MOA_<NAME>_TIMEOUT is set)"
             + (" (master --timeout applied)" if args.timeout is not None else ""),
             flush=True,
         )
@@ -1909,7 +1851,6 @@ def main() -> int:
             "codex_effort": args.codex_effort,
             "timeout_seconds": {
                 "codex": codex_timeout,
-                "gemini": gemini_timeout,
                 "sonnet": sonnet_timeout,
                 "master_override": args.timeout,
             },
