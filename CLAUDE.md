@@ -44,10 +44,15 @@ tests must run offline so CI stays credential-free.
 
 ## Hard rules
 
-1. **Preserve lab independence at refinement and aggregation.** Layer
-   2 uses `{codex, gemini}` and the aggregator is Opus so verification
-   is independent of both the Sonnet proposer and the Opus aggregator.
-   Moving Sonnet into Layer 2 defeats the design.
+Rule 2 is non-negotiable. Rule 1 is a strong recommendation.
+
+1. **Recommend lab-independent refiners.** Layer 2 defaults to
+   `{codex, gemini}` and the aggregator is Opus, so verification is
+   independent of both the Sonnet proposer and the Opus aggregator.
+   The harness no longer enforces this (the data model became neutral
+   when named providers landed — see `docs/architecture.md`); it's a
+   recommendation. If you change the default refiner set in a PR,
+   justify it in the PR body.
 2. **Don't commit `.moa/` session artifacts.** Already gitignored; just
    don't fight it.
 

@@ -165,9 +165,31 @@ The brief MUST contain these top-level fields:
 
 ### Step 0e — Get explicit user approval
 Show the brief to the user (rendered as markdown for readability) and ask
-via `AskUserQuestion`: "Scout brief looks like this. Run codex + gemini +
-sonnet proposers (3 parallel) + codex + gemini broadcast refiners (2
-parallel, each sees all 3 proposals) now? Estimated 6-12 minutes wall-clock."
+via `AskUserQuestion` whether to dispatch the run.
+
+**Render the question from the user's resolved roster** — do not hardcode
+`codex + gemini + sonnet`. Since PR #2 (named providers), the active
+proposer/refiner sets come from `harness/scripts/config.py`'s
+`load_resolved_config()` and may include user-defined names like
+`cursor-grok` or `cursor-sonnet`. Resolve them in this precedence
+(highest first):
+
+1. `MOA_PROPOSERS` / `MOA_REFINERS` env vars (comma-separated names)
+2. `harness/config.yaml` → `layers.proposers` / `layers.refiners`
+3. Defaults: `[codex, gemini, sonnet]` and `[codex, gemini]`
+
+User-defined provider names declared under `providers:` in
+`harness/config.yaml` (e.g. `cursor-grok: {harness: cursor, model: grok-4-20}`)
+are valid roster entries and must be shown verbatim. If
+`MOA_SKIP_LAYER2=1` or `layers.skip_refinement: true`, omit the refiner
+clause entirely. If `--self-moa` is in play, use the self-MoA instance IDs
+(default `sonnet-a, sonnet-b, sonnet-c` proposers, `sonnet-r1, sonnet-r2`
+refiners) instead.
+
+Phrase the question with the resolved names, e.g.:
+"Scout brief looks like this. Run {proposer_names} proposers ({N}
+parallel) + {refiner_names} broadcast refiners ({M} parallel, each sees
+all {N} proposals) now? Estimated 6-12 minutes wall-clock."
 
 Do not run the orchestrator until the user says yes.
 

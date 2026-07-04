@@ -52,6 +52,7 @@ import argparse
 import contextlib
 import json
 import os
+import re
 import sys
 import tempfile
 import time
@@ -81,6 +82,7 @@ if str(SCRIPT_DIR) not in sys.path:
 from adapters import codex as codex_adapter  # noqa: E402
 from adapters import gemini as gemini_adapter  # noqa: E402
 from adapters import claude as claude_adapter  # noqa: E402
+from adapters import cursor as cursor_adapter  # noqa: E402
 from adapters.claude import TEMPERATURE_DIVERSITY_SHIM  # noqa: E402
 import config as harness_config  # noqa: E402
 
@@ -98,8 +100,6 @@ REFINER_PROMPT_PATH = PROMPTS_DIR / "refiner.md"
 
 LOCK_FILE = Path(tempfile.gettempdir()) / "moa.lock"
 
-PROPOSER_AGENTS = ("codex", "gemini", "sonnet")
-REFINER_AGENTS = ("codex", "gemini")
 
 
 # ---------------------------------------------------------------------------
@@ -246,6 +246,9 @@ def _validate_against_schema(payload: Any, schema: dict, path: str = "$") -> lis
             enum = schema.get("enum")
             if enum is not None and payload not in enum:
                 errors.append(f"{path}: value '{payload}' not in enum {enum}")
+            pattern = schema.get("pattern")
+            if pattern is not None and not re.fullmatch(pattern, payload):
+                errors.append(f"{path}: value '{payload}' does not match pattern '{pattern}'")
 
     elif expected == "integer":
         if not isinstance(payload, int) or isinstance(payload, bool):
@@ -515,9 +518,10 @@ def _run_codex(
     timeout: int,
     reasoning_effort: str,
     model: str,
+    agent_id: str = "codex",
     reviewing: Optional[list[str]] = None,
 ) -> LayerResult:
-    log_file = session_dir / f"layer{layer}" / f"codex-{role}.log"
+    log_file = session_dir / f"layer{layer}" / f"{agent_id}-{role}.log"
     result = codex_adapter.run(
         prompt=prompt,
         schema_path=schema_path,
@@ -528,7 +532,7 @@ def _run_codex(
         log_file=log_file,
     )
     layer_result = LayerResult(
-        agent_id="codex",
+        agent_id=agent_id,
         layer=layer,
         role=role,
         reviewing=reviewing,
@@ -552,9 +556,10 @@ def _run_gemini(
     session_dir: Path,
     timeout: int,
     model: str,
+    agent_id: str = "gemini",
     reviewing: Optional[list[str]] = None,
 ) -> LayerResult:
-    log_file = session_dir / f"layer{layer}" / f"gemini-{role}.log"
+    log_file = session_dir / f"layer{layer}" / f"{agent_id}-{role}.log"
     result = gemini_adapter.run(
         prompt=prompt,
         repo_path=repo_path,
@@ -563,7 +568,7 @@ def _run_gemini(
         log_file=log_file,
     )
     layer_result = LayerResult(
-        agent_id="gemini",
+        agent_id=agent_id,
         layer=layer,
         role=role,
         reviewing=reviewing,
@@ -587,9 +592,10 @@ def _run_sonnet(
     session_dir: Path,
     timeout: int,
     model: str,
+    agent_id: str = "sonnet",
     reviewing: Optional[list[str]] = None,
 ) -> LayerResult:
-    log_file = session_dir / f"layer{layer}" / f"sonnet-{role}.log"
+    log_file = session_dir / f"layer{layer}" / f"{agent_id}-{role}.log"
     result = claude_adapter.run(
         prompt=prompt,
         schema_path=schema_path,
@@ -599,7 +605,7 @@ def _run_sonnet(
         log_file=log_file,
     )
     layer_result = LayerResult(
-        agent_id="sonnet",
+        agent_id=agent_id,
         layer=layer,
         role=role,
         reviewing=reviewing,
@@ -611,6 +617,112 @@ def _run_sonnet(
     )
     _finalize_result(layer_result, result.payload, schema_path, session_dir)
     return layer_result
+
+
+def _run_cursor(
+    *,
+    layer: int,
+    role: str,
+    prompt: str,
+    schema_path: Path,
+    repo_path: Path,
+    session_dir: Path,
+    timeout: int,
+    model: str,
+    agent_id: str,
+    reviewing: Optional[list[str]] = None,
+) -> LayerResult:
+    """Invoke the cursor adapter and lift its result into a LayerResult."""
+    log_file = session_dir / f"layer{layer}" / f"{agent_id}-{role}.log"
+    result = cursor_adapter.run(
+        prompt=prompt,
+        repo_path=repo_path,
+        model=model,
+        timeout_seconds=timeout,
+        log_file=log_file,
+    )
+    layer_result = LayerResult(
+        agent_id=agent_id,
+        layer=layer,
+        role=role,
+        reviewing=reviewing,
+        success=result.success,
+        payload=result.payload,
+        duration_seconds=result.duration_seconds,
+        error=result.error_message,
+        log_path=str(log_file.relative_to(session_dir)),
+    )
+    _finalize_result(layer_result, result.payload, schema_path, session_dir)
+    return layer_result
+
+
+def _dispatch_provider(
+    *,
+    provider: "harness_config.ResolvedProvider",
+    layer: int,
+    role: str,
+    prompt: str,
+    repo_path: Path,
+    session_dir: Path,
+    timeout_for_harness: dict[str, int],
+    codex_effort: str,
+    reviewing: Optional[list[str]] = None,
+) -> LayerResult:
+    """Route a ResolvedProvider to the right _run_* function.
+
+    Per-call timeout precedence (highest first):
+      1. provider.timeout — set by `MOA_<NAME>_TIMEOUT` env var or
+         `providers.<name>.timeout` in harness/config.yaml
+      2. timeout_for_harness[provider.harness] — set by --codex-timeout /
+         --gemini-timeout / --sonnet-timeout CLI flags or their MOA_*_TIMEOUT
+         env equivalents
+
+    codex_effort applies only to the codex harness; ignored otherwise.
+    """
+    h = provider.harness
+    timeout = provider.timeout if provider.timeout is not None else timeout_for_harness[h]
+    if h == "codex":
+        return _run_codex(
+            layer=layer, role=role, prompt=prompt,
+            schema_path=PROPOSER_SCHEMA_PATH if "proposer" in role else REFINER_SCHEMA_PATH,
+            repo_path=repo_path, session_dir=session_dir,
+            timeout=timeout,
+            reasoning_effort=codex_effort,
+            model=provider.model,
+            agent_id=provider.name,
+            reviewing=reviewing,
+        )
+    if h == "gemini":
+        return _run_gemini(
+            layer=layer, role=role, prompt=prompt,
+            schema_path=PROPOSER_SCHEMA_PATH if "proposer" in role else REFINER_SCHEMA_PATH,
+            repo_path=repo_path, session_dir=session_dir,
+            timeout=timeout,
+            model=provider.model,
+            agent_id=provider.name,
+            reviewing=reviewing,
+        )
+    if h == "claude":
+        return _run_sonnet(
+            layer=layer, role=role, prompt=prompt,
+            schema_path=PROPOSER_SCHEMA_PATH if "proposer" in role else REFINER_SCHEMA_PATH,
+            repo_path=repo_path, session_dir=session_dir,
+            timeout=timeout,
+            model=provider.model,
+            agent_id=provider.name,
+            reviewing=reviewing,
+        )
+    if h == "cursor":
+        return _run_cursor(
+            layer=layer, role=role, prompt=prompt,
+            schema_path=PROPOSER_SCHEMA_PATH if "proposer" in role else REFINER_SCHEMA_PATH,
+            repo_path=repo_path, session_dir=session_dir,
+            timeout=timeout,
+            model=provider.model,
+            agent_id=provider.name,
+            reviewing=reviewing,
+        )
+    raise ValueError(f"unknown harness {h!r} for provider {provider.name!r}")
 
 
 def _run_sonnet_instance(
@@ -799,64 +911,41 @@ def run_layer1(
     scout_brief: dict,
     repo_path: Path,
     session_dir: Path,
-    codex_timeout: int,
-    gemini_timeout: int,
-    sonnet_timeout: int,
-    codex_model: str,
-    gemini_model: str,
-    sonnet_model: str,
+    proposers: list["harness_config.ResolvedProvider"],
+    timeout_for_harness: dict[str, int],
     codex_effort: str,
     available: dict[str, bool],
 ) -> list[LayerResult]:
-    """Run codex + gemini + sonnet proposers in parallel.
+    """Run the proposer layer in parallel.
 
-    Only spawns agents that passed the preflight check (available[id] == True).
+    Each provider in `proposers` is dispatched to its harness's _run_* function.
+    `available` is a {harness_name -> bool} preflight result; providers whose
+    harness failed preflight are skipped.
     """
     schema = _load_schema(PROPOSER_SCHEMA_PATH)
-
     results: list[LayerResult] = []
-    with ThreadPoolExecutor(max_workers=len(PROPOSER_AGENTS)) as pool:
+
+    runnable = [p for p in proposers if available.get(p.harness, False)]
+
+    if not runnable:
+        print("[orchestrator] WARN: no proposers available after preflight", flush=True)
+        return results
+
+    with ThreadPoolExecutor(max_workers=len(runnable)) as pool:
         futures: dict = {}
-        if available.get("codex"):
-            prompt = _build_proposer_prompt(scout_brief, schema, "codex")
+        for provider in runnable:
+            prompt = _build_proposer_prompt(scout_brief, schema, provider.name)
             futures[pool.submit(
-                _run_codex,
+                _dispatch_provider,
+                provider=provider,
                 layer=1,
                 role="proposer",
                 prompt=prompt,
-                schema_path=PROPOSER_SCHEMA_PATH,
                 repo_path=repo_path,
                 session_dir=session_dir,
-                timeout=codex_timeout,
-                reasoning_effort=codex_effort,
-                model=codex_model,
-            )] = "codex"
-        if available.get("gemini"):
-            prompt = _build_proposer_prompt(scout_brief, schema, "gemini")
-            futures[pool.submit(
-                _run_gemini,
-                layer=1,
-                role="proposer",
-                prompt=prompt,
-                schema_path=PROPOSER_SCHEMA_PATH,
-                repo_path=repo_path,
-                session_dir=session_dir,
-                timeout=gemini_timeout,
-                model=gemini_model,
-            )] = "gemini"
-        if available.get("sonnet"):
-            prompt = _build_proposer_prompt(scout_brief, schema, "sonnet")
-            futures[pool.submit(
-                _run_sonnet,
-                layer=1,
-                role="proposer",
-                prompt=prompt,
-                schema_path=PROPOSER_SCHEMA_PATH,
-                repo_path=repo_path,
-                session_dir=session_dir,
-                timeout=sonnet_timeout,
-                model=sonnet_model,
-            )] = "sonnet"
+                timeout_for_harness=timeout_for_harness,
+                codex_effort=codex_effort,
+            )] = provider.name
 
         for future in as_completed(futures):
             agent_id = futures[future]
@@ -872,9 +961,6 @@ def run_layer1(
                         error=f"orchestrator exception: {e}\n{traceback.format_exc()}",
                     )
                 )
-            # Print progress as soon as each future resolves so users see
-            # the ensemble unfold in real time instead of waiting for all
-            # three proposers to finish before any line appears.
             r = results[-1]
             status = "OK" if r.success else "FAIL"
             print(
@@ -893,70 +979,42 @@ def run_layer2(
     layer1_results: list[LayerResult],
     repo_path: Path,
     session_dir: Path,
-    codex_timeout: int,
-    gemini_timeout: int,
-    codex_model: str,
-    gemini_model: str,
+    refiners: list["harness_config.ResolvedProvider"],
+    timeout_for_harness: dict[str, int],
     codex_effort: str,
     available: dict[str, bool],
 ) -> list[LayerResult]:
-    """Run broadcast refiners in parallel.
-
-    codex and gemini each receive ALL successful proposer outputs. This is
-    paper-faithful MoA broadcast refinement, distinct from the v1 cross-pair
-    design (where each refiner saw only the OTHER proposer's output).
-
-    Only codex and gemini act as refiners -- sonnet is proposer-only, and
-    Opus (parent session) is the Layer 3 aggregator. This keeps the
-    verification lab-independent from both the sonnet proposer and the Opus
-    aggregator.
-    """
+    """Run the refiner layer in parallel (broadcast — each refiner sees all proposers)."""
     schema = _load_schema(REFINER_SCHEMA_PATH)
-
-    successful_proposers = [
-        r for r in layer1_results if r.success and r.payload is not None
-    ]
-    if not successful_proposers:
-        return []
-
-    proposer_ids_seen = [r.agent_id for r in successful_proposers]
-
     results: list[LayerResult] = []
-    with ThreadPoolExecutor(max_workers=len(REFINER_AGENTS)) as pool:
+
+    successful = [r for r in layer1_results if r.success and r.payload is not None]
+    if not successful:
+        print("[orchestrator] WARN: no successful proposers; skipping refiner layer", flush=True)
+        return results
+    proposer_ids = [r.agent_id for r in successful]
+
+    runnable = [p for p in refiners if available.get(p.harness, False)]
+    if not runnable:
+        print("[orchestrator] WARN: no refiners available after preflight", flush=True)
+        return results
+
+    with ThreadPoolExecutor(max_workers=len(runnable)) as pool:
         futures: dict = {}
-        if available.get("codex"):
-            prompt = _build_refiner_prompt(
-                scout_brief, successful_proposers, "codex", schema
-            )
+        for provider in runnable:
+            prompt = _build_refiner_prompt(scout_brief, successful, provider.name, schema)
             futures[pool.submit(
-                _run_codex,
+                _dispatch_provider,
+                provider=provider,
                 layer=2,
                 role="refiner-broadcast",
                 prompt=prompt,
-                schema_path=REFINER_SCHEMA_PATH,
                 repo_path=repo_path,
                 session_dir=session_dir,
-                timeout=codex_timeout,
-                reasoning_effort=codex_effort,
-                model=codex_model,
-                reviewing=proposer_ids_seen,
-            )] = "codex"
-        if available.get("gemini"):
-            prompt = _build_refiner_prompt(
-                scout_brief, successful_proposers, "gemini", schema
-            )
-            futures[pool.submit(
-                _run_gemini,
-                layer=2,
-                role="refiner-broadcast",
-                prompt=prompt,
-                schema_path=REFINER_SCHEMA_PATH,
-                repo_path=repo_path,
-                session_dir=session_dir,
-                timeout=gemini_timeout,
-                model=gemini_model,
-                reviewing=proposer_ids_seen,
-            )] = "gemini"
+                timeout_for_harness=timeout_for_harness,
+                codex_effort=codex_effort,
+                reviewing=proposer_ids,
+            )] = provider.name
 
         for future in as_completed(futures):
             agent_id = futures[future]
@@ -968,13 +1026,11 @@ def run_layer2(
                         agent_id=agent_id,
                         layer=2,
                         role="refiner-broadcast",
-                        reviewing=proposer_ids_seen,
                         success=False,
                         error=f"orchestrator exception: {e}\n{traceback.format_exc()}",
+                        reviewing=proposer_ids,
                     )
                 )
-            # Print progress immediately so Layer 2 refiners show up live
-            # as they finish, not batched after as_completed drains.
             r = results[-1]
             status = "OK" if r.success else "FAIL"
             reviewed = ",".join(r.reviewing) if r.reviewing else "none"
@@ -999,19 +1055,17 @@ def write_synthesis_input(
     layer2: list[LayerResult],
     session_dir: Path,
     layer2_mode: str = "broadcast",
-    proposer_agent_ids: Optional[tuple[str, ...]] = None,
-    refiner_agent_ids: Optional[tuple[str, ...]] = None,
+    proposer_agent_ids: tuple[str, ...],
+    refiner_agent_ids: tuple[str, ...],
 ) -> Path:
     """Write the synthesis-input.md file the parent Claude session reads.
 
-    proposer_agent_ids / refiner_agent_ids default to the moa-x constants.
-    For self-moa, pass the instance IDs (sonnet-a/b/c, sonnet-r1/r2) so
-    the synthesis file iterates over actual instance identities, not adapter
-    names. moa-x behavior is unchanged (None → original constants).
+    proposer_agent_ids / refiner_agent_ids are required. For self-moa,
+    pass the instance IDs (sonnet-a/b/c, sonnet-r1/r2) so the synthesis
+    file iterates over actual instance identities, not adapter names.
+    For normal moa-x runs, pass IDs derived from final_proposers /
+    final_refiners (tuple(p.name for p in final_proposers), etc.).
     """
-    _proposer_ids = proposer_agent_ids if proposer_agent_ids is not None else PROPOSER_AGENTS
-    _refiner_ids = refiner_agent_ids if refiner_agent_ids is not None else REFINER_AGENTS
-
     output_path = session_dir / "synthesis-input.md"
     parts: list[str] = []
 
@@ -1019,11 +1073,11 @@ def write_synthesis_input(
     parts.append("")
     parts.append(f"**Session**: `{scout_brief.get('session_id', 'unknown')}`")
     parts.append("")
-    proposer_list = " + ".join(_proposer_ids)
-    refiner_list = " + ".join(_refiner_ids)
+    proposer_list = " + ".join(proposer_agent_ids)
+    refiner_list = " + ".join(refiner_agent_ids)
     parts.append(
-        f"**Architecture**: {len(_proposer_ids)} proposers ({proposer_list}) → "
-        f"{len(_refiner_ids)} broadcast refiners ({refiner_list}, each saw all proposals) → "
+        f"**Architecture**: {len(proposer_agent_ids)} proposers ({proposer_list}) → "
+        f"{len(refiner_agent_ids)} broadcast refiners ({refiner_list}, each saw all proposals) → "
         "Opus aggregator (this session)"
     )
     parts.append("")
@@ -1049,7 +1103,7 @@ def write_synthesis_input(
     parts.append("## Layer 1 — Proposers (parallel)")
     parts.append("")
 
-    for agent in _proposer_ids:
+    for agent in proposer_agent_ids:
         agent_results = [r for r in layer1 if r.agent_id == agent]
         if not agent_results:
             parts.append(f"### {agent} proposer")
@@ -1094,7 +1148,7 @@ def write_synthesis_input(
         parts.append("_No refiners ran (insufficient successful proposers, or --skip-layer2)._")
         parts.append("")
 
-    for agent in _refiner_ids:
+    for agent in refiner_agent_ids:
         agent_results = [r for r in layer2 if r.agent_id == agent]
         if not agent_results:
             continue
@@ -1301,14 +1355,14 @@ def main() -> int:
                         help="Skip refiner layer.")
     parser.add_argument("--proposers",
                         default=os.environ.get("MOA_PROPOSERS"),
-                        help="Comma-separated subset of {codex,gemini,sonnet} "
-                             "to spawn as proposers. Default: all three. "
-                             "Adapters not listed are NOT initialized.")
+                        help="Comma-separated subset of provider names from your resolved "
+                             "layer (built-ins codex/gemini/sonnet plus any user-named "
+                             "providers from harness/config.yaml). Default: all configured.")
     parser.add_argument("--refiners",
                         default=os.environ.get("MOA_REFINERS"),
-                        help="Comma-separated subset of {codex,gemini} for the "
-                             "refiner layer. Default: both. sonnet is not a "
-                             "valid refiner (lab-independence constraint).")
+                        help="Comma-separated subset of provider names from your resolved "
+                             "refiner layer (built-ins codex/gemini plus any user-named "
+                             "providers from harness/config.yaml). Default: all configured.")
     parser.add_argument("--self-moa", action="store_true", default=False,
                         help="Run in self-MoA mode: three sonnet proposers + two "
                              "sonnet refiners (named instances) instead of the "
@@ -1382,46 +1436,23 @@ def main() -> int:
                 print(f"  - {v}", file=sys.stderr)
             return 2
 
-    # Resolve proposer / refiner filter. The CLI flag (when set) subsets
-    # the default PROPOSER_AGENTS / REFINER_AGENTS tuples. Invalid names
-    # raise loudly — catching typos here prevents silently running a
-    # different arm than the config declares.
-    def _parse_subset(raw: "Optional[str]", valid: tuple[str, ...], label: str) -> set[str]:
-        if raw is None:
-            return set(valid)
-        requested = {s.strip() for s in raw.split(",") if s.strip()}
-        invalid = requested - set(valid)
-        if invalid:
-            print(
-                f"ERROR: --{label} contains invalid adapter(s): {sorted(invalid)}. "
-                f"Valid: {list(valid)}.",
-                file=sys.stderr,
-            )
-            sys.exit(2)
-        if not requested:
-            print(
-                f"ERROR: --{label} was empty after parsing. Pass at least one adapter.",
-                file=sys.stderr,
-            )
-            sys.exit(2)
-        return requested
-
     # self-moa is routed entirely through the instance-keyed path; --proposers
     # and --refiners are adapter-name flags that don't apply to it.
     if args.self_moa:
-        self_moa_proposer_ids = [
+        self_moaproposer_agent_ids = [
             s.strip()
             for s in (args.self_moa_proposers or "sonnet-a,sonnet-b,sonnet-c").split(",")
             if s.strip()
         ]
-        self_moa_refiner_ids = [
+        self_moarefiner_agent_ids = [
             s.strip()
             for s in (args.self_moa_refiners or "sonnet-r1,sonnet-r2").split(",")
             if s.strip()
         ]
-    else:
-        enabled_proposers = _parse_subset(args.proposers, PROPOSER_AGENTS, "proposers")
-        enabled_refiners = _parse_subset(args.refiners, REFINER_AGENTS, "refiners")
+    # Load resolved provider config (named providers from YAML + builtins).
+    # Done outside the self-moa branch so it's available if needed in future;
+    # the self-moa branch ignores it entirely.
+    loaded_cfg = harness_config.load_resolved_config()
 
     with _global_lock():
         if args.self_moa:
@@ -1438,8 +1469,8 @@ def main() -> int:
             print(f"[orchestrator] arm: self-moa", flush=True)
             print(f"[orchestrator] session: {scout_brief.get('session_id', 'unknown')}", flush=True)
             print(f"[orchestrator] repo: {repo_path}", flush=True)
-            print(f"[orchestrator] proposers: {self_moa_proposer_ids}", flush=True)
-            print(f"[orchestrator] refiners:  {self_moa_refiner_ids}", flush=True)
+            print(f"[orchestrator] proposers: {self_moaproposer_agent_ids}", flush=True)
+            print(f"[orchestrator] refiners:  {self_moarefiner_agent_ids}", flush=True)
             print(f"[orchestrator] sonnet model: {args.sonnet_model}  ready", flush=True)
             print(
                 f"[orchestrator] timeouts: sonnet={sonnet_timeout}s"
@@ -1450,8 +1481,8 @@ def main() -> int:
             config_snapshot = {
                 "arm": "self-moa",
                 "sonnet_model": args.sonnet_model,
-                "proposer_instances": self_moa_proposer_ids,
-                "refiner_instances": self_moa_refiner_ids,
+                "proposer_instances": self_moaproposer_agent_ids,
+                "refiner_instances": self_moarefiner_agent_ids,
                 "timeout_seconds": {
                     "sonnet": sonnet_timeout,
                     "master_override": args.timeout,
@@ -1466,7 +1497,7 @@ def main() -> int:
                 session_dir=session_dir,
                 sonnet_timeout=sonnet_timeout,
                 sonnet_model=args.sonnet_model,
-                instances=self_moa_proposer_ids,
+                instances=self_moaproposer_agent_ids,
             )
 
             successful_layer1 = [r for r in layer1 if r.success]
@@ -1505,7 +1536,7 @@ def main() -> int:
                     session_dir=session_dir,
                     sonnet_timeout=sonnet_timeout,
                     sonnet_model=args.sonnet_model,
-                    instances=self_moa_refiner_ids,
+                    instances=self_moarefiner_agent_ids,
                 )
 
             synthesis_path = write_synthesis_input(
@@ -1514,8 +1545,8 @@ def main() -> int:
                 layer2=layer2,
                 session_dir=session_dir,
                 layer2_mode=layer2_mode,
-                proposer_agent_ids=tuple(self_moa_proposer_ids),
-                refiner_agent_ids=tuple(self_moa_refiner_ids),
+                proposer_agent_ids=tuple(self_moaproposer_agent_ids),
+                refiner_agent_ids=tuple(self_moarefiner_agent_ids),
             )
             manifest_path = write_manifest(
                 session_dir=session_dir,
@@ -1540,91 +1571,109 @@ def main() -> int:
                   flush=True)
             return 0
 
-        # ---------- moa-x / single-best path ----------
-        # Preflight: verify all 3 CLIs. At least 1 must succeed for Layer 1;
-        # at least 1 of {codex, gemini} must succeed for Layer 2. Adapters
-        # excluded via --proposers / --refiners are marked unavailable so
-        # they are neither preflighted nor spawned.
-        #
-        # --skip-layer2 suppresses refiner preflight entirely: when layer 2
-        # will not run, a dummy refiner entry in --refiners must not gate
-        # the whole arm on a codex/gemini install we are not going to use.
-        skipping_layer2 = args.skip_layer2
-        codex_needed = "codex" in enabled_proposers or (
-            not skipping_layer2 and "codex" in enabled_refiners
-        )
-        gemini_needed = "gemini" in enabled_proposers or (
-            not skipping_layer2 and "gemini" in enabled_refiners
-        )
-        if codex_needed:
-            codex_ok, codex_msg = codex_adapter.check_available()
-        else:
-            codex_ok, codex_msg = False, "excluded via --proposers / --refiners"
-        if gemini_needed:
-            gemini_ok, gemini_msg = gemini_adapter.check_available()
-        else:
-            gemini_ok, gemini_msg = False, "excluded via --proposers / --refiners"
-        if "sonnet" in enabled_proposers:
-            sonnet_ok, sonnet_msg = claude_adapter.check_available()
-        else:
-            sonnet_ok, sonnet_msg = False, "excluded via --proposers"
+        # ---------- moa-x / cross-lab path ----------
+        # Apply CLI flag overrides to BUILTIN entries that are referenced in
+        # layers. Each --<provider>-model flag mutates the resolved provider's
+        # model if that provider is currently scheduled to run. User-named
+        # providers are not affected by these flags (use MOA_<NAME>_MODEL env
+        # var instead, which config.py already handles at resolve time).
+        def _apply_model_override(providers, name, model):
+            return [
+                harness_config.ResolvedProvider(name=p.name, harness=p.harness, model=model)
+                if p.name == name else p
+                for p in providers
+            ]
 
-        # Layer-specific availability: an adapter is "available" for a
-        # layer only if (a) it passed its CLI preflight AND (b) it was
-        # explicitly enabled for THAT layer via --proposers / --refiners.
-        # Keeping these separate prevents an adapter that's excluded from
-        # one layer from being spawned in the other.
-        available_proposers = {
-            "codex": codex_ok and "codex" in enabled_proposers,
-            "gemini": gemini_ok and "gemini" in enabled_proposers,
-            "sonnet": sonnet_ok and "sonnet" in enabled_proposers,
-        }
-        available_refiners = {
-            "codex": codex_ok and "codex" in enabled_refiners,
-            "gemini": gemini_ok and "gemini" in enabled_refiners,
-        }
-        # Legacy shape expected by run_layer1 / run_layer2 call sites that
-        # still read `available[agent]`. Each uses its own layer-appropriate
-        # dict below; this top-level `available` is only kept for the
-        # all-CLIs-down check and log lines.
-        available = {
-            "codex": available_proposers["codex"] or available_refiners["codex"],
-            "gemini": available_proposers["gemini"] or available_refiners["gemini"],
-            "sonnet": available_proposers["sonnet"],
-        }
+        loaded_cfg_proposers = list(loaded_cfg.proposers)
+        loaded_cfg_refiners = list(loaded_cfg.refiners)
 
-        # Layer 1 (proposers) must have at least one runnable adapter;
-        # otherwise we have nothing to plan with and should bail. Layer 2
-        # can be skipped entirely with --skip-layer2, so we only enforce
-        # refiner availability below in the layer-2 branch.
-        if not any(available_proposers.values()):
-            print(
-                "ERROR: no proposer CLIs are ready.\n"
-                f"  codex:  {codex_msg}\n"
-                f"  gemini: {gemini_msg}\n"
-                f"  sonnet: {sonnet_msg}",
-                file=sys.stderr,
-            )
+        if args.codex_model and args.codex_model != "gpt-5.4":
+            loaded_cfg_proposers = _apply_model_override(loaded_cfg_proposers, "codex", args.codex_model)
+            loaded_cfg_refiners = _apply_model_override(loaded_cfg_refiners, "codex", args.codex_model)
+
+        if args.gemini_model and args.gemini_model != "gemini-2.5-pro":
+            loaded_cfg_proposers = _apply_model_override(loaded_cfg_proposers, "gemini", args.gemini_model)
+            loaded_cfg_refiners = _apply_model_override(loaded_cfg_refiners, "gemini", args.gemini_model)
+
+        if args.sonnet_model and args.sonnet_model != "claude-sonnet-4-6":
+            loaded_cfg_proposers = _apply_model_override(loaded_cfg_proposers, "sonnet", args.sonnet_model)
+
+        # --proposers / --refiners are name subsets. With named providers,
+        # valid names are the union of all resolved providers in each layer.
+        def _filter_subset(providers, raw, label):
+            if raw is None:
+                return providers
+            requested = {s.strip() for s in raw.split(",") if s.strip()}
+            valid_names = {p.name for p in providers}
+            invalid = requested - valid_names
+            if invalid:
+                print(
+                    f"ERROR: --{label} contains names not in the resolved layer: {sorted(invalid)}. "
+                    f"Valid for this layer: {sorted(valid_names)}.",
+                    file=sys.stderr,
+                )
+                sys.exit(2)
+            return [p for p in providers if p.name in requested]
+
+        final_proposers = _filter_subset(loaded_cfg_proposers, args.proposers, "proposers")
+        final_refiners = _filter_subset(loaded_cfg_refiners, args.refiners, "refiners")
+        if not final_proposers:
+            print("ERROR: --proposers resolved to empty list", file=sys.stderr)
+            return 2
+
+        # Preflight: check each unique harness used in the union of layers.
+        # --skip-layer2 suppresses refiner harnesses from being checked when
+        # layer 2 will not run, so a missing codex/gemini install doesn't gate
+        # the whole run when we're not going to use it.
+        harnesses_for_proposers = {p.harness for p in final_proposers}
+        harnesses_for_refiners = (
+            set() if args.skip_layer2 or loaded_cfg.skip_refinement
+            else {p.harness for p in final_refiners}
+        )
+        needed_harnesses = harnesses_for_proposers | harnesses_for_refiners
+        available: dict[str, bool] = {}
+        for harness in sorted(needed_harnesses):
+            if harness == "codex":
+                ok, msg = codex_adapter.check_available()
+            elif harness == "gemini":
+                ok, msg = gemini_adapter.check_available()
+            elif harness == "claude":
+                ok, msg = claude_adapter.check_available()
+            elif harness == "cursor":
+                ok, msg = cursor_adapter.check_available()
+            else:
+                ok, msg = False, f"unknown harness {harness!r}"
+            available[harness] = ok
+            print(f"[orchestrator] preflight {harness}: {'OK' if ok else 'FAIL'} — {msg}", flush=True)
+
+        if not any(available.get(p.harness, False) for p in final_proposers):
+            print("ERROR: no proposers passed preflight; cannot run", file=sys.stderr)
             return 3
 
-        for agent, (ok, msg) in (
-            ("codex", (codex_ok, codex_msg)),
-            ("gemini", (gemini_ok, gemini_msg)),
-            ("sonnet", (sonnet_ok, sonnet_msg)),
-        ):
-            if not ok:
-                print(f"WARNING: {agent} unavailable ({msg}). Proceeding without it.",
-                      file=sys.stderr)
+        # Build harness-keyed timeout map for the dispatch helper.
+        timeout_for_harness = {
+            "codex": codex_timeout,
+            "gemini": gemini_timeout,
+            "claude": sonnet_timeout,
+            "cursor": _int_env("MOA_CURSOR_TIMEOUT") or sonnet_timeout,
+        }
 
         started_at = time.time()
+        print(f"[orchestrator] arm: cross-lab", flush=True)
         print(f"[orchestrator] session: {scout_brief.get('session_id', 'unknown')}", flush=True)
         print(f"[orchestrator] repo: {repo_path}", flush=True)
-        print(f"[orchestrator] codex:  {args.codex_model} @ {args.codex_effort}  "
-              f"({'ready' if codex_ok else 'SKIP'})", flush=True)
-        print(f"[orchestrator] gemini: {args.gemini_model}  "
-              f"({'ready' if gemini_ok else 'SKIP'})", flush=True)
-        print(f"[orchestrator] sonnet: {args.sonnet_model}  "
-              f"({'ready' if sonnet_ok else 'SKIP'})", flush=True)
+        print(f"[orchestrator] proposers: {[p.name for p in final_proposers]}", flush=True)
+        print(f"[orchestrator] refiners:  {[p.name for p in final_refiners]}", flush=True)
+        # Aggregator runs in the parent Claude Code session (harness=claude). Refiners that
+        # share that harness give up the cross-lab independence the design recommends.
+        # Warn but don't block — see CLAUDE.md hard rules.
+        same_lab_refiners = [p.name for p in final_refiners if p.harness == "claude"]
+        if same_lab_refiners:
+            print(
+                f"[orchestrator] WARN: refiners {same_lab_refiners} share the aggregator's "
+                "harness (claude); cross-lab refinement is recommended (see CLAUDE.md)",
+                flush=True,
+            )
         print(
             f"[orchestrator] timeouts: codex={codex_timeout}s "
             f"gemini={gemini_timeout}s sonnet={sonnet_timeout}s"
@@ -1635,10 +1684,10 @@ def main() -> int:
         # Snapshot the resolved config for the manifest so post-mortems can
         # see exactly what models/effort/timeout the session ran with.
         config_snapshot = {
-            "codex_model": args.codex_model,
+            "arm": "cross-lab",
+            "proposers": [{"name": p.name, "harness": p.harness, "model": p.model} for p in final_proposers],
+            "refiners": [{"name": p.name, "harness": p.harness, "model": p.model} for p in final_refiners],
             "codex_effort": args.codex_effort,
-            "gemini_model": args.gemini_model,
-            "sonnet_model": args.sonnet_model,
             "timeout_seconds": {
                 "codex": codex_timeout,
                 "gemini": gemini_timeout,
@@ -1654,16 +1703,12 @@ def main() -> int:
             scout_brief=scout_brief,
             repo_path=repo_path,
             session_dir=session_dir,
-            codex_timeout=codex_timeout,
-            gemini_timeout=gemini_timeout,
-            sonnet_timeout=sonnet_timeout,
-            codex_model=args.codex_model,
-            gemini_model=args.gemini_model,
-            sonnet_model=args.sonnet_model,
+            proposers=final_proposers,
+            timeout_for_harness=timeout_for_harness,
             codex_effort=args.codex_effort,
-            available=available_proposers,
+            available=available,
         )
-        # Per-agent progress lines are now printed inside run_layer1 as each
+        # Per-agent progress lines are printed inside run_layer1 as each
         # future resolves, so we don't repeat them here.
 
         successful_layer1 = [r for r in layer1 if r.success]
@@ -1681,9 +1726,9 @@ def main() -> int:
             )
             return 4
 
-        if len(successful_layer1) < len(PROPOSER_AGENTS):
-            missing = [a for a in PROPOSER_AGENTS if not any(r.agent_id == a and r.success for r in layer1)]
-            print(f"[orchestrator] DEGRADED: only {len(successful_layer1)}/{len(PROPOSER_AGENTS)} "
+        if len(successful_layer1) < len(final_proposers):
+            missing = [p.name for p in final_proposers if not any(r.agent_id == p.name and r.success for r in layer1)]
+            print(f"[orchestrator] DEGRADED: only {len(successful_layer1)}/{len(final_proposers)} "
                   f"proposers succeeded. Missing: {missing}", flush=True)
 
         # ---------- Layer 2: broadcast refiners ----------
@@ -1692,18 +1737,21 @@ def main() -> int:
         if args.skip_layer2:
             print("[orchestrator] Layer 2: SKIPPED (--skip-layer2)", flush=True)
             layer2_mode = "skipped"
-        elif not any(available_refiners.values()):
+        elif loaded_cfg.skip_refinement:
+            print("[orchestrator] Layer 2: SKIPPED (skip_refinement set in config)", flush=True)
+            layer2_mode = "skipped"
+        elif not any(available.get(p.harness, False) for p in final_refiners):
             print("[orchestrator] Layer 2: SKIPPED (no refiners available — either "
-                  "both preflights failed or --refiners excluded them)",
+                  "preflights failed or --refiners excluded them)",
                   file=sys.stderr)
             layer2_mode = "skipped"
         else:
             # Paper-faithful broadcast refinement assumes 2+ proposers for
             # cross-proposer critique. With only 1 successful proposer the
             # refiners effectively become single-source reviewers, so label
-            # the run as degraded. Kyle's call: still run Layer 2 for the
-            # second opinion, but tag the manifest and synthesis-input so
-            # the Opus aggregator applies lower confidence.
+            # the run as degraded. Still run Layer 2 for the second opinion,
+            # but tag the manifest and synthesis-input so the Opus aggregator
+            # applies lower confidence.
             if len(successful_layer1) < 2:
                 layer2_mode = "degraded_non_broadcast"
                 print(
@@ -1717,12 +1765,10 @@ def main() -> int:
                 layer1_results=layer1,
                 repo_path=repo_path,
                 session_dir=session_dir,
-                codex_timeout=codex_timeout,
-                gemini_timeout=gemini_timeout,
-                codex_model=args.codex_model,
-                gemini_model=args.gemini_model,
+                refiners=final_refiners,
+                timeout_for_harness=timeout_for_harness,
                 codex_effort=args.codex_effort,
-                available=available_refiners,
+                available=available,
             )
             # Per-agent progress is printed inside run_layer2 as each future
             # resolves, so no sorted-print block needed here.
@@ -1734,6 +1780,8 @@ def main() -> int:
             layer2=layer2,
             session_dir=session_dir,
             layer2_mode=layer2_mode,
+            proposer_agent_ids=tuple(p.name for p in final_proposers),
+            refiner_agent_ids=tuple(p.name for p in final_refiners),
         )
         manifest_path = write_manifest(
             session_dir=session_dir,

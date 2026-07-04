@@ -87,10 +87,21 @@ Save to `.moa/<session>/scout-brief.json`:
 ```
 
 ### 7. Show the brief to the user
-Render the brief in markdown for human review. Then ask via `AskUserQuestion`:
-"Scout brief looks like this. Run codex + gemini + sonnet proposers (3
-parallel) + codex + gemini broadcast refiners (2 parallel, each sees all 3
-proposals) now? Estimated 6-12 minutes wall-clock."
+Render the brief in markdown for human review. Then ask via `AskUserQuestion`,
+**phrased from the user's resolved roster** — do not hardcode
+`codex + gemini + sonnet`. Read the active proposer/refiner sets from
+(highest precedence first) `MOA_PROPOSERS` / `MOA_REFINERS` env vars,
+then `harness/config.yaml`'s `layers.proposers` / `layers.refiners`, then
+the defaults `[codex, gemini, sonnet]` and `[codex, gemini]`. User-defined
+names from the `providers:` block (e.g. `cursor-grok`) are valid and must
+be shown verbatim. Honor `MOA_SKIP_LAYER2` / `layers.skip_refinement` by
+omitting the refiner clause. In `--self-moa` mode use the self-MoA instance
+IDs instead.
+
+Example shape:
+"Scout brief looks like this. Run {proposer_names} proposers ({N}
+parallel) + {refiner_names} broadcast refiners ({M} parallel, each sees
+all {N} proposals) now? Estimated 6-12 minutes wall-clock."
 
 A dollar cost estimate is optional. If the user is on subscription
 plans (the common case), there's nothing to estimate. If they're

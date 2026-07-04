@@ -90,6 +90,27 @@ Three labs (OpenAI + Google + Anthropic), not more, not fewer.
   diversity argument, since today's three are all US-based. See
   [`CONTRIBUTING.md`](../CONTRIBUTING.md).
 
+### Why provider names instead of fixed roles
+
+A provider in moa-x is a `{name, harness, model}` triple. The `harness`
+is which CLI gets invoked (`codex`, `gemini`, `claude`, `cursor`); the
+`model` is what that harness asks for (e.g. `gpt-5.4`, `grok-4-20`);
+the `name` is a user-facing label that becomes the `agent_id` in
+payloads. The codebase ships built-in names `codex`, `gemini`, `sonnet`
+for back-compat; users add their own under `providers:` in
+`harness/config.yaml`.
+
+This split exists because the Cursor CLI breaks the one-CLI-one-lab
+assumption — `cursor-agent --model gpt-5.5-medium` and `codex --model gpt-5.4`
+both hit OpenAI. Encoding the lab in the harness identifier would
+have meant pretending Cursor was three or four different harnesses;
+splitting the data model is cleaner.
+
+The lab-independence preference (Layer 2 refiners should not share a
+lab with the Opus aggregator) lives in CLAUDE.md as a recommendation,
+not as a runtime invariant. The harness stays lab-agnostic; the user
+decides whether the soft rule is worth following.
+
 ## Why CLI, not SDK
 
 Each vendor CLI already handles auth, retries, tool routing, and

@@ -27,11 +27,17 @@ Typical usage:
     from config import resolve_bin
     bin_path = resolve_bin("codex")   # → $MOA_CODEX_BIN or "codex"
 
+    # Resolve a named provider to a triple:
+    from config import resolve_provider
+    rp = resolve_provider("codex", user_providers={})
+    # rp.name == "codex", rp.harness == "codex", rp.model == "gpt-5.4"
+
 The config.yaml schema is documented in harness/config.example.yaml.
 """
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
@@ -55,6 +61,113 @@ _DEFAULT_BINS = {
     "gemini": "gemini",
     "claude": "claude",
 }
+
+
+@dataclass(frozen=True)
+class ResolvedProvider:
+    """A provider resolved from a layer config entry to an invocation record.
+
+    `timeout` is per-provider in seconds. None means "use the harness-level
+    default" (set by --codex-timeout / --gemini-timeout / --sonnet-timeout
+    CLI flags or their MOA_*_TIMEOUT env equivalents). User-named providers
+    can set their own timeout via `providers.<name>.timeout` in
+    harness/config.yaml or MOA_<NAME>_TIMEOUT env var.
+    """
+    name: str                         # user-facing label, used as agent_id in payloads
+    harness: str                      # which adapter handles the call: codex, gemini, claude, cursor
+    model: str                        # model id passed to the harness
+    timeout: Optional[int] = None     # per-provider timeout in seconds; None → harness default
+
+
+# Built-in named providers. Existing configs that reference codex/gemini/sonnet
+# resolve through this table for back-compat. User-defined providers in
+# harness/config.yaml under `providers:` are layered on top in resolve_provider.
+# Built-ins always carry timeout=None so the existing CLI flag / harness-level
+# env path (MOA_CODEX_TIMEOUT etc.) continues to apply.
+BUILTIN_PROVIDERS: dict[str, ResolvedProvider] = {
+    "codex":  ResolvedProvider(name="codex",  harness="codex",  model="gpt-5.4"),
+    "gemini": ResolvedProvider(name="gemini", harness="gemini", model="gemini-2.5-pro"),
+    "sonnet": ResolvedProvider(name="sonnet", harness="claude", model="claude-sonnet-4-6"),
+}
+
+
+def resolve_provider(name: str, *, user_providers: dict[str, dict]) -> ResolvedProvider:
+    """Resolve a provider name to a ResolvedProvider record.
+
+    Lookup order:
+      1. user_providers (from harness/config.yaml `providers:` block)
+      2. BUILTIN_PROVIDERS (codex, gemini, sonnet)
+
+    Then env-var overrides apply per-field:
+      - MOA_<NAME>_MODEL overrides .model
+      - MOA_<NAME>_TIMEOUT overrides .timeout
+
+    Built-in providers always resolve with timeout=None so the existing
+    --codex-timeout / --gemini-timeout / --sonnet-timeout CLI flag path
+    continues to apply at the harness level. Set MOA_<NAME>_TIMEOUT or a
+    YAML `timeout:` field to override per-provider.
+
+    Raises ValueError if the name resolves nowhere or if a timeout value
+    is malformed.
+    """
+    if name in user_providers:
+        spec = user_providers[name]
+        if not isinstance(spec, dict) or "harness" not in spec or "model" not in spec:
+            raise ValueError(
+                f"user provider {name!r} must be a mapping with 'harness' and 'model' keys; "
+                f"got {spec!r}"
+            )
+        yaml_timeout = spec.get("timeout")
+        if yaml_timeout is not None and not isinstance(yaml_timeout, int):
+            raise ValueError(
+                f"user provider {name!r} `timeout:` must be an integer (seconds); "
+                f"got {yaml_timeout!r}"
+            )
+        rp = ResolvedProvider(
+            name=name,
+            harness=spec["harness"],
+            model=spec["model"],
+            timeout=yaml_timeout,
+        )
+    elif name in BUILTIN_PROVIDERS:
+        rp = BUILTIN_PROVIDERS[name]
+    else:
+        valid = sorted(set(BUILTIN_PROVIDERS) | set(user_providers))
+        raise ValueError(
+            f"unknown provider name {name!r}; valid names: {valid}"
+        )
+
+    env_prefix = f"MOA_{name.upper().replace('-', '_')}"
+
+    override_model = os.environ.get(f"{env_prefix}_MODEL")
+    if override_model:
+        rp = ResolvedProvider(name=rp.name, harness=rp.harness, model=override_model, timeout=rp.timeout)
+
+    override_timeout_raw = os.environ.get(f"{env_prefix}_TIMEOUT")
+    if override_timeout_raw:
+        try:
+            override_timeout = int(override_timeout_raw)
+        except ValueError as e:
+            raise ValueError(
+                f"{env_prefix}_TIMEOUT must be an integer (seconds); got {override_timeout_raw!r}"
+            ) from e
+        rp = ResolvedProvider(name=rp.name, harness=rp.harness, model=rp.model, timeout=override_timeout)
+
+    return rp
+
+
+def resolve_layer(
+    names: list[str],
+    *,
+    user_providers: dict[str, dict],
+) -> list[ResolvedProvider]:
+    """Resolve a list of provider names to ResolvedProvider records.
+
+    Order is preserved. Duplicates are kept (caller handles self-moa-style
+    suffixing). Raises ValueError on the first unknown name with the list
+    of valid options.
+    """
+    return [resolve_provider(name, user_providers=user_providers) for name in names]
 
 
 def resolve_bin(provider: str) -> str:
@@ -153,6 +266,96 @@ def _yaml_to_env(cfg: dict[str, Any]) -> dict[str, str]:
         env["MOA_SKIP_LAYER2"] = "1"
 
     return env
+
+
+def _user_providers_from_yaml(cfg: dict[str, Any]) -> dict[str, dict]:
+    """Extract the `providers:` block from a parsed YAML config.
+
+    Returns a name → spec dict where spec is a mapping with at least
+    `harness` and `model` keys. Validation of harness/model values
+    happens at resolve_provider() time, not here.
+    """
+    raw = cfg.get("providers") or {}
+    if not isinstance(raw, dict):
+        raise ValueError(
+            "harness/config.yaml: top-level `providers:` must be a mapping"
+        )
+    out: dict[str, dict] = {}
+    for name, spec in raw.items():
+        if not isinstance(spec, dict):
+            raise ValueError(
+                f"harness/config.yaml: provider {name!r} must be a mapping with "
+                f"`harness:` and `model:` keys; got {type(spec).__name__}"
+            )
+        out[str(name)] = dict(spec)
+    return out
+
+
+@dataclass(frozen=True)
+class LoadedConfig:
+    """Fully resolved config ready for run_moa.py to dispatch from."""
+    proposers: list[ResolvedProvider]
+    refiners: list[ResolvedProvider]
+    skip_refinement: bool
+
+
+# Default layer assignments when no YAML / env override is set.
+_DEFAULT_PROPOSERS = ["codex", "gemini", "sonnet"]
+_DEFAULT_REFINERS = ["codex", "gemini"]
+
+
+def load_resolved_config(
+    *,
+    config_path: Optional[Path] = None,
+    dotenv_path: Optional[Path] = None,
+) -> LoadedConfig:
+    """Load YAML + .env and resolve all named providers in the layer assignments.
+
+    Caller is responsible for having previously called apply_config_to_env()
+    so MOA_PROPOSERS / MOA_REFINERS env vars (if set) are visible. The
+    `dotenv_path` argument is currently unused by this function (env state
+    has already been applied) but is reserved for future use; pass it for
+    parity with apply_config_to_env.
+    """
+    cfg_path = config_path or DEFAULT_CONFIG_PATH
+    cfg = _load_yaml(cfg_path)
+    user_providers = _user_providers_from_yaml(cfg)
+
+    proposer_names = _resolve_layer_names(
+        env_key="MOA_PROPOSERS",
+        yaml_value=(cfg.get("layers") or {}).get("proposers"),
+        default=_DEFAULT_PROPOSERS,
+    )
+    refiner_names = _resolve_layer_names(
+        env_key="MOA_REFINERS",
+        yaml_value=(cfg.get("layers") or {}).get("refiners"),
+        default=_DEFAULT_REFINERS,
+    )
+
+    proposers = resolve_layer(proposer_names, user_providers=user_providers)
+    refiners = resolve_layer(refiner_names, user_providers=user_providers)
+
+    skip_refinement = bool(os.environ.get("MOA_SKIP_LAYER2")) or bool(
+        (cfg.get("layers") or {}).get("skip_refinement")
+    )
+
+    return LoadedConfig(
+        proposers=proposers,
+        refiners=refiners,
+        skip_refinement=skip_refinement,
+    )
+
+
+def _resolve_layer_names(
+    *, env_key: str, yaml_value: Any, default: list[str]
+) -> list[str]:
+    """Pick layer names from env > yaml > default."""
+    env_val = os.environ.get(env_key)
+    if env_val:
+        return [s.strip() for s in env_val.split(",") if s.strip()]
+    if isinstance(yaml_value, list):
+        return [str(s) for s in yaml_value]
+    return list(default)
 
 
 def apply_config_to_env(

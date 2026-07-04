@@ -25,7 +25,10 @@ What happens:
 2. **Approval gate.** The skill shows you the brief and asks "run it?"
    Estimated wall-clock: 6–12 minutes. Nothing spawns until you say yes.
 3. **Proposers (Layer 1, parallel).** Three headless subprocesses
-   fire in parallel: `codex exec`, `gemini -p`, `claude -p`. Each
+   fire in parallel by default: `codex exec`, `gemini -p`, `claude -p`
+   (an optional fourth `cursor-agent` lane is available — see
+   [`docs/install.md`](install.md#optional-cursor-cli-fourth-provider)).
+   Each
    reads the repo (codex with a filesystem-enforced read-only
    sandbox; the others with read-only enforced by prompt), does web
    research, and writes an independent plan to

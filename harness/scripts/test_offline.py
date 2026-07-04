@@ -240,6 +240,41 @@ SAMPLE_CLAUDE_STDOUT_FENCED = json.dumps(
 )
 
 
+SAMPLE_CURSOR_STDOUT_SUCCESS = json.dumps({
+    "type": "result",
+    "subtype": "success",
+    "is_error": False,
+    "duration_ms": 8394,
+    "result": json.dumps(VALID_PROPOSER_CODEX),  # the model returned bare JSON
+    "session_id": "abc-123",
+    "request_id": "req-456",
+    "usage": {"inputTokens": 100, "outputTokens": 500,
+              "cacheReadTokens": 0, "cacheWriteTokens": 0},
+})
+
+SAMPLE_CURSOR_STDOUT_FENCED = json.dumps({
+    "type": "result",
+    "subtype": "success",
+    "is_error": False,
+    "duration_ms": 8394,
+    "result": "Here is the JSON:\n```json\n" + json.dumps(VALID_PROPOSER_CODEX) + "\n```",
+    "session_id": "abc-123",
+    "request_id": "req-456",
+    "usage": {"inputTokens": 100, "outputTokens": 500,
+              "cacheReadTokens": 0, "cacheWriteTokens": 0},
+})
+
+SAMPLE_CURSOR_STDOUT_ERROR = json.dumps({
+    "type": "result",
+    "subtype": "error",
+    "is_error": True,
+    "duration_ms": 100,
+    "result": "rate limit exceeded; please try again in 60 seconds",
+    "session_id": "abc-123",
+    "request_id": "req-456",
+})
+
+
 def _make_valid_broadcast_refiner(agent_id: str) -> dict:
     """Build a valid broadcast-refiner payload (sees all 3 proposers)."""
     return {
@@ -330,6 +365,12 @@ def _check(label: str, condition: bool, detail: str = "") -> bool:
     return condition
 
 
+def _ok(condition: bool, detail: str = "") -> bool:
+    status = PASS if condition else FAIL
+    print(f"  [{status}]" + (f"  -- {detail}" if detail else ""))
+    return condition
+
+
 def test_schema_validator_accepts_valid_codex_payload() -> bool:
     print("\n[1] Schema validator accepts a valid codex proposer payload")
     schema = run_moa._load_schema(run_moa.PROPOSER_SCHEMA_PATH)
@@ -352,12 +393,14 @@ def test_schema_validator_rejects_missing_field() -> bool:
     return _check("flagged missing 'plan' field", has_plan_error, f"errors={errors[:3]}")
 
 
-def test_schema_validator_rejects_bad_enum() -> bool:
-    print("\n[4] Schema validator rejects payload with bad enum value (claude not in enum)")
+def test_schema_validator_rejects_bad_agent_id_pattern() -> bool:
+    print("\n[4] Schema validator rejects agent_id that violates the regex pattern")
     schema = run_moa._load_schema(run_moa.PROPOSER_SCHEMA_PATH)
-    errors = run_moa._validate_against_schema(INVALID_PROPOSER_PAYLOAD_BAD_ENUM, schema)
-    has_enum_error = any("enum" in e or "claude" in e for e in errors)
-    return _check("flagged enum violation", has_enum_error, f"errors={errors[:3]}")
+    bad_payload = _make_valid_proposer("Bad Name!")  # uppercase + space + bang
+    errors = run_moa._validate_against_schema(bad_payload, schema)
+    print(f"  errors: {errors}")
+    has_pattern_error = any("pattern" in e for e in errors)
+    return _check("expected pattern violation", has_pattern_error, "saw: " + str(errors))
 
 
 def test_schema_validator_rejects_missing_evidence_key() -> bool:
@@ -440,6 +483,27 @@ def test_claude_extractor_fallback_to_fenced_result() -> bool:
                   f"agent_id={payload.get('agent_id') if isinstance(payload, dict) else None}")
 
 
+def test_cursor_extractor_finds_payload_in_bare_result() -> bool:
+    print("\n[N] cursor._extract_payload returns inner JSON from bare result text")
+    from adapters import cursor as cursor_adapter
+    payload = cursor_adapter._extract_payload(SAMPLE_CURSOR_STDOUT_SUCCESS)
+    ok = payload is not None and payload.get("agent_id") == "codex"
+    return _ok(ok, f"got {payload!r}")
+
+def test_cursor_extractor_handles_fenced_json() -> bool:
+    print("\n[N] cursor._extract_payload pulls JSON out of ```json fences in result text")
+    from adapters import cursor as cursor_adapter
+    payload = cursor_adapter._extract_payload(SAMPLE_CURSOR_STDOUT_FENCED)
+    ok = payload is not None and payload.get("agent_id") == "codex"
+    return _ok(ok, f"got {payload!r}")
+
+def test_cursor_extractor_returns_none_on_is_error() -> bool:
+    print("\n[N] cursor._extract_payload returns None when envelope is_error=true")
+    from adapters import cursor as cursor_adapter
+    payload = cursor_adapter._extract_payload(SAMPLE_CURSOR_STDOUT_ERROR)
+    return _ok(payload is None, f"got {payload!r}")
+
+
 def test_refiner_schema_validator_broadcast_codex() -> bool:
     print("\n[10] Refiner schema validator accepts broadcast codex refiner payload")
     schema = run_moa._load_schema(run_moa.REFINER_SCHEMA_PATH)
@@ -456,17 +520,59 @@ def test_refiner_schema_validator_broadcast_gemini() -> bool:
     return _check("no errors", len(errors) == 0, f"errors={errors[:3]}")
 
 
-def test_refiner_schema_rejects_sonnet_as_refiner() -> bool:
-    print("\n[12] Refiner schema rejects sonnet as refiner (only codex/gemini allowed)")
+def test_refiner_schema_accepts_user_named_provider_refs() -> bool:
+    """Regression: when proposers are user-named (e.g. all routed through cursor as
+    c-gpt / c-gemini / c-opus), the refiner echoes those IDs back in `reviewing`,
+    `per_proposer_verdicts[].proposer`, `verifications[].proposer`, etc. The
+    schema must accept them — Phase 1.2 only loosened the top-level agent_id;
+    five proposer-id reference sites needed the same loosening."""
+    print("\n[11b] Refiner schema accepts user-named provider refs (c-gpt, c-gemini, c-opus)")
     schema = run_moa._load_schema(run_moa.REFINER_SCHEMA_PATH)
-    payload = _make_valid_broadcast_refiner("sonnet")
+    payload = _make_valid_broadcast_refiner("c-gpt")
+    payload["reviewing"] = ["c-gpt", "c-gemini", "c-opus"]
+    payload["per_proposer_verdicts"] = [
+        {"proposer": "c-gpt",    "verdict": "accept_with_changes",
+         "summary": "Strong plan; missing metrics step, TTL too aggressive."},
+        {"proposer": "c-gemini", "verdict": "accept_with_changes",
+         "summary": "Solid evidence citations; suggests wrong library version."},
+        {"proposer": "c-opus",   "verdict": "accept_as_is",
+         "summary": "Cleanest plan with best risk analysis and real file citations."},
+    ]
+    payload["verifications"] = [
+        {"proposer": "c-gpt", "claim_index_path": "plan[0].evidence[0]",
+         "status": "verified", "actual_finding": "File exists at line 42.",
+         "source_url": "app/services/intended_zones.py:42"},
+        {"proposer": "c-gemini", "claim_index_path": "plan[1].evidence[0]",
+         "status": "unverified", "actual_finding": "Could not locate cited file.",
+         "source_url": None},
+    ]
+    payload["disagreements"] = [
+        {"proposer": "c-gemini", "point": "TTL of 60s is too aggressive",
+         "why": "We saw cache thrashing in a similar service",
+         "what_to_do_instead": "Start at 5 minutes and tune down"},
+    ]
+    payload["incorrect_steps"] = [
+        {"proposer": "c-gemini", "step_index": 2,
+         "what_is_wrong": "Cites redis-py 4.0 API which is no longer current"},
+    ]
     errors = run_moa._validate_against_schema(payload, schema)
-    has_enum_error = any("enum" in e or "sonnet" in e for e in errors)
-    return _check("flagged sonnet in agent_id", has_enum_error, f"errors={errors[:3]}")
+    return _check("no errors with user-named provider refs", len(errors) == 0, f"errors={errors[:3]}")
+
+
+def test_refiner_schema_rejects_malformed_proposer_ref() -> bool:
+    """Negative: confirm the new pattern enforcement actually fires — a
+    proposer reference with uppercase/space/punctuation must be rejected."""
+    print("\n[11c] Refiner schema rejects malformed proposer ref (regex pattern fires)")
+    schema = run_moa._load_schema(run_moa.REFINER_SCHEMA_PATH)
+    payload = _make_valid_broadcast_refiner("codex")
+    payload["reviewing"] = ["Bad Name!", "gemini", "sonnet"]   # uppercase + space + bang
+    errors = run_moa._validate_against_schema(payload, schema)
+    has_pattern_error = any("pattern" in e for e in errors)
+    return _check("flagged pattern violation in reviewing[]", has_pattern_error, f"errors={errors[:3]}")
 
 
 def test_evidence_cross_field_rejects_code_with_null_file() -> bool:
-    print("\n[13a] _validate_evidence_cross_fields rejects type=code with null file")
+    print("\n[12a] _validate_evidence_cross_fields rejects type=code with null file")
     payload = {
         "plan": [
             {
@@ -482,7 +588,7 @@ def test_evidence_cross_field_rejects_code_with_null_file() -> bool:
 
 
 def test_evidence_cross_field_rejects_external_with_null_url() -> bool:
-    print("\n[13b] _validate_evidence_cross_fields rejects type=external with null url")
+    print("\n[12b] _validate_evidence_cross_fields rejects type=external with null url")
     payload = {
         "plan": [
             {
@@ -498,13 +604,13 @@ def test_evidence_cross_field_rejects_external_with_null_url() -> bool:
 
 
 def test_evidence_cross_field_accepts_valid_payload() -> bool:
-    print("\n[13c] _validate_evidence_cross_fields accepts the valid fixture")
+    print("\n[12c] _validate_evidence_cross_fields accepts the valid fixture")
     errors = run_moa._validate_evidence_cross_fields(VALID_PROPOSER_CODEX)
     return _check("no errors on valid proposer payload", len(errors) == 0, f"errors={errors[:3]}")
 
 
 def test_unsupported_keyword_warning() -> bool:
-    print("\n[13d] _validate_against_schema warns on unsupported keywords (anyOf, if, oneOf)")
+    print("\n[12d] _validate_against_schema warns on unsupported keywords (anyOf, if, oneOf)")
     import warnings
     # Reset dedup cache so this test is reproducible
     run_moa._warned_keywords.clear()
@@ -524,7 +630,7 @@ def test_unsupported_keyword_warning() -> bool:
 
 
 def test_manifest_config_section_present() -> bool:
-    print("\n[13e] write_manifest includes a `config` section")
+    print("\n[12e] write_manifest includes a `config` section")
     import inspect
     sig = inspect.signature(run_moa.write_manifest)
     has_config_param = "config" in sig.parameters
@@ -533,7 +639,7 @@ def test_manifest_config_section_present() -> bool:
 
 
 def test_config_precedence_env_over_dotenv_over_yaml() -> bool:
-    print("\n[14] config loader precedence: shell env > .env > config.yaml")
+    print("\n[13] config loader precedence: shell env > .env > config.yaml")
     import config
     import os
     import tempfile
@@ -602,7 +708,7 @@ def test_config_precedence_env_over_dotenv_over_yaml() -> bool:
 
 
 def test_self_moa_argparse_smoke() -> bool:
-    print("\n[15] run_moa --help lists --self-moa flag (post-load_arm.py regression)")
+    print("\n[14] run_moa --help lists --self-moa flag (post-load_arm.py regression)")
     import re
     import subprocess
     proc = subprocess.run(
@@ -628,8 +734,64 @@ def test_self_moa_argparse_smoke() -> bool:
     )
 
 
+def test_install_deps_default_config_only_needs_default_harnesses() -> bool:
+    """install_deps.py without harness/config.yaml resolves to the default
+    proposers/refiners and only needs codex/gemini/claude — not cursor."""
+    print("\n[14b] install_deps: default config → needed harnesses {codex, gemini, claude}")
+    from config import load_resolved_config
+    import tempfile
+    from pathlib import Path as _Path
+    # Force "no config.yaml" by passing a nonexistent path
+    loaded = load_resolved_config(config_path=_Path("/tmp/install_deps_no_yaml_xx_DOES_NOT_EXIST.yaml"))
+    needed = {p.harness for p in loaded.proposers + loaded.refiners}
+    return _ok(needed == {"codex", "gemini", "claude"}, f"got {sorted(needed)}")
+
+
+def test_install_deps_cursor_only_config_skips_other_harnesses() -> bool:
+    """A cursor-only config means the preflight only needs the cursor harness."""
+    print("\n[14c] install_deps: cursor-only config → needed harnesses == {cursor}")
+    import tempfile, textwrap
+    from pathlib import Path as _Path
+    from config import load_resolved_config
+    yaml_text = textwrap.dedent("""
+        providers:
+          c-gpt:    {harness: cursor, model: gpt-5.5-medium}
+          c-gemini: {harness: cursor, model: gemini-3.1-pro}
+        layers:
+          proposers: [c-gpt, c-gemini]
+          refiners:  [c-gpt]
+    """)
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        f.write(yaml_text)
+        tmp_path = _Path(f.name)
+    try:
+        loaded = load_resolved_config(config_path=tmp_path)
+        needed = {p.harness for p in loaded.proposers + loaded.refiners}
+        return _ok(needed == {"cursor"}, f"got {sorted(needed)}")
+    finally:
+        tmp_path.unlink()
+
+
+def test_install_deps_schema_coherence_catches_bad_name() -> bool:
+    """Schema coherence in install_deps must reject names that don't match the
+    agent_id regex pattern. Regression for the c-gpt-style mismatch + uppercase
+    typos in user configs."""
+    print("\n[14d] install_deps: schema coherence catches names that violate the regex")
+    import json as _json, re as _re
+    from pathlib import Path as _Path
+    schema = _json.loads((SCRIPT_DIR / "schemas" / "proposer.schema.json").read_text())
+    pattern = schema["properties"]["agent_id"]["pattern"]
+    rx = _re.compile(pattern)
+    good_names = ["c-gpt", "cursor-grok", "codex", "sonnet-a"]
+    bad_names = ["Bad_Name", "C-GPT", "has space", "9-starts-with-digit", "way-too-long-name-that-exceeds-32-chars"]
+    good_pass = all(rx.fullmatch(n) for n in good_names)
+    bad_fail = not any(rx.fullmatch(n) for n in bad_names)
+    return _ok(good_pass and bad_fail,
+               f"good_pass={good_pass} bad_fail={bad_fail}; pattern={pattern!r}")
+
+
 def test_skill_assets_present() -> bool:
-    print("\n[13] All required skill assets present on disk")
+    print("\n[15] All required skill assets present on disk")
     skill_dir = SCRIPT_DIR.parent
     assets = [
         skill_dir / "SKILL.md",
@@ -644,11 +806,179 @@ def test_skill_assets_present() -> bool:
         skill_dir / "scripts" / "adapters" / "codex.py",
         skill_dir / "scripts" / "adapters" / "gemini.py",
         skill_dir / "scripts" / "adapters" / "claude.py",
+        skill_dir / "scripts" / "adapters" / "cursor.py",
         skill_dir / "scripts" / "schemas" / "proposer.schema.json",
         skill_dir / "scripts" / "schemas" / "refiner.schema.json",
     ]
     missing = [str(p.relative_to(skill_dir)) for p in assets if not p.exists()]
     return _check("no missing assets", len(missing) == 0, f"missing={missing}")
+
+
+def test_config_resolve_builtin_codex() -> bool:
+    print("\n[16] config.resolve_provider returns built-in codex triple")
+    from config import resolve_provider
+    rp = resolve_provider("codex", user_providers={})
+    ok = (rp.name == "codex" and rp.harness == "codex" and rp.model == "gpt-5.4")
+    return _ok(ok, f"got {rp}")
+
+def test_config_resolve_builtin_sonnet_uses_claude_harness() -> bool:
+    print("\n[17] config.resolve_provider: sonnet name maps to claude harness")
+    from config import resolve_provider
+    rp = resolve_provider("sonnet", user_providers={})
+    ok = (rp.name == "sonnet" and rp.harness == "claude" and rp.model == "claude-sonnet-4-6")
+    return _ok(ok, f"got {rp}")
+
+def test_config_resolve_unknown_name_raises() -> bool:
+    print("\n[18] config.resolve_provider raises on unknown name")
+    from config import resolve_provider
+    try:
+        resolve_provider("nonexistent-name", user_providers={})
+    except ValueError as e:
+        return _ok("nonexistent-name" in str(e) and "codex" in str(e),
+                   f"error message should list valid names; got: {e}")
+    return _ok(False, "expected ValueError")
+
+
+def test_config_resolve_user_provider_yaml_timeout() -> bool:
+    print("\n[18b] config.resolve_provider picks up `timeout:` from YAML user_provider entry")
+    from config import resolve_provider
+    user = {"slow-grok": {"harness": "cursor", "model": "grok-4-20", "timeout": 1800}}
+    rp = resolve_provider("slow-grok", user_providers=user)
+    return _ok(rp.timeout == 1800 and rp.model == "grok-4-20", f"got {rp}")
+
+
+def test_config_resolve_env_timeout_override() -> bool:
+    print("\n[18c] config.resolve_provider honors MOA_<NAME>_TIMEOUT env override")
+    import os as _os
+    from config import resolve_provider
+    key = "MOA_SLOW_GROK_TIMEOUT"
+    prior = _os.environ.get(key)
+    _os.environ[key] = "2400"
+    try:
+        user = {"slow-grok": {"harness": "cursor", "model": "grok-4-20", "timeout": 1800}}
+        rp = resolve_provider("slow-grok", user_providers=user)
+        return _ok(rp.timeout == 2400, f"env should win over YAML; got timeout={rp.timeout}")
+    finally:
+        if prior is None:
+            _os.environ.pop(key, None)
+        else:
+            _os.environ[key] = prior
+
+
+def test_config_resolve_env_timeout_malformed_raises() -> bool:
+    print("\n[18d] config.resolve_provider raises on non-integer MOA_<NAME>_TIMEOUT")
+    import os as _os
+    from config import resolve_provider
+    key = "MOA_SLOW_GROK_TIMEOUT"
+    prior = _os.environ.get(key)
+    _os.environ[key] = "not-a-number"
+    try:
+        user = {"slow-grok": {"harness": "cursor", "model": "grok-4-20"}}
+        try:
+            resolve_provider("slow-grok", user_providers=user)
+        except ValueError as e:
+            return _ok("integer" in str(e), f"got {e}")
+        return _ok(False, "expected ValueError")
+    finally:
+        if prior is None:
+            _os.environ.pop(key, None)
+        else:
+            _os.environ[key] = prior
+
+
+def test_config_builtin_timeout_is_none() -> bool:
+    print("\n[18e] config: built-in providers have timeout=None (CLI flag path stays in charge)")
+    from config import resolve_provider
+    rp = resolve_provider("codex", user_providers={})
+    return _ok(rp.timeout is None, f"built-in codex should have timeout=None; got {rp.timeout}")
+
+
+def test_config_yaml_providers_block() -> bool:
+    print("\n[19] config: harness/config.yaml `providers:` block parses into user_providers")
+    import tempfile, textwrap
+    from pathlib import Path as _Path
+    from config import _load_yaml, _user_providers_from_yaml
+    yaml_text = textwrap.dedent("""
+        providers:
+          cursor-grok: {harness: cursor, model: grok-4.20}
+          cursor-gpt:  {harness: cursor, model: gpt-5.5}
+        layers:
+          proposers: [codex, gemini, cursor-grok]
+    """)
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        f.write(yaml_text)
+        tmp_path = _Path(f.name)
+    try:
+        cfg = _load_yaml(tmp_path)
+        user_providers = _user_providers_from_yaml(cfg)
+        ok = (
+            "cursor-grok" in user_providers
+            and user_providers["cursor-grok"]["harness"] == "cursor"
+            and user_providers["cursor-grok"]["model"] == "grok-4.20"
+            and "cursor-gpt" in user_providers
+        )
+        return _ok(ok, f"got: {user_providers}")
+    finally:
+        tmp_path.unlink()
+
+
+def test_config_resolve_layer_mixed() -> bool:
+    print("\n[20] config.resolve_layer resolves mixed builtin + user-named names")
+    from config import resolve_layer
+    user = {"cursor-grok": {"harness": "cursor", "model": "grok-4.20"}}
+    resolved = resolve_layer(["codex", "gemini", "cursor-grok"], user_providers=user)
+    names = [r.name for r in resolved]
+    harnesses = [r.harness for r in resolved]
+    ok = (names == ["codex", "gemini", "cursor-grok"]
+          and harnesses == ["codex", "gemini", "cursor"])
+    return _ok(ok, f"got names={names} harnesses={harnesses}")
+
+def test_config_resolve_layer_unknown_fails_loud() -> bool:
+    print("\n[21] config.resolve_layer raises on unknown name with helpful error")
+    from config import resolve_layer
+    try:
+        resolve_layer(["codex", "typo-name"], user_providers={})
+    except ValueError as e:
+        return _ok("typo-name" in str(e), f"error should mention bad name; got: {e}")
+    return _ok(False, "expected ValueError")
+
+
+def test_config_load_resolved_end_to_end() -> bool:
+    print("\n[22] config.load_resolved_config resolves YAML into proposer/refiner provider lists")
+    import tempfile, textwrap
+    from pathlib import Path as _Path
+    from config import load_resolved_config
+    yaml_text = textwrap.dedent("""
+        providers:
+          cursor-grok: {harness: cursor, model: grok-4.20}
+        layers:
+          proposers: [codex, gemini, cursor-grok]
+          refiners:  [codex, gemini]
+    """)
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        f.write(yaml_text)
+        tmp_path = _Path(f.name)
+    try:
+        loaded = load_resolved_config(config_path=tmp_path, dotenv_path=_Path("/nonexistent"))
+        prop_names = [p.name for p in loaded.proposers]
+        ref_harnesses = [p.harness for p in loaded.refiners]
+        ok = (
+            prop_names == ["codex", "gemini", "cursor-grok"]
+            and ref_harnesses == ["codex", "gemini"]
+            and loaded.skip_refinement is False
+        )
+        return _ok(ok, f"got proposers={prop_names} refiners={ref_harnesses} skip={loaded.skip_refinement}")
+    finally:
+        tmp_path.unlink()
+
+
+def test_cursor_check_available_returns_tuple() -> bool:
+    print("\n[23] cursor.check_available returns (bool, str) tuple")
+    from adapters import cursor as cursor_adapter
+    result = cursor_adapter.check_available()
+    ok = (isinstance(result, tuple) and len(result) == 2
+          and isinstance(result[0], bool) and isinstance(result[1], str))
+    return _ok(ok, f"got {result}")
 
 
 def main() -> int:
@@ -658,7 +988,7 @@ def main() -> int:
         test_schema_validator_accepts_valid_codex_payload,
         test_schema_validator_accepts_valid_sonnet_payload,
         test_schema_validator_rejects_missing_field,
-        test_schema_validator_rejects_bad_enum,
+        test_schema_validator_rejects_bad_agent_id_pattern,
         test_schema_validator_rejects_missing_evidence_key,
         test_strict_mode_lint_clean_on_current_schemas,
         test_strict_mode_lint_catches_violation,
@@ -669,7 +999,8 @@ def main() -> int:
         test_claude_extractor_fallback_to_fenced_result,
         test_refiner_schema_validator_broadcast_codex,
         test_refiner_schema_validator_broadcast_gemini,
-        test_refiner_schema_rejects_sonnet_as_refiner,
+        test_refiner_schema_accepts_user_named_provider_refs,
+        test_refiner_schema_rejects_malformed_proposer_ref,
         test_evidence_cross_field_rejects_code_with_null_file,
         test_evidence_cross_field_rejects_external_with_null_url,
         test_evidence_cross_field_accepts_valid_payload,
@@ -677,7 +1008,25 @@ def main() -> int:
         test_manifest_config_section_present,
         test_config_precedence_env_over_dotenv_over_yaml,
         test_self_moa_argparse_smoke,
+        test_install_deps_default_config_only_needs_default_harnesses,
+        test_install_deps_cursor_only_config_skips_other_harnesses,
+        test_install_deps_schema_coherence_catches_bad_name,
         test_skill_assets_present,
+        test_config_resolve_builtin_codex,
+        test_config_resolve_builtin_sonnet_uses_claude_harness,
+        test_config_resolve_unknown_name_raises,
+        test_config_resolve_user_provider_yaml_timeout,
+        test_config_resolve_env_timeout_override,
+        test_config_resolve_env_timeout_malformed_raises,
+        test_config_builtin_timeout_is_none,
+        test_config_yaml_providers_block,
+        test_config_resolve_layer_mixed,
+        test_config_resolve_layer_unknown_fails_loud,
+        test_config_load_resolved_end_to_end,
+        test_cursor_check_available_returns_tuple,
+        test_cursor_extractor_finds_payload_in_bare_result,
+        test_cursor_extractor_handles_fenced_json,
+        test_cursor_extractor_returns_none_on_is_error,
     ]
     results = [t() for t in tests]
     print("\n" + "=" * 72)
