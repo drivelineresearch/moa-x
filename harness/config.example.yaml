@@ -5,44 +5,66 @@
 #   layers:     which providers run at which layer
 #
 # Built-in named providers (no need to declare):
-#   codex   → {harness: codex,  model: gpt-5.4}                # OpenAI via codex CLI
-#   gemini  → {harness: gemini, model: gemini-2.5-pro}         # Google via gemini CLI
-#   sonnet  → {harness: claude, model: claude-sonnet-4-6}      # Anthropic via claude CLI
+#   codex     → {harness: codex,    model: gpt-5.4}                     # OpenAI via codex CLI
+#   sonnet    → {harness: claude,   model: claude-sonnet-4-6}           # Anthropic via claude CLI
+#   glm       → {harness: opencode, model: zhipuai/glm-5.2}             # Zhipu via opencode CLI
+#   kimi      → {harness: opencode, model: moonshotai/kimi-k2.7-code}   # Moonshot via opencode CLI
+#   composer  → {harness: cursor,   model: composer-2.5}                # Cursor Composer via cursor-agent
 #
-# Override built-in models via:
-#   --codex-model / --gemini-model / --sonnet-model CLI flags, or
-#   MOA_CODEX_MODEL / MOA_GEMINI_MODEL / MOA_SONNET_MODEL env vars.
+# Override a built-in's model via:
+#   --codex-model / --sonnet-model CLI flags, or
+#   MOA_<NAME>_MODEL env vars (e.g. MOA_GLM_MODEL, MOA_KIMI_MODEL, MOA_CODEX_MODEL).
+#   e.g. run glm through Fireworks instead of Zhipu direct:
+#     MOA_GLM_MODEL=fireworks-ai/accounts/fireworks/models/glm-5p2
 #
-# User-named providers (e.g. via the Cursor CLI which routes to many labs):
-# providers:
-#   cursor-gpt:    {harness: cursor, model: gpt-5.5-medium}
-#   cursor-sonnet: {harness: cursor, model: claude-sonnet-4-6}
-#   cursor-grok:   {harness: cursor, model: grok-4-20}
+# NOTE: gemini was removed in v0.3.0. To run a Gemini model, route it through
+# the cursor harness as a user-named provider (see the migration example below).
 #
 # Layer assignments: subset of (built-in names ∪ user-named providers).
 layers:
-  proposers: [codex, gemini, sonnet]
-  refiners:  [codex, gemini]
+  proposers: [codex, glm, sonnet]
+  refiners:  [codex, kimi]
   # Set true to skip the refinement layer entirely.
   skip_refinement: false
 
-# Example: 4-lane proposer mix using one extra Cursor lane:
+# User-named providers extend the built-ins. Define them here, or as a
+# shell/.env shorthand: MOA_PROVIDER_<NAME>=<harness>:<model> (see .env.example).
+# YAML wins over the env shorthand on a name conflict.
+#
+# Example: 4-lane proposer mix adding one Cursor lane
 #
 # providers:
-#   cursor-grok: {harness: cursor, model: grok-4-20}
+#   cursor-grok: {harness: cursor, model: grok-4.3}
 # layers:
-#   proposers: [codex, gemini, sonnet, cursor-grok]
-#   refiners:  [codex, gemini]
+#   proposers: [codex, glm, sonnet, cursor-grok]
+#   refiners:  [codex, kimi]
 #
-# Example: one CLI delivering everything (uncomment to use):
+# Example: run GLM + Kimi through Fireworks serverless instead of the defaults
 #
 # providers:
-#   c-gpt:    {harness: cursor, model: gpt-5.5-medium}
-#   c-sonnet: {harness: cursor, model: claude-sonnet-4-6}
-#   c-gemini: {harness: cursor, model: gemini-3.1-pro}
+#   glm-fw:  {harness: opencode, model: fireworks-ai/accounts/fireworks/models/glm-5p2}
+#   kimi-fw: {harness: opencode, model: fireworks-ai/accounts/fireworks/models/kimi-k2p7-code}
 # layers:
-#   proposers: [c-gpt, c-sonnet, c-gemini]
-#   refiners:  [c-gpt, c-gemini]
+#   proposers: [codex, glm-fw, sonnet]
+#   refiners:  [codex, kimi-fw]
+#
+# Example: everything through the Cursor CLI (one binary, many labs)
+#
+# providers:
+#   c-gpt:      {harness: cursor, model: gpt-5.5}
+#   c-composer: {harness: cursor, model: composer-2.5}
+#   c-grok:     {harness: cursor, model: grok-4.3}
+# layers:
+#   proposers: [c-gpt, c-composer, c-grok]
+#   refiners:  [c-gpt, c-grok]
+#
+# Migration: a Gemini model via the cursor harness (gemini built-in was removed)
+#
+# providers:
+#   cursor-gemini: {harness: cursor, model: gemini-3.1-pro}
+# layers:
+#   proposers: [codex, cursor-gemini, sonnet]
+#   refiners:  [codex, kimi]
 #
 # CLAUDE.md recommends keeping refiner labs disjoint from the aggregator
 # (Anthropic). This is no longer harness-enforced — see the doc for context.

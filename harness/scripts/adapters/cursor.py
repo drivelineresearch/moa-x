@@ -55,8 +55,21 @@ class CursorResult:
 
 
 def _cursor_bin() -> str:
-    """Binary name/path for cursor-agent. Honors MOA_CURSOR_BIN env override."""
-    return os.environ.get("MOA_CURSOR_BIN") or "cursor-agent"
+    """Binary name/path for the Cursor CLI.
+
+    Honors MOA_CURSOR_BIN when set. Otherwise probes PATH: the CLI shipped as
+    `cursor-agent` and was later renamed to `agent`, so we prefer `cursor-agent`
+    (still aliased on most installs) and fall back to `agent`. NOTE: the bare
+    `cursor` binary is the IDE launcher, not the headless agent — never use it.
+    Falls back to the `cursor-agent` name so the not-found error stays coherent.
+    """
+    override = os.environ.get("MOA_CURSOR_BIN")
+    if override:
+        return override
+    for candidate in ("cursor-agent", "agent"):
+        if shutil.which(candidate):
+            return candidate
+    return "cursor-agent"
 
 
 def check_available() -> tuple[bool, str]:

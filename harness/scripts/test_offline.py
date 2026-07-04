@@ -1161,6 +1161,69 @@ def test_config_resolve_builtin_kimi_uses_opencode() -> bool:
     return _ok(ok, f"got {rp}")
 
 
+def test_config_resolve_builtin_composer_uses_cursor() -> bool:
+    print("\n[N] config.resolve_provider: composer maps to cursor harness / composer-2.5")
+    from config import resolve_provider
+    rp = resolve_provider("composer", user_providers={})
+    ok = (rp.name == "composer" and rp.harness == "cursor" and rp.model == "composer-2.5")
+    return _ok(ok, f"got {rp}")
+
+
+def test_gemini_provider_raises_migration_hint() -> bool:
+    print("\n[N] config.resolve_provider('gemini') raises with the v0.3.0 migration hint")
+    from config import resolve_provider
+    try:
+        resolve_provider("gemini", user_providers={})
+    except ValueError as e:
+        msg = str(e)
+        return _ok("removed in v0.3.0" in msg and "cursor" in msg, f"got: {msg[:120]}")
+    return _ok(False, "expected ValueError for removed 'gemini' provider")
+
+
+def test_config_env_provider_definition_parsed() -> bool:
+    print("\n[N] MOA_PROVIDER_<NAME> env var defines a user provider (glm-fw → opencode)")
+    import os as _os
+    from config import _providers_from_env, resolve_provider
+    _os.environ["MOA_PROVIDER_GLM_FW"] = "opencode:fireworks-ai/accounts/fireworks/models/glm-5p2"
+    try:
+        providers = _providers_from_env()
+        rp = resolve_provider("glm-fw", user_providers=providers)
+        ok = (rp.harness == "opencode"
+              and rp.model == "fireworks-ai/accounts/fireworks/models/glm-5p2")
+        return _ok(ok, f"got {rp}")
+    finally:
+        del _os.environ["MOA_PROVIDER_GLM_FW"]
+
+
+def test_config_env_provider_malformed_raises() -> bool:
+    print("\n[N] MOA_PROVIDER_<NAME> without '<harness>:<model>' raises loudly")
+    import os as _os
+    from config import _providers_from_env
+    _os.environ["MOA_PROVIDER_BROKEN"] = "no-colon-here"
+    try:
+        _providers_from_env()
+        return _ok(False, "expected ValueError for malformed provider def")
+    except ValueError as e:
+        return _ok("MOA_PROVIDER_BROKEN" in str(e), f"got: {e}")
+    finally:
+        del _os.environ["MOA_PROVIDER_BROKEN"]
+
+
+def test_refiner_schema_accepts_five_proposer_roster() -> bool:
+    print("\n[N] Refiner schema accepts a 5-proposer broadcast roster (maxItems bump)")
+    schema = run_moa._load_schema(run_moa.REFINER_SCHEMA_PATH)
+    payload = _make_valid_broadcast_refiner("codex")
+    names = ["codex", "glm", "sonnet", "composer", "cursor-grok"]
+    payload["reviewing"] = names
+    payload["per_proposer_verdicts"] = [
+        {"proposer": n, "verdict": "accept_with_changes",
+         "summary": "Reviewed and mostly acceptable with minor edits."}
+        for n in names
+    ]
+    errors = run_moa._validate_against_schema(payload, schema)
+    return _ok(len(errors) == 0, f"errors={errors[:3]}")
+
+
 def main() -> int:
     print("Mixture-of-Agents — offline smoke test (v2: 3 proposers + broadcast refiners)")
     print("=" * 72)
@@ -1217,6 +1280,11 @@ def main() -> int:
         test_opencode_check_available_returns_tuple,
         test_config_resolve_builtin_glm_uses_opencode,
         test_config_resolve_builtin_kimi_uses_opencode,
+        test_config_resolve_builtin_composer_uses_cursor,
+        test_gemini_provider_raises_migration_hint,
+        test_config_env_provider_definition_parsed,
+        test_config_env_provider_malformed_raises,
+        test_refiner_schema_accepts_five_proposer_roster,
         test_layer_result_carries_transient_empty_field,
         test_manifest_summary_includes_transient_empty_arrays,
         test_layer1_manifest_round_trip_via_load,

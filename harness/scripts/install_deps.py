@@ -209,10 +209,10 @@ def _check_cursor_models(loaded_cfg: "LoadedConfig", needed: set[str], failures:
     print("")
     print("  cursor model availability (probe via --list-models):")
 
-    bin_name = harness_config.resolve_bin_for_harness("cursor") if hasattr(harness_config, "resolve_bin_for_harness") else "cursor-agent"
-    # Honor MOA_CURSOR_BIN like the adapter does:
-    import os as _os
-    bin_name = _os.environ.get("MOA_CURSOR_BIN") or "cursor-agent"
+    # Resolve the binary exactly as the adapter does (honors MOA_CURSOR_BIN,
+    # else probes cursor-agent → agent).
+    from adapters import cursor as cursor_adapter
+    bin_name = cursor_adapter._cursor_bin()
 
     try:
         proc = subprocess.run(

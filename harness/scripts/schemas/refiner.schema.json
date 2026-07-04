@@ -28,7 +28,7 @@
       "type": "array",
       "description": "Identifiers of the proposer outputs this refiner is reviewing. Under broadcast refinement this should contain ALL successful proposer outputs from Layer 1. Same pattern as agent_id (lowercase, dash-separated, 1-32 chars) so user-named providers from harness/config.yaml validate.",
       "minItems": 1,
-      "maxItems": 3,
+      "maxItems": 8,
       "items": {
         "type": "string",
         "pattern": "^[a-z][a-z0-9-]{0,31}$"
@@ -43,7 +43,7 @@
       "type": "array",
       "description": "Individual verdict on each proposer's plan. Exactly one entry per proposer in `reviewing`.",
       "minItems": 1,
-      "maxItems": 3,
+      "maxItems": 8,
       "items": {
         "type": "object",
         "additionalProperties": false,

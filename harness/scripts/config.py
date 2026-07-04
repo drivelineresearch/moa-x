@@ -84,10 +84,11 @@ class ResolvedProvider:
 # Built-ins always carry timeout=None so the existing CLI flag / harness-level
 # env path (MOA_CODEX_TIMEOUT etc.) continues to apply.
 BUILTIN_PROVIDERS: dict[str, ResolvedProvider] = {
-    "codex":  ResolvedProvider(name="codex",  harness="codex",    model="gpt-5.4"),
-    "sonnet": ResolvedProvider(name="sonnet", harness="claude",   model="claude-sonnet-4-6"),
-    "glm":    ResolvedProvider(name="glm",    harness="opencode", model="zhipuai/glm-5.2"),
-    "kimi":   ResolvedProvider(name="kimi",   harness="opencode", model="moonshotai/kimi-k2.7-code"),
+    "codex":    ResolvedProvider(name="codex",    harness="codex",    model="gpt-5.4"),
+    "sonnet":   ResolvedProvider(name="sonnet",   harness="claude",   model="claude-sonnet-4-6"),
+    "glm":      ResolvedProvider(name="glm",      harness="opencode", model="zhipuai/glm-5.2"),
+    "kimi":     ResolvedProvider(name="kimi",     harness="opencode", model="moonshotai/kimi-k2.7-code"),
+    "composer": ResolvedProvider(name="composer", harness="cursor",   model="composer-2.5"),
 }
 
 
@@ -303,6 +304,49 @@ def _user_providers_from_yaml(cfg: dict[str, Any]) -> dict[str, dict]:
     return out
 
 
+# Harnesses a provider spec may target. Used to validate MOA_PROVIDER_* env
+# definitions loudly at parse time instead of failing deep in dispatch.
+_KNOWN_HARNESSES = frozenset({"codex", "claude", "opencode", "cursor"})
+
+
+def _providers_from_env() -> dict[str, dict]:
+    """Parse `MOA_PROVIDER_<NAME>=<harness>:<model>` env vars into provider specs.
+
+    <NAME> is lowercased with `_` → `-`, so `MOA_PROVIDER_GLM_FW` defines the
+    provider `glm-fw`. This is a shell/.env shorthand for the YAML `providers:`
+    block, so a full roster swap needs no YAML file. YAML definitions win on a
+    name conflict (they can also set timeout/effort/bin); the MOA_<NAME>_MODEL /
+    MOA_<NAME>_TIMEOUT field overrides still apply on top in resolve_provider.
+
+    Raises ValueError on a malformed value (no colon, unknown harness, empty
+    model) — a broken provider definition should fail loudly, not silently.
+    """
+    prefix = "MOA_PROVIDER_"
+    out: dict[str, dict] = {}
+    for key, value in os.environ.items():
+        if not key.startswith(prefix):
+            continue
+        name = key[len(prefix):].lower().replace("_", "-")
+        if not name:
+            continue
+        if ":" not in value:
+            raise ValueError(
+                f"{key} must be '<harness>:<model>' "
+                f"(e.g. opencode:zhipuai/glm-5.2); got {value!r}"
+            )
+        harness, _, model = value.partition(":")
+        harness, model = harness.strip(), model.strip()
+        if harness not in _KNOWN_HARNESSES:
+            raise ValueError(
+                f"{key}: unknown harness {harness!r}; "
+                f"must be one of {sorted(_KNOWN_HARNESSES)}"
+            )
+        if not model:
+            raise ValueError(f"{key}: empty model in {value!r}")
+        out[name] = {"harness": harness, "model": model}
+    return out
+
+
 @dataclass(frozen=True)
 class LoadedConfig:
     """Fully resolved config ready for run_moa.py to dispatch from."""
@@ -331,7 +375,8 @@ def load_resolved_config(
     """
     cfg_path = config_path or DEFAULT_CONFIG_PATH
     cfg = _load_yaml(cfg_path)
-    user_providers = _user_providers_from_yaml(cfg)
+    # env-defined providers first, YAML layered on top (YAML wins name conflicts).
+    user_providers = {**_providers_from_env(), **_user_providers_from_yaml(cfg)}
 
     proposer_names = _resolve_layer_names(
         env_key="MOA_PROPOSERS",
