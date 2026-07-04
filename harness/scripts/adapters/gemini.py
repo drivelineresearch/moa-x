@@ -213,12 +213,18 @@ def run(
         else:
             approval_args = ["--yolo"]
 
+        # Prompt is sent via stdin, NOT as the value of -p. Refiner prompts
+        # include the scout brief plus every proposer's full output (tens of
+        # KB, sometimes >100KB) and can exceed ARG_MAX on macOS/Linux when
+        # passed as an argv entry. Per gemini-cli --help, "-p, --prompt …
+        # Appended to input on stdin (if any)." — so passing -p with an
+        # empty string triggers headless mode and stdin supplies the body.
         cmd = [
             _gemini_bin(),
             "-m", model,
             *approval_args,  # auto-approve all tools; read-only enforced via prompt
             "--output-format", "json",
-            "-p", prompt,
+            "-p", "",  # empty value triggers headless mode; real prompt is on stdin
         ]
 
         try:
@@ -229,7 +235,7 @@ def run(
             # timeout.
             proc = subprocess.Popen(
                 cmd,
-                stdin=None,
+                stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
@@ -238,7 +244,7 @@ def run(
                 start_new_session=True,  # isolate from parent signal group
             )
             try:
-                stdout_text, stderr_text = proc.communicate(timeout=timeout_seconds)
+                stdout_text, stderr_text = proc.communicate(input=prompt, timeout=timeout_seconds)
                 duration = time.monotonic() - start
                 stdout_captured = stdout_text or ""
                 stderr_captured = stderr_text or ""
