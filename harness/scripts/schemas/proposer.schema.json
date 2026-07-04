@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "MoA Proposer Output",
-  "description": "Schema returned by a proposer agent (codex, gemini, or sonnet) at Layer 1 of the mixture-of-agents pipeline. All three proposers produce this same shape so the orchestrator can stitch them together for the refiner and aggregator layers.",
+  "description": "Schema returned by a proposer agent (e.g. codex, glm, or sonnet) at Layer 1 of the mixture-of-agents pipeline. Every proposer produces this same shape so the orchestrator can stitch them together for the refiner and aggregator layers.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -16,7 +16,7 @@
     "agent_id": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]{0,31}$",
-      "description": "Identifier of the proposer agent that produced this output. Lowercase, dash-separated, 1-32 chars. Built-in defaults: codex (gpt-5.4), gemini (gemini-2.5-pro), sonnet (claude-sonnet-4-6). User-named providers (e.g. cursor-grok) follow the same pattern."
+      "description": "Identifier of the proposer agent that produced this output. Lowercase, dash-separated, 1-32 chars. Built-in providers: codex (gpt-5.4), glm (glm-5.2), sonnet (claude-sonnet-4-6), kimi (kimi-k2.7-code). User-named providers (e.g. cursor-grok) follow the same pattern."
     },
     "summary": {
       "type": "string",

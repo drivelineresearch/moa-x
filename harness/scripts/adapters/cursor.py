@@ -9,13 +9,13 @@ to claude-cli's outer envelope without --json-schema set:
 
 Read-only discipline is enforced by `--mode plan`, which is a CLI-level
 guarantee: the model cannot invoke write/edit tools. This replaces the
-prompt-rule directive that gemini and claude adapters use (those CLIs
-have no equivalent flag). See docs/cursor.md.
+prompt-rule directive the claude/opencode adapters use (those CLIs have
+no equivalent flag). See docs/cursor.md.
 
 Cursor has no --output-schema equivalent (codex-style hard schema
 enforcement), so the orchestrator validates the parsed payload against
-the proposer/refiner schema Python-side (gemini-style). The adapter
-just extracts the inner JSON from the `result` text.
+the proposer/refiner schema Python-side. The adapter just extracts the
+inner JSON from the `result` text via the shared extract_json_from_text.
 
 Subprocess isolation: each call gets its own TMPDIR via env override.
 Cursor session/auth state lives under ~/.cursor/ which is shared
@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import shutil
 import subprocess
 import tempfile
@@ -35,7 +34,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from adapters import kill_proc_tree
+from adapters import extract_json_from_text, kill_proc_tree
 
 
 @dataclass
@@ -56,8 +55,21 @@ class CursorResult:
 
 
 def _cursor_bin() -> str:
-    """Binary name/path for cursor-agent. Honors MOA_CURSOR_BIN env override."""
-    return os.environ.get("MOA_CURSOR_BIN") or "cursor-agent"
+    """Binary name/path for the Cursor CLI.
+
+    Honors MOA_CURSOR_BIN when set. Otherwise probes PATH: the CLI shipped as
+    `cursor-agent` and was later renamed to `agent`, so we prefer `cursor-agent`
+    (still aliased on most installs) and fall back to `agent`. NOTE: the bare
+    `cursor` binary is the IDE launcher, not the headless agent — never use it.
+    Falls back to the `cursor-agent` name so the not-found error stays coherent.
+    """
+    override = os.environ.get("MOA_CURSOR_BIN")
+    if override:
+        return override
+    for candidate in ("cursor-agent", "agent"):
+        if shutil.which(candidate):
+            return candidate
+    return "cursor-agent"
 
 
 def check_available() -> tuple[bool, str]:
@@ -144,7 +156,7 @@ def run(
         CursorResult with parsed inner payload (or None on failure).
 
     Note: Cursor has no --output-schema flag. Schema validation happens
-    orchestrator-side after this returns, same as gemini.
+    orchestrator-side after this returns.
     """
     start = time.monotonic()
     stdout_captured = ""
@@ -166,8 +178,7 @@ def run(
         # prompts include the scout brief plus every proposer's full output
         # (tens of KB) and can exceed ARG_MAX on macOS/Linux. cursor-agent
         # reads stdin when no positional prompt is given. Codex does the
-        # same; gemini doesn't (it forces -p <prompt> with the same risk —
-        # tracked separately).
+        # same; opencode can't (no stdin) so it takes the prompt by file.
         cmd = [
             _cursor_bin(),
             "-p",
@@ -390,46 +401,6 @@ def _extract_payload(stdout: str) -> Optional[dict]:
     if not isinstance(result_text, str) or not result_text.strip():
         return None
 
-    # Step 2: extract JSON from the inner text. Try fences first, then
-    # balanced top-level objects (longest-first, gemini-style).
-    candidates: list[str] = []
-    for match in re.finditer(r"```(?:json)?\s*\n(.*?)\n```", result_text, re.DOTALL):
-        candidates.append(match.group(1).strip())
-
-    # Bare top-level JSON object scan
-    text = result_text
-    for start in range(len(text)):
-        if text[start] != "{":
-            continue
-        depth = 0
-        in_string = False
-        escape = False
-        for end in range(start, len(text)):
-            ch = text[end]
-            if escape:
-                escape = False
-                continue
-            if ch == "\\":
-                escape = True
-                continue
-            if ch == '"':
-                in_string = not in_string
-                continue
-            if in_string:
-                continue
-            if ch == "{":
-                depth += 1
-            elif ch == "}":
-                depth -= 1
-                if depth == 0:
-                    candidates.append(text[start : end + 1])
-                    break
-
-    candidates.sort(key=len, reverse=True)
-    for cand in candidates:
-        try:
-            return json.loads(cand)
-        except (json.JSONDecodeError, ValueError):
-            continue
-
-    return None
+    # Step 2: extract the JSON payload from the inner text (fences or a bare
+    # balanced object, longest-first). Shared with the opencode adapter.
+    return extract_json_from_text(result_text)

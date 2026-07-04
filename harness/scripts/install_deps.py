@@ -9,7 +9,7 @@ the same path run_moa.py uses) and verifies coherence:
   - Schema-pattern coherence: every resolved provider name matches the
     regex pattern in proposer/refiner schemas. Catches the kind of
     runtime mismatch that surfaced when user-named providers ran
-    against schemas hardcoded to {codex,gemini,sonnet}.
+    against schemas hardcoded to a fixed provider set.
   - Cursor-only model-availability: cross-checks each cursor provider's
     `model:` against `cursor-agent --list-models`. Cursor uses machine
     ids (gpt-5.5-medium, grok-4-20) that differ from friendly names —
@@ -46,7 +46,7 @@ if TYPE_CHECKING:
     from config import LoadedConfig, ResolvedProvider
 
 
-ALL_HARNESSES = ("codex", "gemini", "claude", "cursor")
+ALL_HARNESSES = ("codex", "claude", "cursor", "opencode")
 
 
 def _check(label: str, cmd: list[str]) -> tuple[bool, str]:
@@ -92,21 +92,22 @@ def _check_needed_harnesses(loaded_cfg: "LoadedConfig", failures: list[str]) -> 
 
     # Lazy-import adapters so missing optional deps don't crash the whole script
     from adapters import codex as codex_adapter
-    from adapters import gemini as gemini_adapter
     from adapters import claude as claude_adapter
     from adapters import cursor as cursor_adapter
+    from adapters import opencode as opencode_adapter
 
     adapter_for = {
         "codex": codex_adapter,
-        "gemini": gemini_adapter,
         "claude": claude_adapter,
         "cursor": cursor_adapter,
+        "opencode": opencode_adapter,
     }
     install_hint = {
         "codex":  "npm i -g @openai/codex && codex login",
-        "gemini": "npm i -g @google/gemini-cli  (then run interactively once to log in)",
         "claude": "see https://docs.claude.com/en/docs/claude-code/quickstart",
         "cursor": "curl https://cursor.com/install -fsS | bash  (then: cursor-agent login)",
+        "opencode": "curl -fsSL https://opencode.ai/install | bash  (then: opencode auth login, "
+                    "or export ZHIPU_API_KEY / MOONSHOT_API_KEY / FIREWORKS_API_KEY)",
     }
 
     for harness in sorted(needed):
@@ -208,10 +209,10 @@ def _check_cursor_models(loaded_cfg: "LoadedConfig", needed: set[str], failures:
     print("")
     print("  cursor model availability (probe via --list-models):")
 
-    bin_name = harness_config.resolve_bin_for_harness("cursor") if hasattr(harness_config, "resolve_bin_for_harness") else "cursor-agent"
-    # Honor MOA_CURSOR_BIN like the adapter does:
-    import os as _os
-    bin_name = _os.environ.get("MOA_CURSOR_BIN") or "cursor-agent"
+    # Resolve the binary exactly as the adapter does (honors MOA_CURSOR_BIN,
+    # else probes cursor-agent → agent).
+    from adapters import cursor as cursor_adapter
+    bin_name = cursor_adapter._cursor_bin()
 
     try:
         proc = subprocess.run(
@@ -264,7 +265,7 @@ def _check_assets(failures: list[str]) -> None:
         skill_dir / "SKILL.md",
         skill_dir / "scripts" / "run_moa.py",
         skill_dir / "scripts" / "adapters" / "codex.py",
-        skill_dir / "scripts" / "adapters" / "gemini.py",
+        skill_dir / "scripts" / "adapters" / "opencode.py",
         skill_dir / "scripts" / "adapters" / "claude.py",
         skill_dir / "scripts" / "adapters" / "cursor.py",
         skill_dir / "scripts" / "schemas" / "proposer.schema.json",

@@ -27,16 +27,24 @@ payloads.
 
 ### Built-in defaults
 
-These three are always available without declaring them:
+These five are always available without declaring them:
 
 | Name | Harness | Default model |
 |---|---|---|
 | `codex` | `codex` CLI | `gpt-5.4` |
-| `gemini` | `gemini` CLI | `gemini-2.5-pro` |
 | `sonnet` | `claude` CLI | `claude-sonnet-4-6` |
+| `glm` | `opencode` CLI | `zhipuai/glm-5.2` |
+| `kimi` | `opencode` CLI | `moonshotai/kimi-k2.7-code` |
+| `composer` | `cursor` CLI | `composer-2.5` |
 
-Override built-in models via CLI flags (`--codex-model`, etc.) or
-the `MOA_CODEX_MODEL` / `MOA_GEMINI_MODEL` / `MOA_SONNET_MODEL` env vars.
+The default roster draws four labs from these: proposers
+`[codex, glm, sonnet]` (OpenAI, Zhipu, Anthropic) and refiners
+`[codex, kimi]` (OpenAI, Moonshot). The refiners stay independent
+of the Anthropic aggregator (Opus).
+
+Override built-in models via CLI flags (`--codex-model`,
+`--sonnet-model`) or the `MOA_CODEX_MODEL` / `MOA_SONNET_MODEL` /
+`MOA_GLM_MODEL` / `MOA_KIMI_MODEL` env vars.
 
 ### User-defined providers
 
@@ -51,8 +59,8 @@ Then reference the name in `layers:`:
 
 ```yaml
 layers:
-  proposers: [codex, gemini, sonnet, cursor-grok]
-  refiners:  [codex, gemini]
+  proposers: [codex, glm, sonnet, cursor-grok]
+  refiners:  [codex, kimi]
 ```
 
 For user-named providers, model and timeout are overridable via env var
@@ -62,6 +70,23 @@ using the name uppercased with `-` → `_`:
 |---|---|---|
 | `MOA_<NAME>_MODEL` | `MOA_CURSOR_GROK_MODEL=grok-4-20-thinking` | Override model for that provider |
 | `MOA_<NAME>_TIMEOUT` | `MOA_CURSOR_GROK_TIMEOUT=900` | Wall-clock cap in seconds |
+
+### Env-var shorthand: `MOA_PROVIDER_<NAME>`
+
+You can define a provider entirely from the environment, no
+`config.yaml` block required. Set `MOA_PROVIDER_<NAME>=<harness>:<model>`;
+the `<NAME>` is lowercased and `_` → `-` to form the provider name.
+
+```bash
+# Defines a provider named `glm-fw` on the opencode harness,
+# routed through Fireworks:
+MOA_PROVIDER_GLM_FW=opencode:fireworks-ai/accounts/fireworks/models/glm-5p2
+```
+
+Then add `glm-fw` to `MOA_PROPOSERS` / `MOA_REFINERS` or a `layers:`
+block. If a provider of the same name is also declared in a
+`config.yaml` `providers:` block, the YAML block wins. A malformed
+value (missing the `harness:model` split) fails loudly.
 
 ## Two file shapes
 
@@ -79,6 +104,7 @@ Then edit. Format is plain `KEY=value` with `#` comments. Example:
 MOA_CODEX_MODEL=gpt-5.4
 MOA_CODEX_EFFORT=xhigh
 MOA_SONNET_TIMEOUT=1500
+MOA_GLM_MODEL=zhipuai/glm-5.2
 ```
 
 ### `harness/config.yaml` (structured)
@@ -93,8 +119,8 @@ Then edit. Example:
 providers:
   cursor-grok: {harness: cursor, model: grok-4-20}
 layers:
-  proposers: [codex, gemini, sonnet, cursor-grok]
-  refiners:  [codex, gemini]
+  proposers: [codex, glm, sonnet, cursor-grok]
+  refiners:  [codex, kimi]
 ```
 
 ## Knobs
@@ -102,20 +128,23 @@ layers:
 | Variable | Default | What it does |
 |---|---|---|
 | `MOA_CODEX_BIN` | `codex` | Path or name of the codex binary. Set this if codex isn't on PATH or lives somewhere non-standard. |
-| `MOA_GEMINI_BIN` | `gemini` | Same for gemini. |
 | `MOA_CLAUDE_BIN` | `claude` | Same for claude. |
-| `MOA_CURSOR_BIN` | `cursor-agent` | Same for cursor. |
+| `MOA_OPENCODE_BIN` | `opencode` | Same for opencode (GLM / Kimi harness). |
+| `MOA_CURSOR_BIN` | `cursor-agent` | Same for cursor (binary is `cursor-agent`, or `agent` on newer installs). |
 | `MOA_CODEX_MODEL` | `gpt-5.4` | Codex model id. |
 | `MOA_CODEX_EFFORT` | `high` | One of `low`, `medium`, `high`, `xhigh`. Higher = better, slower. Default `--codex-timeout` scales with this. |
-| `MOA_GEMINI_MODEL` | `gemini-2.5-pro` | Gemini model id. `gemini-3.1-pro-preview` is available but flaky. |
 | `MOA_SONNET_MODEL` | `claude-sonnet-4-6` | Model for the sonnet proposer (the `claude` CLI in sonnet mode). |
+| `MOA_GLM_MODEL` | `zhipuai/glm-5.2` | Model id for the `glm` provider (opencode harness). Provider/model string. |
+| `MOA_KIMI_MODEL` | `moonshotai/kimi-k2.7-code` | Model id for the `kimi` provider (opencode harness). Provider/model string. |
 | `MOA_CODEX_TIMEOUT` | effort-scaled | Wall-clock cap for codex calls. xhigh=1500s, high=1200s, medium/low=900s. |
-| `MOA_GEMINI_TIMEOUT` | `1200` | Wall-clock cap for gemini calls, in seconds. |
 | `MOA_SONNET_TIMEOUT` | `1200` | Wall-clock cap for sonnet calls, in seconds. |
+| `MOA_OPENCODE_TIMEOUT` | `1200` | Wall-clock cap for opencode calls (glm / kimi), in seconds. |
+| `MOA_CURSOR_TIMEOUT` | `1200` | Wall-clock cap for cursor calls, in seconds. |
 | `MOA_<NAME>_MODEL` | — | Model override for any user-named provider (name uppercased, `-` → `_`). |
 | `MOA_<NAME>_TIMEOUT` | `1200` | Timeout override for any user-named provider. |
-| `MOA_PROPOSERS` | `codex,gemini,sonnet` | Comma-separated subset of proposers to spawn. |
-| `MOA_REFINERS` | `codex,gemini` | Comma-separated subset of refiners. |
+| `MOA_PROVIDER_<NAME>` | — | Define a provider inline as `<harness>:<model>` (name lowercased, `_` → `-`). No `config.yaml` needed. |
+| `MOA_PROPOSERS` | `codex,glm,sonnet` | Comma-separated subset of proposers to spawn. |
+| `MOA_REFINERS` | `codex,kimi` | Comma-separated subset of refiners. |
 | `MOA_SKIP_LAYER2` | unset | Set to `1` to skip the refinement layer entirely. |
 
 CLI flag equivalents exist for every row here. Run
@@ -123,18 +152,44 @@ CLI flag equivalents exist for every row here. Run
 
 ## Examples
 
-### 4-lane mix (defaults + cursor-grok)
+### 5-lane mix (defaults + cursor-grok)
 
 ```yaml
 # harness/config.yaml
 providers:
   cursor-grok: {harness: cursor, model: grok-4-20}
 layers:
-  proposers: [codex, gemini, sonnet, cursor-grok]
-  refiners:  [codex, gemini]
+  proposers: [codex, glm, sonnet, cursor-grok]
+  refiners:  [codex, kimi]
 ```
 
-Adds a fourth proposer lane without touching the three built-ins.
+Adds an extra proposer lane without touching the built-in roster.
+
+### GLM / Kimi through Fireworks
+
+The `glm` and `kimi` defaults route through their native providers
+(`zhipuai/…`, `moonshotai/…`). To run the same models through
+Fireworks instead, declare user providers with the Fireworks model
+strings:
+
+```yaml
+# harness/config.yaml
+providers:
+  glm-fw:  {harness: opencode, model: fireworks-ai/accounts/fireworks/models/glm-5p2}
+  kimi-fw: {harness: opencode, model: fireworks-ai/accounts/fireworks/models/kimi-k2p7-code}
+layers:
+  proposers: [codex, glm-fw, sonnet]
+  refiners:  [codex, kimi-fw]
+```
+
+Or define them inline without a config file:
+
+```bash
+MOA_PROVIDER_GLM_FW=opencode:fireworks-ai/accounts/fireworks/models/glm-5p2
+MOA_PROVIDER_KIMI_FW=opencode:fireworks-ai/accounts/fireworks/models/kimi-k2p7-code
+MOA_PROPOSERS=codex,glm-fw,sonnet
+MOA_REFINERS=codex,kimi-fw
+```
 
 ### One CLI, many labs (cursor-everywhere)
 
@@ -143,14 +198,34 @@ Adds a fourth proposer lane without touching the three built-ins.
 providers:
   c-gpt:    {harness: cursor, model: gpt-5.5-medium}
   c-sonnet: {harness: cursor, model: claude-4.5-sonnet}
-  c-gemini: {harness: cursor, model: gemini-3.1-pro}
+  c-composer: {harness: cursor, model: composer-2.5}
 layers:
-  proposers: [c-gpt, c-sonnet, c-gemini]
-  refiners:  [c-gpt, c-gemini]
+  proposers: [c-gpt, c-sonnet, c-composer]
+  refiners:  [c-gpt, c-composer]
 ```
 
 Consolidates billing through the Cursor CLI while keeping
 cross-lab diversity at the model level.
+
+## Migrating from gemini
+
+The `gemini` provider and its adapter were removed in v0.3.0. There
+is no longer a `gemini` harness, no built-in `gemini` provider, and
+no `MOA_GEMINI_*` knobs or `--gemini-model` / `--gemini-timeout`
+flags. The default roster's cross-lab diversity now comes from GLM
+(Zhipu) and Kimi (Moonshot) via the `opencode` harness.
+
+If you still want a Gemini model in the ensemble, route it through
+the `cursor` harness as a user provider:
+
+```yaml
+# harness/config.yaml
+providers:
+  cursor-gemini: {harness: cursor, model: gemini-3.1-pro}
+layers:
+  proposers: [codex, glm, sonnet, cursor-gemini]
+  refiners:  [codex, kimi]
+```
 
 ## Secrets
 

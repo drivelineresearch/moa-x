@@ -32,3 +32,7 @@ tmp/
 *.swp
 *.swo
 *~
+
+# Claude Code session state (local; must not be tracked)
+brain/
+/big-refactor-plan.md

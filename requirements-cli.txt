@@ -1,6 +1,6 @@
 # requirements-cli.txt
 #
-# The three external CLIs used by the MoA-X harness.
+# The external CLIs used by the MoA-X harness.
 # These CLIs are NOT pip-installable — each has its own install mechanism.
 #
 # ── Install ───────────────────────────────────────────────────────────────────
@@ -9,10 +9,17 @@
 #   install:  npm i -g @openai/codex
 #   auth:     codex login   (creates ~/.codex/auth.json)
 
-# gemini CLI (Google)
-#   install:  npm i -g @google/gemini-cli
-#   auth:     gemini        (interactive OAuth; creates ~/.gemini/)
+# opencode CLI (runs GLM 5.2 + Kimi K2.7 Code)
+#   install:  curl -fsSL https://opencode.ai/install | bash
+#   auth:     opencode auth login
+#             or set provider keys: ZHIPU_API_KEY (GLM),
+#             MOONSHOT_API_KEY (Kimi), FIREWORKS_API_KEY (Fireworks routing)
 
 # claude CLI (Anthropic / Claude Code)
 #   install:  see https://docs.claude.com/en/docs/claude-code/quickstart
 #   auth:     claude        (interactive OAuth; creates ~/.claude/)
+
+# cursor CLI (optional — routes composer / Cursor-hosted models)
+#   install:  see https://cursor.com/docs/cli
+#   binary:   cursor-agent (older) or agent (newer); set MOA_CURSOR_BIN to override
+#   auth:     cursor-agent login   (creates ~/.cursor/)

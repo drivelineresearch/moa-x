@@ -4,7 +4,7 @@ Invokes `claude -p` headlessly with --json-schema for guaranteed JSON
 shape. Claude Code supports arbitrary JSON Schema enforcement natively
 via the --json-schema flag, which writes the validated object to
 `.structured_output` in the outer result envelope. This makes parsing
-cleaner than gemini (where we strip fences) and on par with codex
+cleaner than the cursor/opencode adapters (where we strip fences) and on par with codex
 (which uses --output-schema).
 
 Key differences from the other adapters:
@@ -156,7 +156,7 @@ def run(
         timeout_seconds: Hard wall-clock cap. Default 1200s (20 min) because
             sonnet with full tool access was observed taking >900s in the
             first dogfood run. The restricted tool set (no Agent) should
-            bring it closer to gemini's ~3-4 min, but we leave headroom.
+            bring it closer to the ~3-4 min typical, but we leave headroom.
         log_file: Optional path to write the full claude output to. ALWAYS
             written in every exit path so post-mortems never come up empty.
         temperature_shim: Optional text appended to --append-system-prompt to

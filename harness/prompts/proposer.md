@@ -107,7 +107,7 @@ explore beyond it if the spec demands it, but stay bounded:
 Output JSON conforming to the proposer schema (handed to you separately by
 the orchestrator). Key fields:
 
-- **agent_id** — set to your identifier: `codex`, `gemini`, or `sonnet`.
+- **agent_id** — set to your identifier (e.g. `codex`, `glm`, or `sonnet`).
   The orchestrator will tell you which one you are in the prompt body.
 - **summary** — 1-2 paragraphs plain language. No headings, no bullet lists.
   Imagine you are explaining the plan to a colleague over coffee.

@@ -13,13 +13,26 @@ API-key auth works too.
 npm i -g @openai/codex
 codex login
 
-# Google gemini
-npm i -g @google/gemini-cli
-gemini            # run interactively once to complete OAuth
-
 # Anthropic Claude Code
 # See https://docs.claude.com/en/docs/claude-code/quickstart
+
+# opencode (drives the GLM and Kimi providers)
+curl -fsSL https://opencode.ai/install | bash
+# or: npm i -g opencode-ai
+opencode auth login    # interactive login
+# or export a provider key (no login needed):
+#   export ZHIPU_API_KEY=...       # GLM
+#   export MOONSHOT_API_KEY=...    # Kimi
+#   export FIREWORKS_API_KEY=...   # GLM / Kimi via Fireworks
 ```
+
+The default roster is `codex` + `sonnet` (via `claude`) + `glm` and
+`kimi` (both via `opencode`) — four labs: OpenAI, Anthropic, Zhipu,
+Moonshot. GLM and Kimi both run on the `opencode` harness; their
+model ids are provider/model strings (`zhipuai/glm-5.2`,
+`moonshotai/kimi-k2.7-code`, or the Fireworks variants
+`fireworks-ai/accounts/fireworks/models/glm-5p2` and
+`…/kimi-k2p7-code`).
 
 Subscription auth is the path I use and what the docs lead with. If
 you'd rather bill through an API key, each vendor CLI already handles
@@ -28,12 +41,13 @@ when you invoke it. Better API-billing ergonomics (cost surfacing,
 per-layer accounting, a `MOA_MAX_COST` knob) are on the open wish
 list. See the PR-wanted section of the top-level README.
 
-### Optional: Cursor CLI (fourth provider)
+### Optional: Cursor CLI (extra provider)
 
-The Cursor CLI (`cursor-agent`) is optional. It's a single binary that
-routes to OpenAI, Anthropic, Google, xAI, and Moonshot models — useful
-if you want a 4th lane in the ensemble or want to consolidate around
-one CLI for billing.
+The Cursor CLI is optional. Its binary is `cursor-agent` (older
+installs) or `agent` (newer, renamed). It's a single binary that
+routes to OpenAI, Anthropic, Google, xAI, and Moonshot models, plus
+Cursor's own `composer-2.5` — useful if you want an extra lane in the
+ensemble or want to consolidate around one CLI for billing.
 
 ```bash
 curl https://cursor.com/install -fsS | bash
@@ -43,7 +57,9 @@ export CURSOR_API_KEY=...    # API-billed
 ```
 
 Then add a `providers:` block to `harness/config.yaml`. See
-`harness/config.example.yaml` for examples.
+`harness/config.example.yaml` for examples. The built-in `composer`
+provider (harness `cursor`, model `composer-2.5`) is available once
+the CLI is installed.
 
 ## 2. Verify
 
@@ -93,5 +109,5 @@ welcome. See [`CONTRIBUTING.md`](../CONTRIBUTING.md).
 python3 harness/scripts/test_offline.py
 ```
 
-No network, no external CLIs. All 23 tests should pass. CI runs the
+No network, no external CLIs. All tests should pass. CI runs the
 same thing on every push.
