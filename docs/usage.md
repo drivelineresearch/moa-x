@@ -25,16 +25,19 @@ What happens:
 2. **Approval gate.** The skill shows you the brief and asks "run it?"
    Estimated wall-clock: 6–12 minutes. Nothing spawns until you say yes.
 3. **Proposers (Layer 1, parallel).** Three headless subprocesses
-   fire in parallel by default: `codex exec`, `gemini -p`, `claude -p`
-   (an optional fourth `cursor-agent` lane is available — see
-   [`docs/install.md`](install.md#optional-cursor-cli-fourth-provider)).
-   Each
+   fire in parallel by default: `codex` (codex harness), `glm`
+   (opencode harness), and `sonnet` (claude harness) — OpenAI,
+   Zhipu, and Anthropic. Additional lanes (a `cursor` provider,
+   Kimi, or any user provider) are available — see
+   [`docs/install.md`](install.md#optional-cursor-cli-extra-provider)
+   and [`docs/config.md`](config.md). Each
    reads the repo (codex with a filesystem-enforced read-only
    sandbox; the others with read-only enforced by prompt), does web
    research, and writes an independent plan to
    `.moa/<session>/layer1/`.
 4. **Broadcast refiners (Layer 2, parallel).** Two more subprocesses,
-   `codex` and `gemini`, each receive all three proposals and
+   `codex` and `kimi` (OpenAI and Moonshot — independent of the
+   Anthropic aggregator), each receive all three proposals and
    produce verification output in `.moa/<session>/layer2/`.
    "Broadcast" means every refiner sees every proposal, per the MoA
    paper.
@@ -78,11 +81,11 @@ Each invocation creates a directory under `.moa/`:
 ├── scout-brief.json
 ├── layer1/
 │   ├── codex-proposer.{json,log}
-│   ├── gemini-proposer.{json,log}
+│   ├── glm-proposer.{json,log}
 │   └── sonnet-proposer.{json,log}
 ├── layer2/
 │   ├── codex-refiner-broadcast.{json,log}
-│   └── gemini-refiner-broadcast.{json,log}
+│   └── kimi-refiner-broadcast.{json,log}
 ├── synthesis-input.md    # what the aggregator reads
 ├── manifest.json         # timing + per-layer success/failure
 └── final-plan.md         # written by the aggregator

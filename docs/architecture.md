@@ -13,29 +13,34 @@ plans for coding agents instead of chat answers.
 
 ```
 Layer 0 — Scout brief           (parent Claude, in-place)
-Layer 1 — Proposers (3 parallel)  codex + gemini + sonnet subprocesses
-Layer 2 — Broadcast refiners (2)  codex + gemini, each sees ALL 3 proposals
+Layer 1 — Proposers (parallel)    default: codex + glm + sonnet subprocesses
+Layer 2 — Broadcast refiners      default: codex + kimi, each sees ALL proposals
 Layer 3 — Aggregator              (parent Claude Opus, in-place)
 ```
+
+The roster (which providers run at which layer, and how many) is
+config-driven — the defaults shown here are what the harness ships with.
 
 **Layer 0.** Parent Claude Code session reads your spec, asks 1–3
 clarifying questions, writes a scout brief (focus files, in-scope,
 out-of-scope). The brief bounds how much exploration the downstream
 models do.
 
-**Layer 1: three proposers, three labs.** OpenAI `codex`, Google
-`gemini`, Anthropic `claude` (in Sonnet mode). Each produces an
-independent plan. Every proposer reads the repo (codex with a
-filesystem-enforced read-only sandbox; gemini and sonnet with
-read-only enforced by prompt) and does web research. Different labs
-tend to mean different training data, different tool-use behavior,
-and different blind spots.
+**Layer 1: proposers across labs.** The default is OpenAI `codex`, Zhipu
+`glm` (GLM-5.2 via the `opencode` CLI), and Anthropic `claude` (in Sonnet
+mode). Each produces an independent plan. Every proposer reads the repo
+(codex with a filesystem-enforced read-only sandbox; opencode with a
+permission-deny policy plus the prompt rule; sonnet with read-only
+enforced by prompt) and does web research. Different labs tend to mean
+different training data, different tool-use behavior, and different blind
+spots.
 
-**Layer 2: two broadcast refiners.** `codex` and `gemini` each see
-all three proposals and produce verification output: which claims
-are verified, which are contradicted, what's missing, what the
-proposers disagreed on. "Broadcast" means every refiner sees every
-proposal, not cross-pair. This is paper-faithful to Wang et al.
+**Layer 2: broadcast refiners.** The default refiners are `codex` and
+`kimi` (Moonshot Kimi K2.7 Code via `opencode`). Each sees all the
+proposals and produces verification output: which claims are verified,
+which are contradicted, what's missing, what the proposers disagreed on.
+"Broadcast" means every refiner sees every proposal, not cross-pair. This
+is paper-faithful to Wang et al.
 
 **Layer 3: aggregation.** Parent Claude Opus synthesizes into one
 plan you can act on. It honors every `contradicted` flag from the
@@ -47,8 +52,8 @@ subprocesses spawned by `harness/scripts/run_moa.py`.
 
 ## Why broadcast refinement
 
-Version 0.1 of this harness used *cross-pair* refinement: codex only
-saw gemini's proposal, gemini only saw codex's. That's not what the
+Version 0.1 of this harness used *cross-pair* refinement: each refiner
+saw only one other proposer's plan. That's not what the
 MoA paper does. Broadcast (every refiner sees every proposal) costs
 the same wall-clock (refiners run in parallel either way) and
 gives each refiner enough context to spot cross-proposer
@@ -58,8 +63,8 @@ reveal. v0.2 corrected this.
 ## Why sonnet is proposer-only
 
 Opus 4.x is the Layer 3 aggregator. Sonnet 4.x is a Layer 1 proposer.
-Layer 2 is kept to `{codex, gemini}` so the verification step is
-done by two labs independent of both:
+The default Layer 2 is `{codex, kimi}` so the verification step is
+done by two labs (OpenAI + Moonshot) independent of both:
 
 - the Anthropic-family proposer (Sonnet), and
 - the Anthropic-family aggregator (Opus).
@@ -68,37 +73,55 @@ Using Sonnet as a refiner would concentrate Anthropic across two
 load-bearing layers and reduce verification independence. This
 matters when the Anthropic-family proposer is wrong in a way
 characteristic of its training: another Anthropic refiner is less
-likely to catch it.
+likely to catch it. The harness no longer enforces this — the roster
+is user config — but the shipped default follows it, and CLAUDE.md
+recommends keeping it (the orchestrator warns if a refiner shares the
+aggregator's harness).
 
-## Why these three
+## Why this roster
 
-Three labs (OpenAI + Google + Anthropic), not more, not fewer.
+The default roster spans four labs — OpenAI (`codex`), Zhipu (`glm`),
+Anthropic (`sonnet`), Moonshot (`kimi`) — not more, not fewer.
 
-- **Three is enough for cross-lab diversity.** The paper's own
-  ablation shows diversity (different labs) beats quantity (more
-  copies of the same model). Three independent labs cover the
-  current frontier.
-- **Adding more labs costs wall-clock and auth complexity.** Each
-  provider needs its own adapter, preflight, and auth story (whether
-  that's subscription OAuth or an API key).
-- **`{codex, claude-code, gemini}` is the default set.** It isn't a
-  hard cap. The orchestrator, preflight, and prompt assumptions are
-  shaped around this trio, so PRs that add providers (OpenCode, a
-  fourth frontier lab, a Chinese-lab model, xAI, Mistral) should open
-  an issue first so we can talk through the adapter shape. A
-  Chinese-lab proposer in particular would sharpen the cross-lab
-  diversity argument, since today's three are all US-based. See
-  [`CONTRIBUTING.md`](../CONTRIBUTING.md).
+- **Cross-lab diversity beats quantity.** The paper's own ablation
+  shows diversity (different labs) beats more copies of the same model.
+  Four independent labs across two countries cover a lot of the current
+  frontier and break the US-only monoculture the earlier lineup had.
+- **Adding lanes costs wall-clock and auth complexity.** Each provider
+  needs an auth story (subscription OAuth or an API key) and adds to the
+  parallel fan-out, though the wall-clock cost is bounded since layers
+  run in parallel.
+- **It's a default, not a cap.** The roster is pure config (see
+  [`config.md`](config.md)). More providers — DeepSeek, Qwen, MiniMax,
+  xAI Grok, Mistral — are welcome; most slot in as an `opencode` or
+  `cursor` model string. A genuinely new *harness* still needs its own
+  adapter, preflight, and prompt-assumption review, so open an issue
+  first. See [`CONTRIBUTING.md`](../CONTRIBUTING.md).
+
+### Why gemini was removed
+
+Through v0.2 the third lab was Google `gemini` (via the gemini CLI). It
+was removed in v0.3.0 because it was the harness's dominant flake source:
+the CLI routinely returned a success-shaped envelope with an empty
+response (utility-model quota exhaustion silently dropping the JSON),
+it has no CLI-level read-only mode (only a prompt rule), and it forced
+the prompt onto argv where large refiner prompts hit ARG_MAX. GLM-5.2
+(via opencode) took the third-lab slot: comparable frontier coding
+quality, real permission-level read-only, and file-based prompt delivery
+that sidesteps the argv limit. Anyone who still wants a Gemini model can
+route it through the `cursor` harness as a user-named provider — see
+[`config.md`](config.md#migrating-from-gemini).
 
 ### Why provider names instead of fixed roles
 
 A provider in moa-x is a `{name, harness, model}` triple. The `harness`
-is which CLI gets invoked (`codex`, `gemini`, `claude`, `cursor`); the
-`model` is what that harness asks for (e.g. `gpt-5.4`, `grok-4-20`);
-the `name` is a user-facing label that becomes the `agent_id` in
-payloads. The codebase ships built-in names `codex`, `gemini`, `sonnet`
-for back-compat; users add their own under `providers:` in
-`harness/config.yaml`.
+is which CLI gets invoked (`codex`, `claude`, `opencode`, `cursor`); the
+`model` is what that harness asks for (e.g. `gpt-5.4`, `zhipuai/glm-5.2`,
+`grok-4-20`); the `name` is a user-facing label that becomes the
+`agent_id` in payloads. The codebase ships built-in names `codex`,
+`sonnet`, `glm`, `kimi`, `composer`; users add their own under
+`providers:` in `harness/config.yaml` or via the
+`MOA_PROVIDER_<NAME>=<harness>:<model>` env shorthand.
 
 This split exists because the Cursor CLI breaks the one-CLI-one-lab
 assumption — `cursor-agent --model gpt-5.5-medium` and `codex --model gpt-5.4`
@@ -134,9 +157,9 @@ happily take PRs on. See the top-level README's PR wishlist.
   tau-bench/terminal-bench adapters; they're gone.
 
 Previously this list also called "API-key fallback" and "more than
-three providers" non-goals. Neither is anymore. API billing is a
-path we want to support better, and a fourth provider (especially a
-Chinese-lab model) is on the PR wishlist. The one hard constraint
-that remains is the lab-independence invariant at refinement and
-aggregation (see "Why sonnet is proposer-only" above); any new
-provider has to slot in without collapsing that.
+three providers" non-goals. Neither is anymore. opencode already routes
+provider API keys (GLM/Kimi are API-billable today), the default roster
+is four providers, and the roster is user config. The one constraint we
+still recommend (not enforce) is lab-independence at refinement and
+aggregation (see "Why sonnet is proposer-only" above); the shipped
+default honors it and the orchestrator warns when a roster breaks it.

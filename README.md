@@ -3,38 +3,40 @@
 **Cross-Lab Mixture of Agents for coding plans.**
 
 <p align="center">
-  <img src="docs/moa-architecture.png" alt="MoA-X architecture: Scout → 3 proposers (codex + gemini + sonnet, read-only) → 2 broadcast refiners → Opus aggregator, 6-12 min wall-clock" width="720">
+  <img src="docs/moa-architecture.png" alt="MoA-X architecture: Scout → 3 proposers (codex + glm + sonnet, read-only) → 2 broadcast refiners (codex + kimi) → Opus aggregator, 6-12 min wall-clock" width="720">
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license">
   <img src="https://img.shields.io/badge/python-3.11%2B-blue.svg" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/runner-Claude%20Code-8b5cf6.svg" alt="Claude Code">
-  <img src="https://img.shields.io/badge/providers-codex%20%7C%20claude--code%20%7C%20gemini%20%7C%20cursor-informational" alt="supported CLIs">
+  <img src="https://img.shields.io/badge/providers-codex%20%7C%20claude--code%20%7C%20opencode%20%7C%20cursor-informational" alt="supported CLIs">
 </p>
 
 A small, CLI-native take on the 2024
 [Mixture-of-Agents paper](https://arxiv.org/abs/2406.04692), pointed at
 a different job: producing **repo-grounded implementation plans** for
-coding agents instead of chat answers. Three proposers from three
-different labs (OpenAI `codex`, Google `gemini`, Anthropic `claude`
-Sonnet) read the repo in parallel, do their own web research, and each
-write an independent plan. Two of them then refine in broadcast mode
-(every refiner sees every plan). Finally a parent Claude Opus session
+coding agents instead of chat answers. The default roster puts proposers
+from four different labs to work — OpenAI `codex`, Zhipu `glm` (GLM-5.2 via
+the `opencode` CLI), Anthropic `claude` Sonnet — reading the repo in
+parallel, doing their own web research, and each writing an independent
+plan. Two refiners (`codex` + Moonshot `kimi`) then refine in broadcast
+mode (every refiner sees every plan). Finally a parent Claude Opus session
 aggregates the whole thing into one plan you can act on.
 
 Built to run **inside Claude Code** as a skill. Standalone Python works
-too. The harness ships three built-in CLI providers (`codex`, `gemini`,
-`claude`) plus optional Cursor CLI support as a fourth lane. API-based
-auth and alternative harnesses are all fair game. See "PRs we'd love
-to see" below.
+too. The harness ships built-in providers across four harnesses (`codex`,
+`claude`, `opencode`, `cursor`) and the roster — which providers run at
+which layer, and how many — is pure config. API-based auth and more
+providers are all fair game. See "PRs we'd love to see" below.
 
 ## TL;DR
 
 ```bash
-# 1. Install the three CLIs (see docs/install.md for details)
-npm i -g @openai/codex          && codex login
-npm i -g @google/gemini-cli     && gemini
+# 1. Install the CLIs (see docs/install.md for details)
+npm i -g @openai/codex               && codex login
+curl -fsSL https://opencode.ai/install | bash   # then: opencode auth login,
+                                                 # or export ZHIPU_API_KEY / MOONSHOT_API_KEY
 # claude CLI: https://docs.claude.com/en/docs/claude-code/quickstart
 
 # 2. Install as a Claude Code skill
@@ -48,10 +50,14 @@ cp -r harness ~/.claude/skills/mixture-of-agents
 
 ```
 Layer 0 — Scout brief           (parent Claude, in-place)
-Layer 1 — Proposers (3 parallel)  codex + gemini + sonnet subprocesses
-Layer 2 — Broadcast refiners (2)  codex + gemini, each sees ALL 3 proposals
+Layer 1 — Proposers (parallel)    default: codex + glm + sonnet subprocesses
+Layer 2 — Broadcast refiners      default: codex + kimi, each sees ALL proposals
 Layer 3 — Aggregator              (parent Claude Opus, in-place)
 ```
+
+The roster is config-driven; the defaults above span four labs (OpenAI,
+Zhipu, Anthropic, Moonshot) and keep the refiners independent of the Opus
+aggregator's lab.
 
 Typical wall-clock is 6–12 minutes. Use it for non-trivial
 architecture work, not one-line fixes. Background in
@@ -59,10 +65,10 @@ architecture work, not one-line fixes. Background in
 
 ## Docs
 
-- [`docs/install.md`](docs/install.md): install the three CLIs, verify, install as a Claude Code skill
+- [`docs/install.md`](docs/install.md): install the CLIs, verify, install as a Claude Code skill
 - [`docs/usage.md`](docs/usage.md): running via `/mixture-of-agents` (primary) or standalone
-- [`docs/config.md`](docs/config.md): `.env` + `harness/config.yaml`, MOA_\* knob table, precedence
-- [`docs/architecture.md`](docs/architecture.md): the four layers, why broadcast, why these three providers
+- [`docs/config.md`](docs/config.md): `.env` + `harness/config.yaml`, MOA_\* knob table, precedence, roster swaps
+- [`docs/architecture.md`](docs/architecture.md): the four layers, why broadcast, why this roster
 - [`CONTRIBUTING.md`](CONTRIBUTING.md): dev setup, PR protocol, where help is welcome
 - [`SECURITY.md`](SECURITY.md): private vulnerability reports
 - [`CLAUDE.md`](CLAUDE.md): guidance for coding agents working on this repo
@@ -83,7 +89,7 @@ harness/               orchestrator, adapters, prompts, schemas
   config.example.yaml  copy to harness/config.yaml to override defaults
   prompts/             scout / proposer / refiner / aggregator
   scripts/             orchestrator + adapters + config + tests
-requirements-cli.txt   install/auth notes for the three CLIs
+requirements-cli.txt   install/auth notes for the provider CLIs
 ```
 
 ## PRs we'd love to see
@@ -92,23 +98,23 @@ The current harness is shaped around what I use day-to-day. These are
 the directions that would expand who MoA-X is useful for, and I'd
 prioritize reviewing PRs that land any of them:
 
-- **API-billing support** for codex, gemini, and claude. Right now
-  the adapters assume each CLI is logged in against a subscription
-  plan. Shops that run through `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`
-  / `GEMINI_API_KEY` should be a first-class path.
-- **OpenCode and other agent harnesses.** The orchestrator runs fine
-  from a plain shell, but the scout + aggregation steps are tailored
-  to Claude Code. PRs that close the gap for OpenCode (or aider,
-  codex-as-harness, roo, continue, cline, etc.) are welcome.
-- **Chinese-lab models.** DeepSeek, Qwen, Kimi, GLM, MiniMax. The
-  whole argument for MoA is cross-lab diversity, and the current
-  lineup is US-only. Routing one proposer through a Chinese frontier
-  model would test the thesis in the place it most deserves testing.
-- **More providers generally.** xAI Grok, Mistral, any model with a
-  credible coding-bench story. Cursor CLI is already supported as a
-  fourth lane (see `docs/install.md`). Additional native adapters need
-  their own adapter, preflight, and prompt-assumption review; open an
-  issue first so we can talk through auth shape, then build.
+- **API-billing support** for codex and claude. Right now those
+  adapters assume the CLI is logged in against a subscription plan.
+  Shops that run through `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` should
+  be a first-class path. (opencode already routes provider API keys —
+  `ZHIPU_API_KEY` / `MOONSHOT_API_KEY` / `FIREWORKS_API_KEY` — so GLM
+  and Kimi are API-billable today.)
+- **More agent harnesses.** The orchestrator runs fine from a plain
+  shell, but the scout + aggregation steps are tailored to Claude Code.
+  `opencode` and `cursor` are supported alongside `codex`/`claude`;
+  PRs closing the gap for aider, roo, continue, cline, etc. are welcome.
+- **More Chinese-lab and frontier models.** GLM (Zhipu) and Kimi
+  (Moonshot) ship in the default roster via opencode. DeepSeek, Qwen,
+  MiniMax, xAI Grok, Mistral — anything with a credible coding-bench
+  story — extend the cross-lab diversity argument further. Most slot in
+  as an `opencode` or `cursor` model string with no new adapter; a
+  genuinely new harness needs its own adapter, preflight, and
+  prompt-assumption review, so open an issue first.
 - **Cost observability** for API-billed runs: token accounting in the
   manifest, a `MOA_MAX_COST` ceiling, per-layer spend breakdowns.
 

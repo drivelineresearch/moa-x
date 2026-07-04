@@ -11,10 +11,10 @@ README has a more specific wishlist.
 ## Dev environment
 
 ```bash
-# 1. Install the three external CLIs. Any auth the CLI itself supports
+# 1. Install the external CLIs. Any auth the CLI itself supports
 #    works — subscription OAuth (what I use) or API key both fine.
-npm i -g @openai/codex          && codex login
-npm i -g @google/gemini-cli     && gemini       # interactive OAuth once
+npm i -g @openai/codex                            && codex login
+curl -fsSL https://opencode.ai/install | bash     && opencode auth login  # GLM + Kimi
 # claude CLI: see https://docs.claude.com/en/docs/claude-code/quickstart
 
 # 2. Verify everything is wired up:
@@ -40,14 +40,16 @@ New tests must run offline so CI stays credential-free.
 
 - First-class API-billing support. The adapters currently assume
   subscription auth. Making `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` /
-  `GEMINI_API_KEY` a supported, documented path (with cost surfacing
-  in the manifest and a `MOA_MAX_COST` ceiling) is a priority.
+  `ZHIPU_API_KEY` / `MOONSHOT_API_KEY` a supported, documented path
+  (with cost surfacing in the manifest and a `MOA_MAX_COST` ceiling)
+  is a priority.
 - Running outside Claude Code: OpenCode, aider, codex-as-harness,
   roo/cline/continue, or a plain shell. The Claude Code skill path
   is the best-trodden today.
-- Chinese-lab models: DeepSeek, Qwen, Kimi, GLM, MiniMax. The
-  cross-lab diversity argument is weaker when all three providers
-  are US-based; a Chinese proposer would test and strengthen it.
+- Chinese-lab models: the default roster already ships GLM 5.2 and
+  Kimi K2.7 Code (via opencode), so the ensemble spans OpenAI, Zhipu,
+  Anthropic, and Moonshot. More Chinese-lab frontier models — DeepSeek,
+  Qwen, MiniMax — would broaden that diversity further.
 - More providers generally: xAI Grok, Mistral, anything with a
   credible coding story. Open an issue first so we can talk through
   auth and adapter shape; adding a provider touches the orchestrator,

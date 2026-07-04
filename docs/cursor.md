@@ -1,23 +1,29 @@
 # Cursor CLI integration
 
-This page documents how moa-x integrates with the Cursor CLI
-(`cursor-agent`), what guarantees the integration provides, and how to
-configure it. For named-provider config in general see
-[`docs/config.md`](./config.md); for the architectural rationale see
+This page documents how moa-x integrates with the Cursor CLI, what
+guarantees the integration provides, and how to configure it. For
+named-provider config in general see [`docs/config.md`](./config.md);
+for the architectural rationale see
 [`docs/architecture.md`](./architecture.md).
+
+Cursor's CLI binary was historically named `cursor-agent`; newer
+releases rename it to `agent`. The adapter probes `cursor-agent` first,
+then `agent`, honoring `MOA_CURSOR_BIN` if set. Command examples below
+use `cursor-agent`; substitute `agent` on a newer install.
 
 ## Why Cursor
 
-Cursor is the first multi-lab CLI in the moa-x default set. A single
-`cursor-agent` binary routes to OpenAI, Anthropic, Google, xAI, or
-Moonshot models via the `--model` flag — useful for adding a fourth
-ensemble lane, or for users who want to consolidate billing around one
-subscription.
+Cursor is a multi-lab CLI: a single binary routes to OpenAI, Anthropic,
+Google, xAI, or Moonshot models — plus Cursor's own in-house
+`composer` models — via the `--model` flag. That makes it useful for
+adding an ensemble lane, or for users who want to consolidate billing
+around one subscription. moa-x ships `composer` (composer-2.5) as a
+built-in provider on the cursor harness.
 
-This is also why named providers exist: the legacy
-`{codex, gemini, sonnet}` strings packed CLI + lab + model into one
-token, which Cursor's one-CLI-many-labs shape broke. See
-`docs/architecture.md` for the full design discussion.
+This is also why named providers exist: the legacy `{codex, sonnet, …}`
+strings packed CLI + lab + model into one token, which Cursor's
+one-CLI-many-labs shape broke. See `docs/architecture.md` for the full
+design discussion.
 
 ## Filesystem guarantees
 
@@ -28,19 +34,28 @@ Plan mode is enforced at the Cursor CLI layer:
 
 Verified: prompts that ask the model to write a file return *"plan mode
 is active and I lack permission to run write/edit tools"* and produce
-no file. This is a real CLI-level guarantee, not a prompt hint.
+no file. `--mode plan` is the primary CLI-level guarantee, not a prompt
+hint.
+
+Belt-and-suspenders: for defense in depth you can also pin the
+workspace read-only at the sandbox layer — a `sandbox.json` with
+`workspace_readonly` plus `permissions.deny: ["Write(**)"]`. Note the
+known bug where headless `-p` runs could ignore `sandbox.json`
+(cursor forum thread 157095); that unreliability is exactly why
+`--mode plan` is the primary guarantee and the sandbox settings are a
+secondary layer, not the other way around.
 
 Implication: the adapter does **not** prepend the
-`READ_ONLY_RULE` prompt directive that the gemini and claude adapters
-use. Those adapters have no equivalent CLI flag, so the prompt is their
-only line of defense. Cursor's plan mode replaces the prompt rule —
-keeping both would just add token overhead.
+`READ_ONLY_RULE` prompt directive that the codex, claude, and opencode
+adapters use. Those adapters have no equivalent CLI flag, so the prompt
+is their only line of defense. Cursor's plan mode replaces the prompt
+rule — keeping both would just add token overhead.
 
 If a future Cursor release regresses plan-mode enforcement, the
 orchestrator's session is still bounded by `cwd=repo_path` (set on the
 subprocess), so any rogue write lands inside the user's repo where
 `.gitignore` and review surface it. Defense in depth lives at the git
-layer, not the prompt layer.
+and sandbox layers, not the prompt layer.
 
 ## Authentication
 
@@ -57,8 +72,9 @@ non-zero with a helpful message when not. This catches stale tokens
 or expired sessions during preflight, before the orchestrator wastes
 wall-clock launching a real call that will fail.
 
-Set `MOA_CURSOR_BIN` if `cursor-agent` lives somewhere unusual; the
-default search is the system PATH.
+Set `MOA_CURSOR_BIN` if the binary lives somewhere unusual or is named
+something other than `cursor-agent` / `agent`; the default search
+probes `cursor-agent` first, then `agent`, on the system PATH.
 
 ## Command line shape
 
@@ -112,7 +128,7 @@ identical to claude-cli's outer envelope without `--json-schema` set:
 
 Cursor has no `--output-schema` equivalent (codex's hard schema
 enforcement). The adapter validates the inner JSON against the
-proposer/refiner schema Python-side, mirroring the gemini adapter's
+proposer/refiner schema Python-side, mirroring the opencode adapter's
 strategy. The parser handles both bare JSON and ` ```json ` fenced JSON
 inside the `result` text, longest-match-first.
 
@@ -132,10 +148,10 @@ Examples (from a current install):
 | GPT-5.5              | `gpt-5.5-medium` (also `-high`, `-extra-high`) |
 | Claude 4.7 Opus      | `claude-opus-4-7-medium` (or `-thinking-high`, etc.) |
 | Claude 4.5 Sonnet    | `claude-4.5-sonnet`         |
-| Gemini 3.1 Pro       | `gemini-3.1-pro`            |
-| Gemini 3 Flash       | `gemini-3-flash`            |
+| Composer 2.5         | `composer-2.5` (Cursor's in-house model) |
+| Gemini 3.1 Pro       | `gemini-3.1-pro` (used by the Gemini migration example below) |
 | Grok 4.20            | `grok-4-20`                 |
-| Kimi K2.5            | `kimi-k2.5`                 |
+| Kimi K2.7 Code       | `kimi-k2.7-code`            |
 
 Notes:
 
@@ -159,7 +175,19 @@ identifiers by provider. Useful summary as of 2026-04:
 | Google    | `gemini-*`                                                 |
 | xAI       | `grok-*`                                                   |
 | Moonshot  | `kimi-*`                                                   |
+| Zhipu     | `glm-*`                                                    |
 | Cursor    | `composer-*` (Cursor's own foundation models)              |
+
+### Cursor-hosted GLM / Kimi vs opencode
+
+Cursor's catalog also routes Kimi K2.7 Code and GLM 5.2. If you already
+pay for Cursor, routing those through the cursor harness is a valid
+alternative to the default `opencode` lanes — one subscription, one CLI.
+The catch: **the Cursor CLI has no bring-your-own-key path**, so
+Cursor-hosted GLM/Kimi run on Cursor's billing, not your Zhipu /
+Moonshot keys. If you want to run GLM 5.2 or Kimi K2.7 Code on your own
+provider keys, use the `opencode` harness (the default) instead — it
+reads `ZHIPU_API_KEY` / `MOONSHOT_API_KEY` directly.
 
 moa-x does not infer lab from model id at runtime. The `lab` concept
 is intentionally absent from the data model — see
@@ -177,8 +205,8 @@ Add a fourth lane (Grok) on top of the default ensemble:
 providers:
   cursor-grok: {harness: cursor, model: grok-4-20}
 layers:
-  proposers: [codex, gemini, sonnet, cursor-grok]
-  refiners:  [codex, gemini]
+  proposers: [codex, glm, sonnet, cursor-grok]
+  refiners:  [codex, kimi]
 ```
 
 One CLI delivering everything (the consolidate-around-Cursor case):
@@ -194,6 +222,21 @@ layers:
   # CLAUDE.md recommends keeping refiners off the aggregator's lab
   # (Anthropic). The orchestrator warns but doesn't block.
 ```
+
+Migrating from the removed `gemini` provider (v0.3.0 dropped the gemini
+harness and built-in provider). If you relied on a Gemini lane, route it
+through Cursor as a user-defined provider:
+
+```yaml
+providers:
+  cursor-gemini: {harness: cursor, model: gemini-3.1-pro}
+layers:
+  proposers: [codex, glm, sonnet, cursor-gemini]
+  refiners:  [codex, kimi]
+```
+
+(This runs on Cursor billing — the Cursor CLI has no bring-your-own-key
+path for Google models.)
 
 Override a model at runtime:
 
@@ -242,7 +285,7 @@ checks only what your config actually needs:
 
 - **Required harnesses** = `{p.harness for p in proposers + refiners}`.
   Harnesses not referenced in any layer are reported as "unused" and
-  skipped — no failure for codex/gemini/claude not being installed if
+  skipped — no failure for codex/claude/opencode not being installed if
   your config is cursor-only.
 - **Schema coherence**: every resolved provider name is regex-tested
   against the proposer/refiner schemas' `agent_id` patterns. Catches
@@ -257,9 +300,9 @@ checks only what your config actually needs:
   sessions surface here, before a real run wastes wall-clock.
 
 If `harness/config.yaml` doesn't exist, preflight falls back to the
-built-in default ensemble (`proposers: [codex, gemini, sonnet]`,
-`refiners: [codex, gemini]`), which preserves the legacy "is the moa-x
-shipped baseline ready?" diagnostic.
+built-in default ensemble (`proposers: [codex, glm, sonnet]`,
+`refiners: [codex, kimi]`), which preserves the "is the moa-x shipped
+baseline ready?" diagnostic.
 
 ## What this integration does NOT cover
 
