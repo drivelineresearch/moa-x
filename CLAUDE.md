@@ -90,6 +90,13 @@ then `harness/config.yaml`, then built-in defaults. Loader lives at
   The opencode adapter writes the prompt to a file and passes it with `-f`
   plus a short positional instruction. Don't try to pass big refiner prompts
   (scout brief + every proposer output) on argv — they overflow.
+- **opencode `run` flags (verified against the installed CLI, not docs):**
+  the auto-approve flag is `--dangerously-skip-permissions` (there is no
+  `--auto`); there is no `-q`/`--quiet`. `-f/--file` is a greedy yargs ARRAY
+  option, so the positional message MUST come before it (or `-f` swallows the
+  message as a bogus "file"). `OPENCODE_CONFIG` is merged into opencode's
+  config chain, not a replacement, so the read-only `permission` deny block
+  layers on safely. Cold start is ~20s — give opencode agents real timeouts.
 - **opencode model ids are `provider/model` strings** (`zhipuai/glm-5.2`,
   `moonshotai/kimi-k2.7-code`, `fireworks-ai/accounts/fireworks/models/glm-5p2`).
   Swap billing paths by overriding the model string (`MOA_GLM_MODEL=...`), not
