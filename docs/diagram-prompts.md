@@ -14,41 +14,56 @@ that exact style with the new roster. Generate at ~1440px square and overwrite
 
 ## Prompt 1 — architecture illustration (replaces `docs/moa-architecture.png`)
 
+Layout note: image models scramble the stage order unless the quadrants and
+the arrow path are stated up front and explicitly. Keep the 2×2 grid + numbered
+Z-path exactly as written below.
+
 > Isometric technical illustration, hand-drawn vector style: bold black
-> outlines, flat color fills with subtle cel-shading, light warm-gray
-> background. Clean sans-serif labels. It depicts a four-stage "mixture of
-> agents" pipeline, laid out as four labeled vignettes connected by thick
-> colored ribbon-pipes that flow between them.
+> outlines, flat color fills with subtle cel-shading, on a light warm-gray
+> background. Clean sans-serif labels.
 >
-> **(1) SCOUT** (top-left): a person in an orange sweater sitting at a desk,
+> COMPOSITION — a 2×2 grid of four equal quadrants, one numbered stage per
+> quadrant, connected by thick numbered arrows in strict order 1 → 2 → 3 → 4
+> (a Z-shaped reading path). Exact placement, do not rearrange:
+> - TOP-LEFT quadrant = stage ① SCOUT
+> - TOP-RIGHT quadrant = stage ② PROPOSERS
+> - BOTTOM-LEFT quadrant = stage ③ BROADCAST REFINERS
+> - BOTTOM-RIGHT quadrant = stage ④ AGGREGATOR
+> Draw the flow as three big labeled arrows: arrow ①→② runs straight across the
+> TOP edge, left to right (Scout to Proposers); arrow ②→③ sweeps diagonally
+> down the middle from top-right to bottom-left (Proposers to Refiners); arrow
+> ③→④ runs straight across the BOTTOM edge, left to right (Refiners to
+> Aggregator). Each stage header is prefixed with its circled number.
+>
+> ① SCOUT (top-left quadrant): a person in an orange sweater at a desk,
 > reviewing a paper labeled "spec" and a green planning board with pinned
 > sticky notes; a small "scout-brief.json" note and an "APPROVED · 6–12 min"
 > rubber stamp on the desk.
 >
-> **(2) PROPOSERS** (lower-left): three isometric desks in a row, each with a
+> ② PROPOSERS (top-right quadrant): three isometric desks in a row, each with a
 > monitor showing a globe icon (web research). Desk colors and logos identify
-> three labs: a GREEN desk with the OpenAI swirl labeled "codex", a VIOLET
-> desk labeled "GLM" with a small stylized knowledge-graph / "Z" motif (Zhipu),
-> and an ORANGE desk with the Anthropic sunburst labeled "sonnet". A bold red
-> ribbon reading "READ-ONLY" bands across the desks, with a padlock icon. JSON
-> pages drop out of an output tray.
+> three labs: a GREEN desk with the OpenAI swirl labeled "codex", a VIOLET desk
+> labeled "GLM" with a small stylized knowledge-graph / "Z" motif (Zhipu), and
+> an ORANGE desk with the Anthropic sunburst labeled "sonnet". A bold red ribbon
+> reading "READ-ONLY" bands across the desks, with a padlock icon. JSON pages
+> drop out of an output tray.
 >
-> **(3) BROADCAST REFINERS** (top-right): two people at desks reviewing cork
-> boards pinned with three "JSON" sheets each (they each see all proposals). A
-> GREEN desk with the OpenAI swirl labeled "codex", and a DARK-INDIGO desk
-> labeled "kimi" with a small crescent-moon logo (Moonshot). A "VERIFIED"
-> stamp on a desk.
+> ③ BROADCAST REFINERS (bottom-left quadrant): two people at desks reviewing
+> cork boards pinned with three "JSON" sheets each (they each see all
+> proposals). A GREEN desk with the OpenAI swirl labeled "codex", and a
+> DARK-INDIGO desk labeled "kimi" with a small crescent-moon logo (Moonshot). A
+> "VERIFIED" stamp on a desk.
 >
-> **(4) AGGREGATOR** (bottom-right): a pair of hands in orange sleeves drawing
-> on a drafting table, assembling a blueprint and a document labeled
+> ④ AGGREGATOR (bottom-right quadrant): a pair of hands in orange sleeves
+> drawing on a drafting table, assembling a blueprint and a document labeled
 > "final-plan.md". Small "Opus" + Anthropic wordmark in the corner.
 >
-> Colored ribbon-pipes (green, violet, orange from the proposers; green and
-> indigo from the refiners) flow from stage to stage and converge at the
-> aggregator. Along the very bottom, a horizontal ruler/measuring line with the
-> caption "~6–12 min wall-clock". Overall palette: OpenAI green, Zhipu violet,
+> The connecting arrows are colored ribbon-pipes (green, violet, orange from
+> the proposers; green and indigo from the refiners). Along the very bottom,
+> below the grid, a thin horizontal ruler/measuring line with the caption
+> "~6–12 min wall-clock". Overall palette: OpenAI green, Zhipu violet,
 > Anthropic orange, Moonshot indigo, on light gray. No photorealism, no
-> gradients-heavy 3D render — keep the flat illustrated cel-shaded look.
+> heavy-3D render — keep the flat illustrated cel-shaded look.
 
 Notes for whoever runs it:
 - The two former Google-blue desks (one proposer, one refiner) become **Zhipu
