@@ -82,31 +82,23 @@ then `harness/config.yaml`, then built-in defaults. Loader lives at
 `harness/scripts/config.py`. Full knob table in `docs/config.md`.
 
 <!-- AGENT-MANAGED SECTION -->
-<!-- Agents may append discovered patterns, gotchas, and conventions below. -->
+<!-- Lifecycle for entries below: (1) write the full why/detail into the relevant
+     doc or skill FIRST, (2) add a one-line RULE + one-clause tripwire + pointer
+     here, (3) once the entry is stable, graduate it into the human section above
+     and delete it here. Keep this section short — it's an inbox, not an archive. -->
 
 ## Discovered patterns
 
-- **opencode has no stdin and argv is ARG_MAX-capped (~128KB on Linux).**
-  The opencode adapter writes the prompt to a file and passes it with `-f`
-  plus a short positional instruction. Don't try to pass big refiner prompts
-  (scout brief + every proposer output) on argv — they overflow.
-- **opencode `run` flags (verified against the installed CLI, not docs):**
-  the auto-approve flag is `--dangerously-skip-permissions` (there is no
-  `--auto`); there is no `-q`/`--quiet`. `-f/--file` is a greedy yargs ARRAY
-  option, so the positional message MUST come before it (or `-f` swallows the
-  message as a bogus "file"). `OPENCODE_CONFIG` is merged into opencode's
-  config chain, not a replacement, so the read-only `permission` deny block
-  layers on safely. Cold start is ~20s — give opencode agents real timeouts.
-- **opencode model ids are `provider/model` strings** (`zhipuai/glm-5.2`,
-  `moonshotai/kimi-k2.7-code`, `fireworks-ai/accounts/fireworks/models/glm-5p2`).
-  Swap billing paths by overriding the model string (`MOA_GLM_MODEL=...`), not
-  by adding a harness.
-- **The Cursor CLI binary was renamed `cursor-agent` → `agent`** (the bare
-  `cursor` is the IDE launcher, not the agent). `cursor._cursor_bin()` probes
-  `cursor-agent` then `agent`; honor `MOA_CURSOR_BIN` to pin one.
-- **Schema-unenforced adapters (cursor, opencode) share
-  `adapters.extract_json_from_text`.** If you touch JSON extraction, change it
-  there once, not per-adapter.
-- **`gemini` is gone.** `config.resolve_provider('gemini')` raises a targeted
-  migration hint pointing at the cursor harness. Don't reintroduce a gemini
-  built-in without addressing the flakes documented in `docs/architecture.md`.
+- **Don't guess opencode `run` flags — they contradict the published docs.** No
+  `-q`/`--auto`; auto-approve is `--dangerously-skip-permissions`; no stdin
+  (prompt via `-f`, big prompts overflow argv); `-f` is a greedy array so the
+  message goes before it. → `opencode-headless-run-invocation` skill + `adapters/opencode.py`.
+- **opencode model ids are `provider/model` strings.** Swap billing paths by
+  overriding the model string (`MOA_GLM_MODEL=fireworks-ai/...`), not by adding a
+  harness. → `docs/config.md`.
+- **Cursor CLI binary was renamed `cursor-agent` → `agent`** (bare `cursor` is the
+  IDE launcher). The adapter probes both; honor `MOA_CURSOR_BIN`. → `adapters/cursor.py`.
+- **Schema-unenforced adapters (cursor, opencode) share one JSON extractor.**
+  Change `adapters.extract_json_from_text` once, not per-adapter.
+- **`gemini` is gone** and `resolve_provider('gemini')` raises a migration hint.
+  Don't reintroduce it without fixing the flakes. → `docs/architecture.md`.

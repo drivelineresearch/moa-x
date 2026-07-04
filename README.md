@@ -1,9 +1,5 @@
-# MoA-X
-
-**Cross-Lab Mixture of Agents for coding plans.**
-
 <p align="center">
-  <img src="docs/moa-architecture.png" alt="MoA-X architecture: Scout → 3 proposers (codex + glm + sonnet, read-only) → 2 broadcast refiners (codex + kimi) → Opus aggregator, 6-12 min wall-clock" width="720">
+  <img src="docs/moa-x-header.png" alt="MoA-X — Cross-Lab Mixture of Agents for coding plans" width="100%">
 </p>
 
 <p align="center">
@@ -11,6 +7,10 @@
   <img src="https://img.shields.io/badge/python-3.11%2B-blue.svg" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/runner-Claude%20Code-8b5cf6.svg" alt="Claude Code">
   <img src="https://img.shields.io/badge/providers-codex%20%7C%20claude--code%20%7C%20opencode%20%7C%20cursor-informational" alt="supported CLIs">
+</p>
+
+<p align="center">
+  <img src="docs/moa-x-workflow.png" alt="MoA-X workflow: (1) Scout writes a brief → (2) Proposers codex + glm + sonnet draft plans read-only → (3) Broadcast refiners codex + kimi verify all plans → (4) Opus aggregator writes final-plan.md, ~6–12 min wall-clock" width="820">
 </p>
 
 A small, CLI-native take on the 2024
@@ -71,18 +71,19 @@ architecture work, not one-line fixes. Background in
 - [`docs/architecture.md`](docs/architecture.md): the four layers, why broadcast, why this roster
 - [`CONTRIBUTING.md`](CONTRIBUTING.md): dev setup, PR protocol, where help is welcome
 - [`SECURITY.md`](SECURITY.md): private vulnerability reports
-- [`CLAUDE.md`](CLAUDE.md): guidance for coding agents working on this repo
+- [`CLAUDE.md`](CLAUDE.md) / [`AGENTS.md`](AGENTS.md): guidance for coding agents working on this repo (AGENTS.md points at CLAUDE.md)
 
 ## Repo layout
 
 ```
 README.md              this file
 CLAUDE.md              agent guidance for this repo
+AGENTS.md              pointer to CLAUDE.md for Codex / OpenCode / Cursor / Zed
 CONTRIBUTING.md        contributor guide
 SECURITY.md            vulnerability reporting
 LICENSE                MIT
 .env.example           copy to .env to override harness defaults
-docs/                  longer-form docs by topic
+docs/                  longer-form docs by topic (+ brand images)
 harness/               orchestrator, adapters, prompts, schemas
   SKILL.md             Claude Code skill manifest
   README.md            skill-internal notes (lives with harness/ when copied into ~/.claude/skills/)
@@ -117,6 +118,11 @@ prioritize reviewing PRs that land any of them:
   prompt-assumption review, so open an issue first.
 - **Cost observability** for API-billed runs: token accounting in the
   manifest, a `MOA_MAX_COST` ceiling, per-layer spend breakdowns.
+- **Stronger, uniform read-only guarantees.** `codex` runs in a filesystem
+  sandbox and `cursor` uses `--mode plan`, but `opencode` leans on a
+  permission-deny config plus the prompt rule. A PR that hardens or verifies
+  read-only across every harness — and fails a run that writes — would tighten
+  the safety story.
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the PR protocol.
 
