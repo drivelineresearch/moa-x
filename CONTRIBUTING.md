@@ -33,8 +33,8 @@ New tests must run offline so CI stays credential-free.
 3. `python3 harness/scripts/test_offline.py` must pass in CI.
 4. Describe the *why* in the PR body. A clean diff alone rarely
    tells the whole story for a reference harness.
-5. Update `README.md` and/or `CLAUDE.md` if behavior, install, or
-   config surface changed.
+5. Update `README.md` and/or `CLAUDE.md` (agents also read it via
+   `AGENTS.md`) if behavior, install, or config surface changed.
 
 ## Where help is especially welcome
 

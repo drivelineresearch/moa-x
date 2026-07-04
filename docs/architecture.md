@@ -6,7 +6,7 @@ pointed at a different job: producing repo-grounded implementation
 plans for coding agents instead of chat answers.
 
 <p align="center">
-  <img src="moa-architecture.png" alt="MoA-X architecture" width="620">
+  <img src="moa-x-workflow.png" alt="MoA-X workflow: Scout → Proposers (codex + glm + sonnet, read-only) → Broadcast refiners (codex + kimi) → Opus aggregator" width="700">
 </p>
 
 ## The four layers

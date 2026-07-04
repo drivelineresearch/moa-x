@@ -1,18 +1,18 @@
 # Diagram & image prompts
 
-`docs/moa-architecture.png` (embedded in the README and `docs/architecture.md`)
-still shows the pre-v0.3.0 roster (codex + gemini + sonnet). **It needs
-regenerating** for the four-lab roster (codex + glm + sonnet proposers,
-codex + kimi refiners). Until then the alt text is accurate and the image is
-the only stale artifact.
+The brand images are current and live:
 
-The existing image is a **detailed isometric illustration** — hand-drawn
-vector look, bold black outlines, flat color fills with light cel-shading, on
-a light-gray ground — NOT a flat boxes-and-arrows diagram. Prompt 1 recreates
-that exact style with the new roster. Generate at ~1440px square and overwrite
-`docs/moa-architecture.png` (keep the filename so the embeds keep working).
+- `docs/moa-x-header.png` — the README hero banner (generated from Prompt 2).
+- `docs/moa-x-workflow.png` — the four-stage workflow illustration, embedded in
+  the README and `docs/architecture.md` (generated from Prompt 1).
 
-## Prompt 1 — architecture illustration (replaces `docs/moa-architecture.png`)
+Both reflect the four-lab roster (codex + glm + sonnet proposers, codex + kimi
+refiners). The prompts below are kept as the source of truth for regenerating
+or tweaking them — keep the same style so the pair stays visually consistent.
+When regenerating, overwrite the file in place (keep the filename so the embeds
+keep working).
+
+## Prompt 1 — workflow illustration (`docs/moa-x-workflow.png`)
 
 Layout note: image models scramble the stage order unless the quadrants and
 the arrow path are stated up front and explicitly. Keep the 2×2 grid + numbered
@@ -74,7 +74,7 @@ Notes for whoever runs it:
   moon (Kimi) and knowledge-graph/Z (Zhipu) are nice-to-have accents, not
   load-bearing.
 
-## Prompt 2 — hero/banner (optional, top of README)
+## Prompt 2 — hero/banner (`docs/moa-x-header.png`)
 
 > Minimal wide banner (3:1), dark charcoal background. Center: the text
 > "MoA-X" in a bold geometric sans, with a subtle circuit-like motif of four
