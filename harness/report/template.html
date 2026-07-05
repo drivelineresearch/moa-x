@@ -26,9 +26,11 @@
   --green: #10B981;
   --red: #EF4444;
   --dist: #D1D5DB;
-  --font-head: 'Helvetica Neue', 'Arial Narrow', Arial, system-ui, sans-serif;
-  --font-body: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  --font-mono: 'SF Mono', 'Menlo', 'Consolas', 'Liberation Mono', monospace;
+  /* Monospace-forward, developer-tool aesthetic. All system fonts so the
+     single-file artifact stays self-contained (no external font requests). */
+  --font-head: 'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', 'SF Mono', 'Menlo', 'Consolas', 'DejaVu Sans Mono', 'Liberation Mono', monospace;
+  --font-body: 'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', 'SF Mono', 'Menlo', 'Consolas', 'DejaVu Sans Mono', 'Liberation Mono', monospace;
+  --font-mono: 'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', 'SF Mono', 'Menlo', 'Consolas', 'DejaVu Sans Mono', 'Liberation Mono', monospace;
 }
 *, *::before, *::after { box-sizing: border-box; }
 svg, svg * { filter: none; }
@@ -52,6 +54,8 @@ a:hover { color: var(--gold); border-color: var(--gold); }
 h1, h2, h3, .head { font-family: var(--font-head); text-transform: uppercase; letter-spacing: 0.01em; font-weight: 800; }
 h2.section-title { font-size: 1.6rem; margin: 0 0 4px; }
 .section-kicker { font-family: var(--font-head); text-transform: uppercase; font-weight: 800; font-size: 0.7rem; letter-spacing: 0.14em; color: var(--gold); }
+.section-note { color: var(--secondary); font-size: 0.86rem; line-height: 1.55; max-width: 78ch; margin: 6px 0 20px; }
+.section-note b { color: var(--ink); }
 section.block { padding: 44px 0; border-top: 1px solid var(--track); }
 section.block:first-of-type { border-top: none; }
 
@@ -60,7 +64,7 @@ header.report-head { padding: 40px 0 30px; }
 .report-head .eyebrow { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
 .brandmark { font-family: var(--font-head); font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; font-size: 1.1rem; }
 .brandmark .x { color: var(--gold); }
-.report-head h1 { font-size: 2.9rem; line-height: 1.02; margin: 0 0 14px; max-width: 20ch; }
+.report-head h1 { font-size: 2.5rem; line-height: 1.14; margin: 0 0 18px; max-width: 26ch; letter-spacing: 0.005em; }
 .meta-row { display: flex; flex-wrap: wrap; gap: 8px 26px; align-items: center; color: var(--secondary); font-size: 0.85rem; margin-bottom: 20px; }
 .meta-row b { color: var(--ink); font-weight: 700; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -565,8 +569,9 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
     var sec = el("section", { class: "block", id: "plan" });
     sec.appendChild(el("div", { class: "section-kicker", text: "Layer 3" }));
     sec.appendChild(el("h2", { class: "section-title", text: "Aggregated final plan" }));
+    sec.appendChild(el("p", { class: "section-note", html: "Layers 0 (scout) and 3 (aggregation) run <b>in the parent Claude Code session (Opus), in-place</b> — not as spawned CLI subprocesses. The orchestrator only spawns Layers 1 &amp; 2, so Opus has no bar in the timeline and no log below: it <i>is</i> the session reading these outputs and writing the plan." }));
     if (DATA.final_plan_html) sec.appendChild(el("div", { class: "plan-render", html: DATA.final_plan_html }));
-    else sec.appendChild(el("div", { class: "notice info", text: "No final-plan.md yet — the parent Claude session aggregates the proposals and refiner findings into the final plan after this report is generated." }));
+    else sec.appendChild(el("div", { class: "notice info", text: "No final-plan.md yet — the parent Opus session aggregates the proposals and refiner findings into the final plan after this report is generated. Re-run report.py once final-plan.md exists to embed it here." }));
     addSection("plan", "Final plan", sec);
   })();
 
