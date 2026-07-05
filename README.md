@@ -69,6 +69,7 @@ architecture work, not one-line fixes. Background in
 - [`docs/usage.md`](docs/usage.md): running via `/mixture-of-agents` (primary) or standalone
 - [`docs/config.md`](docs/config.md): `.env` + `harness/config.yaml`, MOA_\* knob table, precedence, roster swaps
 - [`docs/architecture.md`](docs/architecture.md): the four layers, why broadcast, why this roster
+- [`docs/report.md`](docs/report.md): the self-contained HTML run report (`report.html`) — 3D pipeline, Gantt, verdict matrix
 - [`CONTRIBUTING.md`](CONTRIBUTING.md): dev setup, PR protocol, where help is welcome
 - [`SECURITY.md`](SECURITY.md): private vulnerability reports
 - [`CLAUDE.md`](CLAUDE.md) / [`AGENTS.md`](AGENTS.md): guidance for coding agents working on this repo (AGENTS.md points at CLAUDE.md)
@@ -89,7 +90,8 @@ harness/               orchestrator, adapters, prompts, schemas
   README.md            skill-internal notes (lives with harness/ when copied into ~/.claude/skills/)
   config.example.yaml  copy to harness/config.yaml to override defaults
   prompts/             scout / proposer / refiner / aggregator
-  scripts/             orchestrator + adapters + config + tests
+  report/              HTML report template + vendored three.min.js
+  scripts/             orchestrator + adapters + config + report + tests
 requirements-cli.txt   install/auth notes for the provider CLIs
 ```
 

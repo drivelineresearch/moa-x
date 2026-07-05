@@ -102,3 +102,10 @@ then `harness/config.yaml`, then built-in defaults. Loader lives at
   Change `adapters.extract_json_from_text` once, not per-adapter.
 - **`gemini` is gone** and `resolve_provider('gemini')` raises a migration hint.
   Don't reintroduce it without fixing the flakes. → `docs/architecture.md`.
+- **The HTML run report is a single self-contained file.** `report.py` inlines
+  `harness/report/template.html` + vendored `three.min.js` + the session data —
+  zero network requests (tests assert no external `src=`/`href=`). Two gotchas:
+  Three.js is pinned to **r128 UMD** (later releases are ESM-only, which can't be
+  inlined into a bare `<script>`); and the session JSON is embedded in a
+  `<script type="application/json">` with `</` → `<\/` so a `</script>` inside a
+  captured log can't terminate the tag early. → `docs/report.md`.

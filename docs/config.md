@@ -152,6 +152,7 @@ layers:
 | `MOA_PROPOSERS` | `codex,glm,sonnet` | Comma-separated subset of proposers to spawn. |
 | `MOA_REFINERS` | `codex,kimi` | Comma-separated subset of refiners. |
 | `MOA_SKIP_LAYER2` | unset | Set to `1` to skip the refinement layer entirely. |
+| `MOA_NO_REPORT` | unset | Set to `1` to skip generating `<session>/report.html` after a run (same as `--no-report`). See [`docs/report.md`](report.md). |
 
 CLI flag equivalents exist for every row here. Run
 `python3 harness/scripts/run_moa.py --help` to see them.
