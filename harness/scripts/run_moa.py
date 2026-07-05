@@ -122,6 +122,10 @@ class LayerResult:
     payload: Optional[dict] = None
     schema_valid: bool = False
     duration_seconds: float = 0.0
+    # Epoch seconds when this agent's adapter call began. Used by the HTML
+    # report's Gantt for exact start offsets; 0.0 on old manifests, where the
+    # report falls back to layer-derived offsets.
+    started_at: float = 0.0
     error: Optional[str] = None
     log_path: Optional[str] = None
     json_path: Optional[str] = None
@@ -533,6 +537,7 @@ def _run_codex(
     reviewing: Optional[list[str]] = None,
 ) -> LayerResult:
     log_file = session_dir / f"layer{layer}" / f"{agent_id}-{role}.log"
+    started_at = time.time()
     result = codex_adapter.run(
         prompt=prompt,
         schema_path=schema_path,
@@ -550,6 +555,7 @@ def _run_codex(
         success=result.success,
         payload=result.payload,
         duration_seconds=result.duration_seconds,
+        started_at=started_at,
         error=result.error_message,
         log_path=str(log_file.relative_to(session_dir)),
     )
@@ -580,6 +586,7 @@ def _run_sonnet(
     reviewing: Optional[list[str]] = None,
 ) -> LayerResult:
     log_file = session_dir / f"layer{layer}" / f"{agent_id}-{role}.log"
+    started_at = time.time()
     result = claude_adapter.run(
         prompt=prompt,
         schema_path=schema_path,
@@ -596,6 +603,7 @@ def _run_sonnet(
         success=result.success,
         payload=result.payload,
         duration_seconds=result.duration_seconds,
+        started_at=started_at,
         error=result.error_message,
         log_path=str(log_file.relative_to(session_dir)),
     )
@@ -618,6 +626,7 @@ def _run_cursor(
 ) -> LayerResult:
     """Invoke the cursor adapter and lift its result into a LayerResult."""
     log_file = session_dir / f"layer{layer}" / f"{agent_id}-{role}.log"
+    started_at = time.time()
     result = cursor_adapter.run(
         prompt=prompt,
         repo_path=repo_path,
@@ -633,6 +642,7 @@ def _run_cursor(
         success=result.success,
         payload=result.payload,
         duration_seconds=result.duration_seconds,
+        started_at=started_at,
         error=result.error_message,
         log_path=str(log_file.relative_to(session_dir)),
         transient_empty=_has_transient_empty(result),
@@ -656,6 +666,7 @@ def _run_opencode(
 ) -> LayerResult:
     """Invoke the opencode adapter and lift its result into a LayerResult."""
     log_file = session_dir / f"layer{layer}" / f"{agent_id}-{role}.log"
+    started_at = time.time()
     result = opencode_adapter.run(
         prompt=prompt,
         repo_path=repo_path,
@@ -671,6 +682,7 @@ def _run_opencode(
         success=result.success,
         payload=result.payload,
         duration_seconds=result.duration_seconds,
+        started_at=started_at,
         error=result.error_message,
         log_path=str(log_file.relative_to(session_dir)),
         transient_empty=_has_transient_empty(result),
@@ -767,6 +779,7 @@ def _run_sonnet_instance(
     (which the claude CLI does not expose).
     """
     log_file = session_dir / f"layer{layer}" / f"{instance_id}-{role}.log"
+    started_at = time.time()
     result = claude_adapter.run(
         prompt=prompt,
         schema_path=schema_path,
@@ -784,6 +797,7 @@ def _run_sonnet_instance(
         success=result.success,
         payload=result.payload,
         duration_seconds=result.duration_seconds,
+        started_at=started_at,
         error=result.error_message,
         log_path=str(log_file.relative_to(session_dir)),
     )
@@ -1267,6 +1281,23 @@ def write_manifest(
     return manifest_path
 
 
+def maybe_write_report(session_dir: Path, enabled: bool) -> None:
+    """Render the self-contained HTML report for a finished session.
+
+    Best-effort: report generation is a presentation nicety layered on top of
+    the run, so a rendering failure prints a warning but never fails the run
+    whose real outputs (manifest, synthesis-input) are already on disk.
+    """
+    if not enabled:
+        return
+    import report as report_module
+    try:
+        out = report_module.generate(session_dir, session_dir / "report.html")
+        print(f"[orchestrator] report:          {out}", flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"[orchestrator] WARN: report generation failed: {e}", file=sys.stderr, flush=True)
+
+
 # ---------------------------------------------------------------------------
 # Phase-split helpers (--phase layer1 / --phase layer2 / --redispatch)
 # ---------------------------------------------------------------------------
@@ -1336,6 +1367,7 @@ def load_layer_results_from_manifest(
             success=entry["success"],
             schema_valid=entry.get("schema_valid", False),
             duration_seconds=entry.get("duration_seconds", 0.0),
+            started_at=entry.get("started_at", 0.0),
             error=entry.get("error"),
             log_path=entry.get("log_path"),
             json_path=entry.get("json_path"),
@@ -1499,6 +1531,11 @@ def main() -> int:
                         action="store_true",
                         default=bool(os.environ.get("MOA_SKIP_LAYER2")),
                         help="Skip refiner layer.")
+    parser.add_argument("--no-report",
+                        action="store_true",
+                        default=bool(os.environ.get("MOA_NO_REPORT")),
+                        help="Skip generating the self-contained HTML run report "
+                             "(<session>/report.html) after the manifest is written.")
     parser.add_argument("--proposers",
                         default=os.environ.get("MOA_PROPOSERS"),
                         help="Comma-separated subset of provider names from your resolved "
@@ -1728,6 +1765,7 @@ def main() -> int:
             print(f"[orchestrator] DONE in {elapsed:.1f}s", flush=True)
             print(f"[orchestrator] synthesis input: {synthesis_path}", flush=True)
             print(f"[orchestrator] manifest:        {manifest_path}", flush=True)
+            maybe_write_report(session_dir, not args.no_report)
             print()
             print("Next: parent Claude session reads synthesis-input.md and aggregates "
                   "in-place per harness/prompts/aggregator.md "
@@ -1979,6 +2017,7 @@ def main() -> int:
             print(f"[orchestrator] DONE in {elapsed:.1f}s", flush=True)
             print(f"[orchestrator] synthesis input: {synthesis_path}", flush=True)
             print(f"[orchestrator] manifest:        {manifest_path}", flush=True)
+            maybe_write_report(session_dir, not args.no_report)
             print()
             print("Next: parent Claude session reads synthesis-input.md and aggregates "
                   "in-place per harness/prompts/aggregator.md "
@@ -2149,6 +2188,7 @@ def main() -> int:
         print(f"[orchestrator] DONE in {elapsed:.1f}s", flush=True)
         print(f"[orchestrator] synthesis input: {synthesis_path}", flush=True)
         print(f"[orchestrator] manifest:        {manifest_path}", flush=True)
+        maybe_write_report(session_dir, not args.no_report)
         print()
         print("Next: parent Claude session reads synthesis-input.md and aggregates "
               "in-place per harness/prompts/aggregator.md "

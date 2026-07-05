@@ -1,0 +1,2 @@
+# Vendored minified Three.js — don't expand in diffs or count as our code.
+harness/report/three.min.js -diff linguist-vendored

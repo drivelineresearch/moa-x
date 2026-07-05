@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>__PAGE_TITLE__</title>
+<style>
+/* ---------------------------------------------------------------------------
+   MoA-X run report — white surface (Driveline design language).
+   Pure white canvas, 8px Mine Shaft top bar, goldenrod sole accent,
+   ZERO box-shadows, hand-crafted SVG charts. No external requests.
+   Font strategy: Gotham/Lato are proprietary and cannot be inlined without a
+   license, so this self-contained artifact uses a heavy system stack for the
+   "Gotham" headline role (uppercase, bold) and a clean system sans for body.
+--------------------------------------------------------------------------- */
+:root {
+  --gold: #FFA300;
+  --burnt: #CF7F00;
+  --ink: #262626;
+  --black: #000000;
+  --white: #FFFFFF;
+  --panel: #F4F4F5;
+  --secondary: #6B7280;
+  --muted: #9CA3AF;
+  --track: #E5E7EB;
+  --green: #10B981;
+  --red: #EF4444;
+  --dist: #D1D5DB;
+  /* Monospace-forward, developer-tool aesthetic. All system fonts so the
+     single-file artifact stays self-contained (no external font requests). */
+  --font-head: 'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', 'SF Mono', 'Menlo', 'Consolas', 'DejaVu Sans Mono', 'Liberation Mono', monospace;
+  --font-body: 'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', 'SF Mono', 'Menlo', 'Consolas', 'DejaVu Sans Mono', 'Liberation Mono', monospace;
+  --font-mono: 'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', 'SF Mono', 'Menlo', 'Consolas', 'DejaVu Sans Mono', 'Liberation Mono', monospace;
+}
+*, *::before, *::after { box-sizing: border-box; }
+svg, svg * { filter: none; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--white);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--burnt); text-decoration: none; border-bottom: 1px solid var(--track); }
+a:hover { color: var(--gold); border-color: var(--gold); }
+
+.topbar { height: 8px; background: var(--ink); width: 100%; position: sticky; top: 0; z-index: 60; }
+
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 28px; }
+
+h1, h2, h3, .head { font-family: var(--font-head); text-transform: uppercase; letter-spacing: 0.01em; font-weight: 800; }
+h2.section-title { font-size: 1.6rem; margin: 0 0 4px; }
+.section-kicker { font-family: var(--font-head); text-transform: uppercase; font-weight: 800; font-size: 0.7rem; letter-spacing: 0.14em; color: var(--gold); }
+.section-note { color: var(--secondary); font-size: 0.86rem; line-height: 1.55; max-width: 78ch; margin: 6px 0 20px; }
+.section-note b { color: var(--ink); }
+section.block { padding: 44px 0; border-top: 1px solid var(--track); }
+section.block:first-of-type { border-top: none; }
+
+/* ---- Header ---- */
+header.report-head { padding: 40px 0 30px; }
+.report-head .eyebrow { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.brandmark { font-family: var(--font-head); font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; font-size: 1.1rem; }
+.brandmark .x { color: var(--gold); }
+.report-head h1 { font-size: 2.5rem; line-height: 1.14; margin: 0 0 18px; max-width: 26ch; letter-spacing: 0.005em; }
+.meta-row { display: flex; flex-wrap: wrap; gap: 8px 26px; align-items: center; color: var(--secondary); font-size: 0.85rem; margin-bottom: 20px; }
+.meta-row b { color: var(--ink); font-weight: 700; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px; border: 1px solid var(--track); border-radius: 999px; font-size: 0.8rem; background: var(--white); }
+.chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--gold); }
+.chip .role { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; }
+.badge { display: inline-block; padding: 4px 11px; border-radius: 6px; font-family: var(--font-head); font-weight: 800; text-transform: uppercase; font-size: 0.68rem; letter-spacing: 0.08em; }
+.badge.ok { background: var(--gold); color: var(--white); }
+.badge.warn { background: var(--red); color: var(--white); }
+.badge.neutral { background: var(--panel); color: var(--ink); }
+
+/* ---- Sticky nav ---- */
+nav.mininav { position: sticky; top: 8px; z-index: 50; background: rgba(255,255,255,0.94); backdrop-filter: blur(4px); border-bottom: 1px solid var(--track); }
+nav.mininav .inner { display: flex; gap: 4px; overflow-x: auto; padding: 10px 0; }
+nav.mininav a { border: none; font-family: var(--font-head); text-transform: uppercase; font-weight: 700; font-size: 0.72rem; letter-spacing: 0.06em; color: var(--secondary); padding: 6px 12px; border-radius: 6px; white-space: nowrap; }
+nav.mininav a:hover { background: var(--panel); color: var(--ink); }
+nav.mininav a.active { color: var(--ink); background: var(--panel); box-shadow: inset 0 -2px 0 var(--gold); }
+
+/* ---- Stat tiles ---- */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); background: var(--white); border: 1px solid var(--track); border-radius: 12px; overflow: hidden; }
+.tile { background: var(--white); padding: 18px 20px; border-right: 1px solid var(--track); border-bottom: 1px solid var(--track); }
+.tile .k { font-family: var(--font-head); font-weight: 800; text-transform: uppercase; font-size: 0.64rem; letter-spacing: 0.1em; color: var(--muted); margin-bottom: 8px; }
+.tile .v { font-family: var(--font-head); font-weight: 800; font-size: 1.9rem; line-height: 1; }
+.tile .v small { font-size: 0.9rem; color: var(--secondary); }
+
+/* ---- Hero (Three.js) ---- */
+#hero { position: relative; width: 100%; height: 440px; border: 1px solid var(--track); border-radius: 12px; overflow: hidden; background: var(--white); }
+#hero canvas { display: block; width: 100%; height: 100%; cursor: grab; }
+#hero canvas:active { cursor: grabbing; }
+#hero .hint { position: absolute; bottom: 12px; left: 14px; font-size: 0.72rem; color: var(--muted); pointer-events: none; }
+#hero-fallback { display: none; }
+
+/* ---- Collapsibles ---- */
+.collapse { border: 1px solid var(--track); border-radius: 12px; margin-bottom: 14px; overflow: hidden; }
+.collapse > .c-head { display: flex; align-items: center; gap: 12px; padding: 16px 20px; cursor: pointer; user-select: none; background: var(--white); }
+.collapse > .c-head:hover { background: var(--panel); }
+.collapse > .c-head .c-title { font-family: var(--font-head); font-weight: 800; text-transform: uppercase; font-size: 0.92rem; letter-spacing: 0.02em; flex: 1; }
+.collapse > .c-head .caret { color: var(--muted); transition: transform 0.2s ease; font-size: 0.8rem; }
+.collapse.open > .c-head .caret { transform: rotate(90deg); }
+.collapse > .c-body { max-height: 0; overflow: hidden; transition: max-height 0.32s ease; }
+.collapse > .c-body > .pad { padding: 4px 20px 22px; }
+.reduced .collapse > .c-body { transition: none; }
+
+.c-head .status-pip { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.pip-ok { background: var(--green); }
+.pip-fail { background: var(--red); }
+.pip-warn { background: var(--gold); }
+.c-head .mini-stats { display: flex; gap: 14px; color: var(--secondary); font-size: 0.76rem; }
+.c-head .mini-stats span b { color: var(--ink); }
+
+/* ---- Text + code ---- */
+.summary-text { font-size: 1rem; line-height: 1.6; margin: 6px 0 18px; }
+.subhead { font-family: var(--font-head); font-weight: 800; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.1em; color: var(--muted); margin: 22px 0 10px; }
+code.inline { font-family: var(--font-mono); font-size: 0.85em; background: var(--panel); padding: 1px 6px; border-radius: 4px; }
+.codeblock { font-family: var(--font-mono); font-size: 0.82rem; background: var(--panel); border-radius: 10px; padding: 16px 18px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; line-height: 1.5; }
+
+/* ---- Plan steps ---- */
+.step { border-left: 3px solid var(--track); padding: 4px 0 4px 18px; margin: 0 0 20px; }
+.step .step-n { font-family: var(--font-head); font-weight: 800; color: var(--gold); font-size: 0.8rem; }
+.step .step-title { font-weight: 700; margin: 2px 0 6px; }
+.step .why { color: var(--secondary); margin-bottom: 10px; }
+.ev-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.ev { display: inline-flex; align-items: center; gap: 6px; font-size: 0.74rem; padding: 3px 9px; border-radius: 6px; border: 1px solid var(--track); font-family: var(--font-mono); }
+.ev.code { background: var(--panel); }
+.ev.ext { background: var(--white); }
+.ev .tag { text-transform: uppercase; font-family: var(--font-head); font-size: 0.6rem; letter-spacing: 0.06em; color: var(--muted); }
+.files { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.file-tok { font-family: var(--font-mono); font-size: 0.74rem; color: var(--secondary); background: var(--panel); padding: 2px 7px; border-radius: 4px; }
+.risk { font-size: 0.82rem; color: var(--secondary); padding-left: 16px; position: relative; margin: 3px 0; }
+.risk::before { content: "△"; position: absolute; left: 0; color: var(--gold); font-size: 0.7rem; top: 2px; }
+
+/* ---- Tables ---- */
+table.dl { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+table.dl th, table.dl td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--track); }
+table.dl th { font-family: var(--font-head); text-transform: uppercase; font-size: 0.66rem; letter-spacing: 0.08em; color: var(--muted); font-weight: 800; }
+
+/* ---- Verdict matrix ---- */
+.matrix { overflow-x: auto; }
+.matrix table { border-collapse: separate; border-spacing: 6px; }
+.matrix th { font-family: var(--font-head); text-transform: uppercase; font-size: 0.66rem; letter-spacing: 0.06em; color: var(--secondary); padding: 4px 8px; text-align: center; font-weight: 800; }
+.matrix th.rowh { text-align: right; color: var(--ink); }
+.mcell { min-width: 108px; height: 52px; border-radius: 8px; padding: 7px 9px; cursor: default; display: flex; flex-direction: column; justify-content: center; gap: 2px; }
+.mcell .verdict { font-family: var(--font-head); text-transform: uppercase; font-size: 0.6rem; letter-spacing: 0.04em; font-weight: 800; }
+.mcell.v-accept_as_is { background: rgba(16,185,129,0.16); color: #0b7a5a; }
+.mcell.v-accept_with_changes { background: rgba(255,163,0,0.18); color: #9a6300; }
+.mcell.v-reject { background: rgba(239,68,68,0.15); color: #b3271e; }
+.mcell.v-none { background: var(--panel); color: var(--muted); }
+
+/* ---- Verification dots ---- */
+.verif-row { margin: 14px 0; }
+.verif-row .vlabel { display: flex; gap: 10px; align-items: baseline; margin-bottom: 8px; }
+.verif-row .vlabel .name { font-family: var(--font-head); font-weight: 800; text-transform: uppercase; font-size: 0.8rem; }
+.verif-row .vlabel .counts { font-size: 0.78rem; color: var(--secondary); }
+.dots { display: flex; flex-wrap: wrap; gap: 6px; }
+.vdot { width: 15px; height: 15px; border-radius: 4px; cursor: pointer; }
+.vdot.verified { background: var(--green); }
+.vdot.unverified { background: var(--track); }
+.vdot.contradicted { background: var(--red); }
+.vdetail { display: none; margin-top: 10px; font-size: 0.85rem; background: var(--panel); border-radius: 8px; padding: 12px 14px; }
+.vdetail.show { display: block; }
+.vdetail .vd-path { font-family: var(--font-mono); font-size: 0.78rem; color: var(--burnt); }
+
+/* ---- Cards / disagreements ---- */
+.cardgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+.dcard { border: 1px solid var(--track); border-left: 3px solid var(--gold); border-radius: 10px; padding: 14px 16px; }
+.dcard .who { font-family: var(--font-head); text-transform: uppercase; font-weight: 800; font-size: 0.68rem; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 6px; }
+.dcard .pt { font-weight: 700; margin-bottom: 6px; }
+.dcard .lbl { font-family: var(--font-head); text-transform: uppercase; font-size: 0.62rem; letter-spacing: 0.06em; color: var(--gold); margin: 8px 0 2px; }
+.checklist { list-style: none; padding: 0; margin: 0; }
+.checklist li { padding-left: 24px; position: relative; margin: 7px 0; }
+.checklist li::before { content: "✓"; position: absolute; left: 0; color: var(--green); font-weight: 800; }
+.flaglist { list-style: none; padding: 0; margin: 0; }
+.flaglist li { padding-left: 24px; position: relative; margin: 7px 0; }
+.flaglist li::before { content: "!"; position: absolute; left: 3px; color: var(--red); font-weight: 800; font-family: var(--font-head); }
+
+/* ---- Pull quote (synthesis) ---- */
+.pullquote { position: relative; padding: 6px 0 6px 54px; margin: 6px 0; }
+.pullquote::before { content: "\201C"; position: absolute; left: 0; top: -14px; font-family: Georgia, serif; font-size: 5rem; color: var(--gold); line-height: 1; }
+.pullquote .q { font-size: 1.05rem; line-height: 1.55; font-style: italic; }
+.pullquote .by { font-family: var(--font-head); text-transform: uppercase; font-weight: 800; font-size: 0.72rem; letter-spacing: 0.06em; color: var(--secondary); margin-top: 8px; }
+
+/* ---- Logs ---- */
+.log-tabs { display: flex; gap: 4px; margin-bottom: 10px; }
+.log-tabs button { font-family: var(--font-head); text-transform: uppercase; font-weight: 700; font-size: 0.68rem; letter-spacing: 0.05em; padding: 6px 14px; border: 1px solid var(--track); background: var(--white); border-radius: 6px; cursor: pointer; color: var(--secondary); }
+.log-tabs button.active { background: var(--ink); color: var(--white); border-color: var(--ink); }
+.log-filter { width: 100%; padding: 8px 12px; border: 1px solid var(--track); border-radius: 8px; font-family: var(--font-mono); font-size: 0.8rem; margin-bottom: 10px; }
+.log-view { font-family: var(--font-mono); font-size: 0.78rem; background: var(--panel); border-radius: 10px; max-height: 460px; overflow: auto; padding: 12px 0; }
+.log-line { display: flex; padding: 0 14px; white-space: pre-wrap; word-break: break-word; }
+.log-line:hover { background: rgba(255,163,0,0.08); }
+.log-line .ln { color: var(--muted); user-select: none; min-width: 46px; text-align: right; padding-right: 14px; flex: none; }
+.log-line.hidden { display: none; }
+.log-empty { padding: 12px 14px; color: var(--muted); font-family: var(--font-body); }
+
+/* ---- Controls ---- */
+.controls { display: flex; gap: 8px; margin-bottom: 16px; }
+.btn { font-family: var(--font-head); text-transform: uppercase; font-weight: 700; font-size: 0.68rem; letter-spacing: 0.05em; padding: 7px 14px; border: 1px solid var(--track); background: var(--white); border-radius: 6px; cursor: pointer; color: var(--ink); }
+.btn:hover { background: var(--panel); }
+
+/* ---- Scope columns ---- */
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.two-col ul { padding-left: 18px; margin: 6px 0; }
+.qa { margin: 10px 0; }
+.qa .q { font-weight: 700; }
+.qa .a { color: var(--secondary); }
+
+/* ---- Final plan render ---- */
+.plan-render h1, .plan-render h2, .plan-render h3 { text-transform: none; font-family: var(--font-head); margin: 22px 0 8px; }
+.plan-render h1 { font-size: 1.5rem; } .plan-render h2 { font-size: 1.2rem; } .plan-render h3 { font-size: 1rem; }
+.plan-render p { margin: 8px 0; } .plan-render ul, .plan-render ol { padding-left: 22px; }
+.plan-render li { margin: 4px 0; }
+.plan-render pre { font-family: var(--font-mono); font-size: 0.82rem; background: var(--panel); border-radius: 10px; padding: 14px 16px; overflow-x: auto; }
+.plan-render code { font-family: var(--font-mono); background: var(--panel); padding: 1px 5px; border-radius: 4px; font-size: 0.85em; }
+.plan-render pre code { background: none; padding: 0; }
+
+/* ---- Tooltip ---- */
+#tooltip { position: fixed; z-index: 100; pointer-events: none; background: rgba(0,0,0,0.9); color: #fff; font-size: 0.76rem; line-height: 1.4; padding: 8px 11px; border-radius: 8px; max-width: 320px; display: none; }
+#tooltip .tt-h { color: var(--gold); font-family: var(--font-head); text-transform: uppercase; font-size: 0.62rem; letter-spacing: 0.06em; margin-bottom: 3px; }
+
+/* ---- Flowchart footer ---- */
+.flow svg { width: 100%; height: auto; }
+footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: var(--muted); font-size: 0.8rem; }
+
+.notice { background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.3); border-radius: 10px; padding: 14px 18px; margin-bottom: 18px; color: #b3271e; }
+.notice.info { background: var(--panel); border-color: var(--track); color: var(--ink); }
+.empty-note { color: var(--muted); font-style: italic; }
+
+@media (max-width: 720px) {
+  .report-head h1 { font-size: 2rem; }
+  .two-col { grid-template-columns: 1fr; }
+  #hero { height: 340px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+}
+@media print {
+  nav.mininav, #hero .hint, .controls, .log-filter, .log-tabs { display: none !important; }
+  .collapse > .c-body { max-height: none !important; }
+  #hero { display: none; } #hero-fallback { display: block !important; }
+  section.block { padding: 20px 0; }
+}
+</style>
+</head>
+<body>
+<div class="topbar"></div>
+
+<script type="application/json" id="moa-data">__MOA_DATA_JSON__</script>
+
+<nav class="mininav"><div class="wrap"><div class="inner" id="mininav-inner"></div></div></nav>
+
+<div class="wrap" id="app"></div>
+
+<div id="tooltip"></div>
+
+<script>/*__THREE_JS_LIB__*/</script>
+<script>
+"use strict";
+(function () {
+  var DATA = JSON.parse(document.getElementById("moa-data").textContent);
+  var REDUCED = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (REDUCED) document.body.classList.add("reduced");
+
+  var C = { gold: "#FFA300", green: "#10B981", red: "#EF4444", ink: "#262626", track: "#E5E7EB", muted: "#9CA3AF" };
+
+  // ---- tiny DOM helper ----
+  function el(tag, attrs, kids) {
+    var n = document.createElement(tag);
+    if (attrs) for (var k in attrs) {
+      if (k === "class") n.className = attrs[k];
+      else if (k === "html") n.innerHTML = attrs[k];
+      else if (k === "text") n.textContent = attrs[k];
+      else if (k.slice(0, 2) === "on" && typeof attrs[k] === "function") n.addEventListener(k.slice(2), attrs[k]);
+      else if (attrs[k] != null) n.setAttribute(k, attrs[k]);
+    }
+    if (kids != null) (Array.isArray(kids) ? kids : [kids]).forEach(function (c) {
+      if (c == null) return;
+      n.appendChild(typeof c === "string" ? document.createTextNode(c) : c);
+    });
+    return n;
+  }
+  function esc(s) { var d = document.createElement("div"); d.textContent = s == null ? "" : String(s); return d.innerHTML; }
+  function fmtDur(s) { if (s == null) return "—"; if (s < 60) return s.toFixed(1) + "s"; var m = Math.floor(s / 60); return m + "m " + Math.round(s - m * 60) + "s"; }
+  function statusPip(r) { return r.success ? "pip-ok" : (r.transient_empty ? "pip-warn" : "pip-fail"); }
+
+  var app = document.getElementById("app");
+  var sections = [];
+  function addSection(id, navLabel, node) { sections.push({ id: id, label: navLabel }); app.appendChild(node); }
+
+  // ---------------------------------------------------------------- Header
+  (function () {
+    var head = el("header", { class: "report-head" });
+    head.appendChild(el("div", { class: "eyebrow" }, [
+      el("div", { class: "brandmark", html: 'MoA<span class="x">-X</span> &nbsp;RUN REPORT' }),
+      el("div", { class: "badge " + (DATA.partial ? "warn" : "neutral"), text: DATA.partial ? "Partial (Layer 1 only)" : "Full session" })
+    ]));
+    head.appendChild(el("h1", { text: DATA.title || DATA.session_id }));
+    var l2badge;
+    if (DATA.layer2_mode === "broadcast") l2badge = el("span", { class: "badge ok", text: "broadcast" });
+    else if (DATA.layer2_mode === "degraded_non_broadcast") l2badge = el("span", { class: "badge warn", text: "degraded" });
+    else l2badge = el("span", { class: "badge neutral", text: DATA.layer2_mode || "n/a" });
+    var l2span = el("span", {}, ["Layer 2 "]); l2span.appendChild(l2badge);
+    head.appendChild(el("div", { class: "meta-row" }, [
+      el("span", { html: "Session <b>" + esc(DATA.session_id) + "</b>" }),
+      el("span", { html: "Generated <b>" + esc(DATA.generated_at) + "</b>" }),
+      el("span", { html: "Wall-clock <b>" + fmtDur(DATA.duration_seconds) + "</b>" }),
+      l2span
+    ]));
+    var chips = el("div", { class: "chips" });
+    (DATA.config && DATA.config.proposers || []).forEach(function (p) { chips.appendChild(providerChip(p, "proposer")); });
+    (DATA.config && DATA.config.refiners || []).forEach(function (p) { chips.appendChild(providerChip(p, "refiner")); });
+    if (DATA.config && DATA.config.proposer_instances) DATA.config.proposer_instances.forEach(function (n) { chips.appendChild(providerChip({ name: n, harness: "claude" }, "proposer")); });
+    if (DATA.config && DATA.config.refiner_instances) DATA.config.refiner_instances.forEach(function (n) { chips.appendChild(providerChip({ name: n, harness: "claude" }, "refiner")); });
+    head.appendChild(chips);
+    app.appendChild(head);
+  })();
+  function providerChip(p, role) {
+    return el("span", { class: "chip" }, [
+      el("span", { class: "dot" }),
+      el("span", { html: "<b>" + esc(p.name) + "</b>" }),
+      el("span", { class: "role", text: p.model || p.harness || role })
+    ]);
+  }
+
+  // ---------------------------------------------------------------- Overview tiles
+  (function () {
+    var l1 = DATA.layer1 || [], l2 = DATA.layer2 || [];
+    var agentSecs = l1.concat(l2).reduce(function (a, r) { return a + (r.duration_seconds || 0); }, 0);
+    var sec = el("section", { class: "block", id: "overview" });
+    sec.appendChild(el("div", { class: "section-kicker", text: "Overview" }));
+    sec.appendChild(el("h2", { class: "section-title", text: "The run at a glance" }));
+    var tiles = el("div", { class: "tiles" });
+    function tile(k, v, sub) { return el("div", { class: "tile" }, [el("div", { class: "k", text: k }), el("div", { class: "v", html: v + (sub ? ' <small>' + sub + '</small>' : '') })]); }
+    tiles.appendChild(tile("Proposers", l1.filter(function (r) { return r.success; }).length + "/" + l1.length));
+    tiles.appendChild(tile("Refiners", l2.filter(function (r) { return r.success; }).length + "/" + l2.length));
+    tiles.appendChild(tile("Agent time", fmtDur(agentSecs)));
+    tiles.appendChild(tile("Wall-clock", fmtDur(DATA.duration_seconds)));
+    var speedup = DATA.duration_seconds ? (agentSecs / DATA.duration_seconds).toFixed(1) + "×" : "—";
+    tiles.appendChild(tile("Parallel gain", speedup));
+    sec.appendChild(tiles);
+    sec.appendChild(buildHero());
+    addSection("overview", "Overview", sec);
+  })();
+
+  // ---------------------------------------------------------------- Timeline (SVG Gantt)
+  (function () {
+    var sec = el("section", { class: "block", id: "timeline" });
+    sec.appendChild(el("div", { class: "section-kicker", text: "Timeline" }));
+    sec.appendChild(el("h2", { class: "section-title", text: "When each agent ran" }));
+    sec.appendChild(buildGantt());
+    addSection("timeline", "Timeline", sec);
+  })();
+
+  // ---------------------------------------------------------------- Scout brief
+  (function () {
+    var sb = DATA.scout_brief || {};
+    var sec = el("section", { class: "block", id: "scout" });
+    sec.appendChild(el("div", { class: "section-kicker", text: "Layer 0" }));
+    sec.appendChild(el("h2", { class: "section-title", text: "Scout brief — what was asked" }));
+    var body = el("div");
+    if (sb.frozen_spec) { body.appendChild(el("div", { class: "subhead", text: "Frozen spec" })); body.appendChild(el("div", { class: "codeblock", text: sb.frozen_spec })); }
+    var cols = el("div", { class: "two-col" });
+    if (sb.in_scope) cols.appendChild(el("div", {}, [el("div", { class: "subhead", text: "In scope" }), ul(sb.in_scope)]));
+    if (sb.out_of_scope) cols.appendChild(el("div", {}, [el("div", { class: "subhead", text: "Out of scope" }), ul(sb.out_of_scope)]));
+    body.appendChild(cols);
+    if (sb.focus_files && sb.focus_files.length) { body.appendChild(el("div", { class: "subhead", text: "Focus files" })); var ff = el("div", { class: "files" }); sb.focus_files.forEach(function (f) { ff.appendChild(el("span", { class: "file-tok", text: f })); }); body.appendChild(ff); }
+    if (sb.clarifications && sb.clarifications.length) {
+      body.appendChild(el("div", { class: "subhead", text: "Clarifications" }));
+      sb.clarifications.forEach(function (c) {
+        var m = /^Q:\s*(.*?)\s*A:\s*(.*)$/s.exec(c);
+        if (m) body.appendChild(el("div", { class: "qa" }, [el("div", { class: "q", text: "Q: " + m[1] }), el("div", { class: "a", text: "A: " + m[2] })]));
+        else body.appendChild(el("div", { class: "qa" }, el("div", { class: "a", text: c })));
+      });
+    }
+    if (sb.notes) { body.appendChild(el("div", { class: "subhead", text: "Notes" })); body.appendChild(el("p", { text: sb.notes })); }
+    sec.appendChild(collapsible("Scout brief", "pip-ok", null, body, false));
+    addSection("scout", "Scout", sec);
+  })();
+  function ul(items) { var u = el("ul"); (items || []).forEach(function (i) { u.appendChild(el("li", { text: i })); }); return u; }
+
+  // ---------------------------------------------------------------- Layer 1 proposers
+  (function () {
+    var sec = el("section", { class: "block", id: "proposers" });
+    sec.appendChild(el("div", { class: "section-kicker", text: "Layer 1" }));
+    sec.appendChild(el("h2", { class: "section-title", text: "Proposers — parallel plans" }));
+    sec.appendChild(controlBar("proposers"));
+    (DATA.layer1 || []).forEach(function (r) { sec.appendChild(proposerCard(r)); });
+    if (!(DATA.layer1 || []).length) sec.appendChild(el("p", { class: "empty-note", text: "No proposer results recorded." }));
+    addSection("proposers", "Proposers", sec);
+  })();
+  function proposerCard(r) {
+    var body = el("div");
+    if (!r.success) {
+      body.appendChild(el("div", { class: "notice", html: "<b>" + esc(r.agent_id) + " failed.</b> " + esc(r.error || "unknown error") }));
+    }
+    var p = r.payload;
+    if (p) {
+      if (p.summary) body.appendChild(el("div", { class: "summary-text", text: p.summary }));
+      if (p.plan && p.plan.length) {
+        body.appendChild(el("div", { class: "subhead", text: "Plan — " + p.plan.length + " steps" }));
+        p.plan.forEach(function (s, i) { body.appendChild(planStep(s, i)); });
+      }
+      if (p.open_questions && p.open_questions.length) { body.appendChild(el("div", { class: "subhead", text: "Open questions" })); body.appendChild(ul(p.open_questions)); }
+      if (p.alternatives_rejected && p.alternatives_rejected.length) {
+        body.appendChild(el("div", { class: "subhead", text: "Alternatives rejected" }));
+        p.alternatives_rejected.forEach(function (a) { body.appendChild(el("div", { class: "qa" }, [el("div", { class: "q", text: a.approach }), el("div", { class: "a", text: a.reason })])); });
+      }
+      if (p.research_sources && p.research_sources.length) {
+        body.appendChild(el("div", { class: "subhead", text: "Research sources (" + p.research_sources.length + ")" }));
+        var t = el("table", { class: "dl" }); t.appendChild(el("tr", {}, [el("th", { text: "Source" }), el("th", { text: "Why it matters" })]));
+        p.research_sources.forEach(function (s) {
+          t.appendChild(el("tr", {}, [
+            el("td", {}, s.url ? el("a", { href: s.url, target: "_blank", rel: "noopener", text: s.title || s.url }) : document.createTextNode(s.title || "")),
+            el("td", { text: s.relevance || s.summary || "" })
+          ]));
+        });
+        body.appendChild(t);
+      }
+    }
+    var stats = [];
+    if (p && p.plan) stats.push(["steps", p.plan.length]);
+    if (p && p.plan) stats.push(["evidence", p.plan.reduce(function (a, s) { return a + ((s.evidence || []).length); }, 0)]);
+    stats.push(["dur", fmtDur(r.duration_seconds)]);
+    return collapsible(r.agent_id + " proposer", statusPip(r), stats, body, false);
+  }
+  function planStep(s, i) {
+    var d = el("div", { class: "step" });
+    d.appendChild(el("div", { class: "step-n", text: "STEP " + (i + 1) }));
+    d.appendChild(el("div", { class: "step-title", text: s.step }));
+    if (s.why) d.appendChild(el("div", { class: "why", text: s.why }));
+    if (s.files_touched && s.files_touched.length) { var f = el("div", { class: "files" }); s.files_touched.forEach(function (x) { f.appendChild(el("span", { class: "file-tok", text: x })); }); d.appendChild(f); }
+    if (s.evidence && s.evidence.length) {
+      var ec = el("div", { class: "ev-chips" });
+      s.evidence.forEach(function (e) {
+        if (e.type === "external" && e.url) {
+          var a = el("a", { class: "ev ext", href: e.url, target: "_blank", rel: "noopener", "data-tip": e.claim || "", "data-tiph": "External source" }, [el("span", { class: "tag", text: "ext" }), document.createTextNode(shorten(e.url, 40))]);
+          ec.appendChild(a);
+        } else {
+          var loc = (e.file || "?") + (e.line != null ? ":" + e.line : "");
+          ec.appendChild(el("span", { class: "ev code", "data-tip": e.claim || "", "data-tiph": "Code citation" }, [el("span", { class: "tag", text: "code" }), document.createTextNode(loc)]));
+        }
+      });
+      d.appendChild(ec);
+    }
+    if (s.risks && s.risks.length) s.risks.forEach(function (rk) { d.appendChild(el("div", { class: "risk", text: rk })); });
+    return d;
+  }
+  function shorten(u, n) { u = u.replace(/^https?:\/\//, ""); return u.length > n ? u.slice(0, n - 1) + "…" : u; }
+
+  // ---------------------------------------------------------------- Layer 2 refiners
+  (function () {
+    var all = DATA.layer2 || [];
+    var l2 = all.filter(function (r) { return r.success && r.payload; });
+    var failed = all.filter(function (r) { return !(r.success && r.payload); });
+    var sec = el("section", { class: "block", id: "refiners" });
+    sec.appendChild(el("div", { class: "section-kicker", text: "Layer 2" }));
+    sec.appendChild(el("h2", { class: "section-title", text: "Refiners — the cross-examination" }));
+    if (DATA.layer2_mode === "degraded_non_broadcast")
+      sec.appendChild(el("div", { class: "notice", html: "<b>Degraded, non-broadcast.</b> Only one proposer succeeded, so refiners reviewed a single perspective. Apply lower confidence to their findings." }));
+    // A failed refiner must stay visible — hiding it makes a broken refinement
+    // pass look like a smaller-but-healthy run.
+    failed.forEach(function (r) {
+      sec.appendChild(el("div", { class: "notice", html: "<b>" + esc(r.agent_id) + " refiner failed.</b> " + esc(r.error || "unknown error") }));
+    });
+    if (!l2.length) {
+      sec.appendChild(el("p", { class: "empty-note", text: DATA.layer2_mode === "skipped" ? "Layer 2 was skipped for this run." : "No successful refiner outputs." }));
+      addSection("refiners", "Refiners", sec); return;
+    }
+    sec.appendChild(el("div", { class: "subhead", text: "Verdict matrix — refiners × proposers" }));
+    sec.appendChild(verdictMatrix(l2));
+    sec.appendChild(el("div", { class: "subhead", text: "Evidence verification" }));
+    l2.forEach(function (r) { sec.appendChild(verificationRow(r)); });
+    l2.forEach(function (r) { sec.appendChild(refinerDetail(r)); });
+    addSection("refiners", "Refiners", sec);
+  })();
+  function verdictMatrix(l2) {
+    var proposers = {};
+    l2.forEach(function (r) { (r.payload.per_proposer_verdicts || []).forEach(function (v) { proposers[v.proposer] = 1; }); });
+    var props = Object.keys(proposers);
+    var wrap = el("div", { class: "matrix" });
+    var t = el("table");
+    var hr = el("tr"); hr.appendChild(el("th", { class: "rowh", text: "" }));
+    props.forEach(function (p) { hr.appendChild(el("th", { text: p })); });
+    t.appendChild(hr);
+    l2.forEach(function (r) {
+      var row = el("tr");
+      row.appendChild(el("th", { class: "rowh", text: r.agent_id }));
+      var byProp = {}; (r.payload.per_proposer_verdicts || []).forEach(function (v) { byProp[v.proposer] = v; });
+      props.forEach(function (p) {
+        var v = byProp[p];
+        var cell = el("td");
+        if (v) cell.appendChild(el("div", { class: "mcell v-" + v.verdict, "data-tip": v.summary || "", "data-tiph": r.agent_id + " on " + p }, [el("span", { class: "verdict", text: v.verdict.replace(/_/g, " ") })]));
+        else cell.appendChild(el("div", { class: "mcell v-none" }, [el("span", { class: "verdict", text: "—" })]));
+        row.appendChild(cell);
+      });
+      t.appendChild(row);
+    });
+    wrap.appendChild(t);
+    return wrap;
+  }
+  function verificationRow(r) {
+    var vs = r.payload.verifications || [];
+    var counts = { verified: 0, unverified: 0, contradicted: 0 };
+    vs.forEach(function (v) { if (counts[v.status] != null) counts[v.status]++; });
+    var row = el("div", { class: "verif-row" });
+    row.appendChild(el("div", { class: "vlabel" }, [
+      el("span", { class: "name", text: r.agent_id }),
+      el("span", { class: "counts", html: '<span style="color:var(--green)">' + counts.verified + " verified</span> · " + counts.unverified + " unverified · " + '<span style="color:var(--red)">' + counts.contradicted + " contradicted</span>" })
+    ]));
+    var dots = el("div", { class: "dots" });
+    var detail = el("div", { class: "vdetail" });
+    vs.forEach(function (v) {
+      var dot = el("div", { class: "vdot " + v.status, "data-tip": v.actual_finding || "", "data-tiph": v.proposer + " " + v.claim_index_path + " — " + v.status });
+      dot.addEventListener("click", function () {
+        detail.className = "vdetail show";
+        detail.innerHTML = "";
+        detail.appendChild(el("div", { class: "vd-path", text: v.proposer + " · " + v.claim_index_path + " · " + v.status }));
+        detail.appendChild(el("div", { text: v.actual_finding || "" }));
+        if (v.source_url) detail.appendChild(el("div", { style: "margin-top:6px" }, el("a", { href: v.source_url, target: "_blank", rel: "noopener", text: v.source_url })));
+      });
+      dots.appendChild(dot);
+    });
+    row.appendChild(dots); row.appendChild(detail);
+    return row;
+  }
+  function refinerDetail(r) {
+    var p = r.payload, body = el("div");
+    body.appendChild(el("div", { class: "notice info", html: "<b>Overall verdict:</b> " + esc((p.overall_verdict || "").replace(/_/g, " ")) }));
+    if (p.synthesis_recommendation) body.appendChild(el("div", { class: "pullquote" }, [el("div", { class: "q", text: p.synthesis_recommendation }), el("div", { class: "by", text: "— " + r.agent_id + ", synthesis recommendation" })]));
+    if (p.agreements && p.agreements.length) { body.appendChild(el("div", { class: "subhead", text: "Agreements" })); var au = el("ul", { class: "checklist" }); p.agreements.forEach(function (a) { au.appendChild(el("li", { text: a })); }); body.appendChild(au); }
+    if (p.disagreements && p.disagreements.length) {
+      body.appendChild(el("div", { class: "subhead", text: "Disagreements" }));
+      var g = el("div", { class: "cardgrid" });
+      p.disagreements.forEach(function (d) {
+        g.appendChild(el("div", { class: "dcard" }, [
+          el("div", { class: "who", text: "vs " + d.proposer }),
+          el("div", { class: "pt", text: d.point }),
+          el("div", { class: "lbl", text: "Why" }), el("div", { text: d.why }),
+          el("div", { class: "lbl", text: "Instead" }), el("div", { text: d.what_to_do_instead })
+        ]));
+      });
+      body.appendChild(g);
+    }
+    if (p.cross_proposer_observations && p.cross_proposer_observations.length) { body.appendChild(el("div", { class: "subhead", text: "Cross-proposer observations" })); body.appendChild(ul(p.cross_proposer_observations)); }
+    if (p.missing_steps && p.missing_steps.length) { body.appendChild(el("div", { class: "subhead", text: "Missing steps" })); var mu = el("ul", { class: "flaglist" }); p.missing_steps.forEach(function (m) { mu.appendChild(el("li", { text: m })); }); body.appendChild(mu); }
+    if (p.incorrect_steps && p.incorrect_steps.length) {
+      body.appendChild(el("div", { class: "subhead", text: "Incorrect steps" }));
+      var iu = el("ul", { class: "flaglist" });
+      p.incorrect_steps.forEach(function (s) { iu.appendChild(el("li", { text: s.proposer + " step " + s.step_index + ": " + s.what_is_wrong })); });
+      body.appendChild(iu);
+    }
+    if (p.additional_research && p.additional_research.length) {
+      body.appendChild(el("div", { class: "subhead", text: "Additional research" }));
+      var t = el("table", { class: "dl" }); t.appendChild(el("tr", {}, [el("th", { text: "Source" }), el("th", { text: "What it adds" })]));
+      p.additional_research.forEach(function (s) { t.appendChild(el("tr", {}, [el("td", {}, s.url ? el("a", { href: s.url, target: "_blank", rel: "noopener", text: s.title || s.url }) : document.createTextNode(s.title || "")), el("td", { text: s.what_it_adds || "" })])); });
+      body.appendChild(t);
+    }
+    var reviewed = (r.reviewing || []).join(", ");
+    return collapsible(r.agent_id + " refiner — full findings", statusPip(r), [["reviewed", reviewed || "—"], ["dur", fmtDur(r.duration_seconds)]], body, false);
+  }
+
+  // ---------------------------------------------------------------- Aggregation
+  (function () {
+    var sec = el("section", { class: "block", id: "plan" });
+    sec.appendChild(el("div", { class: "section-kicker", text: "Layer 3" }));
+    sec.appendChild(el("h2", { class: "section-title", text: "Aggregated final plan" }));
+    sec.appendChild(el("p", { class: "section-note", html: "Layers 0 (scout) and 3 (aggregation) run <b>in the parent Claude Code session (Opus), in-place</b> — not as spawned CLI subprocesses. The orchestrator only spawns Layers 1 &amp; 2, so Opus has no bar in the timeline and no log below: it <i>is</i> the session reading these outputs and writing the plan." }));
+    if (DATA.final_plan_html) sec.appendChild(el("div", { class: "plan-render", html: DATA.final_plan_html }));
+    else sec.appendChild(el("div", { class: "notice info", text: "No final-plan.md yet — the parent Opus session aggregates the proposals and refiner findings into the final plan after this report is generated. Re-run report.py once final-plan.md exists to embed it here." }));
+    addSection("plan", "Final plan", sec);
+  })();
+
+  // ---------------------------------------------------------------- Raw logs
+  (function () {
+    var all = (DATA.layer1 || []).concat(DATA.layer2 || []);
+    var sec = el("section", { class: "block", id: "logs" });
+    sec.appendChild(el("div", { class: "section-kicker", text: "Diagnostics" }));
+    sec.appendChild(el("h2", { class: "section-title", text: "Raw agent logs" }));
+    sec.appendChild(controlBar("logs"));
+    all.forEach(function (r) {
+      if (!r.log || (!r.log.stdout && !r.log.stderr)) return;
+      sec.appendChild(collapsible(r.agent_id + " · " + r.role, statusPip(r), [["dur", fmtDur(r.duration_seconds)]], logViewer(r), false));
+    });
+    addSection("logs", "Logs", sec);
+  })();
+  function logViewer(r) {
+    var box = el("div");
+    var tabs = el("div", { class: "log-tabs" });
+    var filter = el("input", { class: "log-filter", placeholder: "Filter lines…", type: "text" });
+    var view = el("div", { class: "log-view" });
+    function render(which) {
+      view.innerHTML = "";
+      var text = (r.log[which] || "").replace(/\s+$/, "");
+      if (!text) { view.appendChild(el("div", { class: "log-empty", text: "(empty)" })); return; }
+      text.split("\n").forEach(function (line, i) {
+        view.appendChild(el("div", { class: "log-line" }, [el("span", { class: "ln", text: i + 1 }), el("span", { class: "lc", text: line })]));
+      });
+      applyFilter();
+    }
+    function applyFilter() {
+      var q = filter.value.toLowerCase();
+      Array.prototype.forEach.call(view.querySelectorAll(".log-line"), function (ln) {
+        var hit = !q || ln.querySelector(".lc").textContent.toLowerCase().indexOf(q) !== -1;
+        ln.className = "log-line" + (hit ? "" : " hidden");
+      });
+    }
+    filter.addEventListener("input", applyFilter);
+    [["stdout", "STDOUT"], ["stderr", "STDERR"]].forEach(function (t, idx) {
+      var b = el("button", { class: idx === 0 ? "active" : "", text: t[1] });
+      b.addEventListener("click", function () { Array.prototype.forEach.call(tabs.children, function (c) { c.className = ""; }); b.className = "active"; render(t[0]); });
+      tabs.appendChild(b);
+    });
+    box.appendChild(tabs); box.appendChild(filter); box.appendChild(view);
+    render("stdout");
+    return box;
+  }
+
+  // ---------------------------------------------------------------- Footer flowchart
+  (function () {
+    var sec = el("section", { class: "block flow", id: "how" });
+    sec.appendChild(el("div", { class: "section-kicker", text: "Reference" }));
+    sec.appendChild(el("h2", { class: "section-title", text: "How MoA-X works" }));
+    sec.appendChild(el("div", { html: staticFlowSVG() }));
+    app.appendChild(sec);
+    var f = el("footer", { class: "foot" });
+    f.appendChild(el("div", { class: "wrap", html: "Generated by <code class='inline'>harness/scripts/report.py</code> · MoA-X mixture-of-agents harness · self-contained, no network required." }));
+    document.body.appendChild(f);
+  })();
+
+  // ---------------------------------------------------------------- shared: collapsible
+  function collapsible(title, pipClass, stats, bodyNode, openByDefault) {
+    var wrap = el("div", { class: "collapse" + (openByDefault ? " open" : "") });
+    var head = el("div", { class: "c-head" });
+    head.appendChild(el("span", { class: "status-pip " + (pipClass || "pip-ok") }));
+    head.appendChild(el("span", { class: "c-title", text: title }));
+    if (stats) { var ms = el("div", { class: "mini-stats" }); stats.forEach(function (s) { ms.appendChild(el("span", { html: esc(s[0]) + " <b>" + esc(s[1]) + "</b>" })); }); head.appendChild(ms); }
+    head.appendChild(el("span", { class: "caret", text: "▶" }));
+    var bodyWrap = el("div", { class: "c-body" });
+    var pad = el("div", { class: "pad" }); pad.appendChild(bodyNode); bodyWrap.appendChild(pad);
+    head.addEventListener("click", function () { toggleCollapse(wrap, bodyWrap); });
+    wrap.appendChild(head); wrap.appendChild(bodyWrap);
+    if (openByDefault) setTimeout(function () { bodyWrap.style.maxHeight = REDUCED ? "none" : bodyWrap.scrollHeight + "px"; }, 0);
+    return wrap;
+  }
+  function toggleCollapse(wrap, bodyWrap) {
+    var open = wrap.classList.toggle("open");
+    if (REDUCED) { bodyWrap.style.maxHeight = open ? "none" : "0"; return; }
+    if (open) {
+      bodyWrap.style.maxHeight = bodyWrap.scrollHeight + "px";
+      setTimeout(function () { if (wrap.classList.contains("open")) bodyWrap.style.maxHeight = "none"; }, 340);
+    } else {
+      bodyWrap.style.maxHeight = bodyWrap.scrollHeight + "px";
+      requestAnimationFrame(function () { bodyWrap.style.maxHeight = "0"; });
+    }
+  }
+  function controlBar(scope) {
+    var bar = el("div", { class: "controls" });
+    bar.appendChild(el("button", { class: "btn", text: "Expand all", onclick: function () { setAll(scope, true); } }));
+    bar.appendChild(el("button", { class: "btn", text: "Collapse all", onclick: function () { setAll(scope, false); } }));
+    return bar;
+  }
+  function setAll(scope, open) {
+    var sec = document.getElementById(scope);
+    Array.prototype.forEach.call(sec.querySelectorAll(".collapse"), function (w) {
+      var b = w.querySelector(".c-body");
+      var isOpen = w.classList.contains("open");
+      if (open && !isOpen) toggleCollapse(w, b);
+      if (!open && isOpen) toggleCollapse(w, b);
+    });
+  }
+
+  // ---------------------------------------------------------------- Gantt
+  function buildGantt() {
+    var l1 = DATA.layer1 || [], l2 = DATA.layer2 || [];
+    var t0 = DATA.started_at || 0;
+    function span(r, layer, derivedStart) {
+      var start = (r.started_at && t0) ? (r.started_at - t0) : derivedStart;
+      return { r: r, layer: layer, start: Math.max(0, start), dur: r.duration_seconds || 0 };
+    }
+    var l1max = l1.reduce(function (a, r) { return Math.max(a, r.duration_seconds || 0); }, 0);
+    var rows = l1.map(function (r) { return span(r, 1, 0); }).concat(l2.map(function (r) { return span(r, 2, l1max); }));
+    if (!rows.length) return el("p", { class: "empty-note", text: "No timing data." });
+    var total = rows.reduce(function (a, s) { return Math.max(a, s.start + s.dur); }, 0) || 1;
+    var W = 900, labelW = 130, chartW = W - labelW - 20, rowH = 34, top = 20, H = top + rows.length * rowH + 30;
+    var svg = svgEl("svg", { viewBox: "0 0 " + W + " " + H, width: "100%", height: "" + H, role: "img", "aria-label": "Agent timeline" });
+    // grid
+    var ticks = 5;
+    for (var i = 0; i <= ticks; i++) {
+      var x = labelW + (chartW * i / ticks);
+      svg.appendChild(svgEl("line", { x1: x, y1: top - 6, x2: x, y2: H - 24, stroke: C.track, "stroke-width": 1, "stroke-dasharray": "2 4" }));
+      svg.appendChild(svgText(x, H - 8, fmtDur(total * i / ticks), { fill: C.muted, "font-size": 10, "text-anchor": "middle" }));
+    }
+    var layerBoundaryDrawn = false;
+    rows.forEach(function (s, idx) {
+      var y = top + idx * rowH;
+      if (s.layer === 2 && !layerBoundaryDrawn) {
+        layerBoundaryDrawn = true;
+        svg.appendChild(svgEl("line", { x1: 0, y1: y - 4, x2: W, y2: y - 4, stroke: C.ink, "stroke-width": 1 }));
+        svg.appendChild(svgText(4, y - 8, "LAYER 2", { fill: C.ink, "font-size": 9, "font-weight": 800, "letter-spacing": "0.08em" }));
+      }
+      if (idx === 0) svg.appendChild(svgText(4, top - 8, "LAYER 1", { fill: C.ink, "font-size": 9, "font-weight": 800, "letter-spacing": "0.08em" }));
+      svg.appendChild(svgText(labelW - 10, y + rowH / 2 + 4, s.r.agent_id, { fill: C.ink, "font-size": 12, "text-anchor": "end", "font-weight": 600 }));
+      var bx = labelW + (chartW * s.start / total);
+      var bw = Math.max(3, chartW * s.dur / total);
+      var color = s.r.success ? C.gold : (s.r.transient_empty ? C.gold : C.red);
+      var bar = svgEl("rect", { x: bx, y: y + 7, width: bw, height: rowH - 16, rx: 8, fill: color, opacity: s.r.success ? 1 : 0.55 });
+      bar.setAttribute("data-tip", (s.r.success ? "OK" : ("FAIL — " + (s.r.error || ""))) + " · " + fmtDur(s.dur));
+      bar.setAttribute("data-tiph", s.r.agent_id + " " + s.r.role);
+      svg.appendChild(bar);
+      svg.appendChild(svgText(bx + bw + 6, y + rowH / 2 + 4, fmtDur(s.dur), { fill: C.secondary || C.muted, "font-size": 10 }));
+    });
+    var note = el("p", { class: "empty-note", style: "margin-top:14px", html: "Bars use recorded per-agent start offsets when present; older manifests fall back to layer-derived offsets (Layer 1 from t0, Layer 2 after the slowest proposer)." });
+    var box = el("div"); box.appendChild(svg); box.appendChild(note); return box;
+  }
+
+  // ---------------------------------------------------------------- Three.js hero
+  function buildHero() {
+    var host = el("div", { id: "hero" });
+    host.appendChild(el("div", { class: "hint", text: REDUCED ? "Motion reduced — static view" : "Drag to orbit · click a node to jump to its section" }));
+    var fallback = el("div", { id: "hero-fallback", html: staticFlowSVG() });
+    host.appendChild(fallback);
+    // Reduced motion: skip WebGL entirely and show the static SVG pipeline.
+    if (REDUCED) fallback.style.display = "block";
+    else setTimeout(function () { initThree(host); }, 0);
+    return host;
+  }
+  function initThree(host) {
+    if (typeof THREE === "undefined") { host.querySelector("#hero-fallback").style.display = "block"; return; }
+    var W = host.clientWidth, H = host.clientHeight;
+    var scene = new THREE.Scene();
+    var camera = new THREE.PerspectiveCamera(45, W / H, 0.1, 100);
+    camera.position.set(0, 1.5, 15);
+    var renderer;
+    try { renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); }
+    catch (e) { host.querySelector("#hero-fallback").style.display = "block"; return; }
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(W, H);
+    renderer.setClearColor(0xffffff, 0);
+    host.insertBefore(renderer.domElement, host.firstChild);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.85));
+    var key = new THREE.DirectionalLight(0xffffff, 0.6); key.position.set(4, 8, 10); scene.add(key);
+
+    var group = new THREE.Group(); scene.add(group);
+    var COL = { gold: 0xFFA300, green: 0x10B981, red: 0xEF4444, ink: 0x262626 };
+    var nodes = [];
+    function addNode(x, y, label, dur, status, target) {
+      var maxDur = 500;
+      var rad = 0.34 + 0.5 * Math.min(1, Math.sqrt((dur || 30) / maxDur));
+      var color = status === "fail" ? COL.red : (status === "anchor" ? COL.gold : COL.green);
+      var geo = new THREE.SphereGeometry(rad, 28, 28);
+      var mat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.45, metalness: 0.1 });
+      var m = new THREE.Mesh(geo, mat); m.position.set(x, y, 0);
+      m.userData = { target: target, base: y };
+      group.add(m); nodes.push(m);
+      group.add(makeLabel(label, x, y - rad - 0.42));
+      return m;
+    }
+    function makeLabel(text, x, y) {
+      var cv = document.createElement("canvas"); var s = 256; cv.width = s; cv.height = 64;
+      var ctx = cv.getContext("2d"); ctx.fillStyle = "#262626";
+      ctx.font = "bold 30px Arial, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(text.toUpperCase(), s / 2, 32);
+      var tex = new THREE.CanvasTexture(cv); tex.needsUpdate = true;
+      var spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
+      spr.position.set(x, y, 0); spr.scale.set(2.4, 0.6, 1); return spr;
+    }
+    function edge(a, b) {
+      var g = new THREE.BufferGeometry().setFromPoints([a.position, b.position]);
+      var line = new THREE.Line(g, new THREE.LineBasicMaterial({ color: COL.gold, transparent: true, opacity: 0.35 }));
+      group.add(line);
+      return { a: a, b: b };
+    }
+
+    var l1 = (DATA.layer1 || []), l2 = (DATA.layer2 || []);
+    var scout = addNode(-6.5, 0, "scout", 20, "anchor", "scout");
+    function spread(n, i) { return n <= 1 ? 0 : (i - (n - 1) / 2) * 2.4; }
+    var pNodes = l1.map(function (r, i) { return addNode(-2.2, spread(l1.length, i), r.agent_id, r.duration_seconds, r.success ? "ok" : "fail", "proposers"); });
+    var rNodes = l2.map(function (r, i) { return addNode(2.2, spread(l2.length, i), r.agent_id, r.duration_seconds, r.success ? "ok" : "fail", "refiners"); });
+    var agg = null;
+    if (!DATA.partial) agg = addNode(6.5, 0, "opus", 60, "anchor", "plan");
+
+    var edges = [];
+    pNodes.forEach(function (p) { edges.push(edge(scout, p)); });
+    // broadcast: every proposer → every refiner
+    pNodes.forEach(function (p) { rNodes.forEach(function (rf) { edges.push(edge(p, rf)); }); });
+    if (agg) rNodes.forEach(function (rf) { edges.push(edge(rf, agg)); });
+    if (agg && !rNodes.length) pNodes.forEach(function (p) { edges.push(edge(p, agg)); });
+
+    // particles
+    var particles = [];
+    if (!REDUCED) edges.forEach(function (e, i) {
+      var pg = new THREE.SphereGeometry(0.09, 10, 10);
+      var pm = new THREE.MeshBasicMaterial({ color: COL.gold });
+      var mesh = new THREE.Mesh(pg, pm); group.add(mesh);
+      particles.push({ mesh: mesh, e: e, t: (i * 0.13) % 1 });
+    });
+
+    // custom drag-orbit
+    var rotY = -0.15, rotX = 0.12, dragging = false, px = 0, py = 0, autoV = 0.0022;
+    var cv = renderer.domElement;
+    cv.addEventListener("mousedown", function (e) { dragging = true; px = e.clientX; py = e.clientY; });
+    window.addEventListener("mouseup", function () { dragging = false; });
+    window.addEventListener("mousemove", function (e) {
+      if (!dragging) return;
+      rotY += (e.clientX - px) * 0.008; rotX += (e.clientY - py) * 0.006;
+      rotX = Math.max(-0.8, Math.min(0.8, rotX)); px = e.clientX; py = e.clientY;
+    });
+    cv.addEventListener("touchstart", function (e) { if (e.touches[0]) { dragging = true; px = e.touches[0].clientX; py = e.touches[0].clientY; } }, { passive: true });
+    cv.addEventListener("touchmove", function (e) { if (dragging && e.touches[0]) { rotY += (e.touches[0].clientX - px) * 0.008; rotX += (e.touches[0].clientY - py) * 0.006; rotX = Math.max(-0.8, Math.min(0.8, rotX)); px = e.touches[0].clientX; py = e.touches[0].clientY; } }, { passive: true });
+    cv.addEventListener("touchend", function () { dragging = false; });
+
+    // click → raycast
+    var ray = new THREE.Raycaster(), mouse = new THREE.Vector2(), downPos = null;
+    cv.addEventListener("mousedown", function (e) { downPos = [e.clientX, e.clientY]; });
+    cv.addEventListener("click", function (e) {
+      if (downPos && (Math.abs(e.clientX - downPos[0]) + Math.abs(e.clientY - downPos[1])) > 6) return;
+      var rect = cv.getBoundingClientRect();
+      mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      ray.setFromCamera(mouse, camera);
+      var hit = ray.intersectObjects(nodes);
+      if (hit.length && hit[0].object.userData.target) {
+        var t = document.getElementById(hit[0].object.userData.target);
+        if (t) t.scrollIntoView({ behavior: REDUCED ? "auto" : "smooth", block: "start" });
+      }
+    });
+
+    function resize() { W = host.clientWidth; H = host.clientHeight; camera.aspect = W / H; camera.updateProjectionMatrix(); renderer.setSize(W, H); }
+    window.addEventListener("resize", resize);
+
+    var clock = 0;
+    function frame() {
+      if (!REDUCED && !dragging) rotY += autoV;
+      group.rotation.y = rotY; group.rotation.x = rotX;
+      if (!REDUCED) {
+        clock += 0.006;
+        nodes.forEach(function (n, i) { n.position.y = n.userData.base + Math.sin(clock * 1.4 + i) * 0.05; });
+        particles.forEach(function (p) {
+          p.t += 0.01; if (p.t > 1) p.t -= 1;
+          p.mesh.position.lerpVectors(p.e.a.position, p.e.b.position, p.t);
+        });
+      }
+      renderer.render(scene, camera);
+      if (!REDUCED) requestAnimationFrame(frame);
+    }
+    frame();
+    if (REDUCED) renderer.render(scene, camera);
+  }
+
+  // ---------------------------------------------------------------- static SVG flow
+  function staticFlowSVG() {
+    var g = C.gold, ink = C.ink, tk = C.track;
+    function box(x, label, sub) {
+      return '<rect x="' + x + '" y="60" width="150" height="70" rx="12" fill="#fff" stroke="' + tk + '"/>' +
+        '<text x="' + (x + 75) + '" y="90" text-anchor="middle" font-family="Arial" font-weight="800" font-size="13" fill="' + ink + '">' + label + '</text>' +
+        '<text x="' + (x + 75) + '" y="110" text-anchor="middle" font-family="Arial" font-size="10" fill="' + C.muted + '">' + sub + '</text>';
+    }
+    function arrow(x1, x2) { return '<line x1="' + x1 + '" y1="95" x2="' + (x2 - 8) + '" y2="95" stroke="' + g + '" stroke-width="2"/>' + '<polygon points="' + (x2 - 8) + ',90 ' + x2 + ',95 ' + (x2 - 8) + ',100" fill="' + g + '"/>'; }
+    return '<svg viewBox="0 0 900 190" width="100%" role="img" aria-label="MoA-X four-layer pipeline">' +
+      box(10, "SCOUT", "Layer 0 · brief") + arrow(160, 210) +
+      box(210, "PROPOSERS", "Layer 1 · parallel") + arrow(360, 410) +
+      box(410, "REFINERS", "Layer 2 · broadcast") + arrow(560, 610) +
+      box(610, "AGGREGATOR", "Layer 3 · Opus") +
+      '<text x="450" y="165" text-anchor="middle" font-family="Arial" font-size="11" fill="' + C.muted + '">Each refiner reviews every proposer — cross-lab verification before synthesis.</text>' +
+      '</svg>';
+  }
+
+  // ---------------------------------------------------------------- SVG helpers
+  function svgEl(tag, attrs) { var n = document.createElementNS("http://www.w3.org/2000/svg", tag); for (var k in attrs) n.setAttribute(k, attrs[k]); return n; }
+  function svgText(x, y, text, attrs) { var t = svgEl("text", Object.assign({ x: x, y: y, "font-family": "Arial, sans-serif" }, attrs || {})); t.textContent = text; return t; }
+
+  // ---------------------------------------------------------------- Nav + scrollspy
+  (function () {
+    var inner = document.getElementById("mininav-inner");
+    sections.forEach(function (s) { inner.appendChild(el("a", { href: "#" + s.id, text: s.label })); });
+    var links = Array.prototype.slice.call(inner.querySelectorAll("a"));
+    function spy() {
+      var y = window.scrollY + 120, cur = sections[0].id;
+      sections.forEach(function (s) { var e = document.getElementById(s.id); if (e && e.offsetTop <= y) cur = s.id; });
+      links.forEach(function (a) { a.className = a.getAttribute("href") === "#" + cur ? "active" : ""; });
+    }
+    window.addEventListener("scroll", spy); spy();
+  })();
+
+  // ---------------------------------------------------------------- Tooltip
+  (function () {
+    var tip = document.getElementById("tooltip");
+    document.addEventListener("mouseover", function (e) {
+      var t = e.target.closest ? e.target.closest("[data-tip]") : null;
+      if (!t || !t.getAttribute("data-tip")) return;
+      tip.innerHTML = (t.getAttribute("data-tiph") ? '<div class="tt-h">' + esc(t.getAttribute("data-tiph")) + "</div>" : "") + esc(t.getAttribute("data-tip"));
+      tip.style.display = "block";
+    });
+    document.addEventListener("mousemove", function (e) {
+      if (tip.style.display !== "block") return;
+      var x = e.clientX + 14, y = e.clientY + 16;
+      if (x + tip.offsetWidth > window.innerWidth - 10) x = e.clientX - tip.offsetWidth - 14;
+      if (y + tip.offsetHeight > window.innerHeight - 10) y = e.clientY - tip.offsetHeight - 16;
+      tip.style.left = x + "px"; tip.style.top = y + "px";
+    });
+    document.addEventListener("mouseout", function (e) {
+      var t = e.target.closest ? e.target.closest("[data-tip]") : null;
+      if (t) tip.style.display = "none";
+    });
+  })();
+})();
+</script>
+</body>
+</html>

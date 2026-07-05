@@ -93,8 +93,16 @@ Layer 3 — Aggregation                      (parent Opus 4.6, in-place, REPL-bo
    ├─ honor every refiner contradiction + synthesis_recommendation
    ├─ surface disagreements explicitly (proposer↔proposer AND refiner↔refiner)
    ├─ write .moa/<session>/final-plan.md
-   └─ present to user, ask if ready to execute
+   ├─ (re-render .moa/<session>/report.html so the plan shows in the report:
+   │   python3 harness/scripts/report.py --session .moa/<session>)
+   └─ present to user, ask if ready to execute (offer to open report.html)
 ```
+
+The orchestrator already wrote `.moa/<session>/report.html` — a single
+self-contained visual post-mortem of the run (3D pipeline, Gantt, proposer
+plans, refiner verdict matrix, logs). After you write `final-plan.md`,
+re-run `report.py --session .moa/<session>` so the aggregated plan is
+embedded too, then point the user at the file. See `docs/report.md`.
 
 Layers 0 and 3 happen in this Claude Code session. Layer 1 and 2 are spawned
 as external subprocesses by `~/.claude/skills/mixture-of-agents/scripts/run_moa.py`.

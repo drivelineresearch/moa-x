@@ -114,6 +114,18 @@ aborting outright:
 Every failure writes to `.moa/<session>/.../*.log` so post-mortems
 have the full CLI output.
 
+## The HTML run report
+
+Each full run also writes a single self-contained
+`.moa/<session>/report.html` — a visual post-mortem with a 3D pipeline
+view, per-agent Gantt, proposer plans, the refiner verdict matrix and
+evidence verification, and the aggregated final plan. Open it directly
+in a browser (no server, no network). Re-render any session (e.g. after
+`final-plan.md` is written) with
+`python3 harness/scripts/report.py --session .moa/<id>` or `--latest`.
+Skip it with `--no-report` (or `MOA_NO_REPORT=1`). Full details:
+[`docs/report.md`](report.md).
+
 ## Limits
 
 - **One MoA run per machine at a time.** A `flock` on `/tmp/moa.lock`

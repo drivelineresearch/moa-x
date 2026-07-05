@@ -20,6 +20,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
 import run_moa  # noqa: E402
+import report as report_module  # noqa: E402
 from adapters import codex as codex_adapter  # noqa: E402
 from adapters import claude as claude_adapter  # noqa: E402
 
@@ -1233,6 +1234,227 @@ def test_refiner_schema_accepts_five_proposer_roster() -> bool:
     return _ok(len(errors) == 0, f"errors={errors[:3]}")
 
 
+# ---------------------------------------------------------------------------
+# HTML report generator (report.py)
+# ---------------------------------------------------------------------------
+
+import re as _re
+import tempfile as _tempfile
+import shutil as _shutil
+
+
+def _extract_embedded_data(html: str) -> dict:
+    """Pull the <script type=application/json id=moa-data> blob out of a report.
+
+    Mirrors what a browser does: slice to the first </script>, undo the
+    ``</`` -> ``<\\/`` escaping, and JSON.parse. If a log's ``</script>`` had
+    leaked unescaped, this slice would truncate the JSON and json.loads would
+    raise — which is exactly the regression this guards against.
+    """
+    m = _re.search(r'<script type="application/json" id="moa-data">(.*?)</script>', html, _re.S)
+    if not m:
+        raise AssertionError("moa-data script block not found")
+    return json.loads(m.group(1).replace("<\\/", "</"))
+
+
+def _write_fixture_session(tmp: Path, partial: bool = False) -> Path:
+    """Create a synthetic .moa session on disk: mixed success/fail/transient.
+
+    Committed nowhere (.moa is gitignored); built fresh per test so report.py
+    exercises the real manifest + payload + log loading path offline.
+    """
+    session = tmp / "sess-fixture"
+    (session / "layer1").mkdir(parents=True, exist_ok=True)
+    (session / "layer2").mkdir(parents=True, exist_ok=True)
+
+    (session / "scout-brief.json").write_text(json.dumps({
+        "session_id": "sess-fixture",
+        "frozen_spec": "Add a widget to the thing.\nSecond line ignored for the title.",
+        "focus_files": ["a.py", "b.py"],
+        "in_scope": ["do the widget"],
+        "out_of_scope": ["not the gadget"],
+        "clarifications": ["Q: color? A: goldenrod"],
+        "notes": "some notes",
+    }), encoding="utf-8")
+
+    codex_payload = _make_valid_proposer("codex")
+    (session / "layer1" / "codex-proposer.json").write_text(json.dumps(codex_payload), encoding="utf-8")
+    # A log carrying an ANSI code AND a literal </script> — both must survive.
+    (session / "layer1" / "codex-proposer.log").write_text(
+        "=== STDOUT ===\n\x1b[32mgreen\x1b[0m line\nembedded </script> tag here\n=== STDERR ===\nwarn\n",
+        encoding="utf-8",
+    )
+
+    layer1 = [
+        {"agent_id": "codex", "layer": 1, "role": "proposer", "reviewing": None,
+         "success": True, "schema_valid": True, "duration_seconds": 120.0,
+         "started_at": 100.0, "error": None,
+         "log_path": "layer1/codex-proposer.log", "json_path": "layer1/codex-proposer.json",
+         "transient_empty": False},
+        {"agent_id": "glm", "layer": 1, "role": "proposer", "reviewing": None,
+         "success": False, "schema_valid": False, "duration_seconds": 5.0,
+         "started_at": 100.0, "error": "hard failure: quota exhausted",
+         "log_path": None, "json_path": None, "transient_empty": False},
+        {"agent_id": "cursor-grok", "layer": 1, "role": "proposer", "reviewing": None,
+         "success": False, "schema_valid": False, "duration_seconds": 4.0,
+         "started_at": 100.0, "error": "empty envelope",
+         "log_path": None, "json_path": None, "transient_empty": True},
+    ]
+
+    manifest = {
+        "session_id": "sess-fixture",
+        "config": {"arm": "cross-lab",
+                   "proposers": [{"name": "codex", "harness": "codex", "model": "gpt-5.4"},
+                                 {"name": "glm", "harness": "opencode", "model": "glm-5.2"},
+                                 {"name": "cursor-grok", "harness": "cursor", "model": "grok"}],
+                   "refiners": [{"name": "kimi", "harness": "opencode", "model": "kimi-k2.7"}]},
+        "layer2_mode": "degraded_non_broadcast" if partial else "broadcast",
+        "started_at": 100.0, "finished_at": 400.0, "duration_seconds": 300.0,
+        "layer1": layer1,
+    }
+
+    if partial:
+        manifest["phase"] = "layer1"
+        (session / "layer1-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    else:
+        kimi_payload = _make_valid_broadcast_refiner("kimi")
+        (session / "layer2" / "kimi-refiner-broadcast.json").write_text(json.dumps(kimi_payload), encoding="utf-8")
+        (session / "layer2" / "kimi-refiner-broadcast.log").write_text(
+            "=== STDOUT ===\nrefiner ran\n=== STDERR ===\n", encoding="utf-8")
+        manifest["layer2"] = [
+            {"agent_id": "kimi", "layer": 2, "role": "refiner-broadcast",
+             "reviewing": ["codex"], "success": True, "schema_valid": True,
+             "duration_seconds": 90.0, "started_at": 220.0, "error": None,
+             "log_path": "layer2/kimi-refiner-broadcast.log",
+             "json_path": "layer2/kimi-refiner-broadcast.json", "transient_empty": False},
+        ]
+        (session / "final-plan.md").write_text(
+            "# Final plan\n\nDo **this** and see `foo.py`.\n\n- step one\n- step two\n\n"
+            "```python\nprint('hi')\n```\n", encoding="utf-8")
+        (session / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    return session
+
+
+def test_report_generates_single_self_contained_file() -> bool:
+    print("\n[N] report.py emits one file with no external src/href asset refs")
+    tmp = Path(_tempfile.mkdtemp())
+    try:
+        session = _write_fixture_session(tmp)
+        out = report_module.generate(session, session / "report.html")
+        html = out.read_text(encoding="utf-8")
+        external = _re.findall(r'(?:src|href)="https?://[^"]*"', html)
+        # Three.js and the main script must be inlined, not linked.
+        inlined = "THREE" in html and "<script>" in html
+        return _ok(not external and inlined and len(html) > 100_000,
+                   f"external_refs={external[:2]}, bytes={len(html)}")
+    finally:
+        _shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_report_embedded_json_round_trips() -> bool:
+    print("\n[N] embedded moa-data JSON parses and lists every roster agent")
+    tmp = Path(_tempfile.mkdtemp())
+    try:
+        session = _write_fixture_session(tmp)
+        html = report_module.generate(session, session / "report.html").read_text(encoding="utf-8")
+        data = _extract_embedded_data(html)
+        ids = [r["agent_id"] for r in data["layer1"]] + [r["agent_id"] for r in data["layer2"]]
+        ok = (set(ids) == {"codex", "glm", "cursor-grok", "kimi"}
+              and data["title"].startswith("Add a widget")
+              and data["final_plan_html"] and "<strong>this</strong>" in data["final_plan_html"])
+        return _ok(ok, f"ids={ids}")
+    finally:
+        _shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_report_renders_failed_and_transient_agents() -> bool:
+    print("\n[N] report carries the failed (glm) and transient-empty (cursor-grok) agents")
+    tmp = Path(_tempfile.mkdtemp())
+    try:
+        session = _write_fixture_session(tmp)
+        data = _extract_embedded_data(
+            report_module.generate(session, session / "report.html").read_text(encoding="utf-8"))
+        glm = next(r for r in data["layer1"] if r["agent_id"] == "glm")
+        grok = next(r for r in data["layer1"] if r["agent_id"] == "cursor-grok")
+        ok = (glm["success"] is False and "quota" in (glm["error"] or "")
+              and grok["transient_empty"] is True and grok["payload"] is None)
+        return _ok(ok, f"glm.success={glm['success']}, grok.transient={grok['transient_empty']}")
+    finally:
+        _shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_report_escapes_script_close_in_logs() -> bool:
+    print("\n[N] a </script> inside a log survives embedding (JSON still slices+parses)")
+    tmp = Path(_tempfile.mkdtemp())
+    try:
+        session = _write_fixture_session(tmp)
+        html = report_module.generate(session, session / "report.html").read_text(encoding="utf-8")
+        data = _extract_embedded_data(html)  # raises if the log's </script> truncated the blob
+        codex = next(r for r in data["layer1"] if r["agent_id"] == "codex")
+        ok = ("</script>" in codex["log"]["stdout"]      # preserved for the reader
+              and "\x1b" not in codex["log"]["stdout"])   # ANSI stripped
+        return _ok(ok, f"stdout={codex['log']['stdout']!r}")
+    finally:
+        _shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_report_phase_split_partial_session() -> bool:
+    print("\n[N] report.py renders a layer1-only (phase-split) session as partial")
+    tmp = Path(_tempfile.mkdtemp())
+    try:
+        session = _write_fixture_session(tmp, partial=True)
+        data = _extract_embedded_data(
+            report_module.generate(session, session / "report.html").read_text(encoding="utf-8"))
+        ok = (data["partial"] is True and len(data["layer1"]) == 3
+              and data["layer2"] == [] and data["final_plan_html"] is None)
+        return _ok(ok, f"partial={data['partial']}, layer2={data['layer2']}")
+    finally:
+        _shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_report_missing_manifest_exits_2() -> bool:
+    print("\n[N] report.py --session with no manifest exits 2")
+    tmp = Path(_tempfile.mkdtemp())
+    try:
+        empty = tmp / "no-manifest"
+        empty.mkdir()
+        # Drive main() directly with argv.
+        import contextlib, io
+        old_argv = sys.argv
+        sys.argv = ["report.py", "--session", str(empty)]
+        buf = io.StringIO()
+        try:
+            with contextlib.redirect_stderr(buf):
+                code = report_module.main()
+        finally:
+            sys.argv = old_argv
+        return _ok(code == 2 and "no manifest" in buf.getvalue(), f"code={code}, err={buf.getvalue()!r}")
+    finally:
+        _shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_report_markdown_subset_renders() -> bool:
+    print("\n[N] render_markdown handles headings, bold, code fences, lists, links")
+    md = ("# Title\n\nA **bold** word and `code`.\n\n- one\n- two\n\n"
+          "```\nraw <b> not escaped-as-tag\n```\n\n[link](https://example.com)\n")
+    html = report_module.render_markdown(md)
+    ok = ("<h1>Title</h1>" in html and "<strong>bold</strong>" in html
+          and "<code>code</code>" in html and "<li>one</li>" in html
+          and "&lt;b&gt;" in html  # code fence content HTML-escaped
+          and '<a href="https://example.com"' in html)
+    return _ok(ok, f"html={html[:80]!r}")
+
+
+def test_report_markdown_code_span_shields_bold() -> bool:
+    print("\n[N] inline code span is not mangled by bold/link substitution")
+    html = report_module.render_markdown("Use `arr[0]` and `a**b**c`, not **real bold**.\n")
+    ok = ("<code>arr[0]</code>" in html and "<code>a**b**c</code>" in html
+          and "<strong>real bold</strong>" in html
+          and "<strong>b</strong>" not in html)  # the ** inside code stayed literal
+    return _ok(ok, f"html={html!r}")
+
+
 def main() -> int:
     print("Mixture-of-Agents — offline smoke test (v2: 3 proposers + broadcast refiners)")
     print("=" * 72)
@@ -1299,6 +1521,14 @@ def main() -> int:
         test_manifest_summary_includes_transient_empty_arrays,
         test_layer1_manifest_round_trip_via_load,
         test_parse_redispatch_arg_validates_names,
+        test_report_generates_single_self_contained_file,
+        test_report_embedded_json_round_trips,
+        test_report_renders_failed_and_transient_agents,
+        test_report_escapes_script_close_in_logs,
+        test_report_phase_split_partial_session,
+        test_report_missing_manifest_exits_2,
+        test_report_markdown_subset_renders,
+        test_report_markdown_code_span_shields_bold,
     ]
     results = [t() for t in tests]
     print("\n" + "=" * 72)
