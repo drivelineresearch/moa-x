@@ -1200,8 +1200,9 @@ def write_synthesis_input(
         "Read `harness/prompts/aggregator.md` (or "
         "`~/.claude/skills/mixture-of-agents/prompts/aggregator.md` if running "
         "as the installed skill) for "
-        "the full aggregation protocol. Synthesize the 3 proposer plans, "
-        "honor the 2 refiner findings, surface disagreements across proposers "
+        "the full aggregation protocol. Synthesize the "
+        f"{len(proposer_agent_ids)} proposer plans, honor the "
+        f"{len(refiner_agent_ids)} refiner findings, surface disagreements across proposers "
         "and across refiners, and write the final plan to `final-plan.md` in "
         "this session directory."
     )
@@ -1777,6 +1778,19 @@ def main() -> int:
 
         final_proposers = _filter_subset(loaded_cfg_proposers, args.proposers, "proposers")
         final_refiners = _filter_subset(loaded_cfg_refiners, args.refiners, "refiners")
+        # --timeout is a master override: it must beat per-provider timeouts
+        # (MOA_<NAME>_TIMEOUT / providers.<name>.timeout), not only the harness
+        # defaults, matching the CLI help. Rebuild the resolved providers so the
+        # per-call timeout in _dispatch resolves to the master value.
+        if args.timeout is not None:
+            final_proposers = [
+                harness_config.ResolvedProvider(name=p.name, harness=p.harness, model=p.model, timeout=args.timeout)
+                for p in final_proposers
+            ]
+            final_refiners = [
+                harness_config.ResolvedProvider(name=p.name, harness=p.harness, model=p.model, timeout=args.timeout)
+                for p in final_refiners
+            ]
         if not final_proposers:
             print("ERROR: --proposers resolved to empty list", file=sys.stderr)
             return 2

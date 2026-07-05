@@ -18,6 +18,12 @@ The loader lives in `harness/scripts/config.py`. An offline test
 (`test_offline.py`, case 14) asserts this precedence. If you change
 it, that test will tell you.
 
+> **The `config.yaml` lane needs PyYAML.** `run_moa.py` / `install_deps.py`
+> run under the system `python3`; the loader raises if `config.yaml` exists but
+> PyYAML is not installed (`pip install pyyaml`). Levels 1–3 above (CLI flags,
+> `MOA_*` env vars, `.env`) need no dependency — use them if you'd rather not
+> install PyYAML.
+
 ## Named providers
 
 A provider is a `{name, harness, model}` triple. The `harness` is

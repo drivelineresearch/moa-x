@@ -86,7 +86,12 @@ def _print_provider_summary(loaded_cfg: "LoadedConfig") -> None:
 
 def _check_needed_harnesses(loaded_cfg: "LoadedConfig", failures: list[str]) -> set[str]:
     """Run check_available() per needed harness; return the set we checked."""
-    needed = {p.harness for p in loaded_cfg.proposers + loaded_cfg.refiners}
+    # Mirror run_moa's preflight: when refinement is skipped, the refiner
+    # harnesses are never used, so don't gate the run on installing them.
+    providers = list(loaded_cfg.proposers)
+    if not loaded_cfg.skip_refinement:
+        providers += loaded_cfg.refiners
+    needed = {p.harness for p in providers}
     print("")
     print(f"  required harnesses (from layer assignments): {sorted(needed)}")
 
