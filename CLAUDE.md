@@ -5,17 +5,20 @@
 MoA-X is a Mixture-of-Agents reference harness. `harness/scripts/run_moa.py`
 orchestrates a config-driven roster of CLI proposers and broadcast
 refiners; the shipped default is codex + glm + sonnet proposers and
-codex + kimi refiners (glm/kimi run through the `opencode` CLI). Layers 0
-(scout) and 3 (aggregation) are handled by the parent Claude Code session.
-The orchestrator only runs Layers 1 and 2.
+codex + kimi refiners (glm/kimi run on the `opencode` CLI via the
+`opencode-go` gateway). Layers 0 (scout) and 3 (aggregation) are handled by
+the parent Claude Code session. The orchestrator only runs Layers 1 and 2,
+then writes a self-contained `.moa/<session>/report.html` post-mortem.
 
-- `harness/`: orchestrator, adapters, prompts, schemas. Designed to be
-  droppable into `~/.claude/skills/mixture-of-agents/` as a Claude Code skill.
+- `harness/`: orchestrator, adapters, prompts, schemas, and `report/`
+  (HTML report template + vendored three.min.js). Designed to be droppable
+  into `~/.claude/skills/mixture-of-agents/` as a Claude Code skill.
 - `docs/`: topic-by-topic docs. Read the relevant one before structural changes:
   - `docs/install.md`: CLI install + skill install
   - `docs/usage.md`: `/mixture-of-agents` flow + standalone
   - `docs/config.md`: `.env` / `harness/config.yaml` precedence + knob table
   - `docs/architecture.md`: the four layers, why broadcast, why this roster (and why gemini left)
+  - `docs/report.md`: the self-contained HTML run report
 - `CONTRIBUTING.md`, `SECURITY.md`, `LICENSE`: community files.
 
 ## WHY
