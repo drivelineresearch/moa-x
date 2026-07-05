@@ -86,8 +86,8 @@ class ResolvedProvider:
 BUILTIN_PROVIDERS: dict[str, ResolvedProvider] = {
     "codex":    ResolvedProvider(name="codex",    harness="codex",    model="gpt-5.4"),
     "sonnet":   ResolvedProvider(name="sonnet",   harness="claude",   model="claude-sonnet-4-6"),
-    "glm":      ResolvedProvider(name="glm",      harness="opencode", model="zhipuai/glm-5.2"),
-    "kimi":     ResolvedProvider(name="kimi",     harness="opencode", model="moonshotai/kimi-k2.7-code"),
+    "glm":      ResolvedProvider(name="glm",      harness="opencode", model="opencode-go/glm-5.2"),
+    "kimi":     ResolvedProvider(name="kimi",     harness="opencode", model="opencode-go/kimi-k2.7-code"),
     "composer": ResolvedProvider(name="composer", harness="cursor",   model="composer-2.5"),
 }
 

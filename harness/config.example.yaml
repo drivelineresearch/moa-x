@@ -7,8 +7,8 @@
 # Built-in named providers (no need to declare):
 #   codex     → {harness: codex,    model: gpt-5.4}                     # OpenAI via codex CLI
 #   sonnet    → {harness: claude,   model: claude-sonnet-4-6}           # Anthropic via claude CLI
-#   glm       → {harness: opencode, model: zhipuai/glm-5.2}             # Zhipu via opencode CLI
-#   kimi      → {harness: opencode, model: moonshotai/kimi-k2.7-code}   # Moonshot via opencode CLI
+#   glm       → {harness: opencode, model: opencode-go/glm-5.2}             # GLM via opencode-go gateway
+#   kimi      → {harness: opencode, model: opencode-go/kimi-k2.7-code}       # Kimi via opencode-go gateway
 #   composer  → {harness: cursor,   model: composer-2.5}                # Cursor Composer via cursor-agent
 #
 # Override a built-in's model via:

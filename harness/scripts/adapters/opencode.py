@@ -4,7 +4,8 @@ Invokes `opencode run` headlessly. OpenCode is the harness we route
 Chinese-lab frontier models through — GLM (Zhipu) and Kimi (Moonshot) —
 and, via its built-in provider catalog, Fireworks-hosted variants of the
 same models. Model ids are `provider/model` strings, e.g.
-`zhipuai/glm-5.2`, `moonshotai/kimi-k2.7-code`,
+`opencode-go/glm-5.2`, `opencode-go/kimi-k2.7-code` (the defaults), the
+direct-provider `zhipuai/glm-5.2` / `moonshotai/kimi-k2.7-code`, or
 `fireworks-ai/accounts/fireworks/models/glm-5p2`.
 
 OpenCode has no JSON envelope in default text mode — the model's final
