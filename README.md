@@ -59,6 +59,11 @@ The roster is config-driven; the defaults above span four labs (OpenAI,
 Zhipu, Anthropic, Moonshot) and keep the refiners independent of the Opus
 aggregator's lab.
 
+Every run also writes a self-contained `.moa/<session>/report.html` — a
+zero-network visual post-mortem (3D pipeline, per-agent Gantt, proposer
+plans, refiner verdict matrix, aggregated plan, raw logs). Open it in a
+browser; details in [`docs/report.md`](docs/report.md).
+
 Typical wall-clock is 6–12 minutes. Use it for non-trivial
 architecture work, not one-line fixes. Background in
 [`docs/architecture.md`](docs/architecture.md).
