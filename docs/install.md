@@ -29,7 +29,8 @@ opencode auth login    # interactive login
 The default roster is `codex` + `sonnet` (via `claude`) + `glm` and
 `kimi` (both via `opencode`) — four labs: OpenAI, Anthropic, Zhipu,
 Moonshot. GLM and Kimi both run on the `opencode` harness; their
-model ids are provider/model strings (`zhipuai/glm-5.2`,
+model ids are provider/model strings (defaults `opencode-go/glm-5.2`,
+`opencode-go/kimi-k2.7-code`; also `zhipuai/glm-5.2`,
 `moonshotai/kimi-k2.7-code`, or the Fireworks variants
 `fireworks-ai/accounts/fireworks/models/glm-5p2` and
 `…/kimi-k2p7-code`).

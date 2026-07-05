@@ -196,9 +196,11 @@ The codex and sonnet harnesses have dedicated flags. Every other harness
 `providers:` block in `harness/config.yaml` or from `MOA_<NAME>_MODEL` /
 `MOA_<NAME>_TIMEOUT` env vars. You can also define a provider entirely from
 the environment with `MOA_PROVIDER_<NAME>=<harness>:<model>`, e.g.
-`MOA_PROVIDER_GLM=opencode:zhipuai/glm-5.2`. Opencode model ids are
-`provider/model` strings (`zhipuai/glm-5.2`, `moonshotai/kimi-k2.7-code`, or
-Fireworks-hosted `fireworks-ai/accounts/fireworks/models/glm-5p2`).
+`MOA_PROVIDER_GLM=opencode:opencode-go/glm-5.2`. Opencode model ids are
+`provider/model` strings (`opencode-go/glm-5.2` and
+`opencode-go/kimi-k2.7-code` are the defaults; `zhipuai/glm-5.2`,
+`moonshotai/kimi-k2.7-code`, and Fireworks-hosted
+`fireworks-ai/accounts/fireworks/models/glm-5p2` also work).
 
 Per-agent timeout defaults:
 - `--codex-timeout` scales with `--codex-effort`: xhigh=1500s, high=1200s, medium/low=900s

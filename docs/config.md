@@ -39,8 +39,8 @@ These five are always available without declaring them:
 |---|---|---|
 | `codex` | `codex` CLI | `gpt-5.4` |
 | `sonnet` | `claude` CLI | `claude-sonnet-4-6` |
-| `glm` | `opencode` CLI | `zhipuai/glm-5.2` |
-| `kimi` | `opencode` CLI | `moonshotai/kimi-k2.7-code` |
+| `glm` | `opencode` CLI | `opencode-go/glm-5.2` |
+| `kimi` | `opencode` CLI | `opencode-go/kimi-k2.7-code` |
 | `composer` | `cursor` CLI | `composer-2.5` |
 
 The default roster draws four labs from these: proposers
@@ -110,7 +110,7 @@ Then edit. Format is plain `KEY=value` with `#` comments. Example:
 MOA_CODEX_MODEL=gpt-5.4
 MOA_CODEX_EFFORT=xhigh
 MOA_SONNET_TIMEOUT=1500
-MOA_GLM_MODEL=zhipuai/glm-5.2
+MOA_GLM_MODEL=opencode-go/glm-5.2
 ```
 
 ### `harness/config.yaml` (structured)
@@ -140,8 +140,8 @@ layers:
 | `MOA_CODEX_MODEL` | `gpt-5.4` | Codex model id. |
 | `MOA_CODEX_EFFORT` | `high` | One of `low`, `medium`, `high`, `xhigh`. Higher = better, slower. Default `--codex-timeout` scales with this. |
 | `MOA_SONNET_MODEL` | `claude-sonnet-4-6` | Model for the sonnet proposer (the `claude` CLI in sonnet mode). |
-| `MOA_GLM_MODEL` | `zhipuai/glm-5.2` | Model id for the `glm` provider (opencode harness). Provider/model string. |
-| `MOA_KIMI_MODEL` | `moonshotai/kimi-k2.7-code` | Model id for the `kimi` provider (opencode harness). Provider/model string. |
+| `MOA_GLM_MODEL` | `opencode-go/glm-5.2` | Model id for the `glm` provider (opencode harness). Provider/model string. |
+| `MOA_KIMI_MODEL` | `opencode-go/kimi-k2.7-code` | Model id for the `kimi` provider (opencode harness). Provider/model string. |
 | `MOA_CODEX_TIMEOUT` | effort-scaled | Wall-clock cap for codex calls. xhigh=1500s, high=1200s, medium/low=900s. |
 | `MOA_SONNET_TIMEOUT` | `1200` | Wall-clock cap for sonnet calls, in seconds. |
 | `MOA_OPENCODE_TIMEOUT` | `1200` | Wall-clock cap for opencode calls (glm / kimi), in seconds. |
@@ -173,10 +173,10 @@ Adds an extra proposer lane without touching the built-in roster.
 
 ### GLM / Kimi through Fireworks
 
-The `glm` and `kimi` defaults route through their native providers
-(`zhipuai/…`, `moonshotai/…`). To run the same models through
-Fireworks instead, declare user providers with the Fireworks model
-strings:
+The `glm` and `kimi` defaults route through the opencode-go gateway
+(`opencode-go/…`). To run the same models through their native
+providers (`zhipuai/glm-5.2`, `moonshotai/kimi-k2.7-code`) or through
+Fireworks instead, declare user providers with those model strings:
 
 ```yaml
 # harness/config.yaml

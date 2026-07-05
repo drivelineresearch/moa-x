@@ -1155,18 +1155,18 @@ def test_opencode_check_available_returns_tuple() -> bool:
 
 
 def test_config_resolve_builtin_glm_uses_opencode() -> bool:
-    print("\n[N] config.resolve_provider: glm maps to opencode harness / zhipuai model")
+    print("\n[N] config.resolve_provider: glm maps to opencode harness / opencode-go model")
     from config import resolve_provider
     rp = resolve_provider("glm", user_providers={})
-    ok = (rp.name == "glm" and rp.harness == "opencode" and rp.model == "zhipuai/glm-5.2")
+    ok = (rp.name == "glm" and rp.harness == "opencode" and rp.model == "opencode-go/glm-5.2")
     return _ok(ok, f"got {rp}")
 
 
 def test_config_resolve_builtin_kimi_uses_opencode() -> bool:
-    print("\n[N] config.resolve_provider: kimi maps to opencode harness / moonshot model")
+    print("\n[N] config.resolve_provider: kimi maps to opencode harness / opencode-go model")
     from config import resolve_provider
     rp = resolve_provider("kimi", user_providers={})
-    ok = (rp.name == "kimi" and rp.harness == "opencode" and rp.model == "moonshotai/kimi-k2.7-code")
+    ok = (rp.name == "kimi" and rp.harness == "opencode" and rp.model == "opencode-go/kimi-k2.7-code")
     return _ok(ok, f"got {rp}")
 
 

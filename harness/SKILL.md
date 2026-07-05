@@ -70,7 +70,7 @@ Layer 1 — Proposers                        (3 parallel, headless, yolo/read-on
    │     │   (filesystem-enforced read-only + --output-schema enforced, web research required)
    │     └→ .moa/<session>/layer1/codex-proposer.json
    │
-   ├─ opencode run -m zhipuai/glm-5.2 --auto -q -f ... (GLM proposer)
+   ├─ opencode run -m opencode-go/glm-5.2 --auto -q -f ... (GLM proposer)
    │     │   (full tool access; read-only discipline enforced via config + prompt)
    │     └→ .moa/<session>/layer1/glm-proposer.json
    │
@@ -83,7 +83,7 @@ Layer 2 — Broadcast refiners               (2 parallel; each sees ALL 3 propos
    ├─ codex refines the broadcast (sees all proposals, verifies evidence, cites fresh sources)
    │     └→ .moa/<session>/layer2/codex-refiner-broadcast.json
    │
-   └─ kimi refines the broadcast (opencode @ moonshotai/kimi-k2.7-code; sees all proposals)
+   └─ kimi refines the broadcast (opencode @ opencode-go/kimi-k2.7-code; sees all proposals)
          └→ .moa/<session>/layer2/kimi-refiner-broadcast.json
                    ↓
 Layer 3 — Aggregation                      (parent Opus 4.6, in-place, REPL-bound)
