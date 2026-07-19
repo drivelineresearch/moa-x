@@ -14,7 +14,7 @@ CLI flags passed to run_moa.py still override everything — they are
 parsed after this module populates os.environ.
 
 Harnesses supported by the built-in adapters are {codex, claude, opencode,
-cursor}. Named providers (built-in codex/sonnet/glm/kimi plus user-defined
+cursor}. Named providers (built-in codex/sonnet/glm/kimi/qwen/composer plus user-defined
 entries in harness/config.yaml) map onto those harnesses.
 
 Typical usage:
@@ -79,7 +79,8 @@ class ResolvedProvider:
 
 
 # Built-in named providers. Existing configs that reference codex/sonnet/glm/kimi
-# resolve through this table for back-compat. User-defined providers in
+# continue to resolve through this table for back-compat; qwen and composer
+# are optional lanes. User-defined providers in
 # harness/config.yaml under `providers:` are layered on top in resolve_provider.
 # Built-ins always carry timeout=None so the existing CLI flag / harness-level
 # env path (MOA_CODEX_TIMEOUT etc.) continues to apply.
@@ -88,6 +89,7 @@ BUILTIN_PROVIDERS: dict[str, ResolvedProvider] = {
     "sonnet":   ResolvedProvider(name="sonnet",   harness="claude",   model="claude-sonnet-4-6"),
     "glm":      ResolvedProvider(name="glm",      harness="opencode", model="opencode-go/glm-5.2"),
     "kimi":     ResolvedProvider(name="kimi",     harness="opencode", model="opencode-go/kimi-k2.7-code"),
+    "qwen":     ResolvedProvider(name="qwen",     harness="opencode", model="qwen-token-plan/qwen3.7-max"),
     "composer": ResolvedProvider(name="composer", harness="cursor",   model="composer-2.5"),
 }
 
@@ -97,7 +99,7 @@ def resolve_provider(name: str, *, user_providers: dict[str, dict]) -> ResolvedP
 
     Lookup order:
       1. user_providers (from harness/config.yaml `providers:` block)
-      2. BUILTIN_PROVIDERS (codex, sonnet, glm, kimi)
+      2. BUILTIN_PROVIDERS (codex, sonnet, glm, kimi, qwen, composer)
 
     Then env-var overrides apply per-field:
       - MOA_<NAME>_MODEL overrides .model
@@ -401,6 +403,15 @@ def load_resolved_config(
         refiners=refiners,
         skip_refinement=skip_refinement,
     )
+
+
+def load_provider_catalog(*, config_path: Optional[Path] = None) -> dict[str, ResolvedProvider]:
+    """Resolve every built-in and user-defined provider available to CLI flags."""
+    cfg_path = config_path or DEFAULT_CONFIG_PATH
+    cfg = _load_yaml(cfg_path)
+    user_providers = {**_providers_from_env(), **_user_providers_from_yaml(cfg)}
+    names = sorted(set(BUILTIN_PROVIDERS) | set(user_providers))
+    return {name: resolve_provider(name, user_providers=user_providers) for name in names}
 
 
 def _resolve_layer_names(

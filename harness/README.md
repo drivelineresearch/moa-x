@@ -100,7 +100,8 @@ into `~/.claude/skills/mixture-of-agents/`. The default roster needs:
 - **codex** — `npm i -g @openai/codex && codex login`
 - **opencode** (runs GLM + Kimi) — `curl -fsSL https://opencode.ai/install | bash`
   (or `npm i -g opencode-ai`), then `opencode auth login`, or export provider
-  API keys (`ZHIPU_API_KEY` / `MOONSHOT_API_KEY` / `FIREWORKS_API_KEY`)
+  API keys (`ZHIPU_API_KEY` / `MOONSHOT_API_KEY` / `FIREWORKS_API_KEY` /
+  `QWEN_TOKEN_PLAN_API_KEY`)
 - **claude** — the Claude Code CLI (runs the sonnet proposer)
 - **cursor** (only if you configure a cursor-routed provider like `composer`)
   — `curl https://cursor.com/install -fsS | bash`, then `cursor-agent login`
@@ -122,6 +123,7 @@ working directory by default):
 ```
 .moa/20260408-101530-add-cache-layer/
 ├── scout-brief.json
+├── layer1-manifest.json  # phase-split checkpoint / redispatch state
 ├── layer1/
 │   ├── codex-proposer.json
 │   ├── codex-proposer.log
@@ -136,7 +138,8 @@ working directory by default):
 │   └── kimi-refiner-broadcast.log
 ├── synthesis-input.md     # what the parent Opus session reads
 ├── manifest.json          # timing, success/failure per layer
-└── final-plan.md          # the synthesized plan (written by parent Opus)
+├── report.html            # self-contained charts, plans, verdicts, and logs
+└── final-plan.md          # written by parent Opus; absent before aggregation
 ```
 
 `.moa/` should be in your repo's `.gitignore`. Sessions are kept locally
@@ -149,8 +152,8 @@ The orchestrator keeps going under partial failure:
 - **1-2 proposers fail, at least 1 succeeds:** refiners see the
   proposers that worked, the aggregator proceeds, and the manifest
   notes the degraded run.
-- **All proposers fail:** orchestrator exits with code 4, no
-  synthesis.
+- **All proposers fail:** `--phase layer1` writes `layer1-manifest.json` and
+  exits 0 so the parent can offer redispatch; legacy `--phase all` exits 4.
 - **One refiner fails, one succeeds:** the aggregator proceeds with
   the surviving refiner's output. The aggregator prompt handles the
   single-refiner case explicitly.
@@ -190,6 +193,10 @@ Defaults:
 - `--codex-effort high`
 - `--sonnet-model claude-sonnet-4-6`
 - `--proposers codex,glm,sonnet` and `--refiners codex,kimi`
+
+Optional built-in: `qwen` routes `qwen-token-plan/qwen3.7-max` through
+OpenCode. Set `QWEN_TOKEN_PLAN_API_KEY=sk-sp-...` in `.env`, then include
+`qwen` in `--proposers` or `MOA_PROPOSERS`.
 
 The codex and sonnet harnesses have dedicated flags. Every other harness
 (opencode for GLM + Kimi, cursor) takes its model/timeout from the

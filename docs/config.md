@@ -33,7 +33,7 @@ payloads.
 
 ### Built-in defaults
 
-These five are always available without declaring them:
+These six are always available without declaring them:
 
 | Name | Harness | Default model |
 |---|---|---|
@@ -41,6 +41,7 @@ These five are always available without declaring them:
 | `sonnet` | `claude` CLI | `claude-sonnet-4-6` |
 | `glm` | `opencode` CLI | `opencode-go/glm-5.2` |
 | `kimi` | `opencode` CLI | `opencode-go/kimi-k2.7-code` |
+| `qwen` | `opencode` CLI | `qwen-token-plan/qwen3.7-max` |
 | `composer` | `cursor` CLI | `composer-2.5` |
 
 The default roster draws four labs from these: proposers
@@ -142,6 +143,7 @@ layers:
 | `MOA_SONNET_MODEL` | `claude-sonnet-4-6` | Model for the sonnet proposer (the `claude` CLI in sonnet mode). |
 | `MOA_GLM_MODEL` | `opencode-go/glm-5.2` | Model id for the `glm` provider (opencode harness). Provider/model string. |
 | `MOA_KIMI_MODEL` | `opencode-go/kimi-k2.7-code` | Model id for the `kimi` provider (opencode harness). Provider/model string. |
+| `MOA_QWEN_MODEL` | `qwen-token-plan/qwen3.7-max` | Model id for the optional built-in Qwen Token Plan provider. |
 | `MOA_CODEX_TIMEOUT` | effort-scaled | Wall-clock cap for codex calls. xhigh=1500s, high=1200s, medium/low=900s. |
 | `MOA_SONNET_TIMEOUT` | `1200` | Wall-clock cap for sonnet calls, in seconds. |
 | `MOA_OPENCODE_TIMEOUT` | `1200` | Wall-clock cap for opencode calls (glm / kimi), in seconds. |
@@ -149,15 +151,40 @@ layers:
 | `MOA_<NAME>_MODEL` | — | Model override for any user-named provider (name uppercased, `-` → `_`). |
 | `MOA_<NAME>_TIMEOUT` | `1200` | Timeout override for any user-named provider. |
 | `MOA_PROVIDER_<NAME>` | — | Define a provider inline as `<harness>:<model>` (name lowercased, `_` → `-`). No `config.yaml` needed. |
-| `MOA_PROPOSERS` | `codex,glm,sonnet` | Comma-separated subset of proposers to spawn. |
-| `MOA_REFINERS` | `codex,kimi` | Comma-separated subset of refiners. |
+| `MOA_PROPOSERS` | `codex,glm,sonnet` | Comma-separated provider names to spawn as proposers. |
+| `MOA_REFINERS` | `codex,kimi` | Comma-separated provider names to spawn as refiners. |
 | `MOA_SKIP_LAYER2` | unset | Set to `1` to skip the refinement layer entirely. |
 | `MOA_NO_REPORT` | unset | Set to `1` to skip generating `<session>/report.html` after a run (same as `--no-report`). See [`docs/report.md`](report.md). |
 
-CLI flag equivalents exist for every row here. Run
-`python3 harness/scripts/run_moa.py --help` to see them.
+CLI flag equivalents exist for the runner-level controls; provider-specific
+models and credentials stay in environment/config. Run
+`python3 harness/scripts/run_moa.py --help` for the full CLI surface.
+
+Provider-specific model overrides such as `MOA_QWEN_MODEL` are environment
+or `.env` settings; there is no dedicated `--qwen-model` flag. Select the
+provider with `--proposers ...qwen...` or `MOA_PROPOSERS`.
 
 ## Examples
+
+### Add Qwen Token Plan
+
+The optional built-in `qwen` provider uses Qwen Cloud Token Plan through the
+OpenCode harness. Store the dedicated `sk-sp-...` key in the gitignored
+`.env` file:
+
+```bash
+QWEN_TOKEN_PLAN_API_KEY=sk-sp-...
+MOA_PROPOSERS=codex,glm,sonnet,qwen
+```
+
+Its default model string is `qwen-token-plan/qwen3.7-max`. The adapter creates
+an isolated OpenCode provider configuration for
+`https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1` and
+references the key through OpenCode's `{env:QWEN_TOKEN_PLAN_API_KEY}` syntax;
+the secret is never copied into a session prompt, manifest, or log. Qwen
+Token Plan keys and pay-as-you-go keys/endpoints are not interchangeable.
+See the official [Qwen Token Plan quick start](https://docs.qwencloud.com/token-plan/team/token-plan-team-quickstart)
+and [OpenCode setup](https://docs.qwencloud.com/developer-guides/clients-and-developer-tools/opencode).
 
 ### 5-lane mix (defaults + cursor-grok)
 

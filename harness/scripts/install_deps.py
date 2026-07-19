@@ -27,6 +27,7 @@ Run with any system Python:
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -84,6 +85,27 @@ def _print_provider_summary(loaded_cfg: "LoadedConfig") -> None:
     ))
 
 
+def _check_provider_credentials(loaded_cfg: "LoadedConfig", failures: list[str]) -> None:
+    """Catch credentials required by custom built-ins before a paid run."""
+    active = list(loaded_cfg.proposers)
+    if not loaded_cfg.skip_refinement:
+        active += loaded_cfg.refiners
+    qwen = [p.name for p in active if p.model.startswith("qwen-token-plan/")]
+    if not qwen:
+        return
+    print("")
+    print("  provider-specific credentials:")
+    key = os.environ.get("QWEN_TOKEN_PLAN_API_KEY", "")
+    if key.startswith("sk-sp-"):
+        print(f"    Qwen Token Plan ({', '.join(qwen)}): OK — dedicated key present")
+    else:
+        print(
+            f"    Qwen Token Plan ({', '.join(qwen)}): FAIL — set "
+            "QWEN_TOKEN_PLAN_API_KEY=sk-sp-... in .env or the shell"
+        )
+        failures.append("Qwen Token Plan credential")
+
+
 def _check_needed_harnesses(loaded_cfg: "LoadedConfig", failures: list[str]) -> set[str]:
     """Run check_available() per needed harness; return the set we checked."""
     # Mirror run_moa's preflight: when refinement is skipped, the refiner
@@ -112,7 +134,8 @@ def _check_needed_harnesses(loaded_cfg: "LoadedConfig", failures: list[str]) -> 
         "claude": "see https://docs.claude.com/en/docs/claude-code/quickstart",
         "cursor": "curl https://cursor.com/install -fsS | bash  (then: cursor-agent login)",
         "opencode": "curl -fsSL https://opencode.ai/install | bash  (then: opencode auth login, "
-                    "or export ZHIPU_API_KEY / MOONSHOT_API_KEY / FIREWORKS_API_KEY)",
+                    "or export ZHIPU_API_KEY / MOONSHOT_API_KEY / FIREWORKS_API_KEY / "
+                    "QWEN_TOKEN_PLAN_API_KEY)",
     }
 
     for harness in sorted(needed):
@@ -339,6 +362,7 @@ def main() -> int:
         return 1
 
     _print_provider_summary(loaded_cfg)
+    _check_provider_credentials(loaded_cfg, failures)
     needed = _check_needed_harnesses(loaded_cfg, failures)
     _check_schema_coherence(loaded_cfg, failures)
     _check_cursor_models(loaded_cfg, needed, failures)

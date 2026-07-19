@@ -1,12 +1,13 @@
 """OpenCode CLI adapter (multi-lab via `opencode run`).
 
 Invokes `opencode run` headlessly. OpenCode is the harness we route
-Chinese-lab frontier models through — GLM (Zhipu) and Kimi (Moonshot) —
-and, via its built-in provider catalog, Fireworks-hosted variants of the
-same models. Model ids are `provider/model` strings, e.g.
+Chinese-lab frontier models through — GLM (Zhipu), Kimi (Moonshot), and
+Qwen (Alibaba Cloud Token Plan) — plus Fireworks-hosted variants. Model ids
+are `provider/model` strings, e.g.
 `opencode-go/glm-5.2`, `opencode-go/kimi-k2.7-code` (the defaults), the
 direct-provider `zhipuai/glm-5.2` / `moonshotai/kimi-k2.7-code`, or
-`fireworks-ai/accounts/fireworks/models/glm-5p2`.
+`fireworks-ai/accounts/fireworks/models/glm-5p2`, or
+`qwen-token-plan/qwen3.7-max`.
 
 OpenCode has no JSON envelope in default text mode — the model's final
 text goes straight to stdout, so we pull the inner JSON payload with the
@@ -58,6 +59,7 @@ _PROVIDER_KEY_ENVS = (
     "FIREWORKS_API_KEY",
     "OPENCODE_API_KEY",
     "OPENROUTER_API_KEY",
+    "QWEN_TOKEN_PLAN_API_KEY",
 )
 
 # Read-only permission policy handed to opencode via OPENCODE_CONFIG. Denying
@@ -72,6 +74,46 @@ _READONLY_CONFIG = {
         "webfetch": "allow",
     },
 }
+
+_QWEN_TOKEN_PLAN_PROVIDER_ID = "qwen-token-plan"
+_QWEN_TOKEN_PLAN_BASE_URL = (
+    "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"
+)
+
+
+def _config_for_model(model: str) -> dict:
+    """Build the isolated OpenCode config, adding known custom providers.
+
+    Qwen Token Plan is not an OpenCode built-in. The official Qwen/OpenCode
+    setup uses a custom provider plus a dedicated `sk-sp-` key. Keep the key
+    out of this generated file by using OpenCode's env substitution syntax.
+    """
+    config = json.loads(json.dumps(_READONLY_CONFIG))
+    prefix = f"{_QWEN_TOKEN_PLAN_PROVIDER_ID}/"
+    if model.startswith(prefix):
+        model_id = model[len(prefix):]
+        config["provider"] = {
+            _QWEN_TOKEN_PLAN_PROVIDER_ID: {
+                # The Token Plan URL is explicitly OpenAI-compatible. Using
+                # OpenCode's OpenAI-compatible transport ensures it appends
+                # /chat/completions instead of Anthropic's /messages route.
+                "npm": "@ai-sdk/openai-compatible",
+                "name": "Qwen Cloud Token Plan",
+                "options": {
+                    "baseURL": _QWEN_TOKEN_PLAN_BASE_URL,
+                    "apiKey": "{env:QWEN_TOKEN_PLAN_API_KEY}",
+                },
+                "models": {
+                    model_id: {
+                        "name": model_id,
+                        "options": {
+                            "thinking": {"type": "enabled", "budgetTokens": 8192}
+                        },
+                    }
+                },
+            }
+        }
+    return config
 
 
 @dataclass
@@ -161,6 +203,7 @@ def run(
     prompt: str,
     repo_path: Path,
     model: str,
+    schema_path: Optional[Path] = None,
     timeout_seconds: int = 1200,
     log_file: Optional[Path] = None,
 ) -> OpenCodeResult:
@@ -172,6 +215,9 @@ def run(
             (opencode has no stdin and argv is ARG_MAX-capped).
         repo_path: Working directory, passed via `--dir` and Popen cwd.
         model: `provider/model` id, e.g. "zhipuai/glm-5.2".
+        schema_path: Optional output schema. Its top-level required keys keep
+            extraction from accepting a valid nested object when the model's
+            surrounding root object is malformed.
         timeout_seconds: Hard wall-clock cap. Default 1200s, matching siblings.
         log_file: Optional path to write the full opencode output. ALWAYS
             written in every exit path so post-mortems never come up empty.
@@ -196,7 +242,7 @@ def run(
 
         # Read-only permission policy via a temp config file.
         config_path = Path(tmpdir) / "opencode.json"
-        config_path.write_text(json.dumps(_READONLY_CONFIG), encoding="utf-8")
+        config_path.write_text(json.dumps(_config_for_model(model)), encoding="utf-8")
         env["OPENCODE_CONFIG"] = str(config_path)
 
         # Prompt goes in a file (see module docstring). Keep it inside the
@@ -289,7 +335,13 @@ def run(
                 transient_empty=transient,
             )
 
-        payload = extract_json_from_text(stdout_captured)
+        required_keys = set()
+        if schema_path is not None:
+            try:
+                required_keys = set(json.loads(schema_path.read_text(encoding="utf-8")).get("required", []))
+            except (OSError, json.JSONDecodeError):
+                required_keys = set()
+        payload = extract_json_from_text(stdout_captured, required_keys=required_keys)
         if payload is None:
             msg, transient = _diagnose_failure(stdout_captured, stderr_captured)
             return OpenCodeResult(
@@ -327,12 +379,19 @@ def _diagnose_failure(stdout: str, stderr: str) -> tuple[str, bool]:
         p in stderr_lower
         for p in ("unauthorized", "401", "403", "invalid api key", "not authenticated", "no credentials")
     )
+    routing_hit = any(
+        p in stderr_lower
+        for p in ("not found", "404", "unsupported model", "model not found")
+    )
     if quota_hit:
         return ("opencode hit rate-limit / quota errors (see stderr). Check the "
                 "provider's dashboard or the relevant *_API_KEY budget."), False
     if auth_hit:
         return ("opencode authentication error (see stderr). Run `opencode auth "
                 "login` or export the provider's API key."), False
+    if routing_hit:
+        return ("opencode provider/model routing error (see stderr). Check the "
+                "custom provider base URL, transport, and model id."), False
     if not stdout or not stdout.strip():
         return ("opencode produced empty stdout under a clean exit (no quota/auth "
                 "signal). Likely transient — re-dispatch typically recovers."), True

@@ -461,6 +461,14 @@ def test_claude_extractor_fallback_to_fenced_result() -> bool:
                   f"agent_id={payload.get('agent_id') if isinstance(payload, dict) else None}")
 
 
+def test_claude_schema_copy_omits_dialect_metadata() -> bool:
+    print("\n[N] Claude CLI schema copy omits unsupported $schema metadata")
+    schema_path = SCRIPT_DIR / "schemas" / "proposer.schema.json"
+    cli_schema = json.loads(claude_adapter._schema_json_for_cli(schema_path))
+    ok = "$schema" not in cli_schema and "agent_id" in cli_schema.get("required", [])
+    return _ok(ok, f"keys={list(cli_schema)[:6]}")
+
+
 def test_cursor_extractor_finds_payload_in_bare_result() -> bool:
     print("\n[N] cursor._extract_payload returns inner JSON from bare result text")
     from adapters import cursor as cursor_adapter
@@ -908,6 +916,34 @@ def test_install_deps_schema_coherence_catches_bad_name() -> bool:
                f"good_pass={good_pass} bad_fail={bad_fail}; pattern={pattern!r}")
 
 
+def test_install_deps_qwen_requires_dedicated_key() -> bool:
+    print("\n[N] install_deps requires a dedicated sk-sp key for Qwen Token Plan")
+    import os as _os
+    import install_deps as _install_deps
+    from config import LoadedConfig, ResolvedProvider
+    loaded = LoadedConfig(
+        proposers=[ResolvedProvider("qwen", "opencode", "qwen-token-plan/qwen3.7-max")],
+        refiners=[],
+        skip_refinement=True,
+    )
+    old = _os.environ.pop("QWEN_TOKEN_PLAN_API_KEY", None)
+    try:
+        failures: list[str] = []
+        _install_deps._check_provider_credentials(loaded, failures)
+        missing_fails = failures == ["Qwen Token Plan credential"]
+        _os.environ["QWEN_TOKEN_PLAN_API_KEY"] = "sk-sp-test-only"
+        failures = []
+        _install_deps._check_provider_credentials(loaded, failures)
+        present_passes = not failures
+    finally:
+        if old is None:
+            _os.environ.pop("QWEN_TOKEN_PLAN_API_KEY", None)
+        else:
+            _os.environ["QWEN_TOKEN_PLAN_API_KEY"] = old
+    return _ok(missing_fails and present_passes,
+               f"missing_fails={missing_fails} present_passes={present_passes}")
+
+
 def test_skill_assets_present() -> bool:
     print("\n[15] All required skill assets present on disk")
     skill_dir = SCRIPT_DIR.parent
@@ -1122,6 +1158,47 @@ def test_extractor_handles_bare_object_larger_than_scan_window() -> bool:
                f"len={len(big)}, got dict={isinstance(payload, dict)}")
 
 
+def test_opencode_extractor_repairs_invalid_markdown_escape() -> bool:
+    print("\n[N] OpenCode extractor repairs invalid Markdown escapes in root JSON")
+    from adapters import extract_json_from_text
+    fixture = _make_valid_proposer("glm")
+    fixture["summary"] = "bad escape in otherwise valid proposal output long enough"
+    malformed = json.dumps(fixture).replace("bad escape", r"bad \` escape")
+    payload = extract_json_from_text(
+        "progress prose\n" + malformed,
+        required_keys=set(fixture),
+    )
+    ok = payload is not None and payload.get("agent_id") == "glm" and "\\`" in payload["summary"]
+    return _ok(ok, f"agent={payload.get('agent_id') if payload else None}")
+
+
+def test_opencode_extractor_rejects_valid_nested_object() -> bool:
+    print("\n[N] OpenCode extractor does not mistake a nested plan step for the root payload")
+    from adapters import extract_json_from_text
+    malformed = '{"agent_id":"glm","summary":"bad \\uZZZZ","plan":[{"step":"nested"}]}'
+    payload = extract_json_from_text(
+        malformed,
+        required_keys={"agent_id", "summary", "plan", "open_questions"},
+    )
+    return _ok(payload is None, f"got {payload!r}")
+
+
+def test_qwen_token_plan_config_uses_env_secret() -> bool:
+    print("\n[N] Qwen Token Plan OpenCode config uses the dedicated endpoint and env key")
+    from adapters import opencode as opencode_adapter
+    cfg = opencode_adapter._config_for_model("qwen-token-plan/qwen3.7-max")
+    provider = cfg.get("provider", {}).get("qwen-token-plan", {})
+    options = provider.get("options", {})
+    ok = (
+        options.get("baseURL") == opencode_adapter._QWEN_TOKEN_PLAN_BASE_URL
+        and options.get("apiKey") == "{env:QWEN_TOKEN_PLAN_API_KEY}"
+        and "qwen3.7-max" in provider.get("models", {})
+        and provider.get("npm") == "@ai-sdk/openai-compatible"
+        and "sk-sp-" not in json.dumps(cfg)
+    )
+    return _ok(ok, f"provider keys={list(provider)}")
+
+
 def test_opencode_diagnose_empty_is_transient() -> bool:
     print("\n[N] opencode._diagnose_failure flags empty stdout + clean stderr as transient")
     from adapters import opencode as opencode_adapter
@@ -1134,6 +1211,13 @@ def test_opencode_diagnose_quota_is_not_transient() -> bool:
     from adapters import opencode as opencode_adapter
     msg, transient = opencode_adapter._diagnose_failure("", SAMPLE_OPENCODE_STDERR_QUOTA)
     return _ok(transient is False and "quota" in msg.lower(), f"transient={transient}, msg={msg!r}")
+
+
+def test_opencode_diagnose_not_found_is_not_transient() -> bool:
+    print("\n[N] opencode._diagnose_failure treats HTTP routing errors as non-transient")
+    from adapters import opencode as opencode_adapter
+    msg, transient = opencode_adapter._diagnose_failure("", "Error: Not Found")
+    return _ok(transient is False and "routing" in msg.lower(), f"transient={transient}, msg={msg!r}")
 
 
 def test_opencode_result_carries_transient_empty_field() -> bool:
@@ -1177,6 +1261,54 @@ def test_config_resolve_builtin_composer_uses_cursor() -> bool:
     rp = resolve_provider("composer", user_providers={})
     ok = (rp.name == "composer" and rp.harness == "cursor" and rp.model == "composer-2.5")
     return _ok(ok, f"got {rp}")
+
+
+def test_config_resolve_builtin_qwen_uses_token_plan() -> bool:
+    print("\n[N] config.resolve_provider: qwen maps to Qwen Token Plan via OpenCode")
+    from config import resolve_provider
+    rp = resolve_provider("qwen", user_providers={})
+    ok = (
+        rp.name == "qwen"
+        and rp.harness == "opencode"
+        and rp.model == "qwen-token-plan/qwen3.7-max"
+    )
+    return _ok(ok, f"got {rp}")
+
+
+def test_provider_catalog_includes_optional_builtins() -> bool:
+    print("\n[N] CLI provider catalog includes optional qwen outside default layers")
+    from config import load_provider_catalog
+    catalog = load_provider_catalog(config_path=Path("/nonexistent"))
+    ok = "qwen" in catalog and catalog["qwen"].model == "qwen-token-plan/qwen3.7-max"
+    return _ok(ok, f"names={sorted(catalog)}")
+
+
+def test_finalize_moves_misplaced_refiner_verification() -> bool:
+    print("\n[N] finalizer restores verification records misplaced in additional_research")
+    import contextlib
+    import io
+    import tempfile
+    payload = _make_valid_broadcast_refiner("kimi")
+    misplaced = payload["verifications"].pop()
+    payload["additional_research"].append(misplaced)
+    result = run_moa.LayerResult(
+        agent_id="kimi", layer=2, role="refiner-broadcast",
+        success=True, payload=payload,
+    )
+    with tempfile.TemporaryDirectory() as td:
+        with contextlib.redirect_stderr(io.StringIO()):
+            run_moa._finalize_result(
+                result,
+                payload,
+                SCRIPT_DIR / "schemas" / "refiner.schema.json",
+                Path(td),
+            )
+    ok = (
+        result.success and result.schema_valid
+        and misplaced in payload["verifications"]
+        and misplaced not in payload["additional_research"]
+    )
+    return _ok(ok, f"success={result.success} schema_valid={result.schema_valid}")
 
 
 def test_gemini_provider_raises_migration_hint() -> bool:
@@ -1469,6 +1601,7 @@ def main() -> int:
         test_codex_extractor_finds_payload_in_framed_output,
         test_claude_extractor_finds_structured_output,
         test_claude_extractor_fallback_to_fenced_result,
+        test_claude_schema_copy_omits_dialect_metadata,
         test_refiner_schema_validator_broadcast_codex,
         test_refiner_schema_validator_broadcast_kimi,
         test_refiner_schema_accepts_user_named_provider_refs,
@@ -1483,6 +1616,7 @@ def main() -> int:
         test_install_deps_default_config_only_needs_default_harnesses,
         test_install_deps_cursor_only_config_skips_other_harnesses,
         test_install_deps_schema_coherence_catches_bad_name,
+        test_install_deps_qwen_requires_dedicated_key,
         test_skill_assets_present,
         test_config_resolve_builtin_codex,
         test_config_resolve_builtin_sonnet_uses_claude_harness,
@@ -1506,13 +1640,20 @@ def main() -> int:
         test_opencode_extractor_finds_bare_payload,
         test_opencode_extractor_handles_fenced_and_prose,
         test_extractor_handles_bare_object_larger_than_scan_window,
+        test_opencode_extractor_repairs_invalid_markdown_escape,
+        test_opencode_extractor_rejects_valid_nested_object,
+        test_qwen_token_plan_config_uses_env_secret,
         test_opencode_diagnose_empty_is_transient,
         test_opencode_diagnose_quota_is_not_transient,
+        test_opencode_diagnose_not_found_is_not_transient,
         test_opencode_result_carries_transient_empty_field,
         test_opencode_check_available_returns_tuple,
         test_config_resolve_builtin_glm_uses_opencode,
         test_config_resolve_builtin_kimi_uses_opencode,
         test_config_resolve_builtin_composer_uses_cursor,
+        test_config_resolve_builtin_qwen_uses_token_plan,
+        test_provider_catalog_includes_optional_builtins,
+        test_finalize_moves_misplaced_refiner_verification,
         test_gemini_provider_raises_migration_hint,
         test_config_env_provider_definition_parsed,
         test_config_env_provider_malformed_raises,

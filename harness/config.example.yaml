@@ -9,6 +9,7 @@
 #   sonnet    → {harness: claude,   model: claude-sonnet-4-6}           # Anthropic via claude CLI
 #   glm       → {harness: opencode, model: opencode-go/glm-5.2}             # GLM via opencode-go gateway
 #   kimi      → {harness: opencode, model: opencode-go/kimi-k2.7-code}       # Kimi via opencode-go gateway
+#   qwen      → {harness: opencode, model: qwen-token-plan/qwen3.7-max}       # Qwen Cloud Token Plan
 #   composer  → {harness: cursor,   model: composer-2.5}                # Cursor Composer via cursor-agent
 #
 # Override a built-in's model via:
@@ -37,6 +38,13 @@ layers:
 #   cursor-grok: {harness: cursor, model: grok-4.3}
 # layers:
 #   proposers: [codex, glm, sonnet, cursor-grok]
+#   refiners:  [codex, kimi]
+#
+# Example: add Qwen Token Plan as a fourth proposer. Put the dedicated
+# `sk-sp-...` key in .env as QWEN_TOKEN_PLAN_API_KEY; never put it here.
+#
+# layers:
+#   proposers: [codex, glm, sonnet, qwen]
 #   refiners:  [codex, kimi]
 #
 # Example: run GLM + Kimi through Fireworks serverless instead of the defaults

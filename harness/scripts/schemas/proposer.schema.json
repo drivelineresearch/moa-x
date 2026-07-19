@@ -16,7 +16,7 @@
     "agent_id": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]{0,31}$",
-      "description": "Identifier of the proposer agent that produced this output. Lowercase, dash-separated, 1-32 chars. Built-in providers: codex (gpt-5.4), glm (glm-5.2), sonnet (claude-sonnet-4-6), kimi (kimi-k2.7-code). User-named providers (e.g. cursor-grok) follow the same pattern."
+      "description": "Identifier of the proposer agent that produced this output. Lowercase, dash-separated, 1-32 chars. Built-in providers: codex (gpt-5.4), glm (glm-5.2), sonnet (claude-sonnet-4-6), kimi (kimi-k2.7-code), qwen (Qwen Token Plan), and composer (Cursor). User-named providers (e.g. cursor-grok) follow the same pattern."
     },
     "summary": {
       "type": "string",

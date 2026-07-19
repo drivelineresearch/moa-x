@@ -2,7 +2,7 @@
 name: mixture-of-agents
 description: |
   Run a non-trivial planning task through a layered ensemble of frontier models
-  from four different labs (proposers codex/gpt-5.4 xhigh + opencode/glm-5.2 +
+  from four different labs (proposers codex/gpt-5.4 high + opencode/glm-5.2 +
   sonnet/4.6; refiners codex + kimi) before producing a final implementation
   plan. The configured proposers run in parallel, broadcast refiners (codex +
   kimi, each sees all proposals) verify and cross-check, then Opus 4.6
@@ -30,7 +30,7 @@ allowed-tools:
 # Mixture of Agents
 
 Layered ensemble planning. The configured proposers — by default three
-frontier models from three different labs (OpenAI's codex CLI at gpt-5.4 xhigh,
+frontier models from three different labs (OpenAI's codex CLI at gpt-5.4 high,
 Zhipu's GLM at glm-5.2 via the opencode CLI, Anthropic's Claude Code CLI at
 claude-sonnet-4-6) — each produce an independent plan grounded in real repo
 code AND aggressive web research, then the refiners (default codex + kimi)
@@ -66,19 +66,20 @@ Layer 0 — Spec triage                      (parent Opus, in-place)
                    ↓
 Layer 1 — Proposers                        (3 parallel, headless, yolo/read-only)
    │
-   ├─ codex exec --sandbox read-only -a never -m gpt-5.4 -c model_reasoning_effort=xhigh
+   ├─ codex exec --sandbox read-only -a never -m gpt-5.4 -c model_reasoning_effort=high
    │     │   (filesystem-enforced read-only + --output-schema enforced, web research required)
    │     └→ .moa/<session>/layer1/codex-proposer.json
    │
-   ├─ opencode run -m opencode-go/glm-5.2 --auto -q -f ... (GLM proposer)
-   │     │   (full tool access; read-only discipline enforced via config + prompt)
+   ├─ opencode run <message> -m opencode-go/glm-5.2 --dir ...
+   │     │   --dangerously-skip-permissions -f ... (GLM proposer)
+   │     │   (edit/bash denied by OPENCODE_CONFIG; read/web allowed)
    │     └→ .moa/<session>/layer1/glm-proposer.json
    │
    └─ claude -p --model claude-sonnet-4-6 --dangerously-skip-permissions --json-schema ...
          │   (full tool access; read-only discipline enforced via --append-system-prompt)
          └→ .moa/<session>/layer1/sonnet-proposer.json
                    ↓
-Layer 2 — Broadcast refiners               (2 parallel; each sees ALL 3 proposals)
+Layer 2 — Broadcast refiners               (2 parallel; each sees ALL valid proposals)
    │
    ├─ codex refines the broadcast (sees all proposals, verifies evidence, cites fresh sources)
    │     └→ .moa/<session>/layer2/codex-refiner-broadcast.json
@@ -89,7 +90,7 @@ Layer 2 — Broadcast refiners               (2 parallel; each sees ALL 3 propos
 Layer 3 — Aggregation                      (parent Opus 4.6, in-place, REPL-bound)
    │
    ├─ read .moa/<session>/synthesis-input.md (built by orchestrator)
-   ├─ pull strongest from each of the 3 proposers
+   ├─ pull strongest from each surviving proposer
    ├─ honor every refiner contradiction + synthesis_recommendation
    ├─ surface disagreements explicitly (proposer↔proposer AND refiner↔refiner)
    ├─ write .moa/<session>/final-plan.md
@@ -290,9 +291,9 @@ Failure modes the orchestrator handles:
 
 ### Step 3 — Aggregate (in-place, this session)
 Once the orchestrator returns, read `.moa/<session_id>/synthesis-input.md`.
-That file contains the frozen spec, the scout brief, all 3 proposer outputs
+That file contains the frozen spec, the scout brief, all proposer outputs
 (in `<proposer_output>` data tags), and both refiner outputs (in
-`<refiner_output>` data tags; each refiner saw all 3 proposals).
+`<refiner_output>` data tags; each refiner saw every valid proposal).
 
 Then read `~/.claude/skills/mixture-of-agents/prompts/aggregator.md` for the
 full aggregation protocol. Synthesize the proposer plans, honor every refiner

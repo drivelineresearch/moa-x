@@ -152,7 +152,10 @@ A refiner JSON conforming to the refiner schema. Key fields:
 - **synthesis_recommendation** — 2-5 sentences of concrete guidance to
   the aggregator on how to merge or choose. This is your most valuable
   output for the aggregator.
-- **additional_research** — your 5+ fresh external citations.
+- **additional_research** — your 5+ fresh external citations. Every item has
+  **exactly** `url`, `title`, and `what_it_adds`. Never put a claim-verification
+  object here; records with `proposer`, `claim_index_path`, `status`,
+  `actual_finding`, and `source_url` belong only in `verifications`.
 
 ## What good broadcast refinement looks like
 
@@ -179,3 +182,5 @@ A refiner JSON conforming to the refiner schema. Key fields:
 
 Return ONLY a single JSON object matching the refiner schema. No prose
 outside the JSON. No markdown code fences around the JSON.
+Before returning, check that every `additional_research` item has exactly the
+three keys `url`, `title`, and `what_it_adds`.

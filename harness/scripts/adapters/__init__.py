@@ -69,7 +69,33 @@ def kill_proc_tree(proc: subprocess.Popen) -> None:
             pass
 
 
-def extract_json_from_text(text: str, *, max_scan: int = 200_000) -> Optional[dict]:
+def _loads_json_object(candidate: str) -> Optional[dict]:
+    r"""Parse one model-produced JSON object, repairing only invalid escapes.
+
+    Schema-unenforced models occasionally emit Markdown-style escapes such as
+    ``\` `` inside a JSON string. JSON permits only ``\"``, ``\\``, ``\/``,
+    ``\b``, ``\f``, ``\n``, ``\r``, ``\t``, and ``\uXXXX``. Preserve the
+    model's text by escaping any other backslash, then retry once.
+    """
+    try:
+        parsed = json.loads(candidate)
+    except (json.JSONDecodeError, ValueError):
+        repaired = re.sub(r'\\(?!["\\/bfnrtu])', r'\\\\', candidate)
+        if repaired == candidate:
+            return None
+        try:
+            parsed = json.loads(repaired)
+        except (json.JSONDecodeError, ValueError):
+            return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def extract_json_from_text(
+    text: str,
+    *,
+    max_scan: int = 200_000,
+    required_keys: Optional[set[str]] = None,
+) -> Optional[dict]:
     """Pull the largest valid JSON object out of a free-text model response.
 
     Shared by the adapters whose CLIs have no native schema enforcement
@@ -85,8 +111,10 @@ def extract_json_from_text(text: str, *, max_scan: int = 200_000) -> Optional[di
          fenced block.
       2. Scan for balanced top-level `{...}` objects, respecting strings and
          escapes so braces inside string literals don't miscount depth.
-      3. Try to json.loads each candidate longest-first; return the first
-         that parses.
+      3. Try to parse each candidate longest-first, with one conservative
+         repair pass for invalid JSON string escapes.
+      4. When `required_keys` is provided, reject nested objects that happen
+         to parse but are not the requested top-level payload.
 
     `max_scan` caps the balanced-object scan to the LAST N characters. The
     scan is O(n²) in the worst case and an embedded payload sits near the end
@@ -98,11 +126,10 @@ def extract_json_from_text(text: str, *, max_scan: int = 200_000) -> Optional[di
 
     stripped = text.strip()
     if stripped.startswith("{"):
-        try:
-            whole = json.loads(stripped)
-        except (json.JSONDecodeError, ValueError):
-            whole = None
-        if isinstance(whole, dict):
+        whole = _loads_json_object(stripped)
+        if isinstance(whole, dict) and (
+            not required_keys or required_keys.issubset(whole)
+        ):
             return whole
 
     candidates: list[str] = []
@@ -139,11 +166,10 @@ def extract_json_from_text(text: str, *, max_scan: int = 200_000) -> Optional[di
 
     candidates.sort(key=len, reverse=True)
     for cand in candidates:
-        try:
-            parsed = json.loads(cand)
-        except (json.JSONDecodeError, ValueError):
-            continue
-        if isinstance(parsed, dict):
+        parsed = _loads_json_object(cand)
+        if isinstance(parsed, dict) and (
+            not required_keys or required_keys.issubset(parsed)
+        ):
             return parsed
 
     return None

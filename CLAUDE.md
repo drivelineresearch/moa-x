@@ -73,8 +73,9 @@ Rule 2 is non-negotiable. Rule 1 is a strong recommendation.
 - **Default roster is `[codex, glm, sonnet]` proposers, `[codex, kimi]`
   refiners** across harnesses `{codex, claude, opencode, cursor}`. It's
   a default, not a cap — the roster is pure config (built-in names,
-  `providers:` in config.yaml, or the `MOA_PROVIDER_<NAME>` env
-  shorthand). More providers (DeepSeek / Qwen / MiniMax / xAI / Mistral)
+  `providers:` in config.yaml, the optional built-in Qwen Token Plan provider,
+  or the `MOA_PROVIDER_<NAME>` env shorthand). More providers (DeepSeek /
+  MiniMax / xAI / Mistral)
   are welcome; most are an opencode/cursor model string, but a new
   *harness* needs its own adapter — open an issue first.
 
