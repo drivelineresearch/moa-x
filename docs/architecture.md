@@ -92,11 +92,12 @@ Anthropic (`sonnet`), Moonshot (`kimi`) — not more, not fewer.
   parallel fan-out, though the wall-clock cost is bounded since layers
   run in parallel.
 - **It's a default, not a cap.** The roster is pure config (see
-  [`config.md`](config.md)). More providers — DeepSeek, Qwen, MiniMax,
-  xAI Grok, Mistral — are welcome; most slot in as an `opencode` or
-  `cursor` model string. A genuinely new *harness* still needs its own
-  adapter, preflight, and prompt-assumption review, so open an issue
-  first. See [`CONTRIBUTING.md`](../CONTRIBUTING.md).
+  [`config.md`](config.md)); Qwen Token Plan already ships as an optional
+  built-in. Tested recipes for DeepSeek, MiniMax, xAI Grok, Mistral, or other
+  frontier models are welcome. Most should slot into the existing `opencode`
+  or `cursor` adapter. A genuinely new *harness* still needs its own adapter,
+  preflight, and prompt-assumption review, so open an issue first. See
+  [`CONTRIBUTING.md`](../CONTRIBUTING.md).
 
 ### Why gemini was removed
 
@@ -146,9 +147,10 @@ var) is the auth MoA-X uses. Each CLI call also runs in its own
 process group with its own TMPDIR, so auth state stays out of the
 orchestrator process's environment.
 
-First-class API-billing support (cost accounting in the manifest,
-a spend ceiling, per-layer breakdowns) is an open direction we'd
-happily take PRs on. See the top-level README's PR wishlist.
+API-key authentication already works through the underlying CLIs. Normalized
+usage/cost accounting in the manifest and report, plus safe pre-dispatch budget
+controls, remains an open direction. See the top-level README's contribution
+priorities.
 
 ## Non-goals
 
@@ -157,9 +159,9 @@ happily take PRs on. See the top-level README's PR wishlist.
   tau-bench/terminal-bench adapters; they're gone.
 
 Previously this list also called "API-key fallback" and "more than
-three providers" non-goals. Neither is anymore. opencode already routes
-provider API keys (GLM/Kimi are API-billable today), the default roster
-is four providers, and the roster is user config. The one constraint we
+three providers" non-goals. Neither is anymore. The underlying CLIs support
+subscription and/or API-key auth, the default roster spans four labs, Qwen is
+an optional built-in, and the roster is user config. The one constraint we
 still recommend (not enforce) is lab-independence at refinement and
 aggregation (see "Why sonnet is proposer-only" above); the shipped
 default honors it and the orchestrator warns when a roster breaks it.

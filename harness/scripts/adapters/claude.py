@@ -8,9 +8,9 @@ cleaner than the cursor/opencode adapters (where we strip fences) and on par wit
 (which uses --output-schema).
 
 Key differences from the other adapters:
-- Read-only discipline is enforced via --append-system-prompt text, not
-  via a filesystem sandbox. Claude Code has no sandbox flag; the contract
-  is "the model has been told not to write, and we trust the model".
+- Read-only discipline is enforced with a hard `--tools` allowlist containing
+  only Read/Grep/Glob/WebSearch/WebFetch, plus the shared prompt rule. Claude
+  Code has no filesystem-sandbox flag, but mutating tools are unavailable.
 - --bare mode is NOT usable here because it strictly requires
   ANTHROPIC_API_KEY (OAuth / keychain auth is ignored in bare mode).
   We use full mode + --dangerously-skip-permissions instead.

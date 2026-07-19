@@ -63,21 +63,19 @@ Rule 2 is non-negotiable. Rule 1 is a strong recommendation.
 
 ## Soft defaults (open to change via PR)
 
-- **Default auth is subscription CLI (plus provider keys for opencode).**
-  codex/claude/cursor lead with subscription login; opencode reads
-  provider API keys (`ZHIPU_API_KEY` / `MOONSHOT_API_KEY` /
-  `FIREWORKS_API_KEY`) so GLM/Kimi are API-billable today. Making
-  codex/claude API-billed runs first-class (`OPENAI_API_KEY` /
-  `ANTHROPIC_API_KEY`, cost accounting, a `MOA_MAX_COST` ceiling) is
-  still wanted.
+- **Auth follows the underlying CLI.** Codex supports persisted API-key login,
+  Claude accepts `ANTHROPIC_API_KEY`, Cursor accepts `CURSOR_API_KEY`, and
+  OpenCode reads provider keys (`ZHIPU_API_KEY`, `MOONSHOT_API_KEY`,
+  `FIREWORKS_API_KEY`, `QWEN_TOKEN_PLAN_API_KEY`, and others). The open gap is
+  normalized usage/cost telemetry and safe pre-dispatch budget controls, not
+  basic API-key authentication.
 - **Default roster is `[codex, glm, sonnet]` proposers, `[codex, kimi]`
   refiners** across harnesses `{codex, claude, opencode, cursor}`. It's
   a default, not a cap — the roster is pure config (built-in names,
   `providers:` in config.yaml, the optional built-in Qwen Token Plan provider,
-  or the `MOA_PROVIDER_<NAME>` env shorthand). More providers (DeepSeek /
-  MiniMax / xAI / Mistral)
-  are welcome; most are an opencode/cursor model string, but a new
-  *harness* needs its own adapter — open an issue first.
+  or the `MOA_PROVIDER_<NAME>` env shorthand). Tested recipes for DeepSeek,
+  MiniMax, xAI, and Mistral are welcome; most are an opencode/cursor model
+  string, but a new *harness* needs its own adapter — open an issue first.
 
 ## Config surface
 
