@@ -6,7 +6,7 @@ pointed at a different job: producing repo-grounded implementation
 plans for coding agents instead of chat answers.
 
 <p align="center">
-  <img src="moa-x-workflow.png" alt="MoA-X workflow: Scout → Proposers (codex + glm + sonnet, read-only) → Broadcast refiners (codex + kimi) → Opus aggregator" width="700">
+  <img src="moa-x-workflow.png" alt="MoA-X workflow: Scout → default proposers (codex + glm + sonnet, with optional Qwen, read-only) → broadcast refiners (codex + kimi, each seeing every valid proposal) → Opus aggregator → final-plan.md and report.html" width="700">
 </p>
 
 ## The four layers
@@ -119,7 +119,7 @@ is which CLI gets invoked (`codex`, `claude`, `opencode`, `cursor`); the
 `model` is what that harness asks for (e.g. `gpt-5.4`, `opencode-go/glm-5.2`,
 `grok-4-20`); the `name` is a user-facing label that becomes the
 `agent_id` in payloads. The codebase ships built-in names `codex`,
-`sonnet`, `glm`, `kimi`, `composer`; users add their own under
+`sonnet`, `glm`, `kimi`, `qwen`, `composer`; users add their own under
 `providers:` in `harness/config.yaml` or via the
 `MOA_PROVIDER_<NAME>=<harness>:<model>` env shorthand.
 

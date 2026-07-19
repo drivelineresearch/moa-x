@@ -471,6 +471,34 @@ def _finalize_result(
     if not (layer_result.success and adapter_payload is not None):
         return
 
+    # Schema-unenforced refiners occasionally append a verification record to
+    # `additional_research` after correctly producing the same record shape in
+    # `verifications`. The fields are unambiguous, so restore the record to the
+    # matching collection before strict validation instead of discarding an
+    # otherwise useful refinement.
+    if layer_result.role == "refiner-broadcast":
+        verification_keys = {
+            "proposer", "claim_index_path", "status", "actual_finding", "source_url"
+        }
+        research = adapter_payload.get("additional_research")
+        verifications = adapter_payload.get("verifications")
+        if isinstance(research, list) and isinstance(verifications, list):
+            misplaced = [
+                item for item in research
+                if isinstance(item, dict) and verification_keys.issubset(item)
+            ]
+            if misplaced:
+                adapter_payload["additional_research"] = [
+                    item for item in research if item not in misplaced
+                ]
+                verifications.extend(misplaced)
+                print(
+                    f"[orchestrator WARNING] {layer_result.agent_id}: moved "
+                    f"{len(misplaced)} verification record(s) out of additional_research",
+                    file=sys.stderr,
+                    flush=True,
+                )
+
     schema = _load_schema(schema_path)
     validation_errors = _validate_against_schema(adapter_payload, schema)
     layer_result.schema_valid = len(validation_errors) == 0
@@ -671,6 +699,7 @@ def _run_opencode(
         prompt=prompt,
         repo_path=repo_path,
         model=model,
+        schema_path=schema_path,
         timeout_seconds=timeout,
         log_file=log_file,
     )
@@ -1538,14 +1567,13 @@ def main() -> int:
                              "(<session>/report.html) after the manifest is written.")
     parser.add_argument("--proposers",
                         default=os.environ.get("MOA_PROPOSERS"),
-                        help="Comma-separated subset of provider names from your resolved "
-                             "layer (built-ins codex/glm/sonnet/kimi plus any user-named "
-                             "providers from harness/config.yaml). Default: all configured.")
+                        help="Comma-separated provider names (built-ins "
+                             "codex/glm/sonnet/kimi/qwen/composer plus user-named "
+                             "providers). Default: the configured proposer layer.")
     parser.add_argument("--refiners",
                         default=os.environ.get("MOA_REFINERS"),
-                        help="Comma-separated subset of provider names from your resolved "
-                             "refiner layer (built-ins codex/kimi plus any user-named "
-                             "providers from harness/config.yaml). Default: all configured.")
+                        help="Comma-separated provider names for refinement. Default: the "
+                             "configured refiner layer.")
     parser.add_argument("--self-moa", action="store_true", default=False,
                         help="Run in self-MoA mode: three sonnet proposers + two "
                              "sonnet refiners (named instances) instead of the "
@@ -1775,9 +1803,9 @@ def main() -> int:
             return 0
 
         # ---------- moa-x / cross-lab path ----------
-        # Apply CLI flag overrides to BUILTIN entries that are referenced in
-        # layers. Each --<provider>-model flag mutates the resolved provider's
-        # model if that provider is currently scheduled to run. User-named
+        # Apply CLI flag overrides to selected BUILTIN entries. Each
+        # --<provider>-model flag mutates the resolved provider's model if that
+        # provider is scheduled to run. User-named
         # providers are not affected by these flags (use MOA_<NAME>_MODEL env
         # var instead, which config.py already handles at resolve time).
         def _apply_model_override(providers, name, model):
@@ -1787,35 +1815,35 @@ def main() -> int:
                 for p in providers
             ]
 
-        loaded_cfg_proposers = list(loaded_cfg.proposers)
-        loaded_cfg_refiners = list(loaded_cfg.refiners)
+        provider_catalog = harness_config.load_provider_catalog()
 
-        if args.codex_model and args.codex_model != "gpt-5.4":
-            loaded_cfg_proposers = _apply_model_override(loaded_cfg_proposers, "codex", args.codex_model)
-            loaded_cfg_refiners = _apply_model_override(loaded_cfg_refiners, "codex", args.codex_model)
-
-        if args.sonnet_model and args.sonnet_model != "claude-sonnet-4-6":
-            loaded_cfg_proposers = _apply_model_override(loaded_cfg_proposers, "sonnet", args.sonnet_model)
-
-        # --proposers / --refiners are name subsets. With named providers,
-        # valid names are the union of all resolved providers in each layer.
-        def _filter_subset(providers, raw, label):
+        # CLI flags may select any available built-in or user-defined provider,
+        # including optional providers not present in the configured default
+        # layer. Preserve the user's requested order.
+        def _select_providers(configured, raw, label):
             if raw is None:
-                return providers
-            requested = {s.strip() for s in raw.split(",") if s.strip()}
-            valid_names = {p.name for p in providers}
-            invalid = requested - valid_names
+                return configured
+            requested = [s.strip() for s in raw.split(",") if s.strip()]
+            invalid = [name for name in requested if name not in provider_catalog]
             if invalid:
                 print(
-                    f"ERROR: --{label} contains names not in the resolved layer: {sorted(invalid)}. "
-                    f"Valid for this layer: {sorted(valid_names)}.",
+                    f"ERROR: --{label} contains unknown provider names: {sorted(set(invalid))}. "
+                    f"Valid providers: {sorted(provider_catalog)}.",
                     file=sys.stderr,
                 )
                 sys.exit(2)
-            return [p for p in providers if p.name in requested]
+            return [provider_catalog[name] for name in requested]
 
-        final_proposers = _filter_subset(loaded_cfg_proposers, args.proposers, "proposers")
-        final_refiners = _filter_subset(loaded_cfg_refiners, args.refiners, "refiners")
+        final_proposers = _select_providers(list(loaded_cfg.proposers), args.proposers, "proposers")
+        final_refiners = _select_providers(list(loaded_cfg.refiners), args.refiners, "refiners")
+
+        if args.codex_model and args.codex_model != "gpt-5.4":
+            final_proposers = _apply_model_override(final_proposers, "codex", args.codex_model)
+            final_refiners = _apply_model_override(final_refiners, "codex", args.codex_model)
+
+        if args.sonnet_model and args.sonnet_model != "claude-sonnet-4-6":
+            final_proposers = _apply_model_override(final_proposers, "sonnet", args.sonnet_model)
+
         # --timeout is a master override: it must beat per-provider timeouts
         # (MOA_<NAME>_TIMEOUT / providers.<name>.timeout), not only the harness
         # defaults, matching the CLI help. Rebuild the resolved providers so the

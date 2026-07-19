@@ -37,7 +37,7 @@ What happens:
    `.moa/<session>/layer1/`.
 4. **Broadcast refiners (Layer 2, parallel).** Two more subprocesses,
    `codex` and `kimi` (OpenAI and Moonshot — independent of the
-   Anthropic aggregator), each receive all three proposals and
+   Anthropic aggregator), each receive every valid proposal and
    produce verification output in `.moa/<session>/layer2/`.
    "Broadcast" means every refiner sees every proposal, per the MoA
    paper.
@@ -79,6 +79,7 @@ Each invocation creates a directory under `.moa/`:
 ```
 .moa/20260418-143045-add-cache-layer/
 ├── scout-brief.json
+├── layer1-manifest.json  # phase-split checkpoint and redispatch state
 ├── layer1/
 │   ├── codex-proposer.{json,log}
 │   ├── glm-proposer.{json,log}
@@ -88,7 +89,8 @@ Each invocation creates a directory under `.moa/`:
 │   └── kimi-refiner-broadcast.{json,log}
 ├── synthesis-input.md    # what the aggregator reads
 ├── manifest.json         # timing + per-layer success/failure
-└── final-plan.md         # written by the aggregator
+├── report.html           # self-contained HTML charts, plans, and logs
+└── final-plan.md         # written by the aggregator; absent until Layer 3
 ```
 
 `.moa/` is gitignored. Nothing the orchestrator produces should end
@@ -102,7 +104,9 @@ aborting outright:
 
 - One or two proposers fail: refiners still run on the survivors,
   the aggregator handles the degraded input and flags it.
-- All three proposers fail: exit code 4. No synthesis.
+- All three proposers fail: `--phase layer1` writes the checkpoint manifest
+  and exits 0 so the parent can offer redispatch; legacy `--phase all` exits
+  code 4 with no synthesis.
 - One refiner fails: the aggregator works with the surviving
   refiner's output. The aggregator prompt explicitly covers the
   single-refiner case.

@@ -4,20 +4,20 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license">
-  <img src="https://img.shields.io/badge/python-3.11%2B-blue.svg" alt="Python 3.11+">
+  <img src="https://img.shields.io/badge/python-3.9%2B-blue.svg" alt="Python 3.9+">
   <img src="https://img.shields.io/badge/runner-Claude%20Code-8b5cf6.svg" alt="Claude Code">
   <img src="https://img.shields.io/badge/providers-codex%20%7C%20claude--code%20%7C%20opencode%20%7C%20cursor-informational" alt="supported CLIs">
 </p>
 
 <p align="center">
-  <img src="docs/moa-x-workflow.png" alt="MoA-X workflow: (1) Scout writes a brief → (2) Proposers codex + glm + sonnet draft plans read-only → (3) Broadcast refiners codex + kimi verify all plans → (4) Opus aggregator writes final-plan.md, ~6–12 min wall-clock" width="820">
+  <img src="docs/moa-x-workflow.png" alt="MoA-X workflow: (1) Scout writes a brief → (2) default proposers codex + glm + sonnet, with optional Qwen, draft plans read-only → (3) broadcast refiners codex + kimi verify every valid proposal → (4) Opus writes final-plan.md and a self-contained report.html, ~6–12 min wall-clock" width="820">
 </p>
 
 A small, CLI-native take on the 2024
 [Mixture-of-Agents paper](https://arxiv.org/abs/2406.04692), pointed at
 a different job: producing **repo-grounded implementation plans** for
 coding agents instead of chat answers. The default roster puts proposers
-from four different labs to work — OpenAI `codex`, Zhipu `glm` (GLM-5.2 via
+from three different labs to work — OpenAI `codex`, Zhipu `glm` (GLM-5.2 via
 the `opencode` CLI), Anthropic `claude` Sonnet — reading the repo in
 parallel, doing their own web research, and each writing an independent
 plan. Two refiners (`codex` + Moonshot `kimi`) then refine in broadcast
@@ -29,6 +29,10 @@ too. The harness ships built-in providers across four harnesses (`codex`,
 `claude`, `opencode`, `cursor`) and the roster — which providers run at
 which layer, and how many — is pure config. API-based auth and more
 providers are all fair game. See "PRs we'd love to see" below.
+
+Qwen Cloud Token Plan is available as the optional built-in `qwen` provider
+(`qwen-token-plan/qwen3.7-max` through OpenCode). Its dedicated `sk-sp-...`
+key stays in `.env`; see [`docs/config.md`](docs/config.md#add-qwen-token-plan).
 
 ## TL;DR
 
@@ -111,7 +115,8 @@ prioritize reviewing PRs that land any of them:
   Shops that run through `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` should
   be a first-class path. (opencode already routes provider API keys —
   `ZHIPU_API_KEY` / `MOONSHOT_API_KEY` / `FIREWORKS_API_KEY` — so GLM
-  and Kimi are API-billable today.)
+  and Kimi are API-billable today. Qwen Token Plan is supported through
+  `QWEN_TOKEN_PLAN_API_KEY`.)
 - **More agent harnesses.** The orchestrator runs fine from a plain
   shell, but the scout + aggregation steps are tailored to Claude Code.
   `opencode` and `cursor` are supported alongside `codex`/`claude`;

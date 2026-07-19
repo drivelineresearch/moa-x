@@ -135,6 +135,16 @@ def _write_log_file(log_file: Optional[Path], stdout: str, stderr: str) -> None:
         print(f"[claude adapter] failed to write log {log_file}: {e}", file=sys_stderr)
 
 
+def _schema_json_for_cli(schema_path: Path) -> str:
+    """Return compact schema JSON accepted by Claude Code's CLI validator."""
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    # Claude Code 2.1.x resolves `$schema` as a reference and rejects the
+    # otherwise-valid Draft 2020-12 URI. The dialect declaration is metadata,
+    # not a validation constraint, so omit it only from the inline CLI copy.
+    schema.pop("$schema", None)
+    return json.dumps(schema, separators=(",", ":"))
+
+
 def run(
     *,
     prompt: str,
@@ -184,8 +194,7 @@ def run(
         # Load the schema once so we can pass it inline to --json-schema. Claude
         # Code's --json-schema flag accepts a JSON string, NOT a path.
         try:
-            schema_json = schema_path.read_text(encoding="utf-8")
-            json.loads(schema_json)  # validate it's parseable
+            schema_json = _schema_json_for_cli(schema_path)
         except (OSError, json.JSONDecodeError) as e:
             stderr_captured = f"Could not load schema {schema_path}: {e}"
             return ClaudeResult(

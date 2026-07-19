@@ -24,6 +24,7 @@ opencode auth login    # interactive login
 #   export ZHIPU_API_KEY=...       # GLM
 #   export MOONSHOT_API_KEY=...    # Kimi
 #   export FIREWORKS_API_KEY=...   # GLM / Kimi via Fireworks
+#   export QWEN_TOKEN_PLAN_API_KEY=sk-sp-...  # optional Qwen Token Plan lane
 ```
 
 The default roster is `codex` + `sonnet` (via `claude`) + `glm` and
@@ -34,6 +35,14 @@ model ids are provider/model strings (defaults `opencode-go/glm-5.2`,
 `moonshotai/kimi-k2.7-code`, or the Fireworks variants
 `fireworks-ai/accounts/fireworks/models/glm-5p2` and
 `…/kimi-k2p7-code`).
+
+An optional built-in `qwen` provider is also available through OpenCode. It
+uses the Qwen Cloud Token Plan endpoint and defaults to
+`qwen-token-plan/qwen3.7-max`. Put the dedicated `sk-sp-...` credential in
+`.env` as `QWEN_TOKEN_PLAN_API_KEY`, then add `qwen` to `MOA_PROPOSERS` or a
+`layers.proposers` list. Do not combine a Token Plan key with the regular
+DashScope pay-as-you-go endpoint; Qwen documents them as separate credential
+and endpoint pairs. See [Qwen's OpenCode guide](https://docs.qwencloud.com/developer-guides/clients-and-developer-tools/opencode).
 
 Subscription auth is the path I use and what the docs lead with. If
 you'd rather bill through an API key, each vendor CLI already handles
