@@ -88,7 +88,16 @@ it prints the exact `login` command to run yourself.
 ## 3. Install as a Claude Code skill (primary path)
 
 The main way to run MoA-X is `/mixture-of-agents` inside Claude Code.
-Drop the `harness/` directory into your skills folder:
+The release includes a ready-to-install archive whose top-level directory is
+already named `mixture-of-agents/`:
+
+```bash
+MOA_X_VERSION=v0.4.1
+curl -fsSL "https://github.com/drivelineresearch/moa-x/releases/download/${MOA_X_VERSION}/mixture-of-agents-${MOA_X_VERSION}.tar.gz" \
+  | tar -xz -C ~/.claude/skills
+```
+
+Or clone the repository and copy `harness/` into your skills folder:
 
 ```bash
 # From a clone of this repo:

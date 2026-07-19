@@ -91,6 +91,7 @@ README.md              this file
 CLAUDE.md              agent guidance for this repo
 AGENTS.md              pointer to CLAUDE.md for Codex / OpenCode / Cursor / Zed
 CONTRIBUTING.md        contributor guide
+CHANGELOG.md           release notes
 SECURITY.md            vulnerability reporting
 LICENSE                MIT
 .env.example           copy to .env to override harness defaults
@@ -146,11 +147,12 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the PR protocol.
 
 ## Status
 
-Active reference implementation, currently v0.4.0. The default four-lab roster
+Active reference implementation, currently v0.4.1. The default four-lab roster
 and optional Qwen proposer have been exercised end to end; offline CI covers
 configuration, schemas, adapters, checkpoint recovery, and self-contained HTML
 report generation. Contributions are welcome; see
-[CONTRIBUTING.md](CONTRIBUTING.md). Security reports go through
+[CONTRIBUTING.md](CONTRIBUTING.md), and release notes are in
+[CHANGELOG.md](CHANGELOG.md). Security reports go through
 [SECURITY.md](SECURITY.md).
 
 ## License

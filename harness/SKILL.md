@@ -16,7 +16,7 @@ description: |
   minutes wall-clock and spends real quota (subscription or API-billed) across
   the external CLIs.
 author: Kyle Boddy
-version: 0.4.0
+version: 0.4.1
 allowed-tools:
   - Read
   - Write

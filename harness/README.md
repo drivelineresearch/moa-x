@@ -279,6 +279,13 @@ Version history:
   codex + kimi. Providers are declarable via `MOA_PROVIDER_<NAME>` env
   shorthand or the config.yaml `providers:` block; route a Gemini model
   through the cursor harness (`cursor-gemini`) if you still want one.
+- **v0.4.0:** Self-contained HTML session report with pipeline, timing,
+  verdict, plan, and log views; GLM and Kimi defaults moved to the
+  `opencode-go` gateway.
+- **v0.4.1:** Qwen Token Plan became an optional built-in provider; Claude and
+  OpenCode structured-output handling, refiner normalization, optional-provider
+  selection, routing diagnostics, documentation, and workflow art were
+  hardened and refreshed.
 
 ## Author
 
