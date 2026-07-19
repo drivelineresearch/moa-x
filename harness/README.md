@@ -83,8 +83,9 @@ aggregator) is adapted from the paper but tuned for:
 
 - **Repo-grounded planning, not chat answers.** All CLIs read the
   actual code. Codex runs with a filesystem-enforced read-only
-  sandbox; the opencode providers (GLM, Kimi) and sonnet run in
-  auto/yolo mode with read-only discipline enforced via config + prompt.
+  sandbox; Claude gets a hard read-only tool allowlist; OpenCode denies edit
+  and shell tools through config; Cursor runs in plan mode. Prompts repeat the
+  read-only contract for every harness.
 - **Heavy web research.** Every proposer and refiner is told to run
   at least 6-8 web searches and cite 5+ external sources.
 - **CLI-first workflow.** Runs entirely from inside Claude Code,
@@ -164,12 +165,11 @@ The orchestrator keeps going under partial failure:
   a warning. If every needed harness fails preflight, the orchestrator
   exits with code 3.
 
-Nothing in this skill writes to your repo during the external phases.
-Codex has filesystem-enforced read-only sandboxing. The opencode providers
-(GLM, Kimi) and sonnet run in auto/yolo mode so they can use shell and web
-tools, but a read-only `OPENCODE_CONFIG` policy and their prompts forbid
-file writes. Only the parent Claude session can edit code, and only after
-you approve the final plan.
+External agents do not mutate the project working tree. Codex has filesystem
+sandboxing, Claude has a read-only tool allowlist, OpenCode denies edit and
+shell tools, and Cursor uses plan mode. The orchestrator writes only its
+gitignored `.moa/` session artifacts; the parent session edits project files
+only after you approve the final plan.
 
 ## Tuning
 

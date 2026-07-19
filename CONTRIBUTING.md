@@ -2,11 +2,10 @@
 
 Thanks for wanting to contribute. This project is built to run inside
 **Claude Code** as a skill (`/mixture-of-agents`). Standalone `python3`
-works too, but the skill path is what we exercise most. PRs that
-improve the non-Claude-Code runner (OpenCode, other harnesses), add
-API-billing ergonomics, or bring in other model providers (including
-Chinese-lab frontier models) are especially welcome. The top-level
-README has a more specific wishlist.
+works too, but the skill path is what we exercise most. PRs that complete
+the standalone workflow, add normalized usage/cost telemetry, verify workspace
+immutability, or harden adapters are especially welcome. The top-level README
+has the canonical, more specific priority list.
 
 ## Dev environment
 
@@ -38,26 +37,22 @@ New tests must run offline so CI stays credential-free.
 
 ## Where help is especially welcome
 
-- First-class API-billing support. The adapters currently assume
-  subscription auth. Making `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` /
-  `ZHIPU_API_KEY` / `MOONSHOT_API_KEY` a supported, documented path
-  (with cost surfacing in the manifest and a `MOA_MAX_COST` ceiling)
-  is a priority.
-- Running outside Claude Code: OpenCode, aider, codex-as-harness,
-  roo/cline/continue, or a plain shell. The Claude Code skill path
-  is the best-trodden today.
-- Chinese-lab models: the default roster already ships GLM 5.2 and
-  Kimi K2.7 Code (via opencode), so the ensemble spans OpenAI, Zhipu,
-  Anthropic, and Moonshot. More Chinese-lab frontier models — DeepSeek,
-  Qwen, MiniMax — would broaden that diversity further.
-- More providers generally: xAI Grok, Mistral, anything with a
-  credible coding story. Open an issue first so we can talk through
-  auth and adapter shape; adding a provider touches the orchestrator,
-  preflight, and prompt assumptions.
-- Adapter robustness: timeouts, subprocess-tree teardown, clearer
-  error diagnostics. See `harness/scripts/adapters/`.
-- Offline test coverage, especially around config precedence and
-  adapter error paths.
+- Complete the standalone path: generate the scout brief and final plan from a
+  plain shell, while preserving checkpoints and the HTML report.
+- Normalize usage, quota, and cost metadata across subscription and API-key
+  auth. Auth already works through the underlying CLIs; trustworthy accounting
+  and pre-dispatch budget controls do not.
+- Add a harness-independent workspace integrity check on top of the existing
+  Codex sandbox, Claude tool allowlist, Cursor plan mode, and OpenCode deny
+  policy.
+- Add tested provider recipes for models such as DeepSeek, MiniMax, Grok, and
+  Mistral. Include config, credential preflight, parser fixtures, and smoke-test
+  evidence; Qwen Token Plan is already built in.
+- Harden CLI compatibility and recovery: capability probes, real-world error
+  fixtures, clearer diagnostics, and resume paths that preserve successful
+  work. See `harness/scripts/adapters/` and `harness/scripts/run_moa.py`.
+- Expand offline coverage around config precedence, adapter error paths,
+  workspace integrity, and checkpoint recovery.
 - Docs that clear up confusion you hit while getting started.
 
 ## How to submit a PR

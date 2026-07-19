@@ -12,9 +12,12 @@ API-key auth works too.
 # OpenAI codex
 npm i -g @openai/codex
 codex login
+# API-billed alternative:
+# printenv OPENAI_API_KEY | codex login --with-api-key
 
 # Anthropic Claude Code
 # See https://docs.claude.com/en/docs/claude-code/quickstart
+# API-billed alternative: export ANTHROPIC_API_KEY=...
 
 # opencode (drives the GLM and Kimi providers)
 curl -fsSL https://opencode.ai/install | bash
@@ -47,9 +50,10 @@ and endpoint pairs. See [Qwen's OpenCode guide](https://docs.qwencloud.com/devel
 Subscription auth is the path I use and what the docs lead with. If
 you'd rather bill through an API key, each vendor CLI already handles
 that on its own; MoA-X defers to whatever auth state the CLI is in
-when you invoke it. Better API-billing ergonomics (cost surfacing,
-per-layer accounting, a `MOA_MAX_COST` knob) are on the open wish
-list. See the PR-wanted section of the top-level README.
+when you invoke it. Authentication is already delegated to those CLIs; the
+open gap is normalized usage/cost telemetry and safe pre-dispatch budget
+controls across their different billing modes. See the contribution-priorities
+section of the top-level README.
 
 ### Optional: Cursor CLI (extra provider)
 
@@ -109,9 +113,9 @@ You'll need to write the scout brief JSON yourself and read
 plan. See [`docs/usage.md`](usage.md#running-standalone) for the
 format and the manual aggregation step.
 
-PRs that improve the standalone path, add support for OpenCode or
-other agent harnesses, or make API-billed auth first-class are all
-welcome. See [`CONTRIBUTING.md`](../CONTRIBUTING.md).
+PRs that complete the standalone scout/aggregation path or harden adapter
+compatibility and recovery are welcome. See
+[`CONTRIBUTING.md`](../CONTRIBUTING.md).
 
 ## Offline tests
 

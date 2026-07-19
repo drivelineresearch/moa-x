@@ -8,6 +8,7 @@
 # codex CLI (OpenAI)
 #   install:  npm i -g @openai/codex
 #   auth:     codex login   (creates ~/.codex/auth.json)
+#             or: printenv OPENAI_API_KEY | codex login --with-api-key
 
 # opencode CLI (runs GLM 5.2 + Kimi K2.7 Code)
 #   install:  curl -fsSL https://opencode.ai/install | bash
@@ -19,8 +20,10 @@
 # claude CLI (Anthropic / Claude Code)
 #   install:  see https://docs.claude.com/en/docs/claude-code/quickstart
 #   auth:     claude        (interactive OAuth; creates ~/.claude/)
+#             or set ANTHROPIC_API_KEY
 
 # cursor CLI (optional — routes composer / Cursor-hosted models)
 #   install:  see https://cursor.com/docs/cli
 #   binary:   cursor-agent (older) or agent (newer); set MOA_CURSOR_BIN to override
 #   auth:     cursor-agent login   (creates ~/.cursor/)
+#             or set CURSOR_API_KEY

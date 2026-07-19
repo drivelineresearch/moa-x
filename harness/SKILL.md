@@ -342,20 +342,19 @@ the whole point of the planning phase was deliberation.
    layer outputs, the synthesis input, and the final plan. The user should
    be able to re-aggregate from the artifacts later or audit any run.
 
-7. **No built-in dollar caps.** The orchestrator doesn't meter spend
-   today. On subscription plans there's nothing to meter; on API-billed
-   CLIs you inherit whatever account-level limits you configured. A
-   `MOA_MAX_COST` knob would be a welcome contribution. Until then the
-   constraints the orchestrator enforces are wall-clock and quality.
+7. **No built-in dollar caps.** The orchestrator doesn't normalize usage or
+   meter spend today. Subscription and API-billed CLIs expose different
+   metadata, and unknown cost must stay explicit. A safe pre-dispatch budget
+   control would be a welcome contribution; until then the orchestrator
+   enforces wall-clock and quality constraints only.
 
 8. **Read-only discipline is non-negotiable.** All proposers and refiners
    are instructed via prompt (and for codex, via sandbox) that they must not
    write, edit, create, or delete files. Codex has hard filesystem
-   enforcement via `--sandbox read-only`. The opencode-routed providers (GLM,
-   Kimi) also get a read-only permission policy via `OPENCODE_CONFIG` that
-   denies write/edit tools. Opencode providers and sonnet run in auto/yolo
-   mode for tool access but the prompt explicitly forbids writes. Any file-
-   mutating tool call by them is a task failure.
+   enforcement via `--sandbox read-only`; Claude gets a hard read-only tool
+   allowlist; OpenCode denies edit and shell tools through `OPENCODE_CONFIG`;
+   and Cursor runs in `--mode plan`. The prompt repeats the rule for every
+   harness. Any file mutation by an agent is a task failure.
 
 ## Files in this skill
 
@@ -405,7 +404,7 @@ planning rather than chat-answer ensembling. Differences from the paper:
 - **Web research required.** All proposers and refiners are explicitly
   instructed to do aggressive web search and cite at least 5 external
   sources each. The cited sources are passed through to the aggregator.
-- **Repo grounded.** All CLIs run with read-only discipline (filesystem-
-  enforced for codex, an `OPENCODE_CONFIG` deny policy plus prompt for the
-  opencode providers, prompt-enforced for sonnet) and the scout brief tells
-  them which files to focus on, bounding exploration cost.
+- **Repo grounded.** All CLIs run with read-only discipline (filesystem
+  sandbox for Codex, tool allowlist for Claude, permission-deny policy for
+  OpenCode, and plan mode for Cursor), and the scout brief tells them which
+  files to focus on, bounding exploration cost.

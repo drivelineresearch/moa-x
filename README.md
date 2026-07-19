@@ -28,7 +28,8 @@ Built to run **inside Claude Code** as a skill. Standalone Python works
 too. The harness ships built-in providers across four harnesses (`codex`,
 `claude`, `opencode`, `cursor`) and the roster — which providers run at
 which layer, and how many — is pure config. API-based auth and more
-providers are all fair game. See "PRs we'd love to see" below.
+providers are already supported. See "Contributions we'd prioritize" below
+for the remaining gaps.
 
 Qwen Cloud Token Plan is available as the optional built-in `qwen` provider
 (`qwen-token-plan/qwen3.7-max` through OpenCode). Its dedicated `sk-sp-...`
@@ -104,43 +105,51 @@ harness/               orchestrator, adapters, prompts, schemas
 requirements-cli.txt   install/auth notes for the provider CLIs
 ```
 
-## PRs we'd love to see
+## Contributions we'd prioritize
 
-The current harness is shaped around what I use day-to-day. These are
-the directions that would expand who MoA-X is useful for, and I'd
-prioritize reviewing PRs that land any of them:
+The core roster, named-provider system, API-key auth paths, Qwen Token Plan,
+phase checkpoints, and HTML reporting are now shipped. The highest-leverage
+remaining contributions are:
 
-- **API-billing support** for codex and claude. Right now those
-  adapters assume the CLI is logged in against a subscription plan.
-  Shops that run through `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` should
-  be a first-class path. (opencode already routes provider API keys —
-  `ZHIPU_API_KEY` / `MOONSHOT_API_KEY` / `FIREWORKS_API_KEY` — so GLM
-  and Kimi are API-billable today. Qwen Token Plan is supported through
-  `QWEN_TOKEN_PLAN_API_KEY`.)
-- **More agent harnesses.** The orchestrator runs fine from a plain
-  shell, but the scout + aggregation steps are tailored to Claude Code.
-  `opencode` and `cursor` are supported alongside `codex`/`claude`;
-  PRs closing the gap for aider, roo, continue, cline, etc. are welcome.
-- **More Chinese-lab and frontier models.** GLM (Zhipu) and Kimi
-  (Moonshot) ship in the default roster via opencode. DeepSeek, Qwen,
-  MiniMax, xAI Grok, Mistral — anything with a credible coding-bench
-  story — extend the cross-lab diversity argument further. Most slot in
-  as an `opencode` or `cursor` model string with no new adapter; a
-  genuinely new harness needs its own adapter, preflight, and
-  prompt-assumption review, so open an issue first.
-- **Cost observability** for API-billed runs: token accounting in the
-  manifest, a `MOA_MAX_COST` ceiling, per-layer spend breakdowns.
-- **Stronger, uniform read-only guarantees.** `codex` runs in a filesystem
-  sandbox and `cursor` uses `--mode plan`, but `opencode` leans on a
-  permission-deny config plus the prompt rule. A PR that hardens or verifies
-  read-only across every harness — and fails a run that writes — would tighten
-  the safety story.
+- **A complete standalone host workflow.** `run_moa.py` handles the proposer
+  and refiner layers from any shell, but Claude Code still supplies the scout
+  and final aggregation steps. Add a first-class command that can create the
+  scout brief, run every layer, write `final-plan.md`, and refresh
+  `report.html` without a parent Claude Code session.
+- **Usage, quota, and cost observability.** Capture the token/usage metadata
+  each CLI exposes, normalize it into the manifest and HTML report, distinguish
+  subscription from metered runs, and make unknown cost explicit. A safe
+  budget control could stop later dispatches before a configured ceiling is
+  exceeded; it must not pretend it can undo an already-billed request.
+- **Defense-in-depth workspace immutability.** Codex uses a filesystem
+  sandbox, Claude uses a read-only tool allowlist, Cursor uses `--mode plan`,
+  and OpenCode denies edit and shell tools. Add a harness-independent
+  before/after integrity check that detects tracked, untracked, and deleted
+  files and marks any mutating agent as failed.
+- **Tested provider recipes, not just model-name examples.** Qwen is already a
+  built-in provider. Contributions for DeepSeek, MiniMax, xAI Grok, Mistral,
+  or another credible coding model should include a reproducible config,
+  credential preflight, captured parser fixtures, and an end-to-end smoke-test
+  result. Most should use the existing OpenCode or Cursor adapter; discuss a
+  genuinely new harness in an issue first.
+- **CLI compatibility and recovery hardening.** Add version/capability probes,
+  fixture-based coverage for real failure envelopes, clearer auth/quota/model
+  diagnostics, and resumable recovery paths that avoid rerunning successful
+  agents after an interrupted session.
+
+API-key billing itself is no longer a missing feature: Codex supports API-key
+login, Claude accepts `ANTHROPIC_API_KEY`, OpenCode routes provider keys, and
+Cursor accepts `CURSOR_API_KEY`. The missing layer is normalized usage and cost
+telemetry across those different billing modes.
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the PR protocol.
 
 ## Status
 
-Early open-source release. Contributions welcome; see
+Active reference implementation, currently v0.4.0. The default four-lab roster
+and optional Qwen proposer have been exercised end to end; offline CI covers
+configuration, schemas, adapters, checkpoint recovery, and self-contained HTML
+report generation. Contributions are welcome; see
 [CONTRIBUTING.md](CONTRIBUTING.md). Security reports go through
 [SECURITY.md](SECURITY.md).
 
