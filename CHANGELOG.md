@@ -3,6 +3,29 @@
 All notable changes to MoA-X are recorded here. Release tags follow semantic
 versioning.
 
+## Unreleased
+
+### Added
+
+- Interactive decision-lineage explorer in `report.html`, backed by a new
+  schema-validated `final-plan.json` companion that links every aggregated
+  step to exact proposer steps and refiner findings.
+- Visible, non-fatal lineage validation warnings and a legacy-session fallback
+  when structured lineage is unavailable.
+
+### Fixed
+
+- Phase-split and redispatched runs now preserve the original session start in
+  their manifests. Reports also repair v0.4.1-and-older phase-local timing from
+  retained agent timestamps, fixing truncated wall-clock totals and Layer 1
+  Gantt offsets.
+
+### Validation
+
+- Offline suite: 83/83 tests pass.
+- The previously affected endpoint smoke report now recovers the full 928.2s
+  session span instead of the phase-local 443.0s value.
+
 ## [0.4.1] — 2026-07-19
 
 ### Added

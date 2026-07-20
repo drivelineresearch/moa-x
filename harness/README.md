@@ -27,8 +27,10 @@ The skill will:
 3. Show you the brief and ask "ready to run? ~6-12 minutes".
 4. On yes, spawn the proposers in parallel (default `codex exec`, `opencode run` for GLM, and `claude -p`).
 5. Spawn the broadcast refiners in parallel (default `codex exec` and `opencode run` for Kimi); each sees all proposals.
-6. Synthesize the proposals + refinements into `final-plan.md`.
-7. Present the plan and ask whether to start executing.
+6. Synthesize the proposals + refinements into `final-plan.md` and the
+   structured `final-plan.json` decision lineage.
+7. Re-render the interactive report, present the plan, and ask whether to
+   start executing.
 
 ## Architecture
 
@@ -140,7 +142,8 @@ working directory by default):
 ├── synthesis-input.md     # what the parent Opus session reads
 ├── manifest.json          # timing, success/failure per layer
 ├── report.html            # self-contained charts, plans, verdicts, and logs
-└── final-plan.md          # written by parent Opus; absent before aggregation
+├── final-plan.md          # written by parent Opus; absent before aggregation
+└── final-plan.json        # exact proposer/refiner lineage for every final step
 ```
 
 `.moa/` should be in your repo's `.gitignore`. Sessions are kept locally

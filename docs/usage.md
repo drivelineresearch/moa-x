@@ -43,7 +43,8 @@ What happens:
    paper.
 5. **Aggregator (Layer 3, in the parent session).** Claude Opus reads
    `.moa/<session>/synthesis-input.md`, synthesizes, honors refiner
-   contradictions, and writes `.moa/<session>/final-plan.md`.
+   contradictions, and writes `.moa/<session>/final-plan.md` plus the
+   structured `final-plan.json` decision lineage.
 6. **Plan presented.** Claude shows you the plan and asks if you want
    to start executing.
 
@@ -90,7 +91,8 @@ Each invocation creates a directory under `.moa/`:
 ├── synthesis-input.md    # what the aggregator reads
 ├── manifest.json         # timing + per-layer success/failure
 ├── report.html           # self-contained HTML charts, plans, and logs
-└── final-plan.md         # written by the aggregator; absent until Layer 3
+├── final-plan.md         # human-readable plan; absent until Layer 3
+└── final-plan.json       # structured decision lineage for report.html
 ```
 
 `.moa/` is gitignored. Nothing the orchestrator produces should end
@@ -123,9 +125,10 @@ have the full CLI output.
 Each full run also writes a single self-contained
 `.moa/<session>/report.html` — a visual post-mortem with a 3D pipeline
 view, per-agent Gantt, proposer plans, the refiner verdict matrix and
-evidence verification, and the aggregated final plan. Open it directly
-in a browser (no server, no network). Re-render any session (e.g. after
-`final-plan.md` is written) with
+evidence verification, an interactive final-step decision-lineage explorer,
+and the aggregated final plan. Open it directly in a browser (no server, no
+network). Re-render any session (e.g. after `final-plan.md` and
+`final-plan.json` are written) with
 `python3 harness/scripts/report.py --session .moa/<id>` or `--latest`.
 Skip it with `--no-report` (or `MOA_NO_REPORT=1`). Full details:
 [`docs/report.md`](report.md).

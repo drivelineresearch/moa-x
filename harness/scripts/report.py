@@ -2,10 +2,11 @@
 """report.py — render a MoA-X session into a single self-contained HTML report.
 
 Reads a `.moa/<session>/` directory (manifest.json, scout-brief.json, the
-per-agent payload JSONs and logs, and final-plan.md if aggregation has run)
+per-agent payload JSONs and logs, plus final-plan.md/final-plan.json if
+aggregation has run)
 and emits one standalone `report.html` with zero external requests: the page
-template, the vendored Three.js build, the session data, and the rendered
-final plan are all inlined.
+template, the vendored Three.js build, the session data, the decision
+lineage, and the rendered final plan are all inlined.
 
 Usage:
     report.py --session .moa/<id> [-o OUT.html]
@@ -23,6 +24,12 @@ import sys
 import time
 from pathlib import Path
 from typing import Any, Optional
+
+from run_moa import (
+    FINAL_PLAN_SCHEMA_PATH,
+    _load_schema,
+    _validate_against_schema,
+)
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPORT_DIR = SCRIPT_DIR.parent / "report"
@@ -75,6 +82,148 @@ def _load_agent(entry: dict, session_dir: Path) -> dict:
     return out
 
 
+def _normalized_timing(manifest: dict, agents: list[dict]) -> dict:
+    """Normalize session bounds across phase-split and redispatched runs.
+
+    v0.4.1 and older final manifests could carry the Layer-2 invocation start
+    while retaining Layer-1 agent timestamps from an earlier invocation. Use
+    every positive recorded timestamp to recover the real session span. New
+    manifests preserve the original start, so this becomes a no-op for them.
+    """
+    raw_start = manifest.get("started_at")
+    raw_finish = manifest.get("finished_at")
+    starts = [float(raw_start)] if isinstance(raw_start, (int, float)) and raw_start > 0 else []
+    finishes = [float(raw_finish)] if isinstance(raw_finish, (int, float)) and raw_finish > 0 else []
+    for agent in agents:
+        start = agent.get("started_at")
+        duration = agent.get("duration_seconds")
+        if isinstance(start, (int, float)) and start > 0:
+            starts.append(float(start))
+            if isinstance(duration, (int, float)) and duration >= 0:
+                finishes.append(float(start) + float(duration))
+
+    start = min(starts) if starts else raw_start
+    finish = max(finishes) if finishes else raw_finish
+    if isinstance(start, (int, float)) and isinstance(finish, (int, float)):
+        duration = max(0.0, float(finish) - float(start))
+    else:
+        duration = manifest.get("duration_seconds")
+
+    raw_duration = manifest.get("duration_seconds")
+    start_changed = (
+        isinstance(start, (int, float))
+        and isinstance(raw_start, (int, float))
+        and abs(float(start) - float(raw_start)) > 0.5
+    )
+    finish_changed = (
+        isinstance(finish, (int, float))
+        and isinstance(raw_finish, (int, float))
+        and abs(float(finish) - float(raw_finish)) > 0.5
+    )
+    duration_changed = (
+        isinstance(duration, (int, float))
+        and isinstance(raw_duration, (int, float))
+        and abs(float(duration) - float(raw_duration)) > 0.5
+    )
+    corrected = start_changed or finish_changed or duration_changed
+    return {
+        "started_at": start,
+        "finished_at": finish,
+        "duration_seconds": duration,
+        "recorded_duration_seconds": raw_duration,
+        "timing_normalized": corrected,
+    }
+
+
+def _validate_final_plan_lineage(
+    lineage: dict,
+    proposers: list[dict],
+    refiners: list[dict],
+) -> list[str]:
+    """Validate the companion JSON and resolve its pointers into agent payloads.
+
+    Schema errors and stale/out-of-range references are warnings rather than a
+    report-generation failure: the rest of a run report remains useful even
+    when an aggregator produced an incomplete lineage file.
+    """
+    schema = _load_schema(FINAL_PLAN_SCHEMA_PATH)
+    warnings_out = _validate_against_schema(lineage, schema)
+    if warnings_out:
+        return warnings_out
+
+    proposer_by_id = {r.get("agent_id"): r for r in proposers}
+    refiner_by_id = {r.get("agent_id"): r for r in refiners}
+    refiner_arrays = {
+        "verification": "verifications",
+        "missing_step": "missing_steps",
+        "incorrect_step": "incorrect_steps",
+        "disagreement": "disagreements",
+    }
+
+    def check_proposer_ref(ref: dict, location: str) -> None:
+        agent_id = ref["agent_id"]
+        agent = proposer_by_id.get(agent_id)
+        payload = (agent or {}).get("payload")
+        plan = payload.get("plan", []) if isinstance(payload, dict) else []
+        if not agent or not agent.get("payload"):
+            warnings_out.append(f"{location}: proposer {agent_id!r} has no payload")
+        elif ref["step_index"] >= len(plan):
+            warnings_out.append(
+                f"{location}: proposer {agent_id!r} step_index {ref['step_index']} "
+                f"is out of range (plan has {len(plan)} steps)"
+            )
+
+    def check_refiner_ref(ref: dict, location: str) -> None:
+        agent_id = ref["agent_id"]
+        agent = refiner_by_id.get(agent_id)
+        payload = (agent or {}).get("payload")
+        if not agent or not payload:
+            warnings_out.append(f"{location}: refiner {agent_id!r} has no payload")
+            return
+        kind = ref["kind"]
+        index = ref["index"]
+        if kind == "synthesis_recommendation":
+            if index is not None:
+                warnings_out.append(
+                    f"{location}: synthesis_recommendation index must be null"
+                )
+            return
+        if index is None:
+            warnings_out.append(f"{location}: {kind} index must be an integer")
+            return
+        values = payload.get(refiner_arrays[kind], [])
+        if index >= len(values):
+            warnings_out.append(
+                f"{location}: refiner {agent_id!r} {kind} index {index} "
+                f"is out of range ({len(values)} available)"
+            )
+
+    seen_ids: set[str] = set()
+    for step_i, step in enumerate(lineage["steps"]):
+        location = f"steps[{step_i}]"
+        if step["id"] in seen_ids:
+            warnings_out.append(f"{location}.id: duplicate id {step['id']!r}")
+        seen_ids.add(step["id"])
+        for ref_i, ref in enumerate(step["proposer_refs"]):
+            check_proposer_ref(ref, f"{location}.proposer_refs[{ref_i}]")
+        for ref_i, ref in enumerate(step["refiner_refs"]):
+            check_refiner_ref(ref, f"{location}.refiner_refs[{ref_i}]")
+
+    for rejected_i, rejected in enumerate(lineage["rejected_inputs"]):
+        check_proposer_ref(
+            {
+                "agent_id": rejected["proposer"],
+                "step_index": rejected["step_index"],
+            },
+            f"rejected_inputs[{rejected_i}]",
+        )
+        for ref_i, ref in enumerate(rejected["refiner_refs"]):
+            check_refiner_ref(
+                ref, f"rejected_inputs[{rejected_i}].refiner_refs[{ref_i}]"
+            )
+    return warnings_out
+
+
 def load_session(session_dir: Path) -> dict:
     """Assemble the data object the template consumes from a session directory.
 
@@ -99,6 +248,7 @@ def load_session(session_dir: Path) -> dict:
     scout = _read_json(session_dir / "scout-brief.json") or {}
     layer1 = [_load_agent(e, session_dir) for e in manifest.get("layer1", [])]
     layer2 = [_load_agent(e, session_dir) for e in manifest.get("layer2", [])]
+    timing = _normalized_timing(manifest, layer1 + layer2)
 
     frozen_spec = scout.get("frozen_spec", "")
     title = frozen_spec.strip().splitlines()[0] if frozen_spec.strip() else manifest.get("session_id", "MoA-X run")
@@ -110,6 +260,25 @@ def load_session(session_dir: Path) -> dict:
     if fp.exists():
         final_plan_md = fp.read_text(encoding="utf-8")
 
+    final_plan_lineage = None
+    lineage_warnings: list[str] = []
+    lineage_path = session_dir / "final-plan.json"
+    if lineage_path.exists():
+        try:
+            final_plan_lineage = _read_json(lineage_path)
+            if not isinstance(final_plan_lineage, dict):
+                lineage_warnings.append("final-plan.json must contain a JSON object")
+                final_plan_lineage = None
+            else:
+                validation_warnings = _validate_final_plan_lineage(
+                    final_plan_lineage, layer1, layer2
+                )
+                lineage_warnings.extend(validation_warnings)
+                if any(w.startswith("$") for w in validation_warnings):
+                    final_plan_lineage = None
+        except (OSError, json.JSONDecodeError) as exc:
+            lineage_warnings.append(f"could not read final-plan.json: {exc}")
+
     return {
         "session_id": manifest.get("session_id", session_dir.name),
         "generated_at": time.strftime("%Y-%m-%d %H:%M"),
@@ -118,12 +287,12 @@ def load_session(session_dir: Path) -> dict:
         "scout_brief": scout,
         "config": manifest.get("config", {}),
         "layer2_mode": manifest.get("layer2_mode", "skipped" if partial else "broadcast"),
-        "started_at": manifest.get("started_at"),
-        "finished_at": manifest.get("finished_at"),
-        "duration_seconds": manifest.get("duration_seconds"),
+        **timing,
         "layer1": layer1,
         "layer2": layer2,
         "final_plan_html": render_markdown(final_plan_md) if final_plan_md else None,
+        "final_plan_lineage": final_plan_lineage,
+        "lineage_warnings": lineage_warnings,
     }
 
 

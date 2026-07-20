@@ -6,7 +6,7 @@ pointed at a different job: producing repo-grounded implementation
 plans for coding agents instead of chat answers.
 
 <p align="center">
-  <img src="moa-x-workflow.png" alt="MoA-X workflow: Scout → default proposers (codex + glm + sonnet, with optional Qwen, read-only) → broadcast refiners (codex + kimi, each seeing every valid proposal) → Opus aggregator → final-plan.md and report.html" width="700">
+  <img src="moa-x-workflow.png" alt="MoA-X workflow: Scout → default proposers (codex + glm + sonnet, with optional Qwen, read-only) → broadcast refiners (codex + kimi, each seeing every valid proposal) → Opus aggregator → final-plan.md, structured decision lineage, and report.html" width="700">
 </p>
 
 ## The four layers

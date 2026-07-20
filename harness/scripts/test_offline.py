@@ -352,6 +352,45 @@ def _make_valid_broadcast_refiner(agent_id: str) -> dict:
     }
 
 
+def _make_valid_final_lineage() -> dict:
+    return {
+        "version": 1,
+        "title": "Add the Redis cache safely",
+        "summary": "Adopt the shared cache approach with the verified hot-path evidence.",
+        "confidence": {
+            "level": "medium",
+            "rationale": "The approach converged and the primary code claim was verified.",
+        },
+        "steps": [
+            {
+                "id": "add-redis-wrapper",
+                "title": "Add the Redis wrapper",
+                "description": "Create the shared cache wrapper around the hot query path.",
+                "files_touched": ["app/cache/redis_cache.py"],
+                "decision": "revised",
+                "adjudication": "Adapts the proposer step using the refiner's verified evidence.",
+                "proposer_refs": [
+                    {
+                        "agent_id": "codex",
+                        "step_index": 0,
+                        "relationship": "adapted",
+                        "note": "Supplied the cache wrapper and key strategy.",
+                    }
+                ],
+                "refiner_refs": [
+                    {
+                        "agent_id": "kimi",
+                        "kind": "verification",
+                        "index": 0,
+                        "note": "Verified the cited hot-path query.",
+                    }
+                ],
+            }
+        ],
+        "rejected_inputs": [],
+    }
+
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -408,14 +447,30 @@ def test_schema_validator_rejects_missing_evidence_key() -> bool:
 
 
 def test_strict_mode_lint_clean_on_current_schemas() -> bool:
-    print("\n[4c] Strict-mode lint: proposer + refiner schemas are OpenAI-compliant")
+    print("\n[4c] Strict-mode lint: all schemas are OpenAI-compliant")
     p_schema = run_moa._load_schema(run_moa.PROPOSER_SCHEMA_PATH)
     r_schema = run_moa._load_schema(run_moa.REFINER_SCHEMA_PATH)
+    f_schema = run_moa._load_schema(run_moa.FINAL_PLAN_SCHEMA_PATH)
     p_violations = run_moa.lint_schema_openai_strict(p_schema)
     r_violations = run_moa.lint_schema_openai_strict(r_schema)
-    clean = not p_violations and not r_violations
-    detail = f"proposer={len(p_violations)} refiner={len(r_violations)}"
-    return _check("both schemas strict-mode clean", clean, detail)
+    f_violations = run_moa.lint_schema_openai_strict(f_schema)
+    clean = not p_violations and not r_violations and not f_violations
+    detail = (
+        f"proposer={len(p_violations)} refiner={len(r_violations)} "
+        f"final={len(f_violations)}"
+    )
+    return _check("all schemas strict-mode clean", clean, detail)
+
+
+def test_final_plan_schema_resolves_local_refs() -> bool:
+    print("\n[4cc] Final-plan lineage schema validates local references and bounds")
+    schema = run_moa._load_schema(run_moa.FINAL_PLAN_SCHEMA_PATH)
+    valid_errors = run_moa._validate_against_schema(_make_valid_final_lineage(), schema)
+    invalid = _make_valid_final_lineage()
+    invalid["steps"][0]["proposer_refs"][0]["step_index"] = -1
+    invalid_errors = run_moa._validate_against_schema(invalid, schema)
+    ok = not valid_errors and any("minimum" in e for e in invalid_errors)
+    return _check("local $refs enforced", ok, f"valid={valid_errors}, invalid={invalid_errors[:2]}")
 
 
 def test_strict_mode_lint_catches_violation() -> bool:
@@ -606,6 +661,19 @@ def test_layer1_manifest_round_trip_via_load() -> bool:
                        f"cursor_grok.transient_empty={cursor_grok.transient_empty}")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_session_started_at_survives_phase_split_and_redispatch() -> bool:
+    print("\n[N] resumed sessions preserve the earliest retained Layer 1 start")
+    retained = [
+        run_moa.LayerResult(
+            agent_id="codex", layer=1, role="proposer", started_at=100.0
+        )
+    ]
+    start = run_moa.session_started_at_from_manifest(
+        {"started_at": 220.0}, retained, fallback=300.0
+    )
+    return _ok(start == 100.0, f"start={start}")
 
 
 def test_parse_redispatch_arg_validates_names() -> bool:
@@ -963,6 +1031,7 @@ def test_skill_assets_present() -> bool:
         skill_dir / "scripts" / "adapters" / "cursor.py",
         skill_dir / "scripts" / "schemas" / "proposer.schema.json",
         skill_dir / "scripts" / "schemas" / "refiner.schema.json",
+        skill_dir / "scripts" / "schemas" / "final-plan.schema.json",
     ]
     missing = [str(p.relative_to(skill_dir)) for p in assets if not p.exists()]
     return _check("no missing assets", len(missing) == 0, f"missing={missing}")
@@ -1463,6 +1532,9 @@ def _write_fixture_session(tmp: Path, partial: bool = False) -> Path:
         (session / "final-plan.md").write_text(
             "# Final plan\n\nDo **this** and see `foo.py`.\n\n- step one\n- step two\n\n"
             "```python\nprint('hi')\n```\n", encoding="utf-8")
+        (session / "final-plan.json").write_text(
+            json.dumps(_make_valid_final_lineage()), encoding="utf-8"
+        )
         (session / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
 
     return session
@@ -1494,8 +1566,56 @@ def test_report_embedded_json_round_trips() -> bool:
         ids = [r["agent_id"] for r in data["layer1"]] + [r["agent_id"] for r in data["layer2"]]
         ok = (set(ids) == {"codex", "glm", "cursor-grok", "kimi"}
               and data["title"].startswith("Add a widget")
-              and data["final_plan_html"] and "<strong>this</strong>" in data["final_plan_html"])
+              and data["final_plan_html"] and "<strong>this</strong>" in data["final_plan_html"]
+              and data["final_plan_lineage"]["steps"][0]["id"] == "add-redis-wrapper"
+              and data["lineage_warnings"] == [])
         return _ok(ok, f"ids={ids}")
+    finally:
+        _shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_report_normalizes_legacy_phase_local_timing() -> bool:
+    print("\n[N] report repairs legacy final manifests that start at Layer 2")
+    tmp = Path(_tempfile.mkdtemp())
+    try:
+        session = _write_fixture_session(tmp)
+        manifest_path = session / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest.update({"started_at": 220.0, "finished_at": 400.0, "duration_seconds": 180.0})
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        data = _extract_embedded_data(
+            report_module.generate(session, session / "report.html").read_text(encoding="utf-8")
+        )
+        ok = (
+            data["started_at"] == 100.0
+            and data["finished_at"] == 400.0
+            and data["duration_seconds"] == 300.0
+            and data["recorded_duration_seconds"] == 180.0
+            and data["timing_normalized"] is True
+        )
+        return _ok(ok, f"timing={data['started_at']}/{data['finished_at']}/{data['duration_seconds']}")
+    finally:
+        _shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_report_lineage_reference_warning_is_nonfatal() -> bool:
+    print("\n[N] stale lineage pointers warn without hiding the usable explorer")
+    tmp = Path(_tempfile.mkdtemp())
+    try:
+        session = _write_fixture_session(tmp)
+        lineage_path = session / "final-plan.json"
+        lineage = json.loads(lineage_path.read_text(encoding="utf-8"))
+        lineage["steps"][0]["proposer_refs"][0]["step_index"] = 99
+        lineage_path.write_text(json.dumps(lineage), encoding="utf-8")
+        html = report_module.generate(session, session / "report.html").read_text(encoding="utf-8")
+        data = _extract_embedded_data(html)
+        ok = (
+            data["final_plan_lineage"] is not None
+            and any("out of range" in warning for warning in data["lineage_warnings"])
+            and "buildLineageExplorer" in html
+            and "Decision lineage — why each step survived" in html
+        )
+        return _ok(ok, f"warnings={data['lineage_warnings']}")
     finally:
         _shutil.rmtree(tmp, ignore_errors=True)
 
@@ -1597,6 +1717,7 @@ def main() -> int:
         test_schema_validator_rejects_bad_agent_id_pattern,
         test_schema_validator_rejects_missing_evidence_key,
         test_strict_mode_lint_clean_on_current_schemas,
+        test_final_plan_schema_resolves_local_refs,
         test_strict_mode_lint_catches_violation,
         test_codex_extractor_finds_payload_in_framed_output,
         test_claude_extractor_finds_structured_output,
@@ -1661,9 +1782,12 @@ def main() -> int:
         test_layer_result_carries_transient_empty_field,
         test_manifest_summary_includes_transient_empty_arrays,
         test_layer1_manifest_round_trip_via_load,
+        test_session_started_at_survives_phase_split_and_redispatch,
         test_parse_redispatch_arg_validates_names,
         test_report_generates_single_self_contained_file,
         test_report_embedded_json_round_trips,
+        test_report_normalizes_legacy_phase_local_timing,
+        test_report_lineage_reference_warning_is_nonfatal,
         test_report_renders_failed_and_transient_agents,
         test_report_escapes_script_close_in_logs,
         test_report_phase_split_partial_session,

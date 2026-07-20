@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/moa-x-workflow.png" alt="MoA-X workflow: (1) Scout writes a brief → (2) default proposers codex + glm + sonnet, with optional Qwen, draft plans read-only → (3) broadcast refiners codex + kimi verify every valid proposal → (4) Opus writes final-plan.md and a self-contained report.html, ~6–12 min wall-clock" width="820">
+  <img src="docs/moa-x-workflow.png" alt="MoA-X workflow: (1) Scout writes a brief → (2) default proposers codex + glm + sonnet, with optional Qwen, draft plans read-only → (3) broadcast refiners codex + kimi verify every valid proposal → (4) Opus writes final-plan.md plus structured decision lineage and a self-contained report.html, ~6–12 min wall-clock" width="820">
 </p>
 
 A small, CLI-native take on the 2024
@@ -66,8 +66,9 @@ aggregator's lab.
 
 Every run also writes a self-contained `.moa/<session>/report.html` — a
 zero-network visual post-mortem (3D pipeline, per-agent Gantt, proposer
-plans, refiner verdict matrix, aggregated plan, raw logs). Open it in a
-browser; details in [`docs/report.md`](docs/report.md).
+plans, refiner verdict matrix, interactive final-step decision lineage,
+aggregated plan, raw logs). Open it in a browser; details in
+[`docs/report.md`](docs/report.md).
 
 Typical wall-clock is 6–12 minutes. Use it for non-trivial
 architecture work, not one-line fixes. Background in
@@ -79,7 +80,7 @@ architecture work, not one-line fixes. Background in
 - [`docs/usage.md`](docs/usage.md): running via `/mixture-of-agents` (primary) or standalone
 - [`docs/config.md`](docs/config.md): `.env` + `harness/config.yaml`, MOA_\* knob table, precedence, roster swaps
 - [`docs/architecture.md`](docs/architecture.md): the four layers, why broadcast, why this roster
-- [`docs/report.md`](docs/report.md): the self-contained HTML run report (`report.html`) — 3D pipeline, Gantt, verdict matrix
+- [`docs/report.md`](docs/report.md): the self-contained HTML run report (`report.html`) — 3D pipeline, Gantt, verdict matrix, decision lineage
 - [`CONTRIBUTING.md`](CONTRIBUTING.md): dev setup, PR protocol, where help is welcome
 - [`SECURITY.md`](SECURITY.md): private vulnerability reports
 - [`CLAUDE.md`](CLAUDE.md) / [`AGENTS.md`](AGENTS.md): guidance for coding agents working on this repo (AGENTS.md points at CLAUDE.md)
@@ -115,8 +116,9 @@ remaining contributions are:
 - **A complete standalone host workflow.** `run_moa.py` handles the proposer
   and refiner layers from any shell, but Claude Code still supplies the scout
   and final aggregation steps. Add a first-class command that can create the
-  scout brief, run every layer, write `final-plan.md`, and refresh
-  `report.html` without a parent Claude Code session.
+  scout brief, run every layer, write `final-plan.md` plus its structured
+  decision lineage, and refresh `report.html` without a parent Claude Code
+  session.
 - **Usage, quota, and cost observability.** Capture the token/usage metadata
   each CLI exposes, normalize it into the manifest and HTML report, distinguish
   subscription from metered runs, and make unknown cost explicit. A safe
