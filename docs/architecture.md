@@ -6,7 +6,7 @@ pointed at a different job: producing repo-grounded implementation
 plans for coding agents instead of chat answers.
 
 <p align="center">
-  <img src="moa-x-workflow.png" alt="MoA-X workflow: Scout → default proposers (codex + glm + sonnet, with optional Qwen, read-only) → broadcast refiners (codex + kimi, each seeing every valid proposal) → Opus aggregator → final-plan.md, structured decision lineage, and report.html" width="700">
+  <img src="moa-x-workflow.png" alt="MoA-X workflow: Scout → gpt-5.6-terra, GLM-5.2, and rolling Sonnet proposers → gpt-5.6-sol and Qwen 3.8 Max Preview broadcast refiners → rolling Opus aggregator → final plan, decision lineage, and report" width="700">
 </p>
 
 ## The four layers
@@ -14,8 +14,8 @@ plans for coding agents instead of chat answers.
 ```
 Layer 0 — Scout brief           (parent Claude, in-place)
 Layer 1 — Proposers (parallel)    default: codex + glm + sonnet subprocesses
-Layer 2 — Broadcast refiners      default: codex + kimi, each sees ALL proposals
-Layer 3 — Aggregator              (parent Claude Opus, in-place)
+Layer 2 — Broadcast refiners      default: codex-reviewer + qwen, each sees ALL proposals
+Layer 3 — Aggregator              default: parent rolling opus; optional recorded Codex phase
 ```
 
 The roster (which providers run at which layer, and how many) is
@@ -35,20 +35,25 @@ enforced by prompt) and does web research. Different labs tend to mean
 different training data, different tool-use behavior, and different blind
 spots.
 
-**Layer 2: broadcast refiners.** The default refiners are `codex` and
-`kimi` (Moonshot Kimi K2.7 Code via `opencode`). Each sees all the
+**Layer 2: broadcast refiners.** The default refiners are `codex-reviewer`
+(`gpt-5.6-sol` at high reasoning) and `qwen` (Alibaba
+`qwen3.8-max-preview` through Qwen Token Plan and `opencode`). Each sees all the
 proposals and produces verification output: which claims are verified,
 which are contradicted, what's missing, what the proposers disagreed on.
 "Broadcast" means every refiner sees every proposal, not cross-pair. This
 is paper-faithful to Wang et al.
 
-**Layer 3: aggregation.** Parent Claude Opus synthesizes into one
-plan you can act on. It honors every `contradicted` flag from the
-refiners, pulls in every `missing_steps` entry, and surfaces
-disagreements instead of silently picking a side.
+**Layer 3: aggregation.** By default parent Claude Code, set to its rolling
+`opus` alias, synthesizes one plan you can act on. The same retained synthesis
+can instead run through `--phase layer3 --aggregator-provider
+codex-aggregator`, which invokes `gpt-5.6-sol` at high reasoning, validates
+the Markdown and exact decision-lineage pointers, records the subprocess, and
+regenerates the report. Both paths honor contradicted findings, pull in
+missing steps, and surface disagreements instead of silently picking a side.
 
-Layers 0 and 3 live in your Claude Code REPL. Layers 1 and 2 are
-subprocesses spawned by `harness/scripts/run_moa.py`.
+Layer 0 lives in the parent agent. Layers 1 and 2 are subprocesses spawned by
+`harness/scripts/run_moa.py`; Layer 3 may live in the parent or run as its own
+recorded subprocess.
 
 ## Why broadcast refinement
 
@@ -60,11 +65,12 @@ gives each refiner enough context to spot cross-proposer
 convergence and divergence signals that a one-input view can't
 reveal. v0.2 corrected this.
 
-## Why sonnet is proposer-only
+## Why Sonnet is proposer-only
 
-Opus 4.x is the Layer 3 aggregator. Sonnet 4.x is a Layer 1 proposer.
-The default Layer 2 is `{codex, kimi}` so the verification step is
-done by two labs (OpenAI + Moonshot) independent of both:
+Claude Code's rolling `opus` alias is the Layer 3 aggregator and its rolling
+`sonnet` alias is a Layer 1 proposer. The default Layer 2 is
+`{codex-reviewer, qwen}` so verification is done by OpenAI and Alibaba,
+independent of both:
 
 - the Anthropic-family proposer (Sonnet), and
 - the Anthropic-family aggregator (Opus).
@@ -80,8 +86,8 @@ aggregator's harness).
 
 ## Why this roster
 
-The default roster spans four labs — OpenAI (`codex`), Zhipu (`glm`),
-Anthropic (`sonnet`), Moonshot (`kimi`) — not more, not fewer.
+The default roster spans four labs — OpenAI (`codex`/`codex-reviewer`), Zhipu
+(`glm`), Anthropic (`sonnet`/`opus`), and Alibaba (`qwen`).
 
 - **Cross-lab diversity beats quantity.** The paper's own ablation
   shows diversity (different labs) beats more copies of the same model.
@@ -92,8 +98,8 @@ Anthropic (`sonnet`), Moonshot (`kimi`) — not more, not fewer.
   parallel fan-out, though the wall-clock cost is bounded since layers
   run in parallel.
 - **It's a default, not a cap.** The roster is pure config (see
-  [`config.md`](config.md)); Qwen Token Plan already ships as an optional
-  built-in. Tested recipes for DeepSeek, MiniMax, xAI Grok, Mistral, or other
+  [`config.md`](config.md)); Qwen Token Plan ships in the default refiner set.
+  Tested recipes for DeepSeek, MiniMax, xAI Grok, Mistral, or other
   frontier models are welcome. Most should slot into the existing `opencode`
   or `cursor` adapter. A genuinely new *harness* still needs its own adapter,
   preflight, and prompt-assumption review, so open an issue first. See
@@ -117,15 +123,15 @@ route it through the `cursor` harness as a user-named provider — see
 
 A provider in moa-x is a `{name, harness, model}` triple. The `harness`
 is which CLI gets invoked (`codex`, `claude`, `opencode`, `cursor`); the
-`model` is what that harness asks for (e.g. `gpt-5.4`, `opencode-go/glm-5.2`,
+`model` is what that harness asks for (e.g. `gpt-5.6-terra`, `opencode-go/glm-5.2`,
 `grok-4-20`); the `name` is a user-facing label that becomes the
 `agent_id` in payloads. The codebase ships built-in names `codex`,
-`sonnet`, `glm`, `kimi`, `qwen`, `composer`; users add their own under
+`codex-reviewer`, `sonnet`, `opus`, `glm`, `kimi`, `qwen`, `composer`; users add their own under
 `providers:` in `harness/config.yaml` or via the
 `MOA_PROVIDER_<NAME>=<harness>:<model>` env shorthand.
 
 This split exists because the Cursor CLI breaks the one-CLI-one-lab
-assumption — `cursor-agent --model gpt-5.5-medium` and `codex --model gpt-5.4`
+assumption — `cursor-agent --model gpt-5.5-medium` and `codex --model gpt-5.6-terra`
 both hit OpenAI. Encoding the lab in the harness identifier would
 have meant pretending Cursor was three or four different harnesses;
 splitting the data model is cleaner.

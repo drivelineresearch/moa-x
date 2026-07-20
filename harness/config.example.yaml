@@ -5,11 +5,14 @@
 #   layers:     which providers run at which layer
 #
 # Built-in named providers (no need to declare):
-#   codex     → {harness: codex,    model: gpt-5.4}                     # OpenAI via codex CLI
-#   sonnet    → {harness: claude,   model: claude-sonnet-4-6}           # Anthropic via claude CLI
+#   codex          → {harness: codex,    model: gpt-5.6-terra}          # OpenAI proposer
+#   codex-reviewer → {harness: codex,    model: gpt-5.6-sol}            # OpenAI reviewer (high)
+#   codex-aggregator → {harness: codex,  model: gpt-5.6-sol}            # optional Layer 3 (high, 600s)
+#   sonnet         → {harness: claude,   model: sonnet}                 # rolling Claude Code alias
+#   opus           → {harness: claude,   model: opus}                   # rolling Layer-3 alias
 #   glm       → {harness: opencode, model: opencode-go/glm-5.2}             # GLM via opencode-go gateway
 #   kimi      → {harness: opencode, model: opencode-go/kimi-k2.7-code}       # Kimi via opencode-go gateway
-#   qwen      → {harness: opencode, model: qwen-token-plan/qwen3.7-max}       # Qwen Cloud Token Plan
+#   qwen      → {harness: opencode, model: qwen-token-plan/qwen3.8-max-preview} # Token Plan, 600s cap
 #   composer  → {harness: cursor,   model: composer-2.5}                # Cursor Composer via cursor-agent
 #
 # Override a built-in's model via:
@@ -24,7 +27,10 @@
 # Layer assignments: subset of (built-in names ∪ user-named providers).
 layers:
   proposers: [codex, glm, sonnet]
-  refiners:  [codex, kimi]
+  refiners:  [codex-reviewer, qwen]
+  aggregator: opus
+  # To run `--phase layer3` through Codex instead, set:
+  # aggregator: codex-aggregator
   # Set true to skip the refinement layer entirely.
   skip_refinement: false
 
@@ -38,14 +44,14 @@ layers:
 #   cursor-grok: {harness: cursor, model: grok-4.3}
 # layers:
 #   proposers: [codex, glm, sonnet, cursor-grok]
-#   refiners:  [codex, kimi]
+#   refiners:  [codex-reviewer, qwen]
 #
-# Example: add Qwen Token Plan as a fourth proposer. Put the dedicated
+# Example: also use Qwen Token Plan as a fourth proposer. Put the dedicated
 # `sk-sp-...` key in .env as QWEN_TOKEN_PLAN_API_KEY; never put it here.
 #
 # layers:
 #   proposers: [codex, glm, sonnet, qwen]
-#   refiners:  [codex, kimi]
+#   refiners:  [codex-reviewer, qwen]
 #
 # Example: run GLM + Kimi through Fireworks serverless instead of the defaults
 #
@@ -54,7 +60,7 @@ layers:
 #   kimi-fw: {harness: opencode, model: fireworks-ai/accounts/fireworks/models/kimi-k2p7-code}
 # layers:
 #   proposers: [codex, glm-fw, sonnet]
-#   refiners:  [codex, kimi-fw]
+#   refiners:  [codex-reviewer, kimi-fw]
 #
 # Example: everything through the Cursor CLI (one binary, many labs)
 #
@@ -72,7 +78,7 @@ layers:
 #   cursor-gemini: {harness: cursor, model: gemini-3.1-pro}
 # layers:
 #   proposers: [codex, cursor-gemini, sonnet]
-#   refiners:  [codex, kimi]
+#   refiners:  [codex-reviewer, qwen]
 #
 # CLAUDE.md recommends keeping refiner labs disjoint from the aggregator
 # (Anthropic). This is no longer harness-enforced — see the doc for context.

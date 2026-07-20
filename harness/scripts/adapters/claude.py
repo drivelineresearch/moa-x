@@ -38,7 +38,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import shutil
 import subprocess
 import tempfile
@@ -47,7 +46,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from adapters import READ_ONLY_RULE, kill_proc_tree  # shared POSIX+Windows timeout handler
+from adapters import READ_ONLY_RULE, extract_json_from_text, kill_proc_tree
 
 # The claude CLI has no --temperature flag. For self-moa, each proposer/refiner
 # instance injects this directive to approximate temperature=0.7 diversity.
@@ -150,7 +149,7 @@ def run(
     prompt: str,
     schema_path: Path,
     repo_path: Path,
-    model: str = "claude-sonnet-4-6",
+    model: str = "sonnet",
     timeout_seconds: int = 1200,  # orchestrator always passes --sonnet-timeout
     log_file: Optional[Path] = None,
     temperature_shim: Optional[str] = None,
@@ -162,7 +161,8 @@ def run(
         schema_path: Path to JSON Schema file. Passed to --json-schema.
         repo_path: Working directory. Claude Code's Read tool can access this
             tree without --add-dir (cwd is implicitly readable).
-        model: Claude model id. Default claude-sonnet-4-6.
+        model: Claude model id or rolling alias. Default `sonnet`, which
+            Claude Code resolves to the latest available Sonnet model.
         timeout_seconds: Hard wall-clock cap. Default 1200s (20 min) because
             sonnet with full tool access was observed taking >900s in the
             first dogfood run. The restricted tool set (no Agent) should
@@ -303,7 +303,15 @@ def run(
                 error_message=f"claude exited with code {proc.returncode}",
             )
 
-        payload = _extract_structured_output(stdout_captured)
+        try:
+            required_keys = set(
+                json.loads(schema_path.read_text(encoding="utf-8")).get("required") or []
+            )
+        except (OSError, json.JSONDecodeError):
+            required_keys = None
+        payload = _extract_structured_output(
+            stdout_captured, required_keys=required_keys
+        )
         if payload is None:
             return ClaudeResult(
                 success=False, payload=None, raw_stdout=stdout_captured,
@@ -325,7 +333,9 @@ def run(
             shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-def _extract_structured_output(stdout: str) -> Optional[dict]:
+def _extract_structured_output(
+    stdout: str, *, required_keys: Optional[set[str]] = None
+) -> Optional[dict]:
     """Extract the validated payload from claude -p JSON output.
 
     Claude Code's outer envelope with --json-schema set:
@@ -351,18 +361,7 @@ def _extract_structured_output(stdout: str) -> Optional[dict]:
     if not stdout:
         return None
 
-    outer = None
-    try:
-        outer = json.loads(stdout)
-    except json.JSONDecodeError:
-        # Find the first top-level JSON object in the stream
-        first_brace = stdout.find("{")
-        while first_brace >= 0:
-            try:
-                outer = json.loads(stdout[first_brace:])
-                break
-            except json.JSONDecodeError:
-                first_brace = stdout.find("{", first_brace + 1)
+    outer = extract_json_from_text(stdout)
 
     if not isinstance(outer, dict):
         return None
@@ -377,48 +376,4 @@ def _extract_structured_output(stdout: str) -> Optional[dict]:
     if not isinstance(result_text, str) or not result_text.strip():
         return None
 
-    # Try fenced JSON first
-    for match in re.finditer(r"```(?:json)?\s*\n(.*?)\n```", result_text, re.DOTALL):
-        try:
-            return json.loads(match.group(1).strip())
-        except json.JSONDecodeError:
-            continue
-
-    # Then scan for a balanced top-level object
-    candidates = []
-    text = result_text
-    for start in range(len(text)):
-        if text[start] != "{":
-            continue
-        depth = 0
-        in_string = False
-        escape = False
-        for end in range(start, len(text)):
-            ch = text[end]
-            if escape:
-                escape = False
-                continue
-            if ch == "\\":
-                escape = True
-                continue
-            if ch == '"':
-                in_string = not in_string
-                continue
-            if in_string:
-                continue
-            if ch == "{":
-                depth += 1
-            elif ch == "}":
-                depth -= 1
-                if depth == 0:
-                    candidates.append(text[start : end + 1])
-                    break
-
-    candidates.sort(key=len, reverse=True)
-    for cand in candidates:
-        try:
-            return json.loads(cand)
-        except (json.JSONDecodeError, ValueError):
-            continue
-
-    return None
+    return extract_json_from_text(result_text, required_keys=required_keys)

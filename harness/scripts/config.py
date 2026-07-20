@@ -14,7 +14,7 @@ CLI flags passed to run_moa.py still override everything — they are
 parsed after this module populates os.environ.
 
 Harnesses supported by the built-in adapters are {codex, claude, opencode,
-cursor}. Named providers (built-in codex/sonnet/glm/kimi/qwen/composer plus user-defined
+cursor}. Named providers (built-in codex/codex-reviewer/codex-aggregator/sonnet/opus/glm/kimi/qwen/composer plus user-defined
 entries in harness/config.yaml) map onto those harnesses.
 
 Typical usage:
@@ -30,7 +30,7 @@ Typical usage:
     # Resolve a named provider to a triple:
     from config import resolve_provider
     rp = resolve_provider("codex", user_providers={})
-    # rp.name == "codex", rp.harness == "codex", rp.model == "gpt-5.4"
+    # rp.name == "codex", rp.harness == "codex", rp.model == "gpt-5.6-terra"
 
 The config.yaml schema is documented in harness/config.example.yaml.
 """
@@ -78,19 +78,25 @@ class ResolvedProvider:
     timeout: Optional[int] = None     # per-provider timeout in seconds; None → harness default
 
 
-# Built-in named providers. Existing configs that reference codex/sonnet/glm/kimi
-# continue to resolve through this table for back-compat; qwen and composer
-# are optional lanes. User-defined providers in
+# Built-in named providers. Existing configs that reference legacy providers
+# continue to resolve through this table for back-compat. `codex-reviewer`
+# separates the default review model from the everyday proposer model, while
+# `opus` names the Claude Code Layer-3 aggregator. User-defined providers in
 # harness/config.yaml under `providers:` are layered on top in resolve_provider.
-# Built-ins always carry timeout=None so the existing CLI flag / harness-level
-# env path (MOA_CODEX_TIMEOUT etc.) continues to apply.
+# Most built-ins carry timeout=None so the existing CLI flag / harness-level
+# env path (MOA_CODEX_TIMEOUT etc.) continues to apply. Qwen has a bounded
+# 600-second default so a failed preview-model refinement cannot stall a run
+# for twenty minutes.
 BUILTIN_PROVIDERS: dict[str, ResolvedProvider] = {
-    "codex":    ResolvedProvider(name="codex",    harness="codex",    model="gpt-5.4"),
-    "sonnet":   ResolvedProvider(name="sonnet",   harness="claude",   model="claude-sonnet-4-6"),
-    "glm":      ResolvedProvider(name="glm",      harness="opencode", model="opencode-go/glm-5.2"),
-    "kimi":     ResolvedProvider(name="kimi",     harness="opencode", model="opencode-go/kimi-k2.7-code"),
-    "qwen":     ResolvedProvider(name="qwen",     harness="opencode", model="qwen-token-plan/qwen3.7-max"),
-    "composer": ResolvedProvider(name="composer", harness="cursor",   model="composer-2.5"),
+    "codex":          ResolvedProvider(name="codex",          harness="codex",    model="gpt-5.6-terra"),
+    "codex-reviewer": ResolvedProvider(name="codex-reviewer", harness="codex",    model="gpt-5.6-sol"),
+    "codex-aggregator": ResolvedProvider(name="codex-aggregator", harness="codex", model="gpt-5.6-sol", timeout=600),
+    "sonnet":         ResolvedProvider(name="sonnet",         harness="claude",   model="sonnet"),
+    "opus":           ResolvedProvider(name="opus",           harness="claude",   model="opus"),
+    "glm":            ResolvedProvider(name="glm",            harness="opencode", model="opencode-go/glm-5.2"),
+    "kimi":           ResolvedProvider(name="kimi",           harness="opencode", model="opencode-go/kimi-k2.7-code"),
+    "qwen":           ResolvedProvider(name="qwen",           harness="opencode", model="qwen-token-plan/qwen3.8-max-preview", timeout=600),
+    "composer":       ResolvedProvider(name="composer",       harness="cursor",   model="composer-2.5"),
 }
 
 
@@ -99,13 +105,13 @@ def resolve_provider(name: str, *, user_providers: dict[str, dict]) -> ResolvedP
 
     Lookup order:
       1. user_providers (from harness/config.yaml `providers:` block)
-      2. BUILTIN_PROVIDERS (codex, sonnet, glm, kimi, qwen, composer)
+      2. BUILTIN_PROVIDERS (codex, codex-reviewer, codex-aggregator, sonnet, opus, glm, kimi, qwen, composer)
 
     Then env-var overrides apply per-field:
       - MOA_<NAME>_MODEL overrides .model
       - MOA_<NAME>_TIMEOUT overrides .timeout
 
-    Built-in providers always resolve with timeout=None so the existing
+    Most built-in providers resolve with timeout=None so the existing
     --codex-timeout / --sonnet-timeout CLI flag path continues to apply at
     the harness level. Set MOA_<NAME>_TIMEOUT or a
     YAML `timeout:` field to override per-provider.
@@ -153,7 +159,9 @@ def resolve_provider(name: str, *, user_providers: dict[str, dict]) -> ResolvedP
 
     override_model = os.environ.get(f"{env_prefix}_MODEL")
     if override_model:
-        rp = ResolvedProvider(name=rp.name, harness=rp.harness, model=override_model, timeout=rp.timeout)
+        rp = ResolvedProvider(
+            name=rp.name, harness=rp.harness, model=override_model, timeout=rp.timeout
+        )
 
     override_timeout_raw = os.environ.get(f"{env_prefix}_TIMEOUT")
     if override_timeout_raw:
@@ -277,6 +285,8 @@ def _yaml_to_env(cfg: dict[str, Any]) -> dict[str, str]:
         env["MOA_PROPOSERS"] = ",".join(str(x) for x in layers["proposers"])
     if "refiners" in layers and isinstance(layers["refiners"], list):
         env["MOA_REFINERS"] = ",".join(str(x) for x in layers["refiners"])
+    if "aggregator" in layers and isinstance(layers["aggregator"], str):
+        env["MOA_AGGREGATOR"] = layers["aggregator"]
     if layers.get("skip_refinement") is True:
         env["MOA_SKIP_LAYER2"] = "1"
 
@@ -355,11 +365,18 @@ class LoadedConfig:
     proposers: list[ResolvedProvider]
     refiners: list[ResolvedProvider]
     skip_refinement: bool
+    aggregator: Optional[ResolvedProvider] = None
 
 
 # Default layer assignments when no YAML / env override is set.
 _DEFAULT_PROPOSERS = ["codex", "glm", "sonnet"]
-_DEFAULT_REFINERS = ["codex", "kimi"]
+_DEFAULT_REFINERS = ["codex-reviewer", "qwen"]
+_DEFAULT_AGGREGATOR = "opus"
+
+
+def _env_truthy(key: str) -> bool:
+    """Return True only for explicit affirmative environment values."""
+    return os.environ.get(key, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def load_resolved_config(
@@ -390,11 +407,18 @@ def load_resolved_config(
         yaml_value=(cfg.get("layers") or {}).get("refiners"),
         default=_DEFAULT_REFINERS,
     )
+    layers = cfg.get("layers") or {}
+    aggregator_name = (
+        os.environ.get("MOA_AGGREGATOR")
+        or (layers.get("aggregator") if isinstance(layers.get("aggregator"), str) else None)
+        or _DEFAULT_AGGREGATOR
+    )
 
     proposers = resolve_layer(proposer_names, user_providers=user_providers)
     refiners = resolve_layer(refiner_names, user_providers=user_providers)
+    aggregator = resolve_provider(aggregator_name, user_providers=user_providers)
 
-    skip_refinement = bool(os.environ.get("MOA_SKIP_LAYER2")) or bool(
+    skip_refinement = _env_truthy("MOA_SKIP_LAYER2") or bool(
         (cfg.get("layers") or {}).get("skip_refinement")
     )
 
@@ -402,6 +426,7 @@ def load_resolved_config(
         proposers=proposers,
         refiners=refiners,
         skip_refinement=skip_refinement,
+        aggregator=aggregator,
     )
 
 

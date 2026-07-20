@@ -3,7 +3,7 @@
 All notable changes to MoA-X are recorded here. Release tags follow semantic
 versioning.
 
-## Unreleased
+## [Unreleased]
 
 ### Added
 
@@ -12,6 +12,24 @@ versioning.
   step to exact proposer steps and refiner findings.
 - Visible, non-fatal lineage validation warnings and a legacy-session fallback
   when structured lineage is unavailable.
+- Optional recorded Layer 3 aggregation through Codex or Claude. The
+  `--phase layer3` path reuses retained proposer/refiner output, validates one
+  strict Markdown-plus-lineage bundle, records timing and logs, and refreshes
+  the HTML report without rerunning Layers 1 or 2.
+- Built-in `codex-aggregator` provider (`gpt-5.6-sol`, high reasoning) and
+  dedicated `MOA_AGGREGATOR_EFFORT` control.
+
+### Changed
+
+- Default proposers now use Codex `gpt-5.6-terra`, GLM 5.2, and Claude Code's
+  rolling `sonnet` alias. Default broadcast refiners now use Codex
+  `gpt-5.6-sol` at high reasoning plus Qwen Token Plan
+  `qwen3.8-max-preview`; the default interactive aggregator remains Claude
+  Code's rolling `opus` alias.
+- Qwen Token Plan is now part of the default refiner roster and has a bounded
+  600-second timeout instead of inheriting the OpenCode harness timeout.
+- The report now includes recorded Layer 3 status, timing, logs, and run-health
+  visibility throughout its overview, pipeline, and Gantt views.
 
 ### Fixed
 
@@ -19,12 +37,24 @@ versioning.
   their manifests. Reports also repair v0.4.1-and-older phase-local timing from
   retained agent timestamps, fixing truncated wall-clock totals and Layer 1
   Gantt offsets.
+- Ordered final-plan steps no longer restart at `1` when nested evidence lists
+  appear between steps.
+- Structured-output extraction is shared, bounded, escape-tolerant, and strict
+  about required root fields across adapters.
+- Proposer/refiner payloads are isolated as data, model identity is verified,
+  and every harness is covered by a Git-visible before/after workspace guard.
+- Report disclosures and lineage tabs now expose consistent keyboard and ARIA
+  behavior.
 
 ### Validation
 
-- Offline suite: 83/83 tests pass.
-- The previously affected endpoint smoke report now recovers the full 928.2s
-  session span instead of the phase-local 443.0s value.
+- Offline suite: 92/92 tests pass.
+- Live cross-lab smoke: all three proposers and both broadcast refiners passed
+  with no timeout, identity, schema, transient-empty, or workspace-mutation
+  failures.
+- Live Codex-only Layer 3 smoke completed in 150.4 seconds, produced two
+  lineage-valid final steps with no stale references, and regenerated the
+  self-contained report.
 
 ## [0.4.1] — 2026-07-19
 
@@ -76,5 +106,6 @@ refiners. Qwen remains opt-in.
 - Switched the default GLM and Kimi routes to the `opencode-go` gateway while
   retaining direct-provider and Fireworks overrides.
 
+[Unreleased]: https://github.com/drivelineresearch/moa-x/compare/v0.4.1...HEAD
 [0.4.1]: https://github.com/drivelineresearch/moa-x/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/drivelineresearch/moa-x/releases/tag/v0.4.0

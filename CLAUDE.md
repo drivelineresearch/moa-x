@@ -5,12 +5,13 @@
 MoA-X is a Mixture-of-Agents reference harness. `harness/scripts/run_moa.py`
 orchestrates a config-driven roster of CLI proposers and broadcast
 refiners; the shipped default is codex + glm + sonnet proposers and
-codex + kimi refiners (glm/kimi run on the `opencode` CLI via the
-`opencode-go` gateway). Layers 0 (scout) and 3 (aggregation) are handled by
-the parent Claude Code session. The orchestrator only runs Layers 1 and 2,
-then writes a self-contained `.moa/<session>/report.html` post-mortem. Layer 3
-adds `final-plan.md` plus a schema-validated `final-plan.json` provenance
-companion that powers the report's decision-lineage explorer.
+codex-reviewer + qwen refiners (GLM and Qwen run on the `opencode` CLI;
+Qwen uses the Token Plan API). Layer 0 (scout) is handled by the parent agent.
+Layer 3 defaults to the parent Claude Code session using its rolling `opus`
+alias, but the orchestrator can also run it as a recorded Codex/Claude
+subprocess with `--phase layer3`. Layer 3 adds `final-plan.md` plus a
+schema-validated `final-plan.json` provenance companion and refreshes the
+self-contained report's decision-lineage explorer.
 
 - `harness/`: orchestrator, adapters, prompts, schemas, and `report/`
   (HTML report template + vendored three.min.js). Designed to be droppable
@@ -53,8 +54,11 @@ tests must run offline so CI stays credential-free.
 Rule 2 is non-negotiable. Rule 1 is a strong recommendation.
 
 1. **Recommend lab-independent refiners.** Layer 2 defaults to
-   `{codex, kimi}` and the aggregator is Opus, so verification is
-   independent of both the Sonnet proposer and the Opus aggregator.
+   `{codex-reviewer, qwen}` and the default aggregator uses Claude Code's
+   `opus` alias, so verification is independent of both the Sonnet proposer
+   and the Anthropic aggregator. If selecting the optional Codex aggregator,
+   reconsider the reviewer roster because `codex-reviewer` then shares its
+   harness/lab.
    The harness no longer enforces this (the data model became neutral
    when named providers landed — see `docs/architecture.md`); it's a
    recommendation, and the orchestrator warns when a refiner shares the
@@ -71,8 +75,12 @@ Rule 2 is non-negotiable. Rule 1 is a strong recommendation.
   `FIREWORKS_API_KEY`, `QWEN_TOKEN_PLAN_API_KEY`, and others). The open gap is
   normalized usage/cost telemetry and safe pre-dispatch budget controls, not
   basic API-key authentication.
-- **Default roster is `[codex, glm, sonnet]` proposers, `[codex, kimi]`
-  refiners** across harnesses `{codex, claude, opencode, cursor}`. It's
+- **Default roster is `[codex, glm, sonnet]` proposers,
+  `[codex-reviewer, qwen]` refiners, and `opus` aggregator** across harnesses
+  `{codex, claude, opencode, cursor}`. The model defaults are
+  `gpt-5.6-terra`, GLM-5.2, Claude Code's rolling `sonnet` alias,
+  `gpt-5.6-sol` at high reasoning, Qwen `qwen3.8-max-preview`, and Claude
+  Code's rolling `opus` alias. It's
   a default, not a cap — the roster is pure config (built-in names,
   `providers:` in config.yaml, the optional built-in Qwen Token Plan provider,
   or the `MOA_PROVIDER_<NAME>` env shorthand). Tested recipes for DeepSeek,

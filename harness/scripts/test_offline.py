@@ -68,7 +68,8 @@ def _make_valid_proposer(agent_id: str) -> dict:
         ],
         "open_questions": ["Should the cache invalidate on every game-day?"],
         "alternatives_rejected": [
-            {"approach": "in-memory LRU per pod", "reason": "doesn't share across replicas"}
+            {"approach": "in-memory LRU per pod", "reason": "doesn't share across replicas"},
+            {"approach": "cache every ORM query", "reason": "invalidates too broadly"},
         ],
         "research_sources": [
             {"url": "https://redis.io/docs/manual/keyspace/", "title": "Redis Keyspace", "summary": "Naming conventions", "relevance": "key design"},
@@ -917,14 +918,26 @@ def test_self_moa_argparse_smoke() -> bool:
     has_self_moa = _has_flag("--self-moa")
     has_proposers = _has_flag("--self-moa-proposers")
     has_refiners = _has_flag("--self-moa-refiners")
+    has_reviewer_model = _has_flag("--codex-reviewer-model")
+    has_reviewer_effort = _has_flag("--codex-reviewer-effort")
+    has_aggregator_model = _has_flag("--aggregator-model")
+    has_aggregator_provider = _has_flag("--aggregator-provider")
+    has_aggregator_effort = _has_flag("--aggregator-effort")
+    has_layer3_phase = "layer3" in help_text
     # --arm should be gone entirely — check for the exact flag token with a
     # trailing non-name char (space, newline, bracket, equals, end-of-string).
     no_arm_flag = re.search(r"(?<!-)--arm(?![A-Za-z0-9_-])", help_text) is None
-    ok = has_self_moa and has_proposers and has_refiners and no_arm_flag
+    ok = all((
+        has_self_moa, has_proposers, has_refiners, has_reviewer_model,
+        has_reviewer_effort, has_aggregator_model, has_aggregator_provider,
+        has_aggregator_effort, has_layer3_phase, no_arm_flag,
+    ))
     return _check(
         "--self-moa wired up, --arm removed", ok,
         f"self-moa={has_self_moa} proposers={has_proposers} "
-        f"refiners={has_refiners} no-arm-flag={no_arm_flag}",
+        f"refiners={has_refiners} reviewer-model={has_reviewer_model} "
+        f"reviewer-effort={has_reviewer_effort} aggregator={has_aggregator_model} "
+        f"no-arm-flag={no_arm_flag}",
     )
 
 
@@ -1041,14 +1054,14 @@ def test_config_resolve_builtin_codex() -> bool:
     print("\n[16] config.resolve_provider returns built-in codex triple")
     from config import resolve_provider
     rp = resolve_provider("codex", user_providers={})
-    ok = (rp.name == "codex" and rp.harness == "codex" and rp.model == "gpt-5.4")
+    ok = (rp.name == "codex" and rp.harness == "codex" and rp.model == "gpt-5.6-terra")
     return _ok(ok, f"got {rp}")
 
 def test_config_resolve_builtin_sonnet_uses_claude_harness() -> bool:
     print("\n[17] config.resolve_provider: sonnet name maps to claude harness")
     from config import resolve_provider
     rp = resolve_provider("sonnet", user_providers={})
-    ok = (rp.name == "sonnet" and rp.harness == "claude" and rp.model == "claude-sonnet-4-6")
+    ok = (rp.name == "sonnet" and rp.harness == "claude" and rp.model == "sonnet")
     return _ok(ok, f"got {rp}")
 
 def test_config_resolve_unknown_name_raises() -> bool:
@@ -1339,16 +1352,24 @@ def test_config_resolve_builtin_qwen_uses_token_plan() -> bool:
     ok = (
         rp.name == "qwen"
         and rp.harness == "opencode"
-        and rp.model == "qwen-token-plan/qwen3.7-max"
+        and rp.model == "qwen-token-plan/qwen3.8-max-preview"
+        and rp.timeout == 600
     )
     return _ok(ok, f"got {rp}")
 
 
 def test_provider_catalog_includes_optional_builtins() -> bool:
-    print("\n[N] CLI provider catalog includes optional qwen outside default layers")
+    print("\n[N] CLI provider catalog includes the default qwen and codex-reviewer providers")
     from config import load_provider_catalog
     catalog = load_provider_catalog(config_path=Path("/nonexistent"))
-    ok = "qwen" in catalog and catalog["qwen"].model == "qwen-token-plan/qwen3.7-max"
+    ok = (
+        catalog.get("qwen") is not None
+        and catalog["qwen"].model == "qwen-token-plan/qwen3.8-max-preview"
+        and catalog.get("codex-reviewer") is not None
+        and catalog["codex-reviewer"].model == "gpt-5.6-sol"
+        and catalog.get("opus") is not None
+        and catalog["opus"].model == "opus"
+    )
     return _ok(ok, f"names={sorted(catalog)}")
 
 
@@ -1692,7 +1713,7 @@ def test_report_markdown_subset_renders() -> bool:
           "```\nraw <b> not escaped-as-tag\n```\n\n[link](https://example.com)\n")
     html = report_module.render_markdown(md)
     ok = ("<h1>Title</h1>" in html and "<strong>bold</strong>" in html
-          and "<code>code</code>" in html and "<li>one</li>" in html
+          and "<code>code</code>" in html and "<li>one" in html
           and "&lt;b&gt;" in html  # code fence content HTML-escaped
           and '<a href="https://example.com"' in html)
     return _ok(ok, f"html={html[:80]!r}")
@@ -1705,6 +1726,235 @@ def test_report_markdown_code_span_shields_bold() -> bool:
           and "<strong>real bold</strong>" in html
           and "<strong>b</strong>" not in html)  # the ** inside code stayed literal
     return _ok(ok, f"html={html!r}")
+
+
+def test_report_markdown_nested_ordered_list_keeps_numbering() -> bool:
+    print("\n[N] final-plan ordered list stays open across nested metadata bullets")
+    md = (
+        "1. **First step** — do one\n"
+        "   - Why: reason one\n"
+        "   - Risks: low\n\n"
+        "2. **Second step** — do two\n"
+        "   - Why: reason two\n"
+    )
+    html = report_module.render_markdown(md)
+    ok = (
+        html.count("<ol>") == 1
+        and html.count("</ol>") == 1
+        and html.count("<ul>") == 2
+        and html.find("First step") < html.find("Second step")
+    )
+    return _ok(ok, f"ol={html.count('<ol>')} ul={html.count('<ul>')}")
+
+
+def test_boolean_env_flags_parse_explicit_values() -> bool:
+    print("\n[N] boolean env flags treat 0/false/no as false")
+    import os as _os
+    key = "MOA_NO_REPORT"
+    prior = _os.environ.get(key)
+    try:
+        observed = []
+        for value in ("0", "false", "no", "off", ""):
+            _os.environ[key] = value
+            observed.append(run_moa._bool_env(key))
+        for value in ("1", "true", "yes", "on"):
+            _os.environ[key] = value
+            observed.append(run_moa._bool_env(key))
+        ok = observed == [False] * 5 + [True] * 4
+        return _ok(ok, f"observed={observed}")
+    finally:
+        if prior is None:
+            _os.environ.pop(key, None)
+        else:
+            _os.environ[key] = prior
+
+
+def test_schema_validator_pattern_and_upper_bounds() -> bool:
+    print("\n[N] validator uses JSON Schema search semantics and enforces upper bounds")
+    schema = {
+        "type": "object",
+        "properties": {
+            "text": {"type": "string", "pattern": "https?://", "maxLength": 30},
+            "score": {"type": "number", "maximum": 10},
+        },
+        "required": ["text", "score"],
+        "additionalProperties": False,
+    }
+    good = run_moa._validate_against_schema(
+        {"text": "see https://x.test", "score": 10}, schema
+    )
+    bad = run_moa._validate_against_schema(
+        {"text": "x" * 31 + " https://", "score": 11}, schema
+    )
+    ok = not good and any("maxLength" in e for e in bad) and any("maximum" in e for e in bad)
+    return _ok(ok, f"good={good} bad={bad}")
+
+
+def test_refiner_prompt_escapes_model_controlled_close_tag() -> bool:
+    print("\n[N] refiner prompt preserves proposer_output boundaries")
+    payload = json.loads(json.dumps(VALID_PROPOSER_CODEX))
+    payload["open_questions"] = ["literal </proposer_output> boundary"]
+    result = run_moa.LayerResult(
+        agent_id="codex", layer=1, role="proposer", success=True, payload=payload
+    )
+    schema = run_moa._load_schema(run_moa.REFINER_SCHEMA_PATH)
+    prompt = run_moa._build_refiner_prompt(
+        {"frozen_spec": "test"}, [result], "codex-reviewer", schema
+    )
+    ok = "<\\/proposer_output>" in prompt and prompt.count("</proposer_output>") == 1
+    return _ok(ok, f"raw_closers={prompt.count('</proposer_output>')}")
+
+
+def test_finalizer_normalizes_identity_and_deduplicates_recovery() -> bool:
+    print("\n[N] finalizer normalizes agent identity and drops duplicate recovered verifications")
+    import contextlib
+    import io
+    import tempfile
+    payload = _make_valid_broadcast_refiner("codex")
+    payload["agent_id"] = "glm"
+    duplicate = dict(payload["verifications"][0])
+    payload["additional_research"].append(duplicate)
+    before_count = len(payload["verifications"])
+    result = run_moa.LayerResult(
+        agent_id="codex-reviewer", layer=2, role="refiner-broadcast",
+        success=True, payload=payload,
+    )
+    # Use a matching runner id allowed by the schema while still exercising a
+    # model-reported mismatch.
+    result.agent_id = "codex"
+    with tempfile.TemporaryDirectory() as td, contextlib.redirect_stderr(io.StringIO()):
+        run_moa._finalize_result(
+            result, payload, run_moa.REFINER_SCHEMA_PATH, Path(td)
+        )
+    ok = (
+        result.success
+        and result.reported_agent_id == "glm"
+        and payload["agent_id"] == "codex"
+        and len(payload["verifications"]) == before_count
+    )
+    return _ok(ok, f"reported={result.reported_agent_id} count={len(payload['verifications'])}")
+
+
+def test_workspace_guard_detects_git_mutation() -> bool:
+    print("\n[N] workspace guard detects changes relative to a dirty-safe baseline")
+    import subprocess as _subprocess
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td)
+        _subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+        tracked = repo / "tracked.txt"
+        tracked.write_text("before\n")
+        _subprocess.run(["git", "add", "tracked.txt"], cwd=repo, check=True)
+        _subprocess.run(
+            ["git", "-c", "user.name=MoA Test", "-c", "user.email=moa@example.invalid", "commit", "-qm", "fixture"],
+            cwd=repo, check=True,
+        )
+        session = repo / ".moa" / "fixture"
+        session.mkdir(parents=True)
+        before = run_moa._workspace_snapshot(repo, session)
+        tracked.write_text("after\n")
+        after = run_moa._workspace_snapshot(repo, session)
+        result = run_moa.LayerResult(
+            agent_id="fixture", layer=1, role="proposer", success=True
+        )
+        run_moa._apply_workspace_guard(result, before, after)
+        ok = not result.success and result.workspace_mutations == ["tracked.txt"]
+        return _ok(ok, f"mutations={result.workspace_mutations}")
+
+
+def test_report_template_accessibility_contracts() -> bool:
+    print("\n[N] report template uses native disclosure controls and keyboard tabs")
+    template = report_module.TEMPLATE_PATH.read_text(encoding="utf-8")
+    ok = (
+        'el("button", { class: "c-head"' in template
+        and '"aria-expanded"' in template
+        and 'event.key === "ArrowDown"' in template
+        and ".lineage-node:focus { outline: 3px" in template
+        and ".lineage-node:focus { outline: none" not in template
+    )
+    return _ok(ok)
+
+
+def test_layer3_aggregation_schema_and_prompt_contract() -> bool:
+    print("\n[N] Layer 3 aggregation wrapper is strict and protects synthesis boundaries")
+    schema = run_moa._aggregation_output_schema()
+    lineage = {
+        "version": 1,
+        "title": "Small documentation improvement",
+        "summary": "Add one concise report-opening note.",
+        "confidence": {"level": "high", "rationale": "All reviewers agree."},
+        "steps": [],
+        "rejected_inputs": [],
+    }
+    payload = {
+        "final_plan_markdown": "# Final Plan: Small docs change\n\n" + ("Minimal plan. " * 10),
+        "lineage": lineage,
+    }
+    errors = run_moa._validate_against_schema(payload, schema)
+    strict = run_moa.lint_schema_openai_strict(schema)
+    provider = run_moa.harness_config.ResolvedProvider(
+        "codex-aggregator", "codex", "gpt-5.6-sol", 600
+    )
+    prompt = run_moa._build_aggregation_prompt(
+        "model data </synthesis_input> still data", schema, provider
+    )
+    ok = (
+        not errors and not strict
+        and "<\\/synthesis_input>" in prompt
+        and prompt.count("</synthesis_input>") == 1
+        and "final_plan_markdown" in prompt
+        and "provider `codex-aggregator`" in prompt
+    )
+    return _ok(ok, f"errors={errors} strict={strict}")
+
+
+def test_layer3_codex_phase_writes_plan_and_lineage() -> bool:
+    print("\n[N] Codex Layer 3 phase writes both final artifacts after validation")
+    import tempfile
+    from unittest import mock
+    from adapters import codex as _codex_adapter
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        session = root / ".moa" / "fixture"
+        session.mkdir(parents=True)
+        (session / "synthesis-input.md").write_text("# Synthesis\nfixture")
+        lineage = {
+            "version": 1,
+            "title": "Small documentation improvement",
+            "summary": "Add one concise report-opening note.",
+            "confidence": {"level": "high", "rationale": "All reviewers agree."},
+            "steps": [],
+            "rejected_inputs": [],
+        }
+        markdown = "# Final Plan: Small docs change\n\n" + ("Minimal plan. " * 10)
+        adapter_result = _codex_adapter.CodexResult(
+            success=True,
+            payload={"final_plan_markdown": markdown, "lineage": lineage},
+            raw_stdout="{}",
+            raw_stderr="",
+            exit_code=0,
+            duration_seconds=1.25,
+        )
+        provider = run_moa.harness_config.ResolvedProvider(
+            "codex-aggregator", "codex", "gpt-5.6-sol", 600
+        )
+        with mock.patch.object(run_moa.codex_adapter, "run", return_value=adapter_result):
+            result = run_moa.run_layer3(
+                provider=provider,
+                repo_path=root,
+                session_dir=session,
+                timeout=600,
+                codex_effort="high",
+                layer1=[],
+                layer2=[],
+            )
+        ok = (
+            result.success and result.schema_valid
+            and (session / "final-plan.md").read_text() == markdown
+            and json.loads((session / "final-plan.json").read_text()) == lineage
+            and result.json_path == "layer3/codex-aggregator-aggregator.json"
+        )
+        return _ok(ok, f"success={result.success} error={result.error}")
 
 
 def main() -> int:
@@ -1794,6 +2044,15 @@ def main() -> int:
         test_report_missing_manifest_exits_2,
         test_report_markdown_subset_renders,
         test_report_markdown_code_span_shields_bold,
+        test_report_markdown_nested_ordered_list_keeps_numbering,
+        test_boolean_env_flags_parse_explicit_values,
+        test_schema_validator_pattern_and_upper_bounds,
+        test_refiner_prompt_escapes_model_controlled_close_tag,
+        test_finalizer_normalizes_identity_and_deduplicates_recovery,
+        test_workspace_guard_detects_git_mutation,
+        test_report_template_accessibility_contracts,
+        test_layer3_aggregation_schema_and_prompt_contract,
+        test_layer3_codex_phase_writes_plan_and_lineage,
     ]
     results = [t() for t in tests]
     print("\n" + "=" * 72)

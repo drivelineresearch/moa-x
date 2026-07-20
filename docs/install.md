@@ -19,7 +19,7 @@ codex login
 # See https://docs.claude.com/en/docs/claude-code/quickstart
 # API-billed alternative: export ANTHROPIC_API_KEY=...
 
-# opencode (drives the GLM and Kimi providers)
+# opencode (drives the GLM proposer and Qwen Token Plan refiner)
 curl -fsSL https://opencode.ai/install | bash
 # or: npm i -g opencode-ai
 opencode auth login    # interactive login
@@ -27,23 +27,18 @@ opencode auth login    # interactive login
 #   export ZHIPU_API_KEY=...       # GLM
 #   export MOONSHOT_API_KEY=...    # Kimi
 #   export FIREWORKS_API_KEY=...   # GLM / Kimi via Fireworks
-#   export QWEN_TOKEN_PLAN_API_KEY=sk-sp-...  # optional Qwen Token Plan lane
+#   export QWEN_TOKEN_PLAN_API_KEY=sk-sp-...  # default Qwen refiner
 ```
 
-The default roster is `codex` + `sonnet` (via `claude`) + `glm` and
-`kimi` (both via `opencode`) — four labs: OpenAI, Anthropic, Zhipu,
-Moonshot. GLM and Kimi both run on the `opencode` harness; their
-model ids are provider/model strings (defaults `opencode-go/glm-5.2`,
-`opencode-go/kimi-k2.7-code`; also `zhipuai/glm-5.2`,
-`moonshotai/kimi-k2.7-code`, or the Fireworks variants
-`fireworks-ai/accounts/fireworks/models/glm-5p2` and
-`…/kimi-k2p7-code`).
+The default roster is `codex` (`gpt-5.6-terra` proposer and
+`gpt-5.6-sol` high reviewer), `sonnet`/`opus` rolling aliases via Claude
+Code, `glm` (`opencode-go/glm-5.2`), and Qwen through `opencode` — four labs:
+OpenAI, Anthropic, Zhipu, and Alibaba.
 
-An optional built-in `qwen` provider is also available through OpenCode. It
-uses the Qwen Cloud Token Plan endpoint and defaults to
-`qwen-token-plan/qwen3.7-max`. Put the dedicated `sk-sp-...` credential in
-`.env` as `QWEN_TOKEN_PLAN_API_KEY`, then add `qwen` to `MOA_PROPOSERS` or a
-`layers.proposers` list. Do not combine a Token Plan key with the regular
+The built-in `qwen` refiner uses the Qwen Cloud Token Plan endpoint and
+defaults to `qwen-token-plan/qwen3.8-max-preview`, with a 600-second cap.
+Put the dedicated `sk-sp-...` credential in `.env` as
+`QWEN_TOKEN_PLAN_API_KEY`. Do not combine a Token Plan key with the regular
 DashScope pay-as-you-go endpoint; Qwen documents them as separate credential
 and endpoint pairs. See [Qwen's OpenCode guide](https://docs.qwencloud.com/developer-guides/clients-and-developer-tools/opencode).
 
@@ -109,20 +104,29 @@ See [`docs/usage.md`](usage.md) for what happens next.
 
 ## 4. Or run standalone (secondary)
 
-The Python orchestrator works outside Claude Code too. You just don't
-get the scout-brief and aggregation steps for free:
+The Python orchestrator works outside Claude Code too. You still need to
+create the scout brief, but final aggregation can run as a recorded phase:
 
 ```bash
 python3 harness/scripts/run_moa.py \
   --scout-brief path/to/your-scout-brief.json
 ```
 
-You'll need to write the scout brief JSON yourself and read
-`.moa/<session>/synthesis-input.md` afterward to assemble the final
-plan. See [`docs/usage.md`](usage.md#running-standalone) for the
-format and the manual aggregation step.
+After Layers 1 and 2 finish, either aggregate interactively or run only the
+retained session's Codex-backed Layer 3:
 
-PRs that complete the standalone scout/aggregation path or harden adapter
+```bash
+python3 harness/scripts/run_moa.py \
+  --scout-brief path/to/your-scout-brief.json \
+  --phase layer3 \
+  --aggregator-provider codex-aggregator \
+  --aggregator-effort high
+```
+
+See [`docs/usage.md`](usage.md#running-standalone) for the scout format,
+phase behavior, and generated artifacts.
+
+PRs that complete standalone Layer 0 from a raw spec or harden adapter
 compatibility and recovery are welcome. See
 [`CONTRIBUTING.md`](../CONTRIBUTING.md).
 

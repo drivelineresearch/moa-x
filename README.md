@@ -10,19 +10,22 @@
 </p>
 
 <p align="center">
-  <img src="docs/moa-x-workflow.png" alt="MoA-X workflow: (1) Scout writes a brief → (2) default proposers codex + glm + sonnet, with optional Qwen, draft plans read-only → (3) broadcast refiners codex + kimi verify every valid proposal → (4) Opus writes final-plan.md plus structured decision lineage and a self-contained report.html, ~6–12 min wall-clock" width="820">
+  <img src="docs/moa-x-workflow.png" alt="MoA-X workflow: Scout → codex gpt-5.6-terra, GLM-5.2, and rolling Sonnet proposers → gpt-5.6-sol and Qwen 3.8 Max Preview broadcast refiners → rolling Opus aggregator → final plan, decision lineage, and self-contained interactive report" width="820">
 </p>
 
 A small, CLI-native take on the 2024
 [Mixture-of-Agents paper](https://arxiv.org/abs/2406.04692), pointed at
 a different job: producing **repo-grounded implementation plans** for
 coding agents instead of chat answers. The default roster puts proposers
-from three different labs to work — OpenAI `codex`, Zhipu `glm` (GLM-5.2 via
-the `opencode` CLI), Anthropic `claude` Sonnet — reading the repo in
+from three different labs to work — OpenAI `codex` (`gpt-5.6-terra`), Zhipu
+`glm` (GLM-5.2 via the `opencode` CLI), and Anthropic Claude Code's rolling
+`sonnet` alias — reading the repo in
 parallel, doing their own web research, and each writing an independent
-plan. Two refiners (`codex` + Moonshot `kimi`) then refine in broadcast
-mode (every refiner sees every plan). Finally a parent Claude Opus session
-aggregates the whole thing into one plan you can act on.
+plan. Two refiners (`codex-reviewer` on `gpt-5.6-sol` at high reasoning and
+Alibaba Qwen `qwen3.8-max-preview`) then refine in broadcast mode (every
+refiner sees every plan). Finally, Layer 3 aggregates with the parent Claude
+Code session's rolling `opus` alias by default, or with a recorded Codex
+subprocess (`gpt-5.6-sol` at high reasoning) when requested.
 
 Built to run **inside Claude Code** as a skill. Standalone Python works
 too. The harness ships built-in providers across four harnesses (`codex`,
@@ -31,8 +34,8 @@ which layer, and how many — is pure config. API-based auth and more
 providers are already supported. See "Contributions we'd prioritize" below
 for the remaining gaps.
 
-Qwen Cloud Token Plan is available as the optional built-in `qwen` provider
-(`qwen-token-plan/qwen3.7-max` through OpenCode). Its dedicated `sk-sp-...`
+Qwen Cloud Token Plan powers the default `qwen` refiner
+(`qwen-token-plan/qwen3.8-max-preview` through OpenCode). Its dedicated `sk-sp-...`
 key stays in `.env`; see [`docs/config.md`](docs/config.md#add-qwen-token-plan).
 
 ## TL;DR
@@ -56,12 +59,12 @@ cp -r harness ~/.claude/skills/mixture-of-agents
 ```
 Layer 0 — Scout brief           (parent Claude, in-place)
 Layer 1 — Proposers (parallel)    default: codex + glm + sonnet subprocesses
-Layer 2 — Broadcast refiners      default: codex + kimi, each sees ALL proposals
-Layer 3 — Aggregator              (parent Claude Opus, in-place)
+Layer 2 — Broadcast refiners      default: codex-reviewer + qwen, each sees ALL proposals
+Layer 3 — Aggregator              default: parent rolling opus; optional recorded Codex phase
 ```
 
 The roster is config-driven; the defaults above span four labs (OpenAI,
-Zhipu, Anthropic, Moonshot) and keep the refiners independent of the Opus
+Zhipu, Anthropic, Alibaba) and keep the refiners independent of the Anthropic
 aggregator's lab.
 
 Every run also writes a self-contained `.moa/<session>/report.html` — a
@@ -70,7 +73,8 @@ plans, refiner verdict matrix, interactive final-step decision lineage,
 aggregated plan, raw logs). Open it in a browser; details in
 [`docs/report.md`](docs/report.md).
 
-Typical wall-clock is 6–12 minutes. Use it for non-trivial
+Typical wall-clock is roughly 12–25 minutes for research-heavy work, with
+provider latency determining the tail. Use it for non-trivial
 architecture work, not one-line fixes. Background in
 [`docs/architecture.md`](docs/architecture.md).
 
@@ -114,21 +118,15 @@ phase checkpoints, and HTML reporting are now shipped. The highest-leverage
 remaining contributions are:
 
 - **A complete standalone host workflow.** `run_moa.py` handles the proposer
-  and refiner layers from any shell, but Claude Code still supplies the scout
-  and final aggregation steps. Add a first-class command that can create the
-  scout brief, run every layer, write `final-plan.md` plus its structured
-  decision lineage, and refresh `report.html` without a parent Claude Code
-  session.
+  and refiner layers from any shell, and `--phase layer3` can now produce the
+  final plan, decision lineage, and refreshed report through Codex or Claude.
+  The remaining gap is a first-class command that creates the Layer 0 scout
+  brief and drives all phases from a raw spec without a parent session.
 - **Usage, quota, and cost observability.** Capture the token/usage metadata
   each CLI exposes, normalize it into the manifest and HTML report, distinguish
   subscription from metered runs, and make unknown cost explicit. A safe
   budget control could stop later dispatches before a configured ceiling is
   exceeded; it must not pretend it can undo an already-billed request.
-- **Defense-in-depth workspace immutability.** Codex uses a filesystem
-  sandbox, Claude uses a read-only tool allowlist, Cursor uses `--mode plan`,
-  and OpenCode denies edit and shell tools. Add a harness-independent
-  before/after integrity check that detects tracked, untracked, and deleted
-  files and marks any mutating agent as failed.
 - **Tested provider recipes, not just model-name examples.** Qwen is already a
   built-in provider. Contributions for DeepSeek, MiniMax, xAI Grok, Mistral,
   or another credible coding model should include a reproducible config,
@@ -150,9 +148,9 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the PR protocol.
 ## Status
 
 Active reference implementation, currently v0.4.1. The default four-lab roster
-and optional Qwen proposer have been exercised end to end; offline CI covers
-configuration, schemas, adapters, checkpoint recovery, and self-contained HTML
-report generation. Contributions are welcome; see
+and Qwen Token Plan route have been exercised end to end; offline CI covers
+configuration, schemas, adapters, checkpoint recovery, recorded Layer 3, and
+self-contained HTML report generation. Contributions are welcome; see
 [CONTRIBUTING.md](CONTRIBUTING.md), and release notes are in
 [CHANGELOG.md](CHANGELOG.md). Security reports go through
 [SECURITY.md](SECURITY.md).

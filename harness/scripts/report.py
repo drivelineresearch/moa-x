@@ -248,7 +248,8 @@ def load_session(session_dir: Path) -> dict:
     scout = _read_json(session_dir / "scout-brief.json") or {}
     layer1 = [_load_agent(e, session_dir) for e in manifest.get("layer1", [])]
     layer2 = [_load_agent(e, session_dir) for e in manifest.get("layer2", [])]
-    timing = _normalized_timing(manifest, layer1 + layer2)
+    layer3 = [_load_agent(e, session_dir) for e in manifest.get("layer3", [])]
+    timing = _normalized_timing(manifest, layer1 + layer2 + layer3)
 
     frozen_spec = scout.get("frozen_spec", "")
     title = frozen_spec.strip().splitlines()[0] if frozen_spec.strip() else manifest.get("session_id", "MoA-X run")
@@ -286,10 +287,12 @@ def load_session(session_dir: Path) -> dict:
         "title": title,
         "scout_brief": scout,
         "config": manifest.get("config", {}),
+        "summary": manifest.get("summary", {}),
         "layer2_mode": manifest.get("layer2_mode", "skipped" if partial else "broadcast"),
         **timing,
         "layer1": layer1,
         "layer2": layer2,
+        "layer3": layer3,
         "final_plan_html": render_markdown(final_plan_md) if final_plan_md else None,
         "final_plan_lineage": final_plan_lineage,
         "lineage_warnings": lineage_warnings,
@@ -337,19 +340,81 @@ def render_markdown(md: str) -> str:
     lines = md.replace("\r\n", "\n").split("\n")
     html: list[str] = []
     i, n = 0, len(lines)
-    list_stack: Optional[str] = None
 
-    def close_list():
-        nonlocal list_stack
-        if list_stack:
-            html.append("</" + list_stack + ">")
-            list_stack = None
+    list_item = re.compile(r"^(\s*)(?:(\d+)\.|([-*]))\s+(.*)$")
+
+    def render_list(start: int) -> tuple[str, int]:
+        """Render one list, including recursively nested child lists.
+
+        Final plans conventionally use a top-level ordered implementation plan
+        with indented unordered metadata below every step.  The old renderer
+        treated each nested bullet group as a new top-level list, which closed
+        and reopened the ``<ol>`` and made every visible step restart at 1.
+        Keeping the parent ``<li>`` open while child lists are rendered fixes
+        the numbering and produces valid nested-list HTML.
+        """
+        first = list_item.match(lines[start])
+        if first is None:  # pragma: no cover - guarded by the caller
+            return "", start + 1
+        indent = len(first.group(1).expandtabs(4))
+        tag = "ol" if first.group(2) else "ul"
+        out = [f"<{tag}>"]
+        cursor = start
+
+        while cursor < n:
+            match = list_item.match(lines[cursor])
+            if match is None:
+                break
+            item_indent = len(match.group(1).expandtabs(4))
+            item_tag = "ol" if match.group(2) else "ul"
+            if item_indent != indent or item_tag != tag:
+                break
+
+            out.append("<li>" + _inline(_esc(match.group(4).strip())))
+            cursor += 1
+
+            # Blank lines are allowed between a parent item and its child
+            # list, and between sibling items. Consume them only while we can
+            # prove the list continues; otherwise the main renderer handles
+            # the following block normally.
+            lookahead = cursor
+            while lookahead < n and not lines[lookahead].strip():
+                lookahead += 1
+            child = list_item.match(lines[lookahead]) if lookahead < n else None
+            if child is not None:
+                child_indent = len(child.group(1).expandtabs(4))
+                child_tag = "ol" if child.group(2) else "ul"
+                if child_indent > indent:
+                    nested, cursor = render_list(lookahead)
+                    out.append(nested)
+                    lookahead = cursor
+                    while lookahead < n and not lines[lookahead].strip():
+                        lookahead += 1
+                    child = list_item.match(lines[lookahead]) if lookahead < n else None
+                    child_indent = (
+                        len(child.group(1).expandtabs(4)) if child is not None else -1
+                    )
+                    child_tag = "ol" if child is not None and child.group(2) else "ul"
+
+                if child is not None and child_indent == indent and child_tag == tag:
+                    cursor = lookahead
+            out.append("</li>")
+
+            next_item = list_item.match(lines[cursor]) if cursor < n else None
+            if next_item is None:
+                break
+            next_indent = len(next_item.group(1).expandtabs(4))
+            next_tag = "ol" if next_item.group(2) else "ul"
+            if next_indent != indent or next_tag != tag:
+                break
+
+        out.append(f"</{tag}>")
+        return "\n".join(out), cursor
 
     while i < n:
         line = lines[i]
 
         if line.strip().startswith("```"):
-            close_list()
             i += 1
             code: list[str] = []
             while i < n and not lines[i].strip().startswith("```"):
@@ -360,47 +425,34 @@ def render_markdown(md: str) -> str:
             continue
 
         if not line.strip():
-            close_list()
             i += 1
             continue
 
         if re.match(r"^(-{3,}|\*{3,}|_{3,})\s*$", line.strip()):
-            close_list()
             html.append("<hr>")
             i += 1
             continue
 
         heading = re.match(r"^(#{1,6})\s+(.*)$", line)
         if heading:
-            close_list()
             level = len(heading.group(1))
             html.append(f"<h{level}>" + _inline(_esc(heading.group(2).strip())) + f"</h{level}>")
             i += 1
             continue
 
         if line.lstrip().startswith(">"):
-            close_list()
             html.append("<blockquote>" + _inline(_esc(line.lstrip()[1:].strip())) + "</blockquote>")
             i += 1
             continue
 
-        ol = re.match(r"^\s*\d+\.\s+(.*)$", line)
-        ul = re.match(r"^\s*[-*]\s+(.*)$", line)
-        if ol or ul:
-            want = "ol" if ol else "ul"
-            if list_stack != want:
-                close_list()
-                html.append("<" + want + ">")
-                list_stack = want
-            html.append("<li>" + _inline(_esc((ol or ul).group(1).strip())) + "</li>")
-            i += 1
+        if list_item.match(line):
+            rendered, i = render_list(i)
+            html.append(rendered)
             continue
 
-        close_list()
         html.append("<p>" + _inline(_esc(line.strip())) + "</p>")
         i += 1
 
-    close_list()
     return "\n".join(html)
 
 

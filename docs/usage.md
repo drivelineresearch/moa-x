@@ -23,7 +23,8 @@ What happens:
    asks 1–3 clarifying questions, and writes a scout brief
    (focus files, in-scope, out-of-scope) to `.moa/<session>/scout-brief.json`.
 2. **Approval gate.** The skill shows you the brief and asks "run it?"
-   Estimated wall-clock: 6–12 minutes. Nothing spawns until you say yes.
+   Estimated wall-clock: roughly 12–25 minutes for research-heavy runs.
+   Nothing spawns until you say yes.
 3. **Proposers (Layer 1, parallel).** Three headless subprocesses
    fire in parallel by default: `codex` (codex harness), `glm`
    (opencode harness), and `sonnet` (claude harness) — OpenAI,
@@ -36,22 +37,25 @@ What happens:
    research, and writes an independent plan to
    `.moa/<session>/layer1/`.
 4. **Broadcast refiners (Layer 2, parallel).** Two more subprocesses,
-   `codex` and `kimi` (OpenAI and Moonshot — independent of the
-   Anthropic aggregator), each receive every valid proposal and
+   `codex-reviewer` (`gpt-5.6-sol`, high) and `qwen`
+   (`qwen3.8-max-preview` — independent of the Anthropic aggregator), each
+   receive every valid proposal and
    produce verification output in `.moa/<session>/layer2/`.
    "Broadcast" means every refiner sees every proposal, per the MoA
    paper.
-5. **Aggregator (Layer 3, in the parent session).** Claude Opus reads
+5. **Aggregator (Layer 3).** By default Claude Code's rolling `opus` alias in
+   the parent session reads
    `.moa/<session>/synthesis-input.md`, synthesizes, honors refiner
    contradictions, and writes `.moa/<session>/final-plan.md` plus the
-   structured `final-plan.json` decision lineage.
+   structured `final-plan.json` decision lineage. You can instead run the
+   recorded Codex phase shown below.
 6. **Plan presented.** Claude shows you the plan and asks if you want
    to start executing.
 
 ## Running standalone
 
-The Python orchestrator handles Layers 1 and 2. Layer 0 (scout brief)
-and Layer 3 (aggregation) are your responsibility:
+The Python orchestrator handles Layers 1 and 2. Layer 0 (scout brief) remains
+the caller's responsibility; Layer 3 can be interactive or automated:
 
 ```bash
 python3 harness/scripts/run_moa.py \
@@ -65,9 +69,21 @@ You'll need to:
 2. After the script exits, read `.moa/<session>/synthesis-input.md` —
    this file has the frozen spec, scout brief, and all proposer and
    refiner outputs concatenated.
-3. Aggregate manually following `harness/prompts/aggregator.md`. If
-   you're driving a different agent harness, this is the prompt you'd
-   feed it.
+3. Aggregate manually following `harness/prompts/aggregator.md`, or run only
+   the retained session's Codex-backed Layer 3:
+
+   ```bash
+   python3 harness/scripts/run_moa.py \
+     --scout-brief .moa/<session>/scout-brief.json \
+     --phase layer3 \
+     --aggregator-provider codex-aggregator \
+     --aggregator-effort high
+   ```
+
+   The phase validates the combined Markdown/lineage response, rejects stale
+   lineage pointers, writes both final artifacts, records Layer 3 timing and
+   logs in the manifest, and regenerates `report.html`. It does not rerun the
+   proposers or refiners.
 
 Self-MoA mode (three Sonnet proposers + two Sonnet refiners) is
 available via `--self-moa`. See
@@ -86,8 +102,11 @@ Each invocation creates a directory under `.moa/`:
 │   ├── glm-proposer.{json,log}
 │   └── sonnet-proposer.{json,log}
 ├── layer2/
-│   ├── codex-refiner-broadcast.{json,log}
-│   └── kimi-refiner-broadcast.{json,log}
+│   ├── codex-reviewer-refiner-broadcast.{json,log}
+│   └── qwen-refiner-broadcast.{json,log}
+├── layer3/
+│   ├── aggregation-output.schema.json
+│   └── codex-aggregator-aggregator.{json,log}
 ├── synthesis-input.md    # what the aggregator reads
 ├── manifest.json         # timing + per-layer success/failure
 ├── report.html           # self-contained HTML charts, plans, and logs
@@ -114,6 +133,8 @@ aborting outright:
   single-refiner case.
 - Schema validation fails for an agent: that agent is marked
   unsuccessful in the manifest, the run continues.
+- A provider mutates the Git-visible workspace: the cross-harness before/after
+  guard marks that agent unsuccessful and records the changed paths.
 - A CLI is unauthenticated: preflight skips it and warns. If nothing
   can run, exit code 3.
 
@@ -135,9 +156,10 @@ Skip it with `--no-report` (or `MOA_NO_REPORT=1`). Full details:
 
 ## Limits
 
-- **One MoA run per machine at a time.** A `flock` on `/tmp/moa.lock`
-  stops concurrent runs from racing on shared CLI auth state.
-- **Wall-clock is typically 6–12 minutes.** Don't run MoA-X for
+- **One MoA run per user at a time.** A `flock` on the per-user system-temp
+  lock (`moa-<uid>.lock` on POSIX) stops concurrent runs from racing on shared
+  CLI auth state without blocking another OS user.
+- **Wall-clock is typically 12–25 minutes for research-heavy runs.** Don't run MoA-X for
   trivial tasks. The tool is shaped for non-trivial architecture
   work.
 - **Web research is part of the contract.** Proposers and refiners
