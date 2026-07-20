@@ -206,7 +206,7 @@ providers:
   cursor-grok: {harness: cursor, model: grok-4-20}
 layers:
   proposers: [codex, glm, sonnet, cursor-grok]
-  refiners:  [codex, kimi]
+  refiners:  [codex-reviewer, qwen]
 ```
 
 One CLI delivering everything (the consolidate-around-Cursor case):
@@ -232,7 +232,7 @@ providers:
   cursor-gemini: {harness: cursor, model: gemini-3.1-pro}
 layers:
   proposers: [codex, glm, sonnet, cursor-gemini]
-  refiners:  [codex, kimi]
+  refiners:  [codex-reviewer, qwen]
 ```
 
 (This runs on Cursor billing — the Cursor CLI has no bring-your-own-key
@@ -262,8 +262,8 @@ MOA_CURSOR_OPUS_THINK_TIMEOUT=1800
 ## Concurrency and rate limits
 
 Cursor session/auth state lives under `~/.cursor/`. The orchestrator's
-file lock (`/tmp/moa.lock`) prevents concurrent moa-x invocations from
-racing on it; lanes within a single MoA run are safe under that lock.
+per-user lock (`<system-temp>/moa-<uid>.lock` on POSIX) prevents concurrent
+MoA-X invocations from racing on it; lanes within one run share that lock.
 
 Running 3-4 concurrent `cursor-agent` lanes per MoA call means 3-4× the
 burn against one Cursor subscription or API key. There's no harness-side
@@ -301,7 +301,7 @@ checks only what your config actually needs:
 
 If `harness/config.yaml` doesn't exist, preflight falls back to the
 built-in default ensemble (`proposers: [codex, glm, sonnet]`,
-`refiners: [codex, kimi]`), which preserves the "is the moa-x shipped
+`refiners: [codex-reviewer, qwen]`), which preserves the "is the moa-x shipped
 baseline ready?" diagnostic.
 
 ## What this integration does NOT cover

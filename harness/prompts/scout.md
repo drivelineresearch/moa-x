@@ -92,7 +92,7 @@ Render the brief in markdown for human review. Then ask via `AskUserQuestion`,
 `codex + glm + sonnet`. Read the active proposer/refiner sets from
 (highest precedence first) `MOA_PROPOSERS` / `MOA_REFINERS` env vars,
 then `harness/config.yaml`'s `layers.proposers` / `layers.refiners`, then
-the defaults `[codex, glm, sonnet]` and `[codex, kimi]`. User-defined
+the defaults `[codex, glm, sonnet]` and `[codex-reviewer, qwen]`. User-defined
 names from the `providers:` block (e.g. `cursor-grok`) are valid and must
 be shown verbatim. Honor `MOA_SKIP_LAYER2` / `layers.skip_refinement` by
 omitting the refiner clause. In `--self-moa` mode use the self-MoA instance
@@ -101,7 +101,7 @@ IDs instead.
 Example shape:
 "Scout brief looks like this. Run {proposer_names} proposers ({N}
 parallel) + {refiner_names} broadcast refiners ({M} parallel, each sees
-all {N} proposals) now? Estimated 6-12 minutes wall-clock."
+all {N} proposals) now? Estimated 12-25 minutes wall-clock."
 
 A dollar cost estimate is optional. If the user is on subscription
 plans (the common case), there's nothing to estimate. If they're

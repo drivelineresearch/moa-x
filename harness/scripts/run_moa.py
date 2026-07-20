@@ -1,27 +1,26 @@
 #!/usr/bin/env python3
-"""run_moa.py — Mixture of Agents orchestrator (Layers 1 + 2 only).
+"""run_moa.py — Mixture of Agents orchestrator.
 
-Layers 0 (scout brief) and 3 (aggregation) are handled by the parent
-Claude Code session (Opus) in the interactive REPL: it writes the
-scout brief before this script runs and reads synthesis-input.md to
-aggregate after this script exits.
+Layer 0 (scout brief) is prepared by the interactive parent agent. Layers 1
+and 2 run through external CLIs. Layer 3 can be completed interactively or
+run later as a recorded Codex/Claude subprocess with ``--phase layer3``.
 
-This script ONLY runs the external CLIs. The roster is config-driven
+The roster is config-driven
 (harness/config.yaml + .env + built-in defaults); the default set is:
 
   Layer 1 (Proposers, parallel):
-    - codex  (gpt-5.4 @ xhigh, OpenAI via codex CLI)
+    - codex  (gpt-5.6-terra @ high, OpenAI via codex CLI)
     - glm    (glm-5.2, Zhipu via opencode CLI)
-    - sonnet (claude-sonnet-4-6, Anthropic via `claude -p`)
+    - sonnet (rolling `sonnet` alias, Anthropic via `claude -p`)
 
   Layer 2 (Refiners, parallel, broadcast):
-    - codex  (sees ALL proposer outputs)
-    - kimi   (kimi-k2.7-code, Moonshot via opencode CLI; sees ALL proposer outputs)
+    - codex-reviewer (gpt-5.6-sol @ high; sees ALL proposer outputs)
+    - qwen   (qwen3.8-max-preview, Alibaba via Qwen Token Plan; sees ALL outputs)
 
 Broadcast refinement (each refiner sees every proposer's output) is
 paper-faithful to Wang et al. 2024 (arXiv:2406.04692). The default keeps
-Layer 2 refiners off the Anthropic lab that supplies both the sonnet
-proposer and the Opus aggregator, so verification stays lab-independent.
+Layer 2 refiners off the Anthropic lab that supplies both the Sonnet
+proposer and the `opus` aggregator, so verification stays lab-independent.
 This is a recommended default, not a runtime invariant — see CLAUDE.md.
 
 Flow:
@@ -29,13 +28,16 @@ Flow:
     run_moa.py         --[Layer 1 parallel]-->  proposer subprocesses
     run_moa.py         --[Layer 2 parallel]-->  broadcast refiner subprocesses
     run_moa.py         --[synthesis-input.md + manifest.json]--> .moa/<session>/
-    parent REPL        --reads synthesis-input.md + aggregates in place
+    parent REPL or run_moa.py --phase layer3  --aggregates retained synthesis
 
 Usage:
     run_moa.py --scout-brief PATH [--repo PATH] [--timeout SEC]
                [--codex-timeout SEC] [--sonnet-timeout SEC]
-               [--codex-model MODEL] [--codex-effort LEVEL]
+               [--codex-model MODEL] [--codex-reviewer-model MODEL]
+               [--codex-effort LEVEL] [--codex-reviewer-effort LEVEL]
                [--sonnet-model MODEL]
+               [--aggregator-provider NAME] [--aggregator-model MODEL]
+               [--aggregator-effort LEVEL]
                [--proposers a,b,c] [--refiners a,b]
                [--skip-layer2]
 
@@ -46,8 +48,8 @@ Usage:
 Timeout policy:
     Each external CLI has its own wall-clock cap. Defaults are tuned to the
     observed tail latency of each adapter: codex scales with reasoning
-    effort (xhigh is 3-5 min typical, with a long tail); opencode and sonnet
-    with aggressive research sit around 3-4 min but can spike. Pass
+    effort; research-enabled calls can have a long tail. The default Qwen
+    preview refiner is explicitly capped at 600 seconds. Pass
     `--timeout` as a master override to set all at once; pass a specific
     `--<agent>-timeout` or MOA_<NAME>_TIMEOUT to bump just one.
 """
@@ -55,9 +57,11 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import time
@@ -104,7 +108,8 @@ FINAL_PLAN_SCHEMA_PATH = SCHEMAS_DIR / "final-plan.schema.json"
 PROPOSER_PROMPT_PATH = PROMPTS_DIR / "proposer.md"
 REFINER_PROMPT_PATH = PROMPTS_DIR / "refiner.md"
 
-LOCK_FILE = Path(tempfile.gettempdir()) / "moa.lock"
+_LOCK_OWNER = str(os.getuid()) if hasattr(os, "getuid") else "windows"
+LOCK_FILE = Path(tempfile.gettempdir()) / f"moa-{_LOCK_OWNER}.lock"
 
 
 
@@ -116,8 +121,8 @@ LOCK_FILE = Path(tempfile.gettempdir()) / "moa.lock"
 class LayerResult:
     """Result of a single agent run within a layer."""
     agent_id: str          # provider name, e.g. codex | glm | sonnet
-    layer: int             # 1 | 2
-    role: str              # proposer | refiner-broadcast
+    layer: int             # 1 | 2 | 3
+    role: str              # proposer | refiner-broadcast | aggregator
     reviewing: Optional[list[str]] = None  # for refiners: proposer ids seen
     success: bool = False
     payload: Optional[dict] = None
@@ -136,6 +141,13 @@ class LayerResult:
     # failure mode like quota, auth, timeout, or schema invalidation.
     # The orchestrator uses this to drive the redispatch user prompt.
     transient_empty: bool = False
+    # Original model-reported identity when it differs from the runner-owned
+    # agent id. Persist provenance without letting a hallucinated id corrupt
+    # attribution in downstream lineage.
+    reported_agent_id: Optional[str] = None
+    # Paths observed after a provider changed the repository outside the
+    # active .moa session. Any non-empty value forces success=False.
+    workspace_mutations: Optional[list[str]] = None
 
 
 # ---------------------------------------------------------------------------
@@ -189,7 +201,8 @@ def _validate_against_schema(
 ) -> list[str]:
     """Lightweight JSON Schema validator. Supports the subset our schemas use:
     type (string or array of strings for nullable fields), required, properties,
-    items, enum, const, minimum, minItems, maxItems, minLength,
+    items, enum, const, minimum, maximum, minItems, maxItems, minLength,
+    maxLength, pattern,
     additionalProperties, and local ``#/$defs/...`` references.
 
     Nullable fields use JSON Schema's type array pattern, e.g.
@@ -292,11 +305,14 @@ def _validate_against_schema(
             min_length = schema.get("minLength")
             if min_length is not None and len(payload) < min_length:
                 errors.append(f"{path}: string shorter than minLength {min_length}")
+            max_length = schema.get("maxLength")
+            if max_length is not None and len(payload) > max_length:
+                errors.append(f"{path}: string longer than maxLength {max_length}")
             enum = schema.get("enum")
             if enum is not None and payload not in enum:
                 errors.append(f"{path}: value '{payload}' not in enum {enum}")
             pattern = schema.get("pattern")
-            if pattern is not None and not re.fullmatch(pattern, payload):
+            if pattern is not None and not re.search(pattern, payload):
                 errors.append(f"{path}: value '{payload}' does not match pattern '{pattern}'")
 
     elif expected == "integer":
@@ -304,12 +320,16 @@ def _validate_against_schema(
             errors.append(f"{path}: expected integer, got {type(payload).__name__}")
         elif schema.get("minimum") is not None and payload < schema["minimum"]:
             errors.append(f"{path}: value {payload} is below minimum {schema['minimum']}")
+        elif schema.get("maximum") is not None and payload > schema["maximum"]:
+            errors.append(f"{path}: value {payload} is above maximum {schema['maximum']}")
 
     elif expected == "number":
         if not isinstance(payload, (int, float)) or isinstance(payload, bool):
             errors.append(f"{path}: expected number, got {type(payload).__name__}")
         elif schema.get("minimum") is not None and payload < schema["minimum"]:
             errors.append(f"{path}: value {payload} is below minimum {schema['minimum']}")
+        elif schema.get("maximum") is not None and payload > schema["maximum"]:
+            errors.append(f"{path}: value {payload} is above maximum {schema['maximum']}")
 
     elif expected == "boolean":
         if not isinstance(payload, bool):
@@ -466,7 +486,10 @@ def _build_refiner_prompt(
         parts.append(f"### Proposer: {r.agent_id}")
         parts.append("")
         parts.append(f'<proposer_output id="{r.agent_id}">')
-        parts.append(json.dumps(r.payload, indent=2))
+        # Keep model-controlled strings from terminating the XML-like data
+        # wrapper. `\/` is a valid JSON escape for `/`, so refiners still see
+        # the exact semantic payload while the delimiter remains unambiguous.
+        parts.append(json.dumps(r.payload, indent=2).replace("</", "<\\/"))
         parts.append("</proposer_output>")
         parts.append("")
 
@@ -532,10 +555,22 @@ def _finalize_result(
                 adapter_payload["additional_research"] = [
                     item for item in research if item not in misplaced
                 ]
-                verifications.extend(misplaced)
+                existing = {
+                    json.dumps(item, sort_keys=True, separators=(",", ":"))
+                    for item in verifications
+                    if isinstance(item, dict)
+                }
+                added = []
+                for item in misplaced:
+                    signature = json.dumps(item, sort_keys=True, separators=(",", ":"))
+                    if signature not in existing:
+                        verifications.append(item)
+                        existing.add(signature)
+                        added.append(item)
                 print(
                     f"[orchestrator WARNING] {layer_result.agent_id}: moved "
-                    f"{len(misplaced)} verification record(s) out of additional_research",
+                    f"{len(added)} unique verification record(s) out of "
+                    f"additional_research ({len(misplaced) - len(added)} duplicate(s) dropped)",
                     file=sys.stderr,
                     flush=True,
                 )
@@ -550,21 +585,20 @@ def _finalize_result(
         layer_result.success = False
         return
 
-    # Task 2: detect payload agent_id hallucination (e.g. codex returning
-    # agent_id="glm"). Keep success=True because the content is still
-    # valid, but record the mismatch so aggregation can verify attribution.
+    # Detect payload agent_id hallucination (e.g. codex returning
+    # agent_id="glm"). Runner identity is authoritative; preserve the original
+    # in a structured field instead of contaminating downstream attribution or
+    # overloading the generic error string on an otherwise successful result.
     payload_agent_id = adapter_payload.get("agent_id")
     if payload_agent_id and payload_agent_id != layer_result.agent_id:
+        layer_result.reported_agent_id = str(payload_agent_id)
+        adapter_payload["agent_id"] = layer_result.agent_id
         mismatch_msg = (
             f"agent_id mismatch: runner expected '{layer_result.agent_id}' "
             f"but payload self-identified as '{payload_agent_id}'. "
-            "Content is still usable but attribution should be verified in aggregation."
+            "Persisted payload normalized to the runner identity."
         )
         print(f"[orchestrator WARNING] {mismatch_msg}", file=sys.stderr, flush=True)
-        if layer_result.error:
-            layer_result.error = f"{layer_result.error}; {mismatch_msg}"
-        else:
-            layer_result.error = mismatch_msg
 
     # Task 5: proposer-only evidence cross-field sanity check. Schema can't
     # express "when type=code then file/line non-null" with our stdlib
@@ -761,6 +795,115 @@ def _run_opencode(
     return layer_result
 
 
+@dataclass(frozen=True)
+class WorkspaceSnapshot:
+    digest: str
+    paths: tuple[str, ...]
+
+
+def _workspace_snapshot(repo_path: Path, session_dir: Path) -> Optional[WorkspaceSnapshot]:
+    """Fingerprint Git-visible workspace state without requiring a clean tree.
+
+    The digest includes the complete tracked diff against HEAD plus the names
+    and contents of untracked, non-ignored files. The active session directory
+    is excluded because writing there is the orchestrator's explicit contract.
+    Non-Git directories return None; provider sandboxes still apply there, but
+    the harness cannot independently prove immutability.
+    """
+    try:
+        inside = subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            cwd=repo_path,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        if inside.returncode != 0 or inside.stdout.strip() != "true":
+            return None
+        try:
+            session_rel = session_dir.resolve().relative_to(repo_path.resolve()).as_posix()
+        except ValueError:
+            session_rel = ""
+
+        diff = subprocess.run(
+            ["git", "diff", "--binary", "--no-ext-diff", "HEAD", "--", "."],
+            cwd=repo_path,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=30,
+            check=False,
+        )
+        untracked = subprocess.run(
+            ["git", "ls-files", "--others", "--exclude-standard", "-z"],
+            cwd=repo_path,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=30,
+            check=False,
+        )
+        status = subprocess.run(
+            ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"],
+            cwd=repo_path,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=30,
+            check=False,
+        )
+        if diff.returncode or untracked.returncode or status.returncode:
+            return None
+
+        def allowed(path: str) -> bool:
+            return not session_rel or not (
+                path == session_rel or path.startswith(session_rel.rstrip("/") + "/")
+            )
+
+        digest = hashlib.sha256(diff.stdout)
+        untracked_paths = [
+            raw.decode("utf-8", "surrogateescape")
+            for raw in untracked.stdout.split(b"\0")
+            if raw
+        ]
+        for relative in sorted(path for path in untracked_paths if allowed(path)):
+            digest.update(relative.encode("utf-8", "surrogateescape"))
+            try:
+                digest.update((repo_path / relative).read_bytes())
+            except OSError:
+                digest.update(b"<unreadable-or-removed>")
+
+        visible_paths = []
+        for raw in status.stdout.split(b"\0"):
+            if not raw:
+                continue
+            entry = raw.decode("utf-8", "surrogateescape")
+            path = entry[3:] if len(entry) > 3 else entry
+            if allowed(path):
+                visible_paths.append(path)
+        return WorkspaceSnapshot(digest.hexdigest(), tuple(sorted(set(visible_paths))))
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def _apply_workspace_guard(
+    result: LayerResult,
+    before: Optional[WorkspaceSnapshot],
+    after: Optional[WorkspaceSnapshot],
+) -> LayerResult:
+    if before is None or after is None or before.digest == after.digest:
+        return result
+    changed = sorted(set(before.paths) | set(after.paths))
+    result.workspace_mutations = changed or ["<content changed in an already-dirty path>"]
+    result.success = False
+    message = (
+        "workspace immutability violation outside the active session: "
+        + ", ".join(result.workspace_mutations[:20])
+    )
+    result.error = f"{result.error}; {message}" if result.error else message
+    print(f"[orchestrator ERROR] {result.agent_id}: {message}", file=sys.stderr, flush=True)
+    return result
+
+
 def _dispatch_provider(
     *,
     provider: "harness_config.ResolvedProvider",
@@ -783,10 +926,11 @@ def _dispatch_provider(
 
     codex_effort applies only to the codex harness; ignored otherwise.
     """
+    before = _workspace_snapshot(repo_path, session_dir)
     h = provider.harness
     timeout = provider.timeout if provider.timeout is not None else timeout_for_harness[h]
     if h == "codex":
-        return _run_codex(
+        result = _run_codex(
             layer=layer, role=role, prompt=prompt,
             schema_path=PROPOSER_SCHEMA_PATH if "proposer" in role else REFINER_SCHEMA_PATH,
             repo_path=repo_path, session_dir=session_dir,
@@ -796,8 +940,8 @@ def _dispatch_provider(
             agent_id=provider.name,
             reviewing=reviewing,
         )
-    if h == "claude":
-        return _run_sonnet(
+    elif h == "claude":
+        result = _run_sonnet(
             layer=layer, role=role, prompt=prompt,
             schema_path=PROPOSER_SCHEMA_PATH if "proposer" in role else REFINER_SCHEMA_PATH,
             repo_path=repo_path, session_dir=session_dir,
@@ -806,8 +950,8 @@ def _dispatch_provider(
             agent_id=provider.name,
             reviewing=reviewing,
         )
-    if h == "cursor":
-        return _run_cursor(
+    elif h == "cursor":
+        result = _run_cursor(
             layer=layer, role=role, prompt=prompt,
             schema_path=PROPOSER_SCHEMA_PATH if "proposer" in role else REFINER_SCHEMA_PATH,
             repo_path=repo_path, session_dir=session_dir,
@@ -816,8 +960,8 @@ def _dispatch_provider(
             agent_id=provider.name,
             reviewing=reviewing,
         )
-    if h == "opencode":
-        return _run_opencode(
+    elif h == "opencode":
+        result = _run_opencode(
             layer=layer, role=role, prompt=prompt,
             schema_path=PROPOSER_SCHEMA_PATH if "proposer" in role else REFINER_SCHEMA_PATH,
             repo_path=repo_path, session_dir=session_dir,
@@ -826,7 +970,10 @@ def _dispatch_provider(
             agent_id=provider.name,
             reviewing=reviewing,
         )
-    raise ValueError(f"unknown harness {h!r} for provider {provider.name!r}")
+    else:
+        raise ValueError(f"unknown harness {h!r} for provider {provider.name!r}")
+    after = _workspace_snapshot(repo_path, session_dir)
+    return _apply_workspace_guard(result, before, after)
 
 
 def _run_sonnet_instance(
@@ -850,6 +997,7 @@ def _run_sonnet_instance(
     """
     log_file = session_dir / f"layer{layer}" / f"{instance_id}-{role}.log"
     started_at = time.time()
+    before = _workspace_snapshot(repo_path, session_dir)
     result = claude_adapter.run(
         prompt=prompt,
         schema_path=schema_path,
@@ -872,7 +1020,8 @@ def _run_sonnet_instance(
         log_path=str(log_file.relative_to(session_dir)),
     )
     _finalize_result(layer_result, result.payload, schema_path, session_dir)
-    return layer_result
+    after = _workspace_snapshot(repo_path, session_dir)
+    return _apply_workspace_guard(layer_result, before, after)
 
 
 def run_layer1_self_moa(
@@ -1163,8 +1312,9 @@ def write_synthesis_input(
     layer2_mode: str = "broadcast",
     proposer_agent_ids: tuple[str, ...],
     refiner_agent_ids: tuple[str, ...],
+    aggregator_model: str = "opus",
 ) -> Path:
-    """Write the synthesis-input.md file the parent Claude session reads.
+    """Write the synthesis-input.md file consumed by the Layer 3 aggregator.
 
     proposer_agent_ids / refiner_agent_ids are required. For self-moa,
     pass the instance IDs (sonnet-a/b/c, sonnet-r1/r2) so the synthesis
@@ -1184,7 +1334,7 @@ def write_synthesis_input(
     parts.append(
         f"**Architecture**: {len(proposer_agent_ids)} proposers ({proposer_list}) → "
         f"{len(refiner_agent_ids)} broadcast refiners ({refiner_list}, each saw all proposals) → "
-        "Opus aggregator (this session)"
+        f"configured {aggregator_model} aggregator"
     )
     parts.append("")
     parts.append("## Hard rule for the aggregator")
@@ -1229,7 +1379,7 @@ def write_synthesis_input(
         if r.success and r.payload is not None:
             parts.append(f'<proposer_output id="{r.agent_id}">')
             parts.append("```json")
-            parts.append(json.dumps(r.payload, indent=2))
+            parts.append(json.dumps(r.payload, indent=2).replace("</", "<\\/"))
             parts.append("```")
             parts.append("</proposer_output>")
         parts.append("")
@@ -1273,18 +1423,20 @@ def write_synthesis_input(
                 f'<refiner_output agent="{r.agent_id}" reviewed="{reviewed}">'
             )
             parts.append("```json")
-            parts.append(json.dumps(r.payload, indent=2))
+            parts.append(json.dumps(r.payload, indent=2).replace("</", "<\\/"))
             parts.append("```")
             parts.append("</refiner_output>")
         parts.append("")
 
-    parts.append("## Aggregator instructions for the parent Claude session")
+    parts.append("## Aggregator instructions")
     parts.append("")
     parts.append(
         "Read `harness/prompts/aggregator.md` (or "
         "`~/.claude/skills/mixture-of-agents/prompts/aggregator.md` if running "
         "as the installed skill) for "
-        "the full aggregation protocol. Synthesize the "
+        "the full aggregation protocol. Aggregate in the current host, or run "
+        "`run_moa.py --phase layer3 --aggregator-provider codex-aggregator` "
+        "to use the recorded Codex path. Synthesize the "
         f"{len(proposer_agent_ids)} proposer plans, honor the "
         f"{len(refiner_agent_ids)} refiner findings, surface disagreements across proposers "
         "and across refiners, and write `final-plan.md` plus the structured "
@@ -1294,6 +1446,208 @@ def write_synthesis_input(
 
     output_path.write_text("\n".join(parts), encoding="utf-8")
     return output_path
+
+
+# ---------------------------------------------------------------------------
+# Layer 3 aggregation (optional Codex/Claude subprocess phase)
+# ---------------------------------------------------------------------------
+
+def _aggregation_output_schema() -> dict:
+    """Wrap final-plan lineage with the Markdown artifact in one strict schema.
+
+    The lineage schema's local references point at ``#/$defs``. Move those
+    definitions to the wrapper root so the same references remain valid when
+    the lineage object is nested under ``lineage``.
+    """
+    lineage = json.loads(json.dumps(_load_schema(FINAL_PLAN_SCHEMA_PATH)))
+    lineage.pop("$schema", None)
+    definitions = lineage.pop("$defs", {})
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MoA Layer 3 Aggregation Output",
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["final_plan_markdown", "lineage"],
+        "properties": {
+            "final_plan_markdown": {"type": "string", "minLength": 100},
+            "lineage": lineage,
+        },
+        "$defs": definitions,
+    }
+
+
+def _build_aggregation_prompt(
+    synthesis_input: str,
+    output_schema: dict,
+    provider: "harness_config.ResolvedProvider",
+) -> str:
+    """Build a host-neutral Layer 3 prompt for Codex or Claude Code."""
+    protocol = (PROMPTS_DIR / "aggregator.md").read_text(encoding="utf-8")
+    protected_input = synthesis_input.replace("</", "<\\/")
+    return (
+        protocol
+        + "\n\n## Subprocess aggregation contract\n\n"
+        + "You are running as the configured Layer 3 aggregator in a read-only "
+        + "subprocess. Do not write files. Return one JSON object only. Put the "
+        + "complete human-readable final plan in `final_plan_markdown` and the "
+        + "exact decision-lineage companion in `lineage`. The orchestrator will "
+        + "validate references and write final-plan.md/final-plan.json.\n\n"
+        + "The Markdown plan must use one continuous numbered list under `## Plan`, "
+        + "follow the structure in the aggregation protocol, and identify the "
+        + "actual configured aggregator rather than claiming to be a parent session.\n"
+        + f"Your aggregator identity is provider `{provider.name}`, harness "
+        + f"`{provider.harness}`, model `{provider.model}`.\n\n"
+        + "## Synthesis input\n\n<synthesis_input>\n"
+        + protected_input
+        + "\n</synthesis_input>\n\n## Required output schema\n\n<schema>\n"
+        + json.dumps(output_schema, indent=2)
+        + "\n</schema>\n"
+    )
+
+
+def run_layer3(
+    *,
+    provider: "harness_config.ResolvedProvider",
+    repo_path: Path,
+    session_dir: Path,
+    timeout: int,
+    codex_effort: str,
+    layer1: list[LayerResult],
+    layer2: list[LayerResult],
+) -> LayerResult:
+    """Aggregate an existing synthesis input through Codex or Claude Code."""
+    synthesis_path = session_dir / "synthesis-input.md"
+    if not synthesis_path.exists():
+        return LayerResult(
+            agent_id=provider.name, layer=3, role="aggregator", success=False,
+            error=f"missing synthesis input: {synthesis_path}",
+        )
+
+    layer3_dir = session_dir / "layer3"
+    layer3_dir.mkdir(parents=True, exist_ok=True)
+    schema = _aggregation_output_schema()
+    schema_path = layer3_dir / "aggregation-output.schema.json"
+    schema_path.write_text(json.dumps(schema, indent=2), encoding="utf-8")
+    log_path = layer3_dir / f"{provider.name}-aggregator.log"
+    json_path = layer3_dir / f"{provider.name}-aggregator.json"
+    prompt = _build_aggregation_prompt(
+        synthesis_path.read_text(encoding="utf-8"), schema, provider
+    )
+
+    before = _workspace_snapshot(repo_path, session_dir)
+    started_at = time.time()
+    if provider.harness == "codex":
+        adapter_result = codex_adapter.run(
+            prompt=prompt,
+            schema_path=schema_path,
+            repo_path=repo_path,
+            model=provider.model,
+            reasoning_effort=codex_effort,
+            timeout_seconds=timeout,
+            log_file=log_path,
+        )
+    elif provider.harness == "claude":
+        adapter_result = claude_adapter.run(
+            prompt=prompt,
+            schema_path=schema_path,
+            repo_path=repo_path,
+            model=provider.model,
+            timeout_seconds=timeout,
+            log_file=log_path,
+        )
+    else:
+        return LayerResult(
+            agent_id=provider.name, layer=3, role="aggregator", success=False,
+            error=(f"Layer 3 subprocess aggregation supports codex or claude; "
+                   f"got {provider.harness!r}"),
+        )
+
+    result = LayerResult(
+        agent_id=provider.name,
+        layer=3,
+        role="aggregator",
+        success=adapter_result.success,
+        payload=adapter_result.payload,
+        duration_seconds=adapter_result.duration_seconds,
+        started_at=started_at,
+        error=adapter_result.error_message,
+        log_path=str(log_path.relative_to(session_dir)),
+    )
+    result = _apply_workspace_guard(
+        result, before, _workspace_snapshot(repo_path, session_dir)
+    )
+    if not result.success or not isinstance(result.payload, dict):
+        return result
+
+    errors = _validate_against_schema(result.payload, schema)
+    markdown = result.payload.get("final_plan_markdown")
+    lineage = result.payload.get("lineage")
+    if isinstance(markdown, str) and not markdown.lstrip().startswith("# Final Plan"):
+        errors.append("$.final_plan_markdown: must start with '# Final Plan'")
+    if isinstance(lineage, dict):
+        import report as report_module
+        lineage_warnings = report_module._validate_final_plan_lineage(
+            lineage,
+            [{"agent_id": r.agent_id, "payload": r.payload} for r in layer1],
+            [{"agent_id": r.agent_id, "payload": r.payload} for r in layer2],
+        )
+        errors.extend(f"$.lineage: {warning}" for warning in lineage_warnings)
+    if errors:
+        result.success = False
+        result.schema_valid = False
+        result.error = "aggregation validation failed: " + "; ".join(errors[:20])
+        return result
+
+    result.schema_valid = True
+    json_path.write_text(json.dumps(result.payload, indent=2), encoding="utf-8")
+    result.json_path = str(json_path.relative_to(session_dir))
+    (session_dir / "final-plan.md").write_text(markdown, encoding="utf-8")
+    (session_dir / "final-plan.json").write_text(
+        json.dumps(lineage, indent=2), encoding="utf-8"
+    )
+    return result
+
+
+def update_manifest_layer3(
+    session_dir: Path,
+    result: LayerResult,
+    provider: "harness_config.ResolvedProvider",
+    codex_effort: str,
+) -> Path:
+    """Record a Layer-3-only run without disturbing retained Layers 1 and 2."""
+    manifest_path = session_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    entry = asdict(result)
+    entry.pop("payload", None)
+    entry["harness"] = provider.harness
+    entry["model"] = provider.model
+    manifest["layer3"] = [entry]
+    manifest.setdefault("config", {})["aggregator"] = {
+        "name": provider.name,
+        "harness": provider.harness,
+        "model": provider.model,
+        "reasoning_effort": codex_effort if provider.harness == "codex" else None,
+    }
+    summary = manifest.setdefault("summary", {})
+    summary["layer3_successes"] = int(result.success)
+    summary["layer3_failures"] = int(not result.success)
+    if result.error and "timeout after" in result.error.lower():
+        failures = summary.setdefault("timeout_failures", [])
+        if result.agent_id not in failures:
+            failures.append(result.agent_id)
+    if result.workspace_mutations:
+        failures = summary.setdefault("workspace_mutation_failures", [])
+        if result.agent_id not in failures:
+            failures.append(result.agent_id)
+    finished_at = max(
+        float(manifest.get("finished_at", 0) or 0),
+        result.started_at + result.duration_seconds,
+    )
+    manifest["finished_at"] = finished_at
+    started_at = float(manifest.get("started_at", finished_at) or finished_at)
+    manifest["duration_seconds"] = max(0.0, finished_at - started_at)
+    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    return manifest_path
 
 
 def write_manifest(
@@ -1339,6 +1693,22 @@ def write_manifest(
             ],
             "transient_empty_refiners": [
                 r.agent_id for r in layer2 if r.transient_empty
+            ],
+            "agent_id_mismatches": [
+                {
+                    "agent_id": r.agent_id,
+                    "reported_agent_id": r.reported_agent_id,
+                }
+                for r in layer1 + layer2
+                if r.reported_agent_id
+            ],
+            "timeout_failures": [
+                r.agent_id
+                for r in layer1 + layer2
+                if r.error and "timeout after" in r.error.lower()
+            ],
+            "workspace_mutation_failures": [
+                r.agent_id for r in layer1 + layer2 if r.workspace_mutations
             ],
         },
     }
@@ -1406,6 +1776,14 @@ def write_layer1_manifest(
             "transient_empty_proposers": [
                 r.agent_id for r in layer1 if r.transient_empty
             ],
+            "agent_id_mismatches": [
+                {"agent_id": r.agent_id, "reported_agent_id": r.reported_agent_id}
+                for r in layer1
+                if r.reported_agent_id
+            ],
+            "workspace_mutation_failures": [
+                r.agent_id for r in layer1 if r.workspace_mutations
+            ],
         },
     }
     for entry in manifest["layer1"]:
@@ -1442,6 +1820,8 @@ def load_layer_results_from_manifest(
             log_path=entry.get("log_path"),
             json_path=entry.get("json_path"),
             transient_empty=entry.get("transient_empty", False),
+            reported_agent_id=entry.get("reported_agent_id"),
+            workspace_mutations=entry.get("workspace_mutations"),
         )
         if result.success and result.json_path:
             payload_file = session_dir / result.json_path
@@ -1574,6 +1954,11 @@ def _int_env(key: str) -> Optional[int]:
         return None
 
 
+def _bool_env(key: str) -> bool:
+    """Parse an opt-in boolean environment flag without string truthiness."""
+    return os.environ.get(key, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def main() -> int:
     # Line-buffer stdout so progress lines from run_layer1/run_layer2 stream
     # out as each agent finishes, rather than getting held in a block buffer
@@ -1611,7 +1996,10 @@ def main() -> int:
                              "Sonnet with full research can spike past 15 min, so headroom "
                              "is the default. A single --timeout overrides this.")
     parser.add_argument("--codex-model",
-                        default=os.environ.get("MOA_CODEX_MODEL") or "gpt-5.4")
+                        default=os.environ.get("MOA_CODEX_MODEL") or "gpt-5.6-terra")
+    parser.add_argument("--codex-reviewer-model",
+                        default=os.environ.get("MOA_CODEX_REVIEWER_MODEL") or "gpt-5.6-sol",
+                        help="Model for the built-in codex-reviewer refiner.")
     parser.add_argument("--codex-effort",
                         default=os.environ.get("MOA_CODEX_EFFORT") or "high",
                         choices=["low", "medium", "high", "xhigh"],
@@ -1619,15 +2007,34 @@ def main() -> int:
                              "--codex-effort xhigh if you need maximum quality "
                              "and can tolerate longer runs. The default "
                              "--codex-timeout scales with this flag.")
+    parser.add_argument("--codex-reviewer-effort",
+                        default=os.environ.get("MOA_CODEX_REVIEWER_EFFORT") or "high",
+                        choices=["low", "medium", "high", "xhigh"],
+                        help="Reasoning effort for codex-harness refiners. "
+                             "Default 'high', independently of proposer effort.")
     parser.add_argument("--sonnet-model",
-                        default=os.environ.get("MOA_SONNET_MODEL") or "claude-sonnet-4-6")
+                        default=os.environ.get("MOA_SONNET_MODEL") or "sonnet")
+    parser.add_argument("--aggregator-model",
+                        default=os.environ.get("MOA_AGGREGATOR_MODEL"),
+                        help="Model override recorded or invoked for Layer 3. "
+                             "Defaults to the configured aggregator provider (normally "
+                             "the rolling 'opus' alias).")
+    parser.add_argument("--aggregator-provider",
+                        default=os.environ.get("MOA_AGGREGATOR"),
+                        help="Named provider for Layer 3. Use 'codex-aggregator' "
+                             "with --phase layer3 to aggregate through Codex.")
+    parser.add_argument("--aggregator-effort",
+                        default=os.environ.get("MOA_AGGREGATOR_EFFORT") or "high",
+                        choices=["low", "medium", "high", "xhigh"],
+                        help="Reasoning effort for a Codex Layer 3 subprocess. "
+                             "Default 'high'.")
     parser.add_argument("--skip-layer2",
                         action="store_true",
-                        default=bool(os.environ.get("MOA_SKIP_LAYER2")),
+                        default=_bool_env("MOA_SKIP_LAYER2"),
                         help="Skip refiner layer.")
     parser.add_argument("--no-report",
                         action="store_true",
-                        default=bool(os.environ.get("MOA_NO_REPORT")),
+                        default=_bool_env("MOA_NO_REPORT"),
                         help="Skip generating the self-contained HTML run report "
                              "(<session>/report.html) after the manifest is written.")
     parser.add_argument("--proposers",
@@ -1654,13 +2061,15 @@ def main() -> int:
                         help="Comma-separated ordered list of self-MoA refiner "
                              "instance IDs (e.g. sonnet-r1,sonnet-r2). Only used "
                              "when --self-moa is set; defaults to sonnet-r1,sonnet-r2.")
-    parser.add_argument("--phase", choices=["all", "layer1", "layer2"], default="all",
+    parser.add_argument("--phase", choices=["all", "layer1", "layer2", "layer3"], default="all",
                         help="Which phase to run. Default 'all' = single-shot (existing "
                              "behavior). Use 'layer1' to run proposers only and write "
                              "layer1-manifest.json so the parent session can surface "
                              "transient-empty failures and decide redispatch vs proceed; "
                              "then run 'layer2' to do refiners + synthesis-input.md from "
-                             "the existing layer1 outputs. Cross-lab path only — self-moa "
+                             "the existing layer1 outputs. Use 'layer3' to aggregate an "
+                             "existing synthesis input with the configured Codex or Claude "
+                             "provider and refresh the report. Cross-lab path only — self-moa "
                              "ignores this flag and always runs single-shot.")
     parser.add_argument("--redispatch", default=None,
                         help="Comma-separated provider names to re-run within the current "
@@ -1669,7 +2078,7 @@ def main() -> int:
                              "succeeded are kept as-is.")
     args = parser.parse_args()
 
-    if args.redispatch and args.phase == "all":
+    if args.redispatch and args.phase not in {"layer1", "layer2"}:
         print(
             "ERROR: --redispatch requires --phase layer1 or --phase layer2.",
             file=sys.stderr,
@@ -1860,10 +2269,9 @@ def main() -> int:
             print(f"[orchestrator] manifest:        {manifest_path}", flush=True)
             maybe_write_report(session_dir, not args.no_report)
             print()
-            print("Next: parent Claude session reads synthesis-input.md and aggregates "
-                  "in-place per harness/prompts/aggregator.md "
-                  "(or ~/.claude/skills/mixture-of-agents/prompts/aggregator.md "
-                  "when running as the installed skill)",
+            print("Next: aggregate synthesis-input.md in the current host, or run "
+                  "--phase layer3 --aggregator-provider codex-aggregator for the "
+                  "recorded Codex path (see harness/prompts/aggregator.md)",
                   flush=True)
             return 0
 
@@ -1875,7 +2283,9 @@ def main() -> int:
         # var instead, which config.py already handles at resolve time).
         def _apply_model_override(providers, name, model):
             return [
-                harness_config.ResolvedProvider(name=p.name, harness=p.harness, model=model)
+                harness_config.ResolvedProvider(
+                    name=p.name, harness=p.harness, model=model, timeout=p.timeout
+                )
                 if p.name == name else p
                 for p in providers
             ]
@@ -1901,13 +2311,33 @@ def main() -> int:
 
         final_proposers = _select_providers(list(loaded_cfg.proposers), args.proposers, "proposers")
         final_refiners = _select_providers(list(loaded_cfg.refiners), args.refiners, "refiners")
+        final_aggregator = loaded_cfg.aggregator or provider_catalog["opus"]
+        if args.aggregator_provider:
+            if args.aggregator_provider not in provider_catalog:
+                print(
+                    f"ERROR: unknown aggregator provider {args.aggregator_provider!r}. "
+                    f"Valid providers: {sorted(provider_catalog)}.",
+                    file=sys.stderr,
+                )
+                return 2
+            final_aggregator = provider_catalog[args.aggregator_provider]
 
-        if args.codex_model and args.codex_model != "gpt-5.4":
+        if args.codex_model and args.codex_model != "gpt-5.6-terra":
             final_proposers = _apply_model_override(final_proposers, "codex", args.codex_model)
-            final_refiners = _apply_model_override(final_refiners, "codex", args.codex_model)
+        if args.codex_reviewer_model and args.codex_reviewer_model != "gpt-5.6-sol":
+            final_refiners = _apply_model_override(
+                final_refiners, "codex-reviewer", args.codex_reviewer_model
+            )
 
-        if args.sonnet_model and args.sonnet_model != "claude-sonnet-4-6":
+        if args.sonnet_model and args.sonnet_model != "sonnet":
             final_proposers = _apply_model_override(final_proposers, "sonnet", args.sonnet_model)
+        if args.aggregator_model and args.aggregator_model != final_aggregator.model:
+            final_aggregator = harness_config.ResolvedProvider(
+                name=final_aggregator.name,
+                harness=final_aggregator.harness,
+                model=args.aggregator_model,
+                timeout=final_aggregator.timeout,
+            )
 
         # --timeout is a master override: it must beat per-provider timeouts
         # (MOA_<NAME>_TIMEOUT / providers.<name>.timeout), not only the harness
@@ -1922,6 +2352,79 @@ def main() -> int:
                 harness_config.ResolvedProvider(name=p.name, harness=p.harness, model=p.model, timeout=args.timeout)
                 for p in final_refiners
             ]
+            final_aggregator = harness_config.ResolvedProvider(
+                name=final_aggregator.name,
+                harness=final_aggregator.harness,
+                model=final_aggregator.model,
+                timeout=args.timeout,
+            )
+
+        # ---------- Phase: layer3 only (aggregate retained synthesis) ----------
+        if args.phase == "layer3":
+            manifest_path = session_dir / "manifest.json"
+            synthesis_path = session_dir / "synthesis-input.md"
+            if not manifest_path.exists() or not synthesis_path.exists():
+                print(
+                    "ERROR: --phase layer3 requires manifest.json and "
+                    f"synthesis-input.md in {session_dir}",
+                    file=sys.stderr,
+                )
+                return 2
+            if final_aggregator.harness == "codex":
+                ok, msg = codex_adapter.check_available()
+                default_timeout = codex_timeout
+            elif final_aggregator.harness == "claude":
+                ok, msg = claude_adapter.check_available()
+                default_timeout = sonnet_timeout
+            else:
+                print(
+                    "ERROR: --phase layer3 supports aggregators on the codex or "
+                    f"claude harness; got {final_aggregator.harness!r}",
+                    file=sys.stderr,
+                )
+                return 2
+            print(
+                f"[orchestrator] preflight {final_aggregator.harness}: "
+                f"{'OK' if ok else 'FAIL'} — {msg}",
+                flush=True,
+            )
+            if not ok:
+                return 3
+            layer1 = load_layer_results_from_manifest(manifest_path, "layer1", session_dir)
+            layer2 = load_layer_results_from_manifest(manifest_path, "layer2", session_dir)
+            timeout = final_aggregator.timeout or default_timeout
+            print(
+                f"[orchestrator] Layer 3: {final_aggregator.name} "
+                f"({final_aggregator.harness} @ {final_aggregator.model}, "
+                f"timeout={timeout}s)...",
+                flush=True,
+            )
+            result = run_layer3(
+                provider=final_aggregator,
+                repo_path=repo_path,
+                session_dir=session_dir,
+                timeout=timeout,
+                codex_effort=args.aggregator_effort,
+                layer1=layer1,
+                layer2=layer2,
+            )
+            update_manifest_layer3(
+                session_dir, result, final_aggregator, args.aggregator_effort
+            )
+            status = "OK" if result.success else "FAIL"
+            print(
+                f"[orchestrator]   {result.agent_id} aggregator: {status} "
+                f"({result.duration_seconds:.1f}s)"
+                + (f" — {result.error}" if result.error else ""),
+                flush=True,
+            )
+            maybe_write_report(session_dir, not args.no_report)
+            if result.success:
+                print(f"[orchestrator] final plan:      {session_dir / 'final-plan.md'}", flush=True)
+                print(f"[orchestrator] decision lineage: {session_dir / 'final-plan.json'}", flush=True)
+                return 0
+            return 5
+
         if not final_proposers:
             print("ERROR: --proposers resolved to empty list", file=sys.stderr)
             return 2
@@ -1969,10 +2472,16 @@ def main() -> int:
         print(f"[orchestrator] repo: {repo_path}", flush=True)
         print(f"[orchestrator] proposers: {[p.name for p in final_proposers]}", flush=True)
         print(f"[orchestrator] refiners:  {[p.name for p in final_refiners]}", flush=True)
-        # Aggregator runs in the parent Claude Code session (harness=claude). Refiners that
-        # share that harness give up the cross-lab independence the design recommends.
-        # Warn but don't block — see CLAUDE.md hard rules.
-        same_lab_refiners = [p.name for p in final_refiners if p.harness == "claude"]
+        print(
+            f"[orchestrator] aggregator: {final_aggregator.name} "
+            f"({final_aggregator.harness} @ {final_aggregator.model})",
+            flush=True,
+        )
+        # Refiners sharing the configured aggregator harness give up the
+        # cross-lab independence the design recommends. Warn but do not block.
+        same_lab_refiners = [
+            p.name for p in final_refiners if p.harness == final_aggregator.harness
+        ]
         if same_lab_refiners:
             print(
                 f"[orchestrator] WARN: refiners {same_lab_refiners} share the aggregator's "
@@ -1993,7 +2502,13 @@ def main() -> int:
             "arm": "cross-lab",
             "proposers": [{"name": p.name, "harness": p.harness, "model": p.model} for p in final_proposers],
             "refiners": [{"name": p.name, "harness": p.harness, "model": p.model} for p in final_refiners],
+            "aggregator": {
+                "name": final_aggregator.name,
+                "harness": final_aggregator.harness,
+                "model": final_aggregator.model,
+            },
             "codex_effort": args.codex_effort,
+            "codex_reviewer_effort": args.codex_reviewer_effort,
             "timeout_seconds": {
                 "codex": codex_timeout,
                 "sonnet": sonnet_timeout,
@@ -2083,7 +2598,7 @@ def main() -> int:
                     session_dir=session_dir,
                     refiners=refiners_to_run,
                     timeout_for_harness=timeout_for_harness,
-                    codex_effort=args.codex_effort,
+                    codex_effort=args.codex_reviewer_effort,
                     available=available,
                 )
 
@@ -2101,6 +2616,7 @@ def main() -> int:
                 layer2_mode=layer2_mode,
                 proposer_agent_ids=tuple(p.name for p in final_proposers),
                 refiner_agent_ids=tuple(p.name for p in final_refiners),
+                aggregator_model=final_aggregator.model,
             )
             manifest_path = write_manifest(
                 session_dir=session_dir,
@@ -2123,10 +2639,9 @@ def main() -> int:
             print(f"[orchestrator] manifest:        {manifest_path}", flush=True)
             maybe_write_report(session_dir, not args.no_report)
             print()
-            print("Next: parent Claude session reads synthesis-input.md and aggregates "
-                  "in-place per harness/prompts/aggregator.md "
-                  "(or ~/.claude/skills/mixture-of-agents/prompts/aggregator.md "
-                  "when running as the installed skill)",
+            print("Next: aggregate synthesis-input.md in the current host, or run "
+                  "--phase layer3 --aggregator-provider codex-aggregator for the "
+                  "recorded Codex path (see harness/prompts/aggregator.md)",
                   flush=True)
             return 0
 
@@ -2255,7 +2770,7 @@ def main() -> int:
             # cross-proposer critique. With only 1 successful proposer the
             # refiners effectively become single-source reviewers, so label
             # the run as degraded. Still run Layer 2 for the second opinion,
-            # but tag the manifest and synthesis-input so the Opus aggregator
+            # but tag the manifest and synthesis-input so the configured aggregator
             # applies lower confidence.
             if len(successful_layer1) < 2:
                 layer2_mode = "degraded_non_broadcast"
@@ -2272,7 +2787,7 @@ def main() -> int:
                 session_dir=session_dir,
                 refiners=final_refiners,
                 timeout_for_harness=timeout_for_harness,
-                codex_effort=args.codex_effort,
+                codex_effort=args.codex_reviewer_effort,
                 available=available,
             )
             print_transient_summary("refiners", layer2)
@@ -2288,6 +2803,7 @@ def main() -> int:
             layer2_mode=layer2_mode,
             proposer_agent_ids=tuple(p.name for p in final_proposers),
             refiner_agent_ids=tuple(p.name for p in final_refiners),
+            aggregator_model=final_aggregator.model,
         )
         manifest_path = write_manifest(
             session_dir=session_dir,
@@ -2306,10 +2822,9 @@ def main() -> int:
         print(f"[orchestrator] manifest:        {manifest_path}", flush=True)
         maybe_write_report(session_dir, not args.no_report)
         print()
-        print("Next: parent Claude session reads synthesis-input.md and aggregates "
-              "in-place per harness/prompts/aggregator.md "
-              "(or ~/.claude/skills/mixture-of-agents/prompts/aggregator.md "
-              "when running as the installed skill)",
+        print("Next: aggregate synthesis-input.md in the current host, or run "
+              "--phase layer3 --aggregator-provider codex-aggregator for the "
+              "recorded Codex path (see harness/prompts/aggregator.md)",
               flush=True)
         return 0
 

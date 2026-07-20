@@ -1,12 +1,13 @@
 # mixture-of-agents
 
 Layered planning ensemble for Claude Code. The configured proposers — by
-default three models from three different labs (OpenAI codex/gpt-5.4, Zhipu
-glm/5.2 via the opencode CLI, Anthropic sonnet/4.6) — read the repo, do heavy
-web research, and write independent plans. The refiners (default codex + kimi,
-Moonshot's kimi-k2.7-code via opencode) then **broadcast-refine** by reading
-all the proposals and producing cross-verifications. The parent Claude Code
-session (Opus 4.6) synthesizes the whole thing into one actionable plan.
+default three models from three different labs (OpenAI codex/gpt-5.6-terra,
+Zhipu GLM-5.2 via OpenCode, and Claude Code's rolling `sonnet` alias) — read
+the repo, do heavy web research, and write independent plans. The refiners
+(gpt-5.6-sol high + Qwen qwen3.8-max-preview) then **broadcast-refine** by reading
+all the proposals and producing cross-verifications. Layer 3 then synthesizes
+one plan in the parent Claude Code session on its rolling `opus` alias, or in
+an optional recorded Codex subprocess on `gpt-5.6-sol` at high reasoning.
 
 Use it for non-trivial architecture work, where a second and third
 opinion from models with different training data and different tool
@@ -24,9 +25,9 @@ The skill will:
 
 1. Ask 1-3 clarifying questions.
 2. Generate a "scout brief" with focus files, in-scope items, out-of-scope items.
-3. Show you the brief and ask "ready to run? ~6-12 minutes".
+3. Show you the brief and ask "ready to run? ~12-25 minutes".
 4. On yes, spawn the proposers in parallel (default `codex exec`, `opencode run` for GLM, and `claude -p`).
-5. Spawn the broadcast refiners in parallel (default `codex exec` and `opencode run` for Kimi); each sees all proposals.
+5. Spawn the broadcast refiners in parallel (`gpt-5.6-sol` and OpenCode/Qwen); each sees all proposals.
 6. Synthesize the proposals + refinements into `final-plan.md` and the
    structured `final-plan.json` decision lineage.
 7. Re-render the interactive report, present the plan, and ask whether to
@@ -35,16 +36,16 @@ The skill will:
 ## Architecture
 
 ```
-Layer 0 — Scout brief                (parent Opus, in-place)
+Layer 0 — Scout brief                (parent Claude Code, in-place)
 Layer 1 — Proposers (parallel)       (default codex + glm + sonnet subprocesses)
-Layer 2 — Broadcast refiners         (default codex + kimi subprocesses, each sees all proposals)
-Layer 3 — Aggregator                 (parent Opus 4.6, in-place)
+Layer 2 — Broadcast refiners         (default codex-reviewer + qwen, each sees all proposals)
+Layer 3 — Aggregator                 (parent rolling opus, or recorded Codex phase)
 ```
 
-Claude work that happens in the parent REPL: Layer 0 (scout brief) and
-Layer 3 (aggregation). The sonnet Layer-1 subprocess is a separate
-`claude -p` headless invocation, not the parent session. The Python
-orchestrator at `scripts/run_moa.py` handles Layers 1 and 2.
+Layer 0 happens in the parent REPL. Layer 3 may also happen there, or the
+Python orchestrator can run it later through Codex/Claude with `--phase
+layer3`. The sonnet Layer-1 subprocess is a separate `claude -p` headless
+invocation, not the parent session.
 
 ### Why broadcast refinement (not cross-pair)
 
@@ -57,11 +58,12 @@ because refiners run in parallel either way, and it gives each refiner
 the context to spot cross-proposer convergence and divergence signals
 that a one-input view can't reveal.
 
-### Why sonnet is proposer-only
+### Why Sonnet is proposer-only
 
-Opus 4.6 is the Layer 3 aggregator. Sonnet 4.6 is a Layer 1 proposer. Layer
-2 (the refiner/verification step) is kept to {codex, kimi} so that the
-verification is done by two labs independent of both the Anthropic-family
+Claude Code's rolling `opus` alias is the Layer 3 aggregator and its rolling
+`sonnet` alias is a Layer 1 proposer. Layer 2 is kept to
+`{codex-reviewer, qwen}` so verification is done by OpenAI + Alibaba,
+independent of both the Anthropic-family
 proposer (sonnet) AND the Anthropic-family aggregator (Opus). Using sonnet
 as a refiner would concentrate Anthropic models across two load-bearing
 layers and reduce verification independence.
@@ -101,7 +103,7 @@ vendor CLIs your roster needs and authenticate each, then drop `harness/`
 into `~/.claude/skills/mixture-of-agents/`. The default roster needs:
 
 - **codex** — `npm i -g @openai/codex && codex login`
-- **opencode** (runs GLM + Kimi) — `curl -fsSL https://opencode.ai/install | bash`
+- **opencode** (runs GLM + Qwen, with Kimi still available) — `curl -fsSL https://opencode.ai/install | bash`
   (or `npm i -g opencode-ai`), then `opencode auth login`, or export provider
   API keys (`ZHIPU_API_KEY` / `MOONSHOT_API_KEY` / `FIREWORKS_API_KEY` /
   `QWEN_TOKEN_PLAN_API_KEY`)
@@ -135,14 +137,17 @@ working directory by default):
 │   ├── sonnet-proposer.json
 │   └── sonnet-proposer.log
 ├── layer2/
-│   ├── codex-refiner-broadcast.json
-│   ├── codex-refiner-broadcast.log
-│   ├── kimi-refiner-broadcast.json
-│   └── kimi-refiner-broadcast.log
-├── synthesis-input.md     # what the parent Opus session reads
+│   ├── codex-reviewer-refiner-broadcast.json
+│   ├── codex-reviewer-refiner-broadcast.log
+│   ├── qwen-refiner-broadcast.json
+│   └── qwen-refiner-broadcast.log
+├── layer3/                # present after a subprocess aggregation
+│   ├── aggregation-output.schema.json
+│   └── codex-aggregator-aggregator.{json,log}
+├── synthesis-input.md     # what the parent aggregator reads
 ├── manifest.json          # timing, success/failure per layer
 ├── report.html            # self-contained charts, plans, verdicts, and logs
-├── final-plan.md          # written by parent Opus; absent before aggregation
+├── final-plan.md          # written by parent or subprocess aggregator
 └── final-plan.json        # exact proposer/refiner lineage for every final step
 ```
 
@@ -164,6 +169,8 @@ The orchestrator keeps going under partial failure:
 - **Schema validation fails for an agent:** that agent is marked
   unsuccessful, the manifest records why, and the run continues with
   what's left.
+- **Workspace mutation is detected:** the agent is marked unsuccessful and
+  the changed Git-visible paths are recorded in the manifest/report.
 - **CLI not authenticated in preflight:** that CLI is skipped with
   a warning. If every needed harness fails preflight, the orchestrator
   exits with code 3.
@@ -181,28 +188,48 @@ Most defaults are right. Things you can override:
 ```bash
 python3 ~/.claude/skills/mixture-of-agents/scripts/run_moa.py \
   --scout-brief .moa/<session>/scout-brief.json \
-  --codex-model gpt-5.4 \
-  --codex-effort xhigh \
-  --sonnet-model claude-sonnet-4-6 \
+  --codex-model gpt-5.6-terra \
+  --codex-reviewer-model gpt-5.6-sol \
+  --codex-effort high \
+  --codex-reviewer-effort high \
+  --sonnet-model sonnet \
+  --aggregator-model opus \
   --codex-timeout 1500 \
   --sonnet-timeout 1200 \
   --proposers codex,glm,sonnet \
-  --refiners codex,kimi \
+  --refiners codex-reviewer,qwen \
   --skip-layer2          # debug only; skips refiners
 ```
 
-Defaults:
-- `--codex-model gpt-5.4`
-- `--codex-effort high`
-- `--sonnet-model claude-sonnet-4-6`
-- `--proposers codex,glm,sonnet` and `--refiners codex,kimi`
+To aggregate an existing session through Codex without rerunning Layers 1–2:
 
-Optional built-in: `qwen` routes `qwen-token-plan/qwen3.7-max` through
-OpenCode. Set `QWEN_TOKEN_PLAN_API_KEY=sk-sp-...` in `.env`, then include
-`qwen` in `--proposers` or `MOA_PROPOSERS`.
+```bash
+python3 ~/.claude/skills/mixture-of-agents/scripts/run_moa.py \
+  --scout-brief .moa/<session>/scout-brief.json \
+  --phase layer3 \
+  --aggregator-provider codex-aggregator \
+  --aggregator-effort high
+```
+
+This validates and writes `final-plan.md` plus `final-plan.json`, records the
+Layer 3 log/timing, and regenerates the report.
+
+Defaults:
+- `--codex-model gpt-5.6-terra`
+- `--codex-reviewer-model gpt-5.6-sol`
+- `--codex-effort high`
+- `--codex-reviewer-effort high`
+- `--sonnet-model sonnet` and `--aggregator-model opus` (rolling aliases)
+- `--aggregator-provider codex-aggregator --aggregator-effort high` for the
+  optional Codex Layer 3 subprocess
+- `--proposers codex,glm,sonnet` and `--refiners codex-reviewer,qwen`
+
+The default Qwen refiner routes `qwen-token-plan/qwen3.8-max-preview` through
+OpenCode with a 600-second cap. Set `QWEN_TOKEN_PLAN_API_KEY=sk-sp-...` in
+`.env`; Qwen can also be included in the proposer set.
 
 The codex and sonnet harnesses have dedicated flags. Every other harness
-(opencode for GLM + Kimi, cursor) takes its model/timeout from the
+(opencode for GLM + Qwen/Kimi, cursor) takes its model/timeout from the
 `providers:` block in `harness/config.yaml` or from `MOA_<NAME>_MODEL` /
 `MOA_<NAME>_TIMEOUT` env vars. You can also define a provider entirely from
 the environment with `MOA_PROVIDER_<NAME>=<harness>:<model>`, e.g.
@@ -235,21 +262,19 @@ pass it on the CLI: `--proposers codex,cursor-gemini,sonnet`.
 
 ## Limits and caveats
 
-- **One MoA run per machine at a time.** A `flock` on `/tmp/moa.lock`
+- **One MoA run per user at a time.** A per-UID `flock` under `/tmp`
   stops concurrent invocations from racing on shared CLI auth state.
   Sequential invocations are fine; parallel ones from the same user
   aren't.
-- **Wall-clock is typically 6-12 minutes.** xhigh codex passes can
-  be 3-5 minutes each. Sonnet with web research is typically
-  60-180s; the opencode providers (GLM, Kimi) are similar. Two layers
-  of parallel calls add up to roughly the 6-12 minute range. Don't run
+- **Wall-clock is typically 12-25 minutes for research-heavy work.** Provider
+  latency can extend the tail; Qwen's default refiner cap is 600 seconds. Don't run
   this for trivial tasks.
 - **Web research is required, not optional.** All prompts insist on
   it. If a CLI is rate-limited on its web search tool, the proposal
   or refinement will be weaker. Thin `research_sources` arrays in
   the manifest are a signal to retry later.
 - **Heterogeneity is the point.** The default roster spans four labs
-  (OpenAI, Zhipu, Anthropic, Moonshot). If you override the defaults so
+  (OpenAI, Zhipu, Anthropic, Alibaba). If you override the defaults so
   they converge on the same vendor, you've defeated the whole purpose of MoA.
 - **Claude `--bare` mode is not used for sonnet.** `--bare` requires
   `ANTHROPIC_API_KEY` and skips OAuth/keychain auth, which means
@@ -279,7 +304,7 @@ Version history:
 - **v0.3.0:** Named-provider roster refactor. Harnesses are now codex,
   claude, opencode, and cursor; the standalone Google adapter was dropped.
   Default roster spans four labs — proposers codex + glm + sonnet, refiners
-  codex + kimi. Providers are declarable via `MOA_PROVIDER_<NAME>` env
+  codex-reviewer + qwen. Providers are declarable via `MOA_PROVIDER_<NAME>` env
   shorthand or the config.yaml `providers:` block; route a Gemini model
   through the cursor harness (`cursor-gemini`) if you still want one.
 - **v0.4.0:** Self-contained HTML session report with pipeline, timing,

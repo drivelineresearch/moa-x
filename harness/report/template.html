@@ -99,8 +99,9 @@ nav.mininav a.active { color: var(--ink); background: var(--panel); box-shadow: 
 
 /* ---- Collapsibles ---- */
 .collapse { border: 1px solid var(--track); border-radius: 12px; margin-bottom: 14px; overflow: hidden; }
-.collapse > .c-head { display: flex; align-items: center; gap: 12px; padding: 16px 20px; cursor: pointer; user-select: none; background: var(--white); }
+.collapse > .c-head { display: flex; width: 100%; align-items: center; gap: 12px; padding: 16px 20px; cursor: pointer; user-select: none; background: var(--white); border: 0; color: var(--ink); font: inherit; text-align: left; }
 .collapse > .c-head:hover { background: var(--panel); }
+.collapse > .c-head:focus-visible { outline: 3px solid var(--gold); outline-offset: -3px; }
 .collapse > .c-head .c-title { font-family: var(--font-head); font-weight: 800; text-transform: uppercase; font-size: 0.92rem; letter-spacing: 0.02em; flex: 1; }
 .collapse > .c-head .caret { color: var(--muted); transition: transform 0.2s ease; font-size: 0.8rem; }
 .collapse.open > .c-head .caret { transform: rotate(90deg); }
@@ -245,7 +246,7 @@ table.dl th { font-family: var(--font-head); text-transform: uppercase; font-siz
 .lineage-viewport { overflow-x: auto; padding: 2px 10px 0; }
 .lineage-viewport svg { display: block; min-width: 760px; }
 .lineage-node { cursor: pointer; }
-.lineage-node:focus { outline: none; }
+.lineage-node:focus { outline: 3px solid var(--gold); outline-offset: 3px; }
 .lineage-node:focus rect, .lineage-node:hover rect { stroke: var(--gold); stroke-width: 3; }
 .lineage-detail { border-top: 1px solid var(--track); padding: 14px 18px 18px; min-height: 112px; }
 .lineage-detail .kind { color: var(--burnt); font-family: var(--font-head); font-size: 0.64rem; text-transform: uppercase; font-weight: 800; letter-spacing: 0.07em; }
@@ -358,6 +359,7 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
     var chips = el("div", { class: "chips" });
     (DATA.config && DATA.config.proposers || []).forEach(function (p) { chips.appendChild(providerChip(p, "proposer")); });
     (DATA.config && DATA.config.refiners || []).forEach(function (p) { chips.appendChild(providerChip(p, "refiner")); });
+    if (DATA.config && DATA.config.aggregator) chips.appendChild(providerChip(DATA.config.aggregator, "aggregator"));
     if (DATA.config && DATA.config.proposer_instances) DATA.config.proposer_instances.forEach(function (n) { chips.appendChild(providerChip({ name: n, harness: "claude" }, "proposer")); });
     if (DATA.config && DATA.config.refiner_instances) DATA.config.refiner_instances.forEach(function (n) { chips.appendChild(providerChip({ name: n, harness: "claude" }, "refiner")); });
     head.appendChild(chips);
@@ -373,8 +375,8 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
 
   // ---------------------------------------------------------------- Overview tiles
   (function () {
-    var l1 = DATA.layer1 || [], l2 = DATA.layer2 || [];
-    var agentSecs = l1.concat(l2).reduce(function (a, r) { return a + (r.duration_seconds || 0); }, 0);
+    var l1 = DATA.layer1 || [], l2 = DATA.layer2 || [], l3 = DATA.layer3 || [];
+    var agentSecs = l1.concat(l2, l3).reduce(function (a, r) { return a + (r.duration_seconds || 0); }, 0);
     var sec = el("section", { class: "block", id: "overview" });
     sec.appendChild(el("div", { class: "section-kicker", text: "Overview" }));
     sec.appendChild(el("h2", { class: "section-title", text: "The run at a glance" }));
@@ -382,11 +384,24 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
     function tile(k, v, sub) { return el("div", { class: "tile" }, [el("div", { class: "k", text: k }), el("div", { class: "v", html: v + (sub ? ' <small>' + sub + '</small>' : '') })]); }
     tiles.appendChild(tile("Proposers", l1.filter(function (r) { return r.success; }).length + "/" + l1.length));
     tiles.appendChild(tile("Refiners", l2.filter(function (r) { return r.success; }).length + "/" + l2.length));
+    if (l3.length) tiles.appendChild(tile("Aggregator", l3.filter(function (r) { return r.success; }).length + "/" + l3.length));
     tiles.appendChild(tile("Agent time", fmtDur(agentSecs)));
     tiles.appendChild(tile("Wall-clock", fmtDur(DATA.duration_seconds)));
     var speedup = DATA.duration_seconds ? (agentSecs / DATA.duration_seconds).toFixed(1) + "×" : "—";
     tiles.appendChild(tile("Parallel gain", speedup));
     sec.appendChild(tiles);
+    var health = DATA.summary || {}, healthItems = [];
+    if ((health.timeout_failures || []).length) healthItems.push("Timed out: " + health.timeout_failures.join(", "));
+    if ((health.transient_empty_proposers || []).length) healthItems.push("Transient-empty proposers: " + health.transient_empty_proposers.join(", "));
+    if ((health.transient_empty_refiners || []).length) healthItems.push("Transient-empty refiners: " + health.transient_empty_refiners.join(", "));
+    if ((health.agent_id_mismatches || []).length) healthItems.push("Identity mismatches: " + health.agent_id_mismatches.map(function (m) { return m.agent_id + " reported " + m.reported_agent_id; }).join(", "));
+    if ((health.workspace_mutation_failures || []).length) healthItems.push("Workspace mutation failures: " + health.workspace_mutation_failures.join(", "));
+    if (healthItems.length) {
+      var healthNotice = el("div", { class: "notice" });
+      healthNotice.appendChild(el("b", { text: "Run health needs attention" }));
+      healthNotice.appendChild(ul(healthItems));
+      sec.appendChild(healthNotice);
+    }
     sec.appendChild(buildHero());
     addSection("overview", "Overview", sec);
   })();
@@ -652,7 +667,7 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
       el("span", {}, [el("i", { class: "adapted" }), document.createTextNode("adapted")]),
       el("span", {}, [el("i", { class: "review" }), document.createTextNode("refiner influence")])
     ]);
-    var viewport = el("div", { class: "lineage-viewport" });
+    var viewport = el("div", { class: "lineage-viewport", role: "tabpanel", id: "lineage-panel" });
     var detail = el("div", { class: "lineage-detail", "aria-live": "polite" });
     main.appendChild(legend); main.appendChild(viewport); main.appendChild(detail);
     layout.appendChild(rail); layout.appendChild(main); shell.appendChild(layout);
@@ -668,6 +683,7 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
       Array.prototype.forEach.call(rail.querySelectorAll(".lineage-step-btn"), function (b, i) {
         b.classList.toggle("active", i === index);
         b.setAttribute("aria-selected", i === index ? "true" : "false");
+        b.setAttribute("tabindex", i === index ? "0" : "-1");
       });
       viewport.innerHTML = "";
       var step = steps[index];
@@ -680,12 +696,24 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
       var button = el("button", {
         class: "lineage-step-btn" + (i === 0 ? " active" : ""),
         role: "tab",
-        "aria-selected": i === 0 ? "true" : "false"
+        "aria-selected": i === 0 ? "true" : "false",
+        "aria-controls": "lineage-panel",
+        tabindex: i === 0 ? "0" : "-1"
       }, [
         el("span", { class: "n", text: "Step " + (i + 1) + " · " + step.decision }),
         el("span", { class: "t", text: step.title })
       ]);
       button.addEventListener("click", function () { selectStep(i); });
+      button.addEventListener("keydown", function (event) {
+        var next = i;
+        if (event.key === "ArrowDown" || event.key === "ArrowRight") next = (i + 1) % steps.length;
+        else if (event.key === "ArrowUp" || event.key === "ArrowLeft") next = (i - 1 + steps.length) % steps.length;
+        else if (event.key === "Home") next = 0;
+        else if (event.key === "End") next = steps.length - 1;
+        else return;
+        event.preventDefault(); selectStep(next);
+        rail.querySelectorAll(".lineage-step-btn")[next].focus();
+      });
       rail.appendChild(button);
     });
     if (steps.length) selectStep(0);
@@ -815,15 +843,18 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
     var sec = el("section", { class: "block", id: "plan" });
     sec.appendChild(el("div", { class: "section-kicker", text: "Layer 3" }));
     sec.appendChild(el("h2", { class: "section-title", text: "Aggregated final plan" }));
-    sec.appendChild(el("p", { class: "section-note", html: "Layers 0 (scout) and 3 (aggregation) run <b>in the parent Claude Code session (Opus), in-place</b> — not as spawned CLI subprocesses. The orchestrator only spawns Layers 1 &amp; 2, so Opus has no bar in the timeline and no log below: it <i>is</i> the session reading these outputs and writing the plan." }));
+    var aggregator = DATA.config && DATA.config.aggregator, layer3 = DATA.layer3 || [];
+    var aggregatorLabel = aggregator ? esc(aggregator.name) + " / " + esc(aggregator.model) : "Claude Code / opus";
+    if (layer3.length) sec.appendChild(el("p", { class: "section-note", html: "Layer 3 ran as a recorded <b>" + aggregatorLabel + " subprocess</b>. Its timing appears in the timeline and its captured output is available in Raw logs." }));
+    else sec.appendChild(el("p", { class: "section-note", html: "Layer 3 aggregation is performed in the configured parent host session (" + aggregatorLabel + ") unless the optional <code>--phase layer3</code> subprocess path is used." }));
     if (DATA.final_plan_html) sec.appendChild(el("div", { class: "plan-render", html: DATA.final_plan_html }));
-    else sec.appendChild(el("div", { class: "notice info", text: "No final-plan.md yet — the parent Opus session aggregates the proposals and refiner findings after this report is generated. Re-run report.py once final-plan.md and final-plan.json exist to embed the plan and decision lineage." }));
+    else sec.appendChild(el("div", { class: "notice info", text: "No final-plan.md yet — aggregate in the configured parent host or run --phase layer3, then regenerate the report to embed the plan and decision lineage." }));
     addSection("plan", "Final plan", sec);
   })();
 
   // ---------------------------------------------------------------- Raw logs
   (function () {
-    var all = (DATA.layer1 || []).concat(DATA.layer2 || []);
+    var all = (DATA.layer1 || []).concat(DATA.layer2 || [], DATA.layer3 || []);
     var sec = el("section", { class: "block", id: "logs" });
     sec.appendChild(el("div", { class: "section-kicker", text: "Diagnostics" }));
     sec.appendChild(el("h2", { class: "section-title", text: "Raw agent logs" }));
@@ -879,22 +910,29 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
   })();
 
   // ---------------------------------------------------------------- shared: collapsible
+  var collapseSequence = 0;
   function collapsible(title, pipClass, stats, bodyNode, openByDefault) {
     var wrap = el("div", { class: "collapse" + (openByDefault ? " open" : "") });
-    var head = el("div", { class: "c-head" });
-    head.appendChild(el("span", { class: "status-pip " + (pipClass || "pip-ok") }));
+    var sequence = ++collapseSequence, headId = "collapse-head-" + sequence, bodyId = "collapse-body-" + sequence;
+    var head = el("button", { class: "c-head", type: "button", id: headId, "aria-expanded": openByDefault ? "true" : "false", "aria-controls": bodyId });
+    head.appendChild(el("span", { class: "status-pip " + (pipClass || "pip-ok"), "aria-hidden": "true" }));
     head.appendChild(el("span", { class: "c-title", text: title }));
-    if (stats) { var ms = el("div", { class: "mini-stats" }); stats.forEach(function (s) { ms.appendChild(el("span", { html: esc(s[0]) + " <b>" + esc(s[1]) + "</b>" })); }); head.appendChild(ms); }
-    head.appendChild(el("span", { class: "caret", text: "▶" }));
-    var bodyWrap = el("div", { class: "c-body" });
+    if (stats) { var ms = el("span", { class: "mini-stats" }); stats.forEach(function (s) { ms.appendChild(el("span", { html: esc(s[0]) + " <b>" + esc(s[1]) + "</b>" })); }); head.appendChild(ms); }
+    head.appendChild(el("span", { class: "caret", text: "▶", "aria-hidden": "true" }));
+    var bodyWrap = el("div", { class: "c-body", id: bodyId, role: "region", "aria-labelledby": headId, "aria-hidden": openByDefault ? "false" : "true" });
+    bodyWrap.inert = !openByDefault;
     var pad = el("div", { class: "pad" }); pad.appendChild(bodyNode); bodyWrap.appendChild(pad);
-    head.addEventListener("click", function () { toggleCollapse(wrap, bodyWrap); });
+    head.addEventListener("click", function () { toggleCollapse(wrap, bodyWrap, head); });
     wrap.appendChild(head); wrap.appendChild(bodyWrap);
     if (openByDefault) setTimeout(function () { bodyWrap.style.maxHeight = REDUCED ? "none" : bodyWrap.scrollHeight + "px"; }, 0);
     return wrap;
   }
-  function toggleCollapse(wrap, bodyWrap) {
+  function toggleCollapse(wrap, bodyWrap, head) {
     var open = wrap.classList.toggle("open");
+    head = head || wrap.querySelector(".c-head");
+    if (head) head.setAttribute("aria-expanded", open ? "true" : "false");
+    bodyWrap.setAttribute("aria-hidden", open ? "false" : "true");
+    bodyWrap.inert = !open;
     if (REDUCED) { bodyWrap.style.maxHeight = open ? "none" : "0"; return; }
     if (open) {
       bodyWrap.style.maxHeight = bodyWrap.scrollHeight + "px";
@@ -914,22 +952,26 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
     var sec = document.getElementById(scope);
     Array.prototype.forEach.call(sec.querySelectorAll(".collapse"), function (w) {
       var b = w.querySelector(".c-body");
+      var h = w.querySelector(".c-head");
       var isOpen = w.classList.contains("open");
-      if (open && !isOpen) toggleCollapse(w, b);
-      if (!open && isOpen) toggleCollapse(w, b);
+      if (open && !isOpen) toggleCollapse(w, b, h);
+      if (!open && isOpen) toggleCollapse(w, b, h);
     });
   }
 
   // ---------------------------------------------------------------- Gantt
   function buildGantt() {
-    var l1 = DATA.layer1 || [], l2 = DATA.layer2 || [];
+    var l1 = DATA.layer1 || [], l2 = DATA.layer2 || [], l3 = DATA.layer3 || [];
     var t0 = DATA.started_at || 0;
     function span(r, layer, derivedStart) {
       var start = (r.started_at && t0) ? (r.started_at - t0) : derivedStart;
       return { r: r, layer: layer, start: Math.max(0, start), dur: r.duration_seconds || 0 };
     }
     var l1max = l1.reduce(function (a, r) { return Math.max(a, r.duration_seconds || 0); }, 0);
-    var rows = l1.map(function (r) { return span(r, 1, 0); }).concat(l2.map(function (r) { return span(r, 2, l1max); }));
+    var l2max = l2.reduce(function (a, r) { return Math.max(a, r.duration_seconds || 0); }, 0);
+    var rows = l1.map(function (r) { return span(r, 1, 0); })
+      .concat(l2.map(function (r) { return span(r, 2, l1max); }))
+      .concat(l3.map(function (r) { return span(r, 3, l1max + l2max); }));
     if (!rows.length) return el("p", { class: "empty-note", text: "No timing data." });
     var total = rows.reduce(function (a, s) { return Math.max(a, s.start + s.dur); }, 0) || 1;
     var W = 900, labelW = 130, chartW = W - labelW - 20, rowH = 34, top = 20, H = top + rows.length * rowH + 30;
@@ -941,15 +983,16 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
       svg.appendChild(svgEl("line", { x1: x, y1: top - 6, x2: x, y2: H - 24, stroke: C.track, "stroke-width": 1, "stroke-dasharray": "2 4" }));
       svg.appendChild(svgText(x, H - 8, fmtDur(total * i / ticks), { fill: C.muted, "font-size": 10, "text-anchor": "middle" }));
     }
-    var layerBoundaryDrawn = false;
+    var lastLayer = 0;
     rows.forEach(function (s, idx) {
       var y = top + idx * rowH;
-      if (s.layer === 2 && !layerBoundaryDrawn) {
-        layerBoundaryDrawn = true;
+      if (s.layer !== lastLayer) {
+        if (lastLayer !== 0) {
         svg.appendChild(svgEl("line", { x1: 0, y1: y - 4, x2: W, y2: y - 4, stroke: C.ink, "stroke-width": 1 }));
-        svg.appendChild(svgText(4, y - 8, "LAYER 2", { fill: C.ink, "font-size": 9, "font-weight": 800, "letter-spacing": "0.08em" }));
+        }
+        svg.appendChild(svgText(4, y - 8, "LAYER " + s.layer, { fill: C.ink, "font-size": 9, "font-weight": 800, "letter-spacing": "0.08em" }));
+        lastLayer = s.layer;
       }
-      if (idx === 0) svg.appendChild(svgText(4, top - 8, "LAYER 1", { fill: C.ink, "font-size": 9, "font-weight": 800, "letter-spacing": "0.08em" }));
       svg.appendChild(svgText(labelW - 10, y + rowH / 2 + 4, s.r.agent_id, { fill: C.ink, "font-size": 12, "text-anchor": "end", "font-weight": 600 }));
       var bx = labelW + (chartW * s.start / total);
       var bw = Math.max(3, chartW * s.dur / total);
@@ -960,7 +1003,7 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
       svg.appendChild(bar);
       svg.appendChild(svgText(bx + bw + 6, y + rowH / 2 + 4, fmtDur(s.dur), { fill: C.secondary || C.muted, "font-size": 10 }));
     });
-    var note = el("p", { class: "empty-note", style: "margin-top:14px", html: "Bars use recorded per-agent start offsets when present; older manifests fall back to layer-derived offsets (Layer 1 from t0, Layer 2 after the slowest proposer)." });
+    var note = el("p", { class: "empty-note", style: "margin-top:14px", html: "Bars use recorded per-agent start offsets when present; older manifests fall back to layer-derived offsets." });
     var box = el("div"); box.appendChild(svg); box.appendChild(note); return box;
   }
 
@@ -1022,13 +1065,16 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
       return { a: a, b: b };
     }
 
-    var l1 = (DATA.layer1 || []), l2 = (DATA.layer2 || []);
+    var l1 = (DATA.layer1 || []), l2 = (DATA.layer2 || []), l3 = (DATA.layer3 || []);
     var scout = addNode(-6.5, 0, "scout", 20, "anchor", "scout");
     function spread(n, i) { return n <= 1 ? 0 : (i - (n - 1) / 2) * 2.4; }
     var pNodes = l1.map(function (r, i) { return addNode(-2.2, spread(l1.length, i), r.agent_id, r.duration_seconds, r.success ? "ok" : "fail", "proposers"); });
     var rNodes = l2.map(function (r, i) { return addNode(2.2, spread(l2.length, i), r.agent_id, r.duration_seconds, r.success ? "ok" : "fail", "refiners"); });
     var agg = null;
-    if (!DATA.partial) agg = addNode(6.5, 0, "opus", 60, "anchor", "plan");
+    if (!DATA.partial) {
+      var aggConfig = ((DATA.config || {}).aggregator || {}), aggRun = l3[0];
+      agg = addNode(6.5, 0, aggConfig.name || "aggregator", aggRun ? aggRun.duration_seconds : 60, aggRun && !aggRun.success ? "fail" : "anchor", "plan");
+    }
 
     var edges = [];
     pNodes.forEach(function (p) { edges.push(edge(scout, p)); });
@@ -1111,7 +1157,7 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
       box(10, "SCOUT", "Layer 0 · brief") + arrow(160, 210) +
       box(210, "PROPOSERS", "Layer 1 · parallel") + arrow(360, 410) +
       box(410, "REFINERS", "Layer 2 · broadcast") + arrow(560, 610) +
-      box(610, "AGGREGATOR", "Layer 3 · Opus") +
+      box(610, "AGGREGATOR", "Layer 3 · " + (((DATA.config || {}).aggregator || {}).model || "opus")) +
       '<text x="450" y="165" text-anchor="middle" font-family="Arial" font-size="11" fill="' + C.muted + '">Each refiner reviews every proposer — cross-lab verification before synthesis.</text>' +
       '</svg>';
   }

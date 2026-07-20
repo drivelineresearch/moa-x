@@ -1,10 +1,9 @@
 """Codex CLI adapter.
 
-Invokes `codex exec` headlessly with --output-schema for guaranteed JSON
-shape. Codex is the only one of the three frontier CLIs that natively
-enforces an arbitrary user-supplied JSON Schema on the model's final
-output, which is why we don't need post-hoc validation here -- codex
-already did it.
+Invokes `codex exec` headlessly with `--output-schema`. The adapter extracts
+the final object with the shared bounded parser, and the orchestrator still
+validates it post hoc. Keeping the second check makes behavior uniform across
+CLI versions and schema-enforced versus schema-unenforced adapters.
 
 Subprocess isolation: each call gets its own TMPDIR via env override.
 Codex auth lives in ~/.codex/auth.json which is shared across calls;
@@ -23,7 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from adapters import kill_proc_tree  # shared POSIX+Windows timeout handler
+from adapters import extract_json_from_text, kill_proc_tree
 
 
 @dataclass
@@ -82,7 +81,7 @@ def run(
     prompt: str,
     schema_path: Path,
     repo_path: Path,
-    model: str = "gpt-5.4",
+    model: str = "gpt-5.6-terra",
     reasoning_effort: str = "high",
     timeout_seconds: int = 900,
     log_file: Optional[Path] = None,
@@ -93,7 +92,7 @@ def run(
         prompt: The full prompt text. Sent via stdin to codex exec.
         schema_path: Path to JSON Schema file. Codex enforces it via --output-schema.
         repo_path: Working directory for codex (--cd). Codex can read repo from here.
-        model: Codex model id. Default gpt-5.4.
+        model: Codex model id. Default gpt-5.6-terra.
         reasoning_effort: low | medium | high | xhigh. Default high. Dropped from
             xhigh in v0.2.2 after the first dogfood run showed xhigh + aggressive
             web research blew past 900s. xhigh is still available via the
@@ -210,7 +209,15 @@ def run(
                 error_message=f"codex exited with code {proc.returncode}",
             )
 
-        payload = _extract_json_payload(stdout_captured)
+        try:
+            required_keys = set(
+                json.loads(schema_path.read_text(encoding="utf-8")).get("required") or []
+            )
+        except (OSError, json.JSONDecodeError):
+            required_keys = None
+        payload = _extract_json_payload(
+            stdout_captured, required_keys=required_keys
+        )
         if payload is None:
             return CodexResult(
                 success=False, payload=None, raw_stdout=stdout_captured,
@@ -230,7 +237,9 @@ def run(
             shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-def _extract_json_payload(stdout: str) -> Optional[dict]:
+def _extract_json_payload(
+    stdout: str, *, required_keys: Optional[set[str]] = None
+) -> Optional[dict]:
     """Extract the final JSON object from codex stdout.
 
     codex exec emits framing lines (workdir, model, session id, etc.), then
@@ -238,60 +247,4 @@ def _extract_json_payload(stdout: str) -> Optional[dict]:
     set, the final assistant message is the validated JSON. We find the last
     well-formed JSON object in the stream and return it.
     """
-    if not stdout:
-        return None
-
-    # Strategy: try to find a fenced JSON block first; otherwise scan for the
-    # last balanced { ... } that parses successfully.
-    # Codex with --output-schema typically emits the JSON as the final block
-    # without fences, so the second strategy is the common path.
-
-    candidates = []
-
-    # 1. Fenced JSON blocks
-    import re
-    for match in re.finditer(r"```json\s*\n(.*?)\n```", stdout, re.DOTALL):
-        candidates.append(match.group(1).strip())
-
-    # 2. Bare top-level JSON objects: walk from end, find balanced braces
-    # Find every '{' position; for each, try to parse from there to the end
-    # and from there to every subsequent '}'. This is O(n^2) worst case but
-    # codex output is bounded.
-    text = stdout
-    for start in range(len(text)):
-        if text[start] != "{":
-            continue
-        depth = 0
-        in_string = False
-        escape = False
-        for end in range(start, len(text)):
-            ch = text[end]
-            if escape:
-                escape = False
-                continue
-            if ch == "\\":
-                escape = True
-                continue
-            if ch == '"':
-                in_string = not in_string
-                continue
-            if in_string:
-                continue
-            if ch == "{":
-                depth += 1
-            elif ch == "}":
-                depth -= 1
-                if depth == 0:
-                    candidates.append(text[start : end + 1])
-                    break
-
-    # Try candidates from longest to shortest (assume the schema-conformant
-    # output is the largest JSON object in the stream)
-    candidates.sort(key=len, reverse=True)
-    for cand in candidates:
-        try:
-            return json.loads(cand)
-        except (json.JSONDecodeError, ValueError):
-            continue
-
-    return None
+    return extract_json_from_text(stdout, required_keys=required_keys)

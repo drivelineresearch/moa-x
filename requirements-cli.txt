@@ -10,7 +10,7 @@
 #   auth:     codex login   (creates ~/.codex/auth.json)
 #             or: printenv OPENAI_API_KEY | codex login --with-api-key
 
-# opencode CLI (runs GLM 5.2 + Kimi K2.7 Code)
+# opencode CLI (runs GLM 5.2 + Qwen Token Plan; Kimi remains available)
 #   install:  curl -fsSL https://opencode.ai/install | bash
 #   auth:     opencode auth login
 #             or set provider keys: ZHIPU_API_KEY (GLM),

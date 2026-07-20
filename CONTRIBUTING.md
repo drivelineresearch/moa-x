@@ -3,8 +3,9 @@
 Thanks for wanting to contribute. This project is built to run inside
 **Claude Code** as a skill (`/mixture-of-agents`). Standalone `python3`
 works too, but the skill path is what we exercise most. PRs that complete
-the standalone workflow, add normalized usage/cost telemetry, verify workspace
-immutability, or harden adapters are especially welcome. The top-level README
+the standalone scout workflow, add normalized usage/cost telemetry, strengthen
+provider capability checks, or harden adapters are especially welcome. The
+top-level README
 has the canonical, more specific priority list.
 
 ## Dev environment
@@ -37,14 +38,15 @@ New tests must run offline so CI stays credential-free.
 
 ## Where help is especially welcome
 
-- Complete the standalone path: generate the scout brief and final plan from a
-  plain shell, while preserving checkpoints and the HTML report.
+- Complete the standalone path: generate the Layer 0 scout brief from a raw
+  spec and drive the existing Layer 1/2 checkpoints plus recorded Layer 3 from
+  one command.
 - Normalize usage, quota, and cost metadata across subscription and API-key
   auth. Auth already works through the underlying CLIs; trustworthy accounting
   and pre-dispatch budget controls do not.
-- Add a harness-independent workspace integrity check on top of the existing
-  Codex sandbox, Claude tool allowlist, Cursor plan mode, and OpenCode deny
-  policy.
+- Extend workspace-integrity assurance beyond the existing Git-visible digest,
+  especially for ignored/untracked paths that are intentionally excluded from
+  the current dirty-safe check.
 - Add tested provider recipes for models such as DeepSeek, MiniMax, Grok, and
   Mistral. Include config, credential preflight, parser fixtures, and smoke-test
   evidence; Qwen Token Plan is already built in.

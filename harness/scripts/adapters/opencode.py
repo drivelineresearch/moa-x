@@ -7,7 +7,7 @@ are `provider/model` strings, e.g.
 `opencode-go/glm-5.2`, `opencode-go/kimi-k2.7-code` (the defaults), the
 direct-provider `zhipuai/glm-5.2` / `moonshotai/kimi-k2.7-code`, or
 `fireworks-ai/accounts/fireworks/models/glm-5p2`, or
-`qwen-token-plan/qwen3.7-max`.
+`qwen-token-plan/qwen3.8-max-preview`.
 
 OpenCode has no JSON envelope in default text mode — the model's final
 text goes straight to stdout, so we pull the inner JSON payload with the
