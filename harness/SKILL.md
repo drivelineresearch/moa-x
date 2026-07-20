@@ -93,17 +93,19 @@ Layer 3 — Aggregation                      (parent Opus 4.6, in-place, REPL-bo
    ├─ pull strongest from each surviving proposer
    ├─ honor every refiner contradiction + synthesis_recommendation
    ├─ surface disagreements explicitly (proposer↔proposer AND refiner↔refiner)
-   ├─ write .moa/<session>/final-plan.md
-   ├─ (re-render .moa/<session>/report.html so the plan shows in the report:
+   ├─ write .moa/<session>/final-plan.md + final-plan.json decision lineage
+   ├─ (re-render .moa/<session>/report.html so the plan + lineage show:
    │   python3 harness/scripts/report.py --session .moa/<session>)
    └─ present to user, ask if ready to execute (offer to open report.html)
 ```
 
 The orchestrator already wrote `.moa/<session>/report.html` — a single
 self-contained visual post-mortem of the run (3D pipeline, Gantt, proposer
-plans, refiner verdict matrix, logs). After you write `final-plan.md`,
-re-run `report.py --session .moa/<session>` so the aggregated plan is
-embedded too, then point the user at the file. See `docs/report.md`.
+plans, refiner verdict matrix, logs). After you write `final-plan.md` and its
+schema-validated `final-plan.json` provenance companion, re-run
+`report.py --session .moa/<session>` so the aggregated plan and interactive
+decision lineage are embedded too, then point the user at the file. See
+`docs/report.md`.
 
 Layers 0 and 3 happen in this Claude Code session. Layer 1 and 2 are spawned
 as external subprocesses by `~/.claude/skills/mixture-of-agents/scripts/run_moa.py`.
@@ -298,7 +300,8 @@ That file contains the frozen spec, the scout brief, all proposer outputs
 Then read `~/.claude/skills/mixture-of-agents/prompts/aggregator.md` for the
 full aggregation protocol. Synthesize the proposer plans, honor every refiner
 contradiction, surface where the proposers AND refiners disagreed, and write
-the final plan to `.moa/<session_id>/final-plan.md`.
+the final plan to `.moa/<session_id>/final-plan.md` plus its structured
+`final-plan.json` decision-lineage companion.
 
 The aggregator prompt has the exact structure the final plan should follow
 (TL;DR, plan steps with evidence, open questions, alternatives considered,
@@ -373,6 +376,7 @@ the whole point of the planning phase was deliberation.
 - `scripts/adapters/claude.py` — claude CLI subprocess wrapper (sonnet proposer)
 - `scripts/schemas/proposer.schema.json` — JSON Schema for Layer 1 outputs
 - `scripts/schemas/refiner.schema.json` — JSON Schema for Layer 2 outputs
+- `scripts/schemas/final-plan.schema.json` — JSON Schema for Layer 3 decision lineage
 
 ## Background
 

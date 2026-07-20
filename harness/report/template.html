@@ -219,6 +219,45 @@ table.dl th { font-family: var(--font-head); text-transform: uppercase; font-siz
 .plan-render code { font-family: var(--font-mono); background: var(--panel); padding: 1px 5px; border-radius: 4px; font-size: 0.85em; }
 .plan-render pre code { background: none; padding: 0; }
 
+/* ---- Decision lineage explorer ---- */
+.lineage-shell { border: 1px solid var(--track); border-radius: 12px; overflow: hidden; background: var(--white); }
+.lineage-summary { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 18px 20px; border-bottom: 1px solid var(--track); background: var(--panel); }
+.lineage-summary .copy { max-width: 76ch; }
+.lineage-summary .title { font-family: var(--font-head); text-transform: uppercase; font-weight: 800; font-size: 0.82rem; }
+.lineage-summary .desc { color: var(--secondary); font-size: 0.82rem; margin-top: 4px; }
+.confidence { flex: none; border: 1px solid var(--track); background: var(--white); border-radius: 999px; padding: 5px 10px; font-family: var(--font-head); font-size: 0.64rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; }
+.confidence.high { border-color: rgba(16,185,129,0.55); color: #0b7a5a; }
+.confidence.medium { border-color: rgba(255,163,0,0.75); color: #9a6300; }
+.confidence.low { border-color: rgba(239,68,68,0.55); color: #b3271e; }
+.lineage-layout { display: grid; grid-template-columns: 270px minmax(0, 1fr); min-height: 470px; }
+.lineage-steps { border-right: 1px solid var(--track); padding: 14px; background: #fafafa; }
+.lineage-step-btn { display: block; width: 100%; text-align: left; border: 1px solid transparent; background: transparent; color: var(--ink); padding: 11px 12px; border-radius: 8px; cursor: pointer; font-family: var(--font-body); margin-bottom: 5px; }
+.lineage-step-btn:hover { background: var(--white); border-color: var(--track); }
+.lineage-step-btn.active { background: var(--white); border-color: var(--gold); box-shadow: inset 3px 0 0 var(--gold); }
+.lineage-step-btn .n { display: block; color: var(--muted); font-family: var(--font-head); font-size: 0.62rem; text-transform: uppercase; font-weight: 800; letter-spacing: 0.07em; }
+.lineage-step-btn .t { display: block; font-size: 0.8rem; font-weight: 700; line-height: 1.35; margin-top: 2px; }
+.lineage-main { min-width: 0; display: flex; flex-direction: column; }
+.lineage-legend { display: flex; flex-wrap: wrap; gap: 10px 18px; padding: 12px 16px 0; color: var(--secondary); font-size: 0.68rem; }
+.lineage-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.lineage-legend i { display: inline-block; width: 24px; height: 0; border-top: 2px solid var(--green); }
+.lineage-legend i.adapted { border-color: var(--gold); border-top-style: dashed; }
+.lineage-legend i.review { border-color: var(--ink); border-top-style: dotted; }
+.lineage-viewport { overflow-x: auto; padding: 2px 10px 0; }
+.lineage-viewport svg { display: block; min-width: 760px; }
+.lineage-node { cursor: pointer; }
+.lineage-node:focus { outline: none; }
+.lineage-node:focus rect, .lineage-node:hover rect { stroke: var(--gold); stroke-width: 3; }
+.lineage-detail { border-top: 1px solid var(--track); padding: 14px 18px 18px; min-height: 112px; }
+.lineage-detail .kind { color: var(--burnt); font-family: var(--font-head); font-size: 0.64rem; text-transform: uppercase; font-weight: 800; letter-spacing: 0.07em; }
+.lineage-detail .detail-title { font-weight: 800; margin: 3px 0 5px; }
+.lineage-detail .detail-body { color: var(--secondary); font-size: 0.84rem; }
+.lineage-detail .detail-note { margin-top: 8px; border-left: 3px solid var(--gold); padding-left: 10px; font-size: 0.8rem; }
+.lineage-files { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
+.lineage-rejected { border-top: 1px solid var(--track); padding: 14px 18px; }
+.lineage-rejected summary { cursor: pointer; font-family: var(--font-head); text-transform: uppercase; font-weight: 800; font-size: 0.68rem; letter-spacing: 0.06em; }
+.lineage-rejected ul { margin-bottom: 0; }
+.lineage-warning { margin-top: 12px; }
+
 /* ---- Tooltip ---- */
 #tooltip { position: fixed; z-index: 100; pointer-events: none; background: rgba(0,0,0,0.9); color: #fff; font-size: 0.76rem; line-height: 1.4; padding: 8px 11px; border-radius: 8px; max-width: 320px; display: none; }
 #tooltip .tt-h { color: var(--gold); font-family: var(--font-head); text-transform: uppercase; font-size: 0.62rem; letter-spacing: 0.06em; margin-bottom: 3px; }
@@ -235,12 +274,16 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
   .report-head h1 { font-size: 2rem; }
   .two-col { grid-template-columns: 1fr; }
   #hero { height: 340px; }
+  .lineage-layout { grid-template-columns: 1fr; }
+  .lineage-steps { border-right: 0; border-bottom: 1px solid var(--track); display: flex; overflow-x: auto; gap: 6px; }
+  .lineage-step-btn { min-width: 210px; margin-bottom: 0; }
+  .lineage-summary { flex-direction: column; }
 }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
 }
 @media print {
-  nav.mininav, #hero .hint, .controls, .log-filter, .log-tabs { display: none !important; }
+  nav.mininav, #hero .hint, .controls, .log-filter, .log-tabs, .lineage-steps { display: none !important; }
   .collapse > .c-body { max-height: none !important; }
   #hero { display: none; } #hero-fallback { display: block !important; }
   section.block { padding: 20px 0; }
@@ -311,6 +354,7 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
       el("span", { html: "Wall-clock <b>" + fmtDur(DATA.duration_seconds) + "</b>" }),
       l2span
     ]));
+    if (DATA.timing_normalized) head.appendChild(el("div", { class: "notice info", text: "Timing repaired for a legacy phase-split manifest: wall-clock and chart offsets use the earliest retained agent start instead of the Layer 2 invocation start." }));
     var chips = el("div", { class: "chips" });
     (DATA.config && DATA.config.proposers || []).forEach(function (p) { chips.appendChild(providerChip(p, "proposer")); });
     (DATA.config && DATA.config.refiners || []).forEach(function (p) { chips.appendChild(providerChip(p, "refiner")); });
@@ -564,6 +608,208 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
     return collapsible(r.agent_id + " refiner — full findings", statusPip(r), [["reviewed", reviewed || "—"], ["dur", fmtDur(r.duration_seconds)]], body, false);
   }
 
+  // ---------------------------------------------------------------- Decision lineage
+  (function () {
+    var sec = el("section", { class: "block", id: "lineage" });
+    sec.appendChild(el("div", { class: "section-kicker", text: "Layer 3 · provenance" }));
+    sec.appendChild(el("h2", { class: "section-title", text: "Decision lineage — why each step survived" }));
+    sec.appendChild(el("p", { class: "section-note", text: "Select a final-plan step, then inspect the proposal steps and refiner findings that shaped it. Solid, dashed, and dotted paths distinguish adoption, adaptation, and review without relying on color alone." }));
+    if (DATA.final_plan_lineage) {
+      sec.appendChild(buildLineageExplorer(DATA.final_plan_lineage));
+    } else {
+      sec.appendChild(el("div", { class: "notice info", text: "No usable final-plan.json yet. Legacy reports still show the Markdown plan; re-run aggregation with the current prompt to add traceable decision lineage." }));
+    }
+    if (DATA.lineage_warnings && DATA.lineage_warnings.length) {
+      var warn = el("div", { class: "notice lineage-warning" });
+      warn.appendChild(el("b", { text: "Lineage validation warnings (" + DATA.lineage_warnings.length + ")" }));
+      warn.appendChild(ul(DATA.lineage_warnings));
+      sec.appendChild(warn);
+    }
+    addSection("lineage", "Lineage", sec);
+  })();
+
+  function buildLineageExplorer(lineage) {
+    var shell = el("div", { class: "lineage-shell" });
+    var summary = el("div", { class: "lineage-summary" });
+    summary.appendChild(el("div", { class: "copy" }, [
+      el("div", { class: "title", text: lineage.title || "Final plan" }),
+      el("div", { class: "desc", text: lineage.summary || "" })
+    ]));
+    var confidence = lineage.confidence || {};
+    summary.appendChild(el("span", {
+      class: "confidence " + (confidence.level || "low"),
+      text: (confidence.level || "unknown") + " confidence",
+      "data-tip": confidence.rationale || "",
+      "data-tiph": "Confidence rationale"
+    }));
+    shell.appendChild(summary);
+
+    var layout = el("div", { class: "lineage-layout" });
+    var rail = el("div", { class: "lineage-steps", role: "tablist", "aria-label": "Final plan steps" });
+    var main = el("div", { class: "lineage-main" });
+    var legend = el("div", { class: "lineage-legend" }, [
+      el("span", {}, [el("i"), document.createTextNode("adopted")]),
+      el("span", {}, [el("i", { class: "adapted" }), document.createTextNode("adapted")]),
+      el("span", {}, [el("i", { class: "review" }), document.createTextNode("refiner influence")])
+    ]);
+    var viewport = el("div", { class: "lineage-viewport" });
+    var detail = el("div", { class: "lineage-detail", "aria-live": "polite" });
+    main.appendChild(legend); main.appendChild(viewport); main.appendChild(detail);
+    layout.appendChild(rail); layout.appendChild(main); shell.appendChild(layout);
+
+    var steps = lineage.steps || [];
+    if (!steps.length) {
+      rail.appendChild(el("div", { class: "empty-note", text: "No final steps" }));
+      viewport.appendChild(el("div", { class: "notice", style: "margin:16px", text: "The aggregator rejected the available inputs; inspect the rejected-input list below." }));
+      showLineageDetail(detail, "Rejected synthesis", "No final step was accepted.", confidence.rationale || "", [], "Decision");
+    }
+
+    function selectStep(index) {
+      Array.prototype.forEach.call(rail.querySelectorAll(".lineage-step-btn"), function (b, i) {
+        b.classList.toggle("active", i === index);
+        b.setAttribute("aria-selected", i === index ? "true" : "false");
+      });
+      viewport.innerHTML = "";
+      var step = steps[index];
+      if (!step) return;
+      viewport.appendChild(buildLineageGraph(step, detail));
+      showLineageDetail(detail, step.title, step.description, step.adjudication, step.files_touched, "Final step · " + step.decision);
+    }
+
+    steps.forEach(function (step, i) {
+      var button = el("button", {
+        class: "lineage-step-btn" + (i === 0 ? " active" : ""),
+        role: "tab",
+        "aria-selected": i === 0 ? "true" : "false"
+      }, [
+        el("span", { class: "n", text: "Step " + (i + 1) + " · " + step.decision }),
+        el("span", { class: "t", text: step.title })
+      ]);
+      button.addEventListener("click", function () { selectStep(i); });
+      rail.appendChild(button);
+    });
+    if (steps.length) selectStep(0);
+
+    var rejected = lineage.rejected_inputs || [];
+    if (rejected.length) {
+      var rejectedBox = el("details", { class: "lineage-rejected" });
+      rejectedBox.appendChild(el("summary", { text: rejected.length + " rejected proposal input" + (rejected.length === 1 ? "" : "s") }));
+      var list = el("ul");
+      rejected.forEach(function (r) {
+        list.appendChild(el("li", { text: r.proposer + " step " + (r.step_index + 1) + " — " + r.reason }));
+      });
+      rejectedBox.appendChild(list); shell.appendChild(rejectedBox);
+    }
+    return shell;
+  }
+
+  function showLineageDetail(host, title, body, note, files, kind) {
+    host.innerHTML = "";
+    host.appendChild(el("div", { class: "kind", text: kind || "Source" }));
+    host.appendChild(el("div", { class: "detail-title", text: title || "Untitled" }));
+    if (body) host.appendChild(el("div", { class: "detail-body", text: body }));
+    if (note) host.appendChild(el("div", { class: "detail-note", text: note }));
+    if (files && files.length) {
+      var fileBox = el("div", { class: "lineage-files" });
+      files.forEach(function (f) { fileBox.appendChild(el("span", { class: "file-tok", text: f })); });
+      host.appendChild(fileBox);
+    }
+  }
+
+  function buildLineageGraph(step, detail) {
+    var proposerRefs = step.proposer_refs || [], refinerRefs = step.refiner_refs || [];
+    var maxNodes = Math.max(proposerRefs.length, refinerRefs.length, 1);
+    var H = Math.max(300, 92 + maxNodes * 82), W = 900, finalY = H / 2;
+    var svg = svgEl("svg", { viewBox: "0 0 " + W + " " + H, width: "100%", height: H, role: "img", "aria-label": "Decision lineage for " + step.title });
+    var defs = svgEl("defs", {}), marker = svgEl("marker", { id: "lineage-arrow-" + step.id, viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 6, markerHeight: 6, orient: "auto-start-reverse" });
+    marker.appendChild(svgEl("path", { d: "M 0 0 L 10 5 L 0 10 z", fill: C.muted })); defs.appendChild(marker); svg.appendChild(defs);
+    svg.appendChild(svgText(32, 24, "PROPOSAL SOURCES", { fill: C.muted, "font-size": 10, "font-weight": 800, "letter-spacing": "0.08em" }));
+    svg.appendChild(svgText(338, 24, "REFINER SIGNALS", { fill: C.muted, "font-size": 10, "font-weight": 800, "letter-spacing": "0.08em" }));
+    svg.appendChild(svgText(650, 24, "FINAL DECISION", { fill: C.muted, "font-size": 10, "font-weight": 800, "letter-spacing": "0.08em" }));
+
+    function ys(count) {
+      if (count <= 1) return [finalY];
+      var gap = Math.min(100, (H - 100) / (count - 1));
+      var first = finalY - gap * (count - 1) / 2;
+      return Array.apply(null, Array(count)).map(function (_, i) { return first + i * gap; });
+    }
+    var propY = ys(proposerRefs.length), refY = ys(refinerRefs.length);
+    function edge(x1, y1, x2, y2, color, dash) {
+      var p = svgEl("path", { d: "M " + x1 + " " + y1 + " C " + (x1 + 75) + " " + y1 + ", " + (x2 - 75) + " " + y2 + ", " + x2 + " " + y2, fill: "none", stroke: color, "stroke-width": 2, "marker-end": "url(#lineage-arrow-" + step.id + ")", opacity: 0.78 });
+      if (dash) p.setAttribute("stroke-dasharray", dash);
+      svg.appendChild(p);
+    }
+    proposerRefs.forEach(function (r, i) { edge(250, propY[i], 650, finalY, r.relationship === "adopted" ? C.green : C.gold, r.relationship === "adapted" ? "8 6" : ""); });
+    refinerRefs.forEach(function (r, i) {
+      var resolved = resolveRefinerLineage(r), color = resolved.status === "contradicted" ? C.red : (resolved.status === "unverified" ? C.muted : C.ink);
+      edge(560, refY[i], 650, finalY, color, "2 6");
+    });
+
+    proposerRefs.forEach(function (r, i) {
+      var source = resolveProposerLineage(r), label = r.agent_id + " · step " + (r.step_index + 1);
+      addLineageNode(svg, 30, propY[i] - 31, 220, 62, label, source.title || r.note, r.relationship, function () {
+        showLineageDetail(detail, source.title || label, source.body, r.note, source.files, "Proposer · " + r.relationship);
+      });
+    });
+    refinerRefs.forEach(function (r, i) {
+      var source = resolveRefinerLineage(r), label = r.agent_id + " · " + r.kind.replace(/_/g, " ");
+      addLineageNode(svg, 340, refY[i] - 31, 220, 62, label, source.title || r.note, source.status || "review", function () {
+        showLineageDetail(detail, source.title || label, source.body, r.note, source.files, "Refiner · " + (source.status || r.kind));
+      });
+    });
+    addLineageNode(svg, 650, finalY - 43, 220, 86, "FINAL · " + step.decision, step.title, "final-" + step.decision, function () {
+      showLineageDetail(detail, step.title, step.description, step.adjudication, step.files_touched, "Final step · " + step.decision);
+    });
+    return svg;
+  }
+
+  function addLineageNode(svg, x, y, w, h, eyebrow, title, state, onActivate) {
+    var colors = { adopted: C.green, adapted: C.gold, verified: C.green, contradicted: C.red, unverified: C.muted, "final-accepted": C.green, "final-revised": C.gold, "final-new": C.ink };
+    var g = svgEl("g", { class: "lineage-node", role: "button", tabindex: "0", "aria-label": eyebrow + ": " + title });
+    g.appendChild(svgEl("rect", { x: x, y: y, width: w, height: h, rx: 10, fill: "#fff", stroke: colors[state] || C.track, "stroke-width": 2 }));
+    g.appendChild(svgText(x + 13, y + 20, eyebrow.toUpperCase(), { fill: colors[state] || C.muted, "font-size": 9, "font-weight": 800, "letter-spacing": "0.05em" }));
+    var lines = wrapLineageText(title, 31, 2);
+    lines.forEach(function (line, i) { g.appendChild(svgText(x + 13, y + 40 + i * 15, line, { fill: C.ink, "font-size": 12, "font-weight": 700 })); });
+    g.addEventListener("click", onActivate);
+    g.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onActivate(); } });
+    svg.appendChild(g);
+  }
+
+  function wrapLineageText(value, width, maxLines) {
+    var words = String(value || "").split(/\s+/), lines = [], line = "";
+    words.forEach(function (word) {
+      var candidate = line ? line + " " + word : word;
+      if (candidate.length > width && line) { lines.push(line); line = word; }
+      else line = candidate;
+    });
+    if (line) lines.push(line);
+    if (lines.length > maxLines) {
+      lines = lines.slice(0, maxLines);
+      lines[maxLines - 1] = lines[maxLines - 1].slice(0, Math.max(1, width - 1)) + "…";
+    }
+    return lines;
+  }
+
+  function resolveProposerLineage(ref) {
+    var agent = (DATA.layer1 || []).find(function (r) { return r.agent_id === ref.agent_id; });
+    var step = agent && agent.payload && (agent.payload.plan || [])[ref.step_index];
+    return step ? { title: step.step, body: step.why || "", files: step.files_touched || [] } : { title: ref.agent_id + " step " + (ref.step_index + 1), body: "Source payload is unavailable.", files: [] };
+  }
+
+  function resolveRefinerLineage(ref) {
+    var agent = (DATA.layer2 || []).find(function (r) { return r.agent_id === ref.agent_id; });
+    var p = agent && agent.payload;
+    if (!p) return { title: ref.kind, body: "Source payload is unavailable.", status: "review", files: [] };
+    var keyByKind = { verification: "verifications", missing_step: "missing_steps", incorrect_step: "incorrect_steps", disagreement: "disagreements" };
+    if (ref.kind === "synthesis_recommendation") return { title: "Synthesis recommendation", body: p.synthesis_recommendation || "", status: "review", files: [] };
+    var item = (p[keyByKind[ref.kind]] || [])[ref.index];
+    if (ref.kind === "verification" && item) return { title: item.proposer + " · " + item.claim_index_path, body: item.actual_finding || "", status: item.status, files: item.source_url ? [item.source_url] : [] };
+    if (ref.kind === "incorrect_step" && item) return { title: item.proposer + " step " + (item.step_index + 1), body: item.what_is_wrong || "", status: "contradicted", files: [] };
+    if (ref.kind === "disagreement" && item) return { title: "Disagreement with " + item.proposer, body: (item.point || "") + " — " + (item.why || "") + " Instead: " + (item.what_to_do_instead || ""), status: "review", files: [] };
+    if (ref.kind === "missing_step" && item != null) return { title: "Missing step", body: String(item), status: "review", files: [] };
+    return { title: ref.kind.replace(/_/g, " "), body: "Referenced finding is unavailable.", status: "review", files: [] };
+  }
+
   // ---------------------------------------------------------------- Aggregation
   (function () {
     var sec = el("section", { class: "block", id: "plan" });
@@ -571,7 +817,7 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
     sec.appendChild(el("h2", { class: "section-title", text: "Aggregated final plan" }));
     sec.appendChild(el("p", { class: "section-note", html: "Layers 0 (scout) and 3 (aggregation) run <b>in the parent Claude Code session (Opus), in-place</b> — not as spawned CLI subprocesses. The orchestrator only spawns Layers 1 &amp; 2, so Opus has no bar in the timeline and no log below: it <i>is</i> the session reading these outputs and writing the plan." }));
     if (DATA.final_plan_html) sec.appendChild(el("div", { class: "plan-render", html: DATA.final_plan_html }));
-    else sec.appendChild(el("div", { class: "notice info", text: "No final-plan.md yet — the parent Opus session aggregates the proposals and refiner findings into the final plan after this report is generated. Re-run report.py once final-plan.md exists to embed it here." }));
+    else sec.appendChild(el("div", { class: "notice info", text: "No final-plan.md yet — the parent Opus session aggregates the proposals and refiner findings after this report is generated. Re-run report.py once final-plan.md and final-plan.json exist to embed the plan and decision lineage." }));
     addSection("plan", "Final plan", sec);
   })();
 

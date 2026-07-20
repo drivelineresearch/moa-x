@@ -133,8 +133,8 @@ consulted" appendix. Don't just list URLs; give each a one-line
 summary of what it contributed and which proposer or refiner cited
 it.
 
-#### Step 7: Write the final plan
-Save to `.moa/<session>/final-plan.md`. Structure:
+#### Step 7: Write the final plan and its decision lineage
+Save the human-readable plan to `.moa/<session>/final-plan.md`. Structure:
 
 ```markdown
 # Final Plan: <one-line title derived from spec>
@@ -200,9 +200,88 @@ Calibrate based on:
 - Open questions: more unresolved questions means lower confidence.>
 ```
 
+Also save `.moa/<session>/final-plan.json`, a machine-readable companion used
+by the report's decision-lineage explorer. Validate it against
+`harness/scripts/schemas/final-plan.schema.json` (or the corresponding schema
+inside the installed skill). It must contain:
+
+- `version`: `1`.
+- `title` and `summary`: the same decision and short summary as the Markdown.
+- `confidence`: `level` (`high`, `medium`, or `low`) plus an honest `rationale`.
+- `steps`: one entry per final-plan step, in the same order. Give every step a
+  stable, unique, dash-separated `id`, plus `title`, `description`,
+  `files_touched`, `decision` (`accepted`, `revised`, or `new`), and an
+  `adjudication` explaining why the step survived synthesis.
+- `proposer_refs`: exact zero-based pointers to source proposal steps. Each
+  pointer has `agent_id`, `step_index`, `relationship` (`adopted` or
+  `adapted`), and a short `note`. Use an empty array only for a genuinely new
+  step that no proposer supplied.
+- `refiner_refs`: exact pointers to findings that influenced the final step.
+  Each has `agent_id`, `kind` (`verification`, `missing_step`,
+  `incorrect_step`, `disagreement`, or `synthesis_recommendation`), `index`,
+  and `note`. `index` is zero-based into the matching refiner array; use
+  `null` only for `synthesis_recommendation`, which is a scalar string.
+- `rejected_inputs`: proposer steps deliberately omitted from the final plan,
+  with `proposer`, zero-based `step_index`, `reason`, and supporting
+  `refiner_refs`.
+
+Do not invent lineage to make the graph look complete. Every pointer must
+resolve to the exact proposer/refiner payload in `synthesis-input.md`. If a
+final step combines multiple proposals, cite all material source steps. If a
+refiner changed the decision, cite that precise finding. In the both-refiners-
+reject case, write an empty `steps` array, put the rejected source steps in
+`rejected_inputs`, and set confidence to `low`.
+
+Example shape (illustrative values only):
+
+```json
+{
+  "version": 1,
+  "title": "Add the widget safely",
+  "summary": "Implement the shared approach with the verified edge-case fix.",
+  "confidence": {
+    "level": "medium",
+    "rationale": "The core approach converged; one API assumption remained unverified."
+  },
+  "steps": [
+    {
+      "id": "add-widget-core",
+      "title": "Add the widget core",
+      "description": "Implement the verified widget path and its fallback.",
+      "files_touched": ["src/widget.py"],
+      "decision": "revised",
+      "adjudication": "Adopts Codex's core step and applies Kimi's verified fallback correction.",
+      "proposer_refs": [
+        {
+          "agent_id": "codex",
+          "step_index": 0,
+          "relationship": "adapted",
+          "note": "Supplied the core implementation path."
+        }
+      ],
+      "refiner_refs": [
+        {
+          "agent_id": "kimi",
+          "kind": "verification",
+          "index": 0,
+          "note": "Verified the path and identified the fallback constraint."
+        }
+      ]
+    }
+  ],
+  "rejected_inputs": []
+}
+```
+
 #### Step 8: Present to the user
+Re-render the report after both files exist:
+
+```bash
+python3 harness/scripts/report.py --session .moa/<session>
+```
+
 Render the final plan inline in the conversation. Then ask:
-"Plan written to .moa/<session>/final-plan.md. Want me to start executing?"
+"Plan and decision lineage written to .moa/<session>/. Want me to start executing?"
 
 Do not start executing without explicit user approval.
 

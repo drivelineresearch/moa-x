@@ -8,7 +8,9 @@ refiners; the shipped default is codex + glm + sonnet proposers and
 codex + kimi refiners (glm/kimi run on the `opencode` CLI via the
 `opencode-go` gateway). Layers 0 (scout) and 3 (aggregation) are handled by
 the parent Claude Code session. The orchestrator only runs Layers 1 and 2,
-then writes a self-contained `.moa/<session>/report.html` post-mortem.
+then writes a self-contained `.moa/<session>/report.html` post-mortem. Layer 3
+adds `final-plan.md` plus a schema-validated `final-plan.json` provenance
+companion that powers the report's decision-lineage explorer.
 
 - `harness/`: orchestrator, adapters, prompts, schemas, and `report/`
   (HTML report template + vendored three.min.js). Designed to be droppable

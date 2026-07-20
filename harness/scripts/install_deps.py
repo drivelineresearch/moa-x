@@ -298,6 +298,7 @@ def _check_assets(failures: list[str]) -> None:
         skill_dir / "scripts" / "adapters" / "cursor.py",
         skill_dir / "scripts" / "schemas" / "proposer.schema.json",
         skill_dir / "scripts" / "schemas" / "refiner.schema.json",
+        skill_dir / "scripts" / "schemas" / "final-plan.schema.json",
         skill_dir / "prompts" / "scout.md",
         skill_dir / "prompts" / "proposer.md",
         skill_dir / "prompts" / "refiner.md",
@@ -324,7 +325,11 @@ def _check_strict_lint(failures: list[str]) -> None:
         failures.append("run_moa import")
         return
 
-    for label, schema_name in (("proposer", "proposer.schema.json"), ("refiner", "refiner.schema.json")):
+    for label, schema_name in (
+        ("proposer", "proposer.schema.json"),
+        ("refiner", "refiner.schema.json"),
+        ("final plan", "final-plan.schema.json"),
+    ):
         schema_path = SCRIPT_DIR / "schemas" / schema_name
         if not schema_path.exists():
             continue

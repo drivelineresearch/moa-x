@@ -58,9 +58,10 @@ Z-path exactly as written below.
 > "VERIFIED" stamp on one desk.
 >
 > ④ AGGREGATOR (bottom-right quadrant): a pair of hands in orange sleeves
-> drawing on a drafting table, assembling a blueprint and two outputs: a
-> document labeled "final-plan.md" and a browser card labeled "report.html"
-> containing tiny bar-chart and timeline shapes. Small "Opus" label in the
+> drawing on a drafting table, assembling a blueprint and three outputs: a
+> document labeled "final-plan.md", a small linked-node data card labeled
+> "final-plan.json", and a browser card labeled "report.html" containing tiny
+> bar-chart, timeline, and decision-lineage shapes. Small "Opus" label in the
 > corner.
 >
 > The connecting arrows are colored ribbon-pipes (green, violet, orange, plus a

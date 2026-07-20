@@ -99,6 +99,7 @@ PROMPTS_DIR = SCRIPT_DIR.parent / "prompts"
 
 PROPOSER_SCHEMA_PATH = SCHEMAS_DIR / "proposer.schema.json"
 REFINER_SCHEMA_PATH = SCHEMAS_DIR / "refiner.schema.json"
+FINAL_PLAN_SCHEMA_PATH = SCHEMAS_DIR / "final-plan.schema.json"
 
 PROPOSER_PROMPT_PATH = PROMPTS_DIR / "proposer.md"
 REFINER_PROMPT_PATH = PROMPTS_DIR / "refiner.md"
@@ -160,7 +161,7 @@ _TYPE_NAME_TO_CHECK = {
 # relies on any of these, we would silently pass invalid payloads. Emit a
 # one-shot warning per (path, keyword) so authors notice instead of trusting
 # a green check that never actually ran the constraint.
-_UNSUPPORTED_SCHEMA_KEYWORDS = {"anyOf", "oneOf", "allOf", "not", "if", "then", "else", "$ref"}
+_UNSUPPORTED_SCHEMA_KEYWORDS = {"anyOf", "oneOf", "allOf", "not", "if", "then", "else"}
 _warned_keywords: set[tuple[str, str]] = set()
 
 
@@ -180,10 +181,16 @@ def _warn_unsupported_keywords(schema: dict, path: str) -> None:
                 )
 
 
-def _validate_against_schema(payload: Any, schema: dict, path: str = "$") -> list[str]:
+def _validate_against_schema(
+    payload: Any,
+    schema: dict,
+    path: str = "$",
+    _root_schema: Optional[dict] = None,
+) -> list[str]:
     """Lightweight JSON Schema validator. Supports the subset our schemas use:
     type (string or array of strings for nullable fields), required, properties,
-    items, enum, minItems, maxItems, minLength, additionalProperties.
+    items, enum, const, minimum, minItems, maxItems, minLength,
+    additionalProperties, and local ``#/$defs/...`` references.
 
     Nullable fields use JSON Schema's type array pattern, e.g.
     `"type": ["string", "null"]`, which means the value can be a string or None.
@@ -193,8 +200,27 @@ def _validate_against_schema(payload: Any, schema: dict, path: str = "$") -> lis
     Returns a list of human-readable error strings. Empty list = valid.
     Avoids the `jsonschema` package so the orchestrator runs with stdlib only.
     """
+    if _root_schema is None:
+        _root_schema = schema
+    ref = schema.get("$ref")
+    if isinstance(ref, str):
+        if not ref.startswith("#/"):
+            return [f"{path}: only local JSON Schema references are supported, got {ref!r}"]
+        target: Any = _root_schema
+        try:
+            for part in ref[2:].split("/"):
+                target = target[part.replace("~1", "/").replace("~0", "~")]
+        except (KeyError, TypeError):
+            return [f"{path}: unresolved schema reference {ref!r}"]
+        if not isinstance(target, dict):
+            return [f"{path}: schema reference {ref!r} does not resolve to an object"]
+        return _validate_against_schema(payload, target, path, _root_schema)
+
     _warn_unsupported_keywords(schema, path)
     errors: list[str] = []
+    if "const" in schema and payload != schema["const"]:
+        errors.append(f"{path}: value {payload!r} does not equal const {schema['const']!r}")
+        return errors
     expected = schema.get("type")
 
     # Handle nullable type arrays like ["string", "null"]
@@ -216,7 +242,7 @@ def _validate_against_schema(payload: Any, schema: dict, path: str = "$") -> lis
             if _TYPE_NAME_TO_CHECK.get(t, lambda _: False)(payload):
                 sub_schema = dict(schema)
                 sub_schema["type"] = t
-                return _validate_against_schema(payload, sub_schema, path)
+                return _validate_against_schema(payload, sub_schema, path, _root_schema)
         return errors
 
     if expected == "object":
@@ -234,7 +260,11 @@ def _validate_against_schema(payload: Any, schema: dict, path: str = "$") -> lis
                     errors.append(f"{path}.{key}: unexpected field")
         for key, sub_schema in properties.items():
             if key in payload:
-                errors.extend(_validate_against_schema(payload[key], sub_schema, f"{path}.{key}"))
+                errors.extend(
+                    _validate_against_schema(
+                        payload[key], sub_schema, f"{path}.{key}", _root_schema
+                    )
+                )
 
     elif expected == "array":
         if not isinstance(payload, list):
@@ -249,7 +279,11 @@ def _validate_against_schema(payload: Any, schema: dict, path: str = "$") -> lis
         item_schema = schema.get("items")
         if item_schema is not None:
             for i, item in enumerate(payload):
-                errors.extend(_validate_against_schema(item, item_schema, f"{path}[{i}]"))
+                errors.extend(
+                    _validate_against_schema(
+                        item, item_schema, f"{path}[{i}]", _root_schema
+                    )
+                )
 
     elif expected == "string":
         if not isinstance(payload, str):
@@ -268,10 +302,14 @@ def _validate_against_schema(payload: Any, schema: dict, path: str = "$") -> lis
     elif expected == "integer":
         if not isinstance(payload, int) or isinstance(payload, bool):
             errors.append(f"{path}: expected integer, got {type(payload).__name__}")
+        elif schema.get("minimum") is not None and payload < schema["minimum"]:
+            errors.append(f"{path}: value {payload} is below minimum {schema['minimum']}")
 
     elif expected == "number":
         if not isinstance(payload, (int, float)) or isinstance(payload, bool):
             errors.append(f"{path}: expected number, got {type(payload).__name__}")
+        elif schema.get("minimum") is not None and payload < schema["minimum"]:
+            errors.append(f"{path}: value {payload} is below minimum {schema['minimum']}")
 
     elif expected == "boolean":
         if not isinstance(payload, bool):
@@ -318,6 +356,9 @@ def lint_schema_openai_strict(schema: Any, path: str = "$") -> list[str]:
             errors.extend(lint_schema_openai_strict(sub, f"{path}.{key}"))
     if isinstance(schema.get("items"), dict):
         errors.extend(lint_schema_openai_strict(schema["items"], f"{path}[items]"))
+    if isinstance(schema.get("$defs"), dict):
+        for key, sub in schema["$defs"].items():
+            errors.extend(lint_schema_openai_strict(sub, f"{path}.$defs.{key}"))
     for kw in ("oneOf", "anyOf", "allOf"):
         if isinstance(schema.get(kw), list):
             for i, sub in enumerate(schema[kw]):
@@ -1246,8 +1287,8 @@ def write_synthesis_input(
         "the full aggregation protocol. Synthesize the "
         f"{len(proposer_agent_ids)} proposer plans, honor the "
         f"{len(refiner_agent_ids)} refiner findings, surface disagreements across proposers "
-        "and across refiners, and write the final plan to `final-plan.md` in "
-        "this session directory."
+        "and across refiners, and write `final-plan.md` plus the structured "
+        "`final-plan.json` decision lineage in this session directory."
     )
     parts.append("")
 
@@ -1411,6 +1452,30 @@ def load_layer_results_from_manifest(
                     pass
         out.append(result)
     return out
+
+
+def session_started_at_from_manifest(
+    manifest: dict,
+    results: list[LayerResult],
+    fallback: float,
+) -> float:
+    """Return the earliest trustworthy timestamp for a resumed session.
+
+    Phase-split and redispatch invocations have their own process start time,
+    but the final manifest describes the whole session. Preserve the bridge
+    manifest's start and also consider retained agent timestamps so older
+    manifests with an incorrect phase-local start repair themselves.
+    """
+    candidates = [fallback]
+    manifest_start = manifest.get("started_at")
+    if isinstance(manifest_start, (int, float)) and manifest_start > 0:
+        candidates.append(float(manifest_start))
+    candidates.extend(
+        float(r.started_at)
+        for r in results
+        if isinstance(r.started_at, (int, float)) and r.started_at > 0
+    )
+    return min(candidates)
 
 
 def print_transient_summary(layer_label: str, results: list[LayerResult]) -> None:
@@ -1951,6 +2016,12 @@ def main() -> int:
             layer1 = load_layer_results_from_manifest(
                 layer1_manifest_path, "layer1", session_dir
             )
+            layer1_manifest = json.loads(
+                layer1_manifest_path.read_text(encoding="utf-8")
+            )
+            session_started_at = session_started_at_from_manifest(
+                layer1_manifest, layer1, started_at
+            )
             if not [r for r in layer1 if r.success]:
                 print(
                     "[orchestrator] FATAL: existing layer1 has no successful "
@@ -2036,13 +2107,18 @@ def main() -> int:
                 scout_brief=scout_brief,
                 layer1=layer1,
                 layer2=layer2,
-                started_at=started_at,
+                started_at=session_started_at,
                 finished_at=time.time(),
                 config=config_snapshot,
                 layer2_mode=layer2_mode,
             )
-            elapsed = time.time() - started_at
-            print(f"[orchestrator] DONE in {elapsed:.1f}s", flush=True)
+            phase_elapsed = time.time() - started_at
+            session_elapsed = time.time() - session_started_at
+            print(
+                f"[orchestrator] DONE phase in {phase_elapsed:.1f}s "
+                f"(session {session_elapsed:.1f}s)",
+                flush=True,
+            )
             print(f"[orchestrator] synthesis input: {synthesis_path}", flush=True)
             print(f"[orchestrator] manifest:        {manifest_path}", flush=True)
             maybe_write_report(session_dir, not args.no_report)
@@ -2057,6 +2133,7 @@ def main() -> int:
         # ---------- Layer 1: parallel proposers (phase = all or layer1) ----------
         existing_layer1: list[LayerResult] = []
         redispatch_proposer_names: Optional[list[str]] = None
+        layer1_session_started_at = started_at
         if args.redispatch:
             # --redispatch with --phase all was rejected at arg-parse time, so
             # we're necessarily in --phase layer1 here.
@@ -2070,6 +2147,12 @@ def main() -> int:
                 return 2
             existing_layer1 = load_layer_results_from_manifest(
                 layer1_manifest_path, "layer1", session_dir
+            )
+            existing_layer1_manifest = json.loads(
+                layer1_manifest_path.read_text(encoding="utf-8")
+            )
+            layer1_session_started_at = session_started_at_from_manifest(
+                existing_layer1_manifest, existing_layer1, started_at
             )
             redispatch_proposer_names = parse_redispatch_arg(
                 args.redispatch, [p.name for p in final_proposers], "proposers"
@@ -2110,12 +2193,17 @@ def main() -> int:
                 session_dir=session_dir,
                 scout_brief=scout_brief,
                 layer1=layer1,
-                started_at=started_at,
+                started_at=layer1_session_started_at,
                 finished_at=time.time(),
                 config=config_snapshot,
             )
-            elapsed = time.time() - started_at
-            print(f"[orchestrator] LAYER1 DONE in {elapsed:.1f}s", flush=True)
+            phase_elapsed = time.time() - started_at
+            session_elapsed = time.time() - layer1_session_started_at
+            print(
+                f"[orchestrator] LAYER1 DONE phase in {phase_elapsed:.1f}s "
+                f"(session {session_elapsed:.1f}s)",
+                flush=True,
+            )
             print(f"[orchestrator] layer1 manifest: {layer1_manifest_path}", flush=True)
             print()
             print(
