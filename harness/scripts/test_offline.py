@@ -1402,6 +1402,19 @@ def test_config_resolve_builtin_cursor_grok_uses_cursor() -> bool:
     return _ok(ok, f"got {rp}")
 
 
+def test_cursor_cmd_includes_plan_mode_when_supported() -> bool:
+    print("\n[N] cursor _build_cursor_cmd: '--mode plan' present iff supported (read-only)")
+    from adapters import cursor as cur
+    with_plan = cur._build_cursor_cmd("cursor-agent", "cursor-grok-4.5-high", plan_mode=True)
+    without = cur._build_cursor_cmd("cursor-agent", "cursor-grok-4.5-high", plan_mode=False)
+    ok = (
+        "--mode" in with_plan and with_plan[with_plan.index("--mode") + 1] == "plan"
+        and "--mode" not in without
+        and "--trust" in with_plan and "--output-format" in with_plan
+    )
+    return _ok(ok, f"with={with_plan} without={without}")
+
+
 def test_cursor_grok_recipe_extracts_valid_payload() -> bool:
     print("\n[N] cursor adapter extracts a schema-valid cursor-grok proposer payload (built-in recipe)")
     from adapters import cursor as cursor_adapter
@@ -2095,6 +2108,7 @@ def main() -> int:
         test_opencode_grok_recipe_extracts_valid_grok_payload,
         test_config_resolve_builtin_cursor_grok_uses_cursor,
         test_cursor_grok_recipe_extracts_valid_payload,
+        test_cursor_cmd_includes_plan_mode_when_supported,
         test_config_resolve_builtin_qwen_uses_token_plan,
         test_provider_catalog_includes_optional_builtins,
         test_finalize_moves_misplaced_refiner_verification,

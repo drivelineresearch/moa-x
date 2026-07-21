@@ -7,10 +7,11 @@ to claude-cli's outer envelope without --json-schema set:
     {"type": "result", "is_error": false, "result": "<MODEL TEXT>",
      "usage": {"inputTokens": ..., "outputTokens": ...}, ...}
 
-Read-only discipline is enforced at the prompt level via the shared
-READ_ONLY_RULE prepended to the prompt, the same way the claude/opencode
-adapters do it. (Current cursor-agent removed the `--mode plan` flag that
-previously gave a CLI-level guarantee.) See docs/cursor.md.
+Read-only discipline prefers `--mode plan` (a CLI-level guarantee — the model
+cannot invoke write/edit tools), feature-detected per cursor-agent build. The
+shared READ_ONLY_RULE is also prepended as defense-in-depth, and is the *sole*
+enforcement (with a loud warning) on the rare builds that lack `--mode plan`.
+See docs/cursor.md.
 
 Cursor has no --output-schema equivalent (codex-style hard schema
 enforcement), so the orchestrator validates the parsed payload against
@@ -24,10 +25,12 @@ invocations from racing on it.
 """
 from __future__ import annotations
 
+import functools
 import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from dataclasses import dataclass
@@ -35,6 +38,37 @@ from pathlib import Path
 from typing import Optional
 
 from adapters import READ_ONLY_RULE, extract_json_from_text, kill_proc_tree
+
+
+@functools.lru_cache(maxsize=8)
+def _supports_plan_mode(bin_name: str) -> bool:
+    """True when this cursor-agent build accepts ``--mode plan`` — a CLI-level
+    read-only guarantee (the model cannot invoke write/edit tools).
+
+    The flag was present, briefly removed in some 2025.10 builds, and restored
+    in current builds, so we feature-detect per binary (cached). Fail-safe: any
+    probe error returns False, so we fall back to the prompt rule + a warning
+    rather than assuming a hard guarantee we do not actually have.
+    """
+    try:
+        proc = subprocess.run(
+            [bin_name, "--help"], capture_output=True, text=True, timeout=15
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return False
+    help_text = (proc.stdout or "") + (proc.stderr or "")
+    return "--mode" in help_text and "plan" in help_text
+
+
+def _build_cursor_cmd(bin_name: str, model: str, *, plan_mode: bool) -> list[str]:
+    """Assemble the cursor-agent argv. Adds ``--mode plan`` (hard, CLI-level
+    read-only) when the build supports it; the caller still prepends the
+    READ_ONLY_RULE to the prompt as defense-in-depth. ``--trust`` bypasses the
+    interactive workspace-trust prompt that otherwise aborts a headless run."""
+    cmd = [bin_name, "-p", "--model", model, "--output-format", "json", "--trust"]
+    if plan_mode:
+        cmd += ["--mode", "plan"]
+    return cmd
 
 
 @dataclass
@@ -144,9 +178,9 @@ def run(
     """Invoke cursor-agent -p with the given prompt.
 
     Args:
-        prompt: The full prompt text. Read-only enforcement is via the
-            shared READ_ONLY_RULE prepended to the stdin prompt (current
-            cursor-agent removed --mode plan).
+        prompt: The full prompt text. Read-only is enforced by `--mode plan`
+            when the cursor-agent build supports it (feature-detected), with the
+            shared READ_ONLY_RULE prepended as defense-in-depth.
         repo_path: Working directory; passed via Popen cwd=.
         model: Model id (e.g. "gpt-5.5", "claude-sonnet-4-6", "grok-4.20").
         timeout_seconds: Hard wall-clock cap. Default 1200s, matching siblings.
@@ -171,27 +205,32 @@ def run(
         env["XDG_CACHE_HOME"] = str(Path(tmpdir) / "cache")
         env["PYTHONDONTWRITEBYTECODE"] = "1"
 
-        # Current cursor-agent (>=2025.10) removed `--mode plan` — passing it now
-        # exits 1 with "unknown option '--mode'", which broke the whole cursor
-        # harness. `--trust` is retained: it bypasses the interactive
-        # workspace-trust prompt that otherwise aborts a headless run in an
-        # untrusted directory. With plan mode gone, read-only discipline is
-        # enforced at the prompt level via the shared READ_ONLY_RULE (prepended
-        # to the stdin prompt below), the same way the claude/opencode adapters
-        # do it.
+        # Read-only enforcement: prefer `--mode plan`, a CLI-level guarantee the
+        # model cannot invoke write/edit tools. That flag was briefly absent in
+        # some 2025.10 cursor-agent builds and is present again in current ones,
+        # so we feature-detect it (cached). When it is available we use it AND
+        # still prepend the READ_ONLY_RULE (defense-in-depth). When it is NOT
+        # available we fall back to the prompt rule alone and warn loudly, since
+        # bare `-p --trust` has full write/shell access. `--trust` bypasses the
+        # interactive workspace-trust prompt that would otherwise abort a
+        # headless run in an untrusted directory.
         #
         # Prompt is sent via stdin, NOT as a positional argv entry. Refiner
         # prompts include the scout brief plus every proposer's full output
         # (tens of KB) and can exceed ARG_MAX on macOS/Linux. cursor-agent
         # reads stdin when no positional prompt is given. Codex does the
         # same; opencode can't (no stdin) so it takes the prompt by file.
-        cmd = [
-            _cursor_bin(),
-            "-p",
-            "--model", model,
-            "--output-format", "json",
-            "--trust",
-        ]
+        bin_name = _cursor_bin()
+        plan_mode = _supports_plan_mode(bin_name)
+        if not plan_mode:
+            print(
+                "[cursor adapter] WARNING: this cursor-agent build does not accept "
+                "'--mode plan'; read-only is enforced only by the prompt rule (soft — "
+                "the model technically has write/shell access). Update cursor-agent for "
+                "a hard CLI-level read-only guarantee.",
+                file=sys.stderr, flush=True,
+            )
+        cmd = _build_cursor_cmd(bin_name, model, plan_mode=plan_mode)
 
         try:
             proc = subprocess.Popen(
