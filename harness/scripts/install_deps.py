@@ -12,7 +12,7 @@ the same path run_moa.py uses) and verifies coherence:
     against schemas hardcoded to a fixed provider set.
   - Cursor-only model-availability: cross-checks each cursor provider's
     `model:` against `cursor-agent --list-models`. Cursor uses machine
-    ids (gpt-5.5-medium, grok-4-20) that differ from friendly names —
+    ids (gpt-5.5-medium, cursor-grok-4.5-high) that differ from friendly names —
     this catches typos before a real run wastes wall-clock.
   - Skill assets and schema strict-mode lint.
 
@@ -227,7 +227,7 @@ def _check_cursor_models(loaded_cfg: "LoadedConfig", needed: set[str], failures:
 
     Cursor uses machine ids that diverge from the friendly names on
     cursor.com/docs/models — this catches the most common typo class
-    (gpt-5.5 vs gpt-5.5-medium, grok-4.20 vs grok-4-20)."""
+    (gpt-5.5 vs gpt-5.5-medium, grok-4.5 vs cursor-grok-4.5-high)."""
     if "cursor" not in needed:
         return
     cursor_providers = [p for p in loaded_cfg.proposers + loaded_cfg.refiners if p.harness == "cursor"]

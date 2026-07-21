@@ -124,7 +124,7 @@ route it through the `cursor` harness as a user-named provider — see
 A provider in moa-x is a `{name, harness, model}` triple. The `harness`
 is which CLI gets invoked (`codex`, `claude`, `opencode`, `cursor`); the
 `model` is what that harness asks for (e.g. `gpt-5.6-terra`, `opencode-go/glm-5.2`,
-`grok-4-20`); the `name` is a user-facing label that becomes the
+`cursor-grok-4.5-high`); the `name` is a user-facing label that becomes the
 `agent_id` in payloads. The codebase ships built-in names `codex`,
 `codex-reviewer`, `sonnet`, `opus`, `glm`, `kimi`, `qwen`, `composer`, `grok`, `cursor-grok`; users add their own under
 `providers:` in `harness/config.yaml` or via the

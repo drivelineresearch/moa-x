@@ -199,7 +199,7 @@ proposer/refiner sets come from `harness/scripts/config.py`'s
 3. Defaults: `[codex, glm, sonnet]`, `[codex-reviewer, qwen]`, aggregator `opus`
 
 User-defined provider names declared under `providers:` in
-`harness/config.yaml` (e.g. `cursor-grok: {harness: cursor, model: grok-4-20}`)
+`harness/config.yaml` (e.g. `c-grok: {harness: cursor, model: cursor-grok-4.5-high}`)
 are valid roster entries and must be shown verbatim. If
 `MOA_SKIP_LAYER2=1` or `layers.skip_refinement: true`, omit the refiner
 clause entirely. If `--self-moa` is in play, use the self-MoA instance IDs

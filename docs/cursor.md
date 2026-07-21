@@ -27,35 +27,49 @@ design discussion.
 
 ## Filesystem guarantees
 
-The cursor adapter invokes `cursor-agent --mode plan` for every call.
-Plan mode is enforced at the Cursor CLI layer:
+Read-only discipline is layered. The primary guarantee is
+`cursor-agent --mode plan`, enforced at the Cursor CLI layer:
 
 > `--mode plan` — read-only/planning (analyze, propose plans, no edits)
 
 Verified: prompts that ask the model to write a file return *"plan mode
 is active and I lack permission to run write/edit tools"* and produce
-no file. `--mode plan` is the primary CLI-level guarantee, not a prompt
-hint.
+no file. `--mode plan` is a CLI-level guarantee, not a prompt hint.
 
-Belt-and-suspenders: for defense in depth you can also pin the
-workspace read-only at the sandbox layer — a `sandbox.json` with
-`workspace_readonly` plus `permissions.deny: ["Write(**)"]`. Note the
-known bug where headless `-p` runs could ignore `sandbox.json`
-(cursor forum thread 157095); that unreliability is exactly why
-`--mode plan` is the primary guarantee and the sandbox settings are a
-secondary layer, not the other way around.
+**The flag is feature-detected per cursor-agent build.** It was present
+historically, briefly removed in some 2025.10 builds, and restored in
+current releases. The adapter probes `cursor-agent --help` once (cached)
+and then:
 
-Implication: the adapter does **not** prepend the
-`READ_ONLY_RULE` prompt directive that the codex, claude, and opencode
-adapters use. Those adapters have no equivalent CLI flag, so the prompt
-is their only line of defense. Cursor's plan mode replaces the prompt
-rule — keeping both would just add token overhead.
+- **When `--mode plan` is supported** (current builds): the adapter uses
+  it **and still prepends** the shared `READ_ONLY_RULE` to the prompt as
+  defense-in-depth. Two independent layers — a hard CLI guarantee plus
+  the soft prompt rule.
+- **When it is absent** (rare old builds): the adapter falls back to the
+  `READ_ONLY_RULE` prompt directive *alone* and prints a loud stderr
+  warning that read-only is now soft — bare `-p --trust` otherwise has
+  full write/shell access. Fail-safe: any probe error is treated as
+  "unsupported," so we never assume a hard guarantee we don't have.
 
-If a future Cursor release regresses plan-mode enforcement, the
+So unlike the codex/claude/opencode adapters (prompt rule only — those
+CLIs have no equivalent flag), the cursor adapter carries *both*
+enforcement paths and prefers the CLI one. An earlier revision dropped
+the prompt rule whenever plan mode was active; that traded away the
+fallback layer and was reverted after review.
+
+Belt-and-suspenders: you can also pin the workspace read-only at the
+sandbox layer — a `sandbox.json` with `workspace_readonly` plus
+`permissions.deny: ["Write(**)"]`. Note the known bug where headless
+`-p` runs could ignore `sandbox.json` (cursor forum thread 157095); that
+unreliability is why `--mode plan` (plus the prompt rule) is the primary
+guarantee and the sandbox settings are a secondary layer.
+
+If a future Cursor release regresses plan-mode enforcement, the adapter
+degrades to the prompt rule (with the warning above), and the
 orchestrator's session is still bounded by `cwd=repo_path` (set on the
 subprocess), so any rogue write lands inside the user's repo where
-`.gitignore` and review surface it. Defense in depth lives at the git
-and sandbox layers, not the prompt layer.
+`.gitignore` and review surface it. Defense in depth lives at the CLI,
+prompt, git, and sandbox layers.
 
 ## Authentication
 
@@ -78,25 +92,29 @@ probes `cursor-agent` first, then `agent`, on the system PATH.
 
 ## Command line shape
 
-The adapter invokes:
+The adapter invokes (with the prompt on **stdin**, not as an argv entry):
 
 ```bash
-cursor-agent -p \
+printf '%s' "$READ_ONLY_RULE
+
+$prompt" | cursor-agent -p \
   --model <model> \
-  --mode plan \
+  --mode plan \          # only when the build supports it (feature-detected)
   --output-format json \
-  --trust \
-  -- \
-  <prompt>
+  --trust
 ```
 
 | Flag                  | Purpose                                                  |
 | --------------------- | -------------------------------------------------------- |
 | `-p`                  | Print/non-interactive mode (required for headless)        |
-| `--mode plan`         | Read-only enforcement (see *Filesystem guarantees*)        |
+| `--mode plan`         | Read-only enforcement, added only when supported (see *Filesystem guarantees*) |
 | `--output-format json`| Structured envelope for the orchestrator's parser          |
 | `--trust`             | Bypass workspace-trust prompt (works only with `-p`)      |
-| `--`                  | Fence the prompt arg from option parsing                  |
+
+The prompt (with `READ_ONLY_RULE` prepended) is written to stdin rather
+than passed positionally: refiner prompts bundle the scout brief plus
+every proposer's full output and can exceed `ARG_MAX`. cursor-agent
+reads stdin when no positional prompt is given.
 
 We deliberately do **not** use `--force` / `--yolo`. Those flags tell
 Cursor to auto-approve commands the model invokes; with plan mode there
@@ -150,7 +168,7 @@ Examples (from a current install):
 | Claude 4.5 Sonnet    | `claude-4.5-sonnet`         |
 | Composer 2.5         | `composer-2.5` (Cursor's in-house model) |
 | Gemini 3.1 Pro       | `gemini-3.1-pro` (used by the Gemini migration example below) |
-| Grok 4.20            | `grok-4-20`                 |
+| Grok 4.5 (Cursor)    | `cursor-grok-4.5-high` (also `-medium`, `-low`; each has a `-fast` variant) |
 | Kimi K2.7 Code       | `kimi-k2.7-code`            |
 
 Notes:
@@ -158,7 +176,10 @@ Notes:
 - Anthropic models in Cursor are listed without a fixed thinking
   budget; reasoning controls live in the suffix (`-low`, `-medium`,
   `-high`, `-thinking-low`, etc.).
-- xAI's Grok-4 is `grok-4-20` (dashed), not `grok-4.20` (dotted).
+- Cursor's Grok ids are `cursor-`-prefixed with the reasoning tier baked
+  in: `cursor-grok-4.5-high` / `-medium` / `-low` (append `-fast` for the
+  faster variant). The bare `grok-4-20` id from older catalogs is gone —
+  always confirm with `cursor-agent --list-models`.
 - moa-x does not validate model ids — Cursor errors are surfaced
   verbatim if you typo.
 
@@ -199,11 +220,21 @@ example config).
 
 ## Configuration examples
 
-Add a fourth lane (Grok) on top of the default ensemble:
+Add the Grok lane on top of the default ensemble. `cursor-grok`
+(model `cursor-grok-4.5-high`) ships as a **built-in**, so no
+`providers:` block is needed — just name it in a layer:
+
+```yaml
+layers:
+  proposers: [codex, glm, sonnet, cursor-grok]
+  refiners:  [codex-reviewer, qwen]
+```
+
+To pin a different Cursor Grok tier, override the built-in's model:
 
 ```yaml
 providers:
-  cursor-grok: {harness: cursor, model: grok-4-20}
+  cursor-grok: {harness: cursor, model: cursor-grok-4.5-medium}
 layers:
   proposers: [codex, glm, sonnet, cursor-grok]
   refiners:  [codex-reviewer, qwen]
@@ -241,7 +272,7 @@ path for Google models.)
 Override a model at runtime:
 
 ```bash
-MOA_CURSOR_GROK_MODEL=grok-4-20-thinking python harness/scripts/run_moa.py ...
+MOA_CURSOR_GROK_MODEL=cursor-grok-4.5-medium python harness/scripts/run_moa.py ...
 ```
 
 Per-provider timeout (for slower thinking models):
@@ -294,7 +325,7 @@ checks only what your config actually needs:
 - **Cursor model availability**: each cursor provider's `model:` is
   checked against `cursor-agent --list-models`. Catches the most
   common typo class (friendly names vs machine ids:
-  `gpt-5.5` vs `gpt-5.5-medium`, `grok-4.20` vs `grok-4-20`).
+  `gpt-5.5` vs `gpt-5.5-medium`, `grok-4.5` vs `cursor-grok-4.5-high`).
 - **Auth probe**: each needed harness's `check_available()` runs (which
   for cursor uses `cursor-agent whoami`). Stale tokens / expired
   sessions surface here, before a real run wastes wall-clock.

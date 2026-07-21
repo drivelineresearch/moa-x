@@ -80,7 +80,7 @@ using the name uppercased with `-` → `_`:
 
 | Pattern | Example | What it does |
 |---|---|---|
-| `MOA_<NAME>_MODEL` | `MOA_CURSOR_GROK_MODEL=grok-4-20-thinking` | Override model for that provider |
+| `MOA_<NAME>_MODEL` | `MOA_CURSOR_GROK_MODEL=cursor-grok-4.5-medium` | Override model for that provider |
 | `MOA_<NAME>_TIMEOUT` | `MOA_CURSOR_GROK_TIMEOUT=900` | Wall-clock cap in seconds |
 
 ### Env-var shorthand: `MOA_PROVIDER_<NAME>`

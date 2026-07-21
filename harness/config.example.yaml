@@ -81,7 +81,7 @@ layers:
 # providers:
 #   c-gpt:      {harness: cursor, model: gpt-5.5}
 #   c-composer: {harness: cursor, model: composer-2.5}
-#   c-grok:     {harness: cursor, model: grok-4.3}
+#   c-grok:     {harness: cursor, model: cursor-grok-4.5-high}
 # layers:
 #   proposers: [c-gpt, c-composer, c-grok]
 #   refiners:  [c-gpt, c-grok]

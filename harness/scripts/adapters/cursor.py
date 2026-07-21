@@ -182,7 +182,7 @@ def run(
             when the cursor-agent build supports it (feature-detected), with the
             shared READ_ONLY_RULE prepended as defense-in-depth.
         repo_path: Working directory; passed via Popen cwd=.
-        model: Model id (e.g. "gpt-5.5", "claude-sonnet-4-6", "grok-4.20").
+        model: Model id (e.g. "gpt-5.5", "claude-sonnet-4-6", "cursor-grok-4.5-high").
         timeout_seconds: Hard wall-clock cap. Default 1200s, matching siblings.
         log_file: Optional path to write the full cursor output. ALWAYS
             written in every exit path so post-mortems never come up empty.
