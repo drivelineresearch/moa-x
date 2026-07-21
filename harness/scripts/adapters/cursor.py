@@ -7,10 +7,10 @@ to claude-cli's outer envelope without --json-schema set:
     {"type": "result", "is_error": false, "result": "<MODEL TEXT>",
      "usage": {"inputTokens": ..., "outputTokens": ...}, ...}
 
-Read-only discipline is enforced by `--mode plan`, which is a CLI-level
-guarantee: the model cannot invoke write/edit tools. This replaces the
-prompt-rule directive the claude/opencode adapters use (those CLIs have
-no equivalent flag). See docs/cursor.md.
+Read-only discipline is enforced at the prompt level via the shared
+READ_ONLY_RULE prepended to the prompt, the same way the claude/opencode
+adapters do it. (Current cursor-agent removed the `--mode plan` flag that
+previously gave a CLI-level guarantee.) See docs/cursor.md.
 
 Cursor has no --output-schema equivalent (codex-style hard schema
 enforcement), so the orchestrator validates the parsed payload against
@@ -34,7 +34,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from adapters import extract_json_from_text, kill_proc_tree
+from adapters import READ_ONLY_RULE, extract_json_from_text, kill_proc_tree
 
 
 @dataclass
@@ -144,8 +144,9 @@ def run(
     """Invoke cursor-agent -p with the given prompt.
 
     Args:
-        prompt: The full prompt text. Read-only enforcement is via
-            --mode plan at the CLI level, not via prompt prepend.
+        prompt: The full prompt text. Read-only enforcement is via the
+            shared READ_ONLY_RULE prepended to the stdin prompt (current
+            cursor-agent removed --mode plan).
         repo_path: Working directory; passed via Popen cwd=.
         model: Model id (e.g. "gpt-5.5", "claude-sonnet-4-6", "grok-4.20").
         timeout_seconds: Hard wall-clock cap. Default 1200s, matching siblings.
@@ -170,9 +171,14 @@ def run(
         env["XDG_CACHE_HOME"] = str(Path(tmpdir) / "cache")
         env["PYTHONDONTWRITEBYTECODE"] = "1"
 
-        # --mode plan gives CLI-level read-only enforcement (the model literally
-        # cannot invoke write/edit tools). --trust bypasses the first-run
-        # workspace-trust prompt in headless mode. See docs/cursor.md.
+        # Current cursor-agent (>=2025.10) removed `--mode plan` — passing it now
+        # exits 1 with "unknown option '--mode'", which broke the whole cursor
+        # harness. `--trust` is retained: it bypasses the interactive
+        # workspace-trust prompt that otherwise aborts a headless run in an
+        # untrusted directory. With plan mode gone, read-only discipline is
+        # enforced at the prompt level via the shared READ_ONLY_RULE (prepended
+        # to the stdin prompt below), the same way the claude/opencode adapters
+        # do it.
         #
         # Prompt is sent via stdin, NOT as a positional argv entry. Refiner
         # prompts include the scout brief plus every proposer's full output
@@ -183,7 +189,6 @@ def run(
             _cursor_bin(),
             "-p",
             "--model", model,
-            "--mode", "plan",
             "--output-format", "json",
             "--trust",
         ]
@@ -200,7 +205,8 @@ def run(
                 start_new_session=True,
             )
             try:
-                stdout_text, stderr_text = proc.communicate(input=prompt, timeout=timeout_seconds)
+                stdout_text, stderr_text = proc.communicate(
+                    input=READ_ONLY_RULE + "\n\n" + prompt, timeout=timeout_seconds)
                 duration = time.monotonic() - start
                 stdout_captured = stdout_text or ""
                 stderr_captured = stderr_text or ""

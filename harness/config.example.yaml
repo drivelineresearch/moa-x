@@ -15,6 +15,7 @@
 #   qwen      → {harness: opencode, model: qwen-token-plan/qwen3.8-max-preview} # Token Plan, 600s cap
 #   composer  → {harness: cursor,   model: composer-2.5}                # Cursor Composer via cursor-agent
 #   grok      → {harness: opencode, model: xai/grok-4.5}                 # xAI Grok (direct) via opencode; needs XAI_API_KEY
+#   cursor-grok → {harness: cursor, model: cursor-grok-4.5-high}         # xAI Grok via Cursor; needs cursor-agent login / CURSOR_API_KEY
 #
 # Override a built-in's model via:
 #   --codex-model / --sonnet-model CLI flags, or
@@ -50,10 +51,11 @@ layers:
 #   proposers: [codex, glm, sonnet, grok]
 #   refiners:  [codex-reviewer, qwen]
 #
-# Example: 4-lane proposer mix adding one Cursor lane
+# Example: 4-lane proposer mix adding the Cursor Grok lane. `cursor-grok` is a
+# built-in (harness: cursor, model cursor-grok-4.5-high) — no providers: block
+# needed. Needs cursor-agent login or CURSOR_API_KEY. Override the exact Cursor
+# model id with MOA_CURSOR_GROK_MODEL as Cursor's catalog advances.
 #
-# providers:
-#   cursor-grok: {harness: cursor, model: grok-4.3}
 # layers:
 #   proposers: [codex, glm, sonnet, cursor-grok]
 #   refiners:  [codex-reviewer, qwen]

@@ -14,7 +14,7 @@ CLI flags passed to run_moa.py still override everything — they are
 parsed after this module populates os.environ.
 
 Harnesses supported by the built-in adapters are {codex, claude, opencode,
-cursor}. Named providers (built-in codex/codex-reviewer/codex-aggregator/sonnet/opus/glm/kimi/qwen/composer/grok plus user-defined
+cursor}. Named providers (built-in codex/codex-reviewer/codex-aggregator/sonnet/opus/glm/kimi/qwen/composer/grok/cursor-grok plus user-defined
 entries in harness/config.yaml) map onto those harnesses.
 
 Typical usage:
@@ -98,6 +98,7 @@ BUILTIN_PROVIDERS: dict[str, ResolvedProvider] = {
     "qwen":           ResolvedProvider(name="qwen",           harness="opencode", model="qwen-token-plan/qwen3.8-max-preview", timeout=600),
     "composer":       ResolvedProvider(name="composer",       harness="cursor",   model="composer-2.5"),
     "grok":           ResolvedProvider(name="grok",           harness="opencode", model="xai/grok-4.5"),
+    "cursor-grok":    ResolvedProvider(name="cursor-grok",    harness="cursor",   model="cursor-grok-4.5-high"),
 }
 
 
@@ -106,7 +107,7 @@ def resolve_provider(name: str, *, user_providers: dict[str, dict]) -> ResolvedP
 
     Lookup order:
       1. user_providers (from harness/config.yaml `providers:` block)
-      2. BUILTIN_PROVIDERS (codex, codex-reviewer, codex-aggregator, sonnet, opus, glm, kimi, qwen, composer, grok)
+      2. BUILTIN_PROVIDERS (codex, codex-reviewer, codex-aggregator, sonnet, opus, glm, kimi, qwen, composer, grok, cursor-grok)
 
     Then env-var overrides apply per-field:
       - MOA_<NAME>_MODEL overrides .model

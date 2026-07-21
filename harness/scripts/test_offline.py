@@ -221,6 +221,23 @@ SAMPLE_CURSOR_STDOUT_SUCCESS = json.dumps({
               "cacheReadTokens": 0, "cacheWriteTokens": 0},
 })
 
+# cursor-grok routes through the cursor harness (built-in cursor-grok ->
+# cursor-grok-4.5-high). Cursor wraps the model's bare-JSON output in its
+# standard result envelope; the adapter's _extract_payload pulls it out. This
+# fixture is the parser-recipe evidence; a live
+# `cursor-agent -p --model cursor-grok-4.5-high --output-format json` proposer
+# run matches this envelope shape exactly.
+SAMPLE_CURSOR_GROK_STDOUT = json.dumps({
+    "type": "result",
+    "subtype": "success",
+    "is_error": False,
+    "duration_ms": 9002,
+    "result": json.dumps(_make_valid_proposer("cursor-grok")),
+    "session_id": "cg-1",
+    "request_id": "req-cg-1",
+    "usage": {"inputTokens": 130, "outputTokens": 650},
+})
+
 SAMPLE_CURSOR_STDOUT_FENCED = json.dumps({
     "type": "result",
     "subtype": "success",
@@ -1377,6 +1394,25 @@ def test_opencode_grok_recipe_extracts_valid_grok_payload() -> bool:
     return _ok(len(errors) == 0, f"schema errors={errors[:3]}")
 
 
+def test_config_resolve_builtin_cursor_grok_uses_cursor() -> bool:
+    print("\n[N] config.resolve_provider: cursor-grok maps to cursor harness / cursor-grok-4.5-high")
+    from config import resolve_provider
+    rp = resolve_provider("cursor-grok", user_providers={})
+    ok = (rp.name == "cursor-grok" and rp.harness == "cursor" and rp.model == "cursor-grok-4.5-high")
+    return _ok(ok, f"got {rp}")
+
+
+def test_cursor_grok_recipe_extracts_valid_payload() -> bool:
+    print("\n[N] cursor adapter extracts a schema-valid cursor-grok proposer payload (built-in recipe)")
+    from adapters import cursor as cursor_adapter
+    payload = cursor_adapter._extract_payload(SAMPLE_CURSOR_GROK_STDOUT)
+    if not (isinstance(payload, dict) and payload.get("agent_id") == "cursor-grok"):
+        return _ok(False, f"extractor did not return a cursor-grok payload; got {payload!r}")
+    schema = run_moa._load_schema(run_moa.PROPOSER_SCHEMA_PATH)
+    errors = run_moa._validate_against_schema(payload, schema)
+    return _ok(len(errors) == 0, f"schema errors={errors[:3]}")
+
+
 def test_config_resolve_builtin_qwen_uses_token_plan() -> bool:
     print("\n[N] config.resolve_provider: qwen maps to Qwen Token Plan via OpenCode")
     from config import resolve_provider
@@ -2057,6 +2093,8 @@ def main() -> int:
         test_config_resolve_builtin_grok_uses_opencode,
         test_opencode_preflight_recognizes_xai_key,
         test_opencode_grok_recipe_extracts_valid_grok_payload,
+        test_config_resolve_builtin_cursor_grok_uses_cursor,
+        test_cursor_grok_recipe_extracts_valid_payload,
         test_config_resolve_builtin_qwen_uses_token_plan,
         test_provider_catalog_includes_optional_builtins,
         test_finalize_moves_misplaced_refiner_verification,
