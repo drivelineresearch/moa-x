@@ -82,9 +82,10 @@ Rule 2 is non-negotiable. Rule 1 is a strong recommendation.
   `gpt-5.6-sol` at high reasoning, Qwen `qwen3.8-max-preview`, and Claude
   Code's rolling `opus` alias. It's
   a default, not a cap — the roster is pure config (built-in names,
-  `providers:` in config.yaml, the optional built-in Qwen Token Plan provider,
-  or the `MOA_PROVIDER_<NAME>` env shorthand). Tested recipes for DeepSeek,
-  MiniMax, xAI, and Mistral are welcome; most are an opencode/cursor model
+  `providers:` in config.yaml, the built-in `grok` (xAI Grok via opencode's
+  native `xai` provider — needs `XAI_API_KEY`) and Qwen Token Plan providers, or
+  the `MOA_PROVIDER_<NAME>` env shorthand). Tested recipes for DeepSeek,
+  MiniMax, and Mistral are welcome; most are an opencode/cursor model
   string, but a new *harness* needs its own adapter — open an issue first.
 
 ## Config surface

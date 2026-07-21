@@ -266,6 +266,13 @@ SAMPLE_CURSOR_STDERR_QUOTA = "rate limit exceeded for your plan; retry after 60s
 # so the shared extractor runs directly on it. Payload may be bare or fenced;
 # empty stdout under a clean exit is the transient flake.
 SAMPLE_OPENCODE_STDOUT_BARE = json.dumps(VALID_PROPOSER_CODEX)
+# Grok routes through the opencode harness (built-in provider `grok` →
+# xai/grok-4.5). opencode emits the model's final text straight to stdout with
+# no JSON envelope, so a Grok proposer's output is a bare (or fenced) JSON
+# object the shared extractor runs on directly. This fixture is the parser
+# recipe evidence for the built-in grok provider; a live
+# `opencode run -m xai/grok-4.5` proposer run matches this shape.
+SAMPLE_OPENCODE_GROK_STDOUT = json.dumps(_make_valid_proposer("grok"))  # bare JSON, agent_id "grok"
 SAMPLE_OPENCODE_STDOUT_FENCED = (
     "I read the repo and here is the plan:\n\n```json\n"
     + json.dumps(VALID_PROPOSER_CODEX) + "\n```\n"
@@ -1345,6 +1352,31 @@ def test_config_resolve_builtin_composer_uses_cursor() -> bool:
     return _ok(ok, f"got {rp}")
 
 
+def test_config_resolve_builtin_grok_uses_opencode() -> bool:
+    print("\n[N] config.resolve_provider: grok maps to opencode harness / xai/grok-4.5")
+    from config import resolve_provider
+    rp = resolve_provider("grok", user_providers={})
+    ok = (rp.name == "grok" and rp.harness == "opencode" and rp.model == "xai/grok-4.5")
+    return _ok(ok, f"got {rp}")
+
+
+def test_opencode_preflight_recognizes_xai_key() -> bool:
+    print("\n[N] opencode preflight registers XAI_API_KEY as valid auth (grok recipe)")
+    from adapters import opencode as oc
+    return _ok("XAI_API_KEY" in oc._PROVIDER_KEY_ENVS, f"_PROVIDER_KEY_ENVS={oc._PROVIDER_KEY_ENVS}")
+
+
+def test_opencode_grok_recipe_extracts_valid_grok_payload() -> bool:
+    print("\n[N] opencode extractor pulls a schema-valid grok proposer payload (built-in grok recipe)")
+    from adapters import extract_json_from_text
+    payload = extract_json_from_text(SAMPLE_OPENCODE_GROK_STDOUT)
+    if not (isinstance(payload, dict) and payload.get("agent_id") == "grok"):
+        return _ok(False, f"extractor did not return a grok payload; got {payload!r}")
+    schema = run_moa._load_schema(run_moa.PROPOSER_SCHEMA_PATH)
+    errors = run_moa._validate_against_schema(payload, schema)
+    return _ok(len(errors) == 0, f"schema errors={errors[:3]}")
+
+
 def test_config_resolve_builtin_qwen_uses_token_plan() -> bool:
     print("\n[N] config.resolve_provider: qwen maps to Qwen Token Plan via OpenCode")
     from config import resolve_provider
@@ -2022,6 +2054,9 @@ def main() -> int:
         test_config_resolve_builtin_glm_uses_opencode,
         test_config_resolve_builtin_kimi_uses_opencode,
         test_config_resolve_builtin_composer_uses_cursor,
+        test_config_resolve_builtin_grok_uses_opencode,
+        test_opencode_preflight_recognizes_xai_key,
+        test_opencode_grok_recipe_extracts_valid_grok_payload,
         test_config_resolve_builtin_qwen_uses_token_plan,
         test_provider_catalog_includes_optional_builtins,
         test_finalize_moves_misplaced_refiner_verification,

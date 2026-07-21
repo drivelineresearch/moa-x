@@ -60,6 +60,7 @@ _PROVIDER_KEY_ENVS = (
     "OPENCODE_API_KEY",
     "OPENROUTER_API_KEY",
     "QWEN_TOKEN_PLAN_API_KEY",
+    "XAI_API_KEY",  # xAI Grok (built-in `grok` provider → xai/grok-4.5)
 )
 
 # Read-only permission policy handed to opencode via OPENCODE_CONFIG. Denying

@@ -14,6 +14,7 @@
 #   kimi      → {harness: opencode, model: opencode-go/kimi-k2.7-code}       # Kimi via opencode-go gateway
 #   qwen      → {harness: opencode, model: qwen-token-plan/qwen3.8-max-preview} # Token Plan, 600s cap
 #   composer  → {harness: cursor,   model: composer-2.5}                # Cursor Composer via cursor-agent
+#   grok      → {harness: opencode, model: xai/grok-4.5}                 # xAI Grok (direct) via opencode; needs XAI_API_KEY
 #
 # Override a built-in's model via:
 #   --codex-model / --sonnet-model CLI flags, or
@@ -37,6 +38,17 @@ layers:
 # User-named providers extend the built-ins. Define them here, or as a
 # shell/.env shorthand: MOA_PROVIDER_<NAME>=<harness>:<model> (see .env.example).
 # YAML wins over the env shorthand on a name conflict.
+#
+# Example: add xAI Grok as a 4th proposer. `grok` is a built-in (harness:
+# opencode, model xai/grok-4.5), so no `providers:` block is needed — just list
+# it. Requires XAI_API_KEY in .env or the shell (direct xAI API — opencode has
+# `xai` as a native provider, no extra CLI login). Override the model with
+# MOA_GROK_MODEL (e.g. xai/grok-build-0.1 for the coding-tuned variant, or
+# xai/grok-4.3).
+#
+# layers:
+#   proposers: [codex, glm, sonnet, grok]
+#   refiners:  [codex-reviewer, qwen]
 #
 # Example: 4-lane proposer mix adding one Cursor lane
 #
