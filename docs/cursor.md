@@ -27,7 +27,7 @@ design discussion.
 
 ## Filesystem guarantees
 
-Read-only discipline is layered. The primary guarantee is
+Read-only discipline is **fail-closed**. The primary guarantee is
 `cursor-agent --mode plan`, enforced at the Cursor CLI layer:
 
 > `--mode plan` — read-only/planning (analyze, propose plans, no edits)
@@ -36,26 +36,24 @@ Verified: prompts that ask the model to write a file return *"plan mode
 is active and I lack permission to run write/edit tools"* and produce
 no file. `--mode plan` is a CLI-level guarantee, not a prompt hint.
 
-**The flag is feature-detected per cursor-agent build.** It was present
-historically, briefly removed in some 2025.10 builds, and restored in
-current releases. The adapter probes `cursor-agent --help` once (cached)
-and then:
+**The adapter ALWAYS passes `--mode plan` — it never launches
+cursor-agent without it.** The shared `READ_ONLY_RULE` is also prepended
+to the prompt as defense-in-depth (two layers: a hard CLI guarantee plus
+the prompt rule). This matches the other adapters, which each carry a
+CLI/tool-level control alongside the prompt rule — codex runs under
+`--sandbox read-only`, the claude adapter exposes no Write/Edit/Bash
+tools, and opencode passes a `permission` block denying edit/write.
 
-- **When `--mode plan` is supported** (current builds): the adapter uses
-  it **and still prepends** the shared `READ_ONLY_RULE` to the prompt as
-  defense-in-depth. Two independent layers — a hard CLI guarantee plus
-  the soft prompt rule.
-- **When it is absent** (rare old builds): the adapter falls back to the
-  `READ_ONLY_RULE` prompt directive *alone* and prints a loud stderr
-  warning that read-only is now soft — bare `-p --trust` otherwise has
-  full write/shell access. Fail-safe: any probe error is treated as
-  "unsupported," so we never assume a hard guarantee we don't have.
-
-So unlike the codex/claude/opencode adapters (prompt rule only — those
-CLIs have no equivalent flag), the cursor adapter carries *both*
-enforcement paths and prefers the CLI one. An earlier revision dropped
-the prompt rule whenever plan mode was active; that traded away the
-fallback layer and was reverted after review.
+`--mode plan` was present historically, briefly **removed** in some
+2025.10 cursor-agent builds, and restored in current releases. On a build
+that lacks it, passing the flag makes cursor-agent exit non-zero
+("unknown option '--mode'"). The adapter detects that specific failure
+and returns a clear *"upgrade cursor-agent"* error — it does **not**
+retry without the flag. So an unsupported build yields a failed run, not
+an unguarded one. (An earlier revision fell back to running without
+`--mode plan` and warned; that was fail-*open* — a transient probe hiccup
+could silently downgrade a plan-capable build to prompt-only enforcement
+— and was replaced by this fail-closed path after review.)
 
 Belt-and-suspenders: you can also pin the workspace read-only at the
 sandbox layer — a `sandbox.json` with `workspace_readonly` plus
@@ -64,23 +62,25 @@ sandbox layer — a `sandbox.json` with `workspace_readonly` plus
 unreliability is why `--mode plan` (plus the prompt rule) is the primary
 guarantee and the sandbox settings are a secondary layer.
 
-If a future Cursor release regresses plan-mode enforcement, the adapter
-degrades to the prompt rule (with the warning above), and the
-orchestrator's session is still bounded by `cwd=repo_path` (set on the
-subprocess), so any rogue write lands inside the user's repo where
-`.gitignore` and review surface it. Defense in depth lives at the CLI,
-prompt, git, and sandbox layers.
+Note the limits of the outer layers: `cwd=repo_path` sets the working
+directory but does not *contain* a process — a shell tool could still
+write to an absolute or parent path — and a git diff surfaces only
+tracked, non-ignored writes. Those are after-the-fact detection, not
+enforcement. The enforcement that matters is `--mode plan`, which is why
+the adapter refuses to run without it.
 
 ## Authentication
 
 Two auth modes, either is acceptable:
 
-| Mode          | Setup                                | Detection                    |
+| Mode          | Setup                                | Billing signal               |
 | ------------- | ------------------------------------ | ---------------------------- |
-| Subscription  | `cursor-agent login`                 | `~/.cursor/` directory exists |
+| Subscription  | `cursor-agent login`                 | no `CURSOR_API_KEY` set       |
 | API-billed    | `export CURSOR_API_KEY=sk-...`       | `CURSOR_API_KEY` env var set  |
 
-`check_available()` runs `cursor-agent whoami` as the auth probe.
+`check_available()` runs `cursor-agent whoami` as the auth probe for
+**both** modes (it does not test for `~/.cursor/`); the `CURSOR_API_KEY`
+env var only distinguishes which billing mode the probe reports.
 Exits 0 when authenticated (prints `✓ Logged in as <email>`); exits
 non-zero with a helpful message when not. This catches stale tokens
 or expired sessions during preflight, before the orchestrator wastes
@@ -99,7 +99,7 @@ printf '%s' "$READ_ONLY_RULE
 
 $prompt" | cursor-agent -p \
   --model <model> \
-  --mode plan \          # only when the build supports it (feature-detected)
+  --mode plan \          # always passed; run fails (no downgrade) if unsupported
   --output-format json \
   --trust
 ```
@@ -107,7 +107,7 @@ $prompt" | cursor-agent -p \
 | Flag                  | Purpose                                                  |
 | --------------------- | -------------------------------------------------------- |
 | `-p`                  | Print/non-interactive mode (required for headless)        |
-| `--mode plan`         | Read-only enforcement, added only when supported (see *Filesystem guarantees*) |
+| `--mode plan`         | Read-only enforcement, always passed; run fails if unsupported (see *Filesystem guarantees*) |
 | `--output-format json`| Structured envelope for the orchestrator's parser          |
 | `--trust`             | Bypass workspace-trust prompt (works only with `-p`)      |
 

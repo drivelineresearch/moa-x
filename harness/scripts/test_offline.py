@@ -1402,17 +1402,43 @@ def test_config_resolve_builtin_cursor_grok_uses_cursor() -> bool:
     return _ok(ok, f"got {rp}")
 
 
-def test_cursor_cmd_includes_plan_mode_when_supported() -> bool:
-    print("\n[N] cursor _build_cursor_cmd: '--mode plan' present iff supported (read-only)")
+def test_cursor_cmd_always_forces_plan_mode() -> bool:
+    print("\n[N] cursor _build_cursor_cmd: ALWAYS forces '--mode plan' (fail-closed read-only)")
     from adapters import cursor as cur
-    with_plan = cur._build_cursor_cmd("cursor-agent", "cursor-grok-4.5-high", plan_mode=True)
-    without = cur._build_cursor_cmd("cursor-agent", "cursor-grok-4.5-high", plan_mode=False)
+    cmd = cur._build_cursor_cmd("cursor-agent", "cursor-grok-4.5-high")
     ok = (
-        "--mode" in with_plan and with_plan[with_plan.index("--mode") + 1] == "plan"
-        and "--mode" not in without
-        and "--trust" in with_plan and "--output-format" in with_plan
+        "--mode" in cmd and cmd[cmd.index("--mode") + 1] == "plan"
+        and "-p" in cmd and "--trust" in cmd
+        and "--output-format" in cmd and cmd[cmd.index("--output-format") + 1] == "json"
+        and cmd[0] == "cursor-agent" and "cursor-grok-4.5-high" in cmd
+        # prompt is NEVER a positional argv entry (stdin only)
+        and not any(tok not in {
+            "cursor-agent", "-p", "--model", "cursor-grok-4.5-high",
+            "--mode", "plan", "--output-format", "json", "--trust",
+        } for tok in cmd)
     )
-    return _ok(ok, f"with={with_plan} without={without}")
+    return _ok(ok, f"cmd={cmd}")
+
+
+def test_cursor_plan_mode_unsupported_detection() -> bool:
+    print("\n[N] cursor _is_plan_mode_unsupported: detects '--mode' rejection, ignores unrelated errors")
+    from adapters import cursor as cur
+    rejects = [
+        ("error: unknown option '--mode'", ""),
+        ("", "unexpected argument '--mode' found"),
+        ("error: unrecognized option: --mode", ""),
+    ]
+    non_rejects = [
+        ("rate limit exceeded", ""),                       # unrelated failure
+        ("", "cursor-agent: authentication error"),        # unrelated failure
+        ("some unknown option --trust weirdness", ""),     # 'unknown option' but not about mode
+        ("", ""),                                          # empty
+    ]
+    ok = (
+        all(cur._is_plan_mode_unsupported(e, o) for e, o in rejects)
+        and not any(cur._is_plan_mode_unsupported(e, o) for e, o in non_rejects)
+    )
+    return _ok(ok, "rejection detection did not match expectations")
 
 
 def test_cursor_grok_recipe_extracts_valid_payload() -> bool:
@@ -2108,7 +2134,8 @@ def main() -> int:
         test_opencode_grok_recipe_extracts_valid_grok_payload,
         test_config_resolve_builtin_cursor_grok_uses_cursor,
         test_cursor_grok_recipe_extracts_valid_payload,
-        test_cursor_cmd_includes_plan_mode_when_supported,
+        test_cursor_cmd_always_forces_plan_mode,
+        test_cursor_plan_mode_unsupported_detection,
         test_config_resolve_builtin_qwen_uses_token_plan,
         test_provider_catalog_includes_optional_builtins,
         test_finalize_moves_misplaced_refiner_verification,
