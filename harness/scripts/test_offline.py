@@ -1432,6 +1432,9 @@ def test_cursor_plan_mode_unsupported_detection() -> bool:
         ("rate limit exceeded", ""),                       # unrelated failure
         ("", "cursor-agent: authentication error"),        # unrelated failure
         ("some unknown option --trust weirdness", ""),     # 'unknown option' but not about mode
+        ("error: unknown option '--model'", ""),           # --model must NOT match --mode
+        ("unrecognized model identifier", ""),             # 'mode' substring, no --mode token
+        ("error: unknown option '--trust'\n\nUsage: cursor-agent --mode plan ...", ""),  # --mode only in usage text (other line)
         ("", ""),                                          # empty
     ]
     ok = (

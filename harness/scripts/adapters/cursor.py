@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -38,6 +39,18 @@ from pathlib import Path
 from typing import Optional
 
 from adapters import READ_ONLY_RULE, extract_json_from_text, kill_proc_tree
+
+# A build that rejects `--mode plan` fails with an option-error phrase followed
+# by the `--mode` token ON THE SAME LINE, e.g. "unknown option '--mode'" or
+# "unexpected argument '--mode' found". Requiring both together (and a word
+# boundary after `mode`) avoids false positives from an unrelated `--model`
+# error, or from usage/help text that merely lists `--mode` on another line.
+_MODE_REJECT_RE = re.compile(
+    r"(?:unknown option|unexpected argument|unrecognized option|"
+    r"unrecognized argument|invalid option|no such option|unknown flag)"
+    r"[^\n]*?--mode\b",
+    re.IGNORECASE,
+)
 
 
 def _build_cursor_cmd(bin_name: str, model: str) -> list[str]:
@@ -59,14 +72,14 @@ def _is_plan_mode_unsupported(stderr: str, stdout: str) -> bool:
     passing it exits nonzero with e.g. "unknown option '--mode'" / "unexpected
     argument '--mode'". Detecting that lets run() tell the user to upgrade
     instead of surfacing a cryptic exit code — and, critically, we FAIL rather
-    than retry without the flag (never downgrade the read-only guarantee)."""
-    blob = f"{stderr}\n{stdout}".lower()
-    if "mode" not in blob:
-        return False
-    return any(s in blob for s in (
-        "unknown option", "unexpected argument", "unrecognized",
-        "invalid option", "no such option", "unknown flag",
-    ))
+    than retry without the flag (never downgrade the read-only guarantee).
+
+    Precise by design: the option-error phrase and the ``--mode`` token must
+    appear together on one line, so an unrelated ``--model`` error or usage
+    text that merely lists ``--mode`` elsewhere does not trip it. A false
+    positive here would only mislabel the error message, never weaken
+    enforcement (nothing retries) — but we keep it tight anyway."""
+    return bool(_MODE_REJECT_RE.search(f"{stderr}\n{stdout}"))
 
 
 @dataclass

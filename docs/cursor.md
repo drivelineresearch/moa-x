@@ -92,14 +92,16 @@ probes `cursor-agent` first, then `agent`, on the system PATH.
 
 ## Command line shape
 
-The adapter invokes (with the prompt on **stdin**, not as an argv entry):
+The adapter invokes (with the prompt on **stdin**, not as an argv entry).
+Note `--mode plan` is always passed; if a build doesn't support it the run
+fails rather than downgrading (see *Filesystem guarantees*):
 
 ```bash
 printf '%s' "$READ_ONLY_RULE
 
 $prompt" | cursor-agent -p \
   --model <model> \
-  --mode plan \          # always passed; run fails (no downgrade) if unsupported
+  --mode plan \
   --output-format json \
   --trust
 ```
