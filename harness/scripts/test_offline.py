@@ -221,6 +221,23 @@ SAMPLE_CURSOR_STDOUT_SUCCESS = json.dumps({
               "cacheReadTokens": 0, "cacheWriteTokens": 0},
 })
 
+# cursor-grok routes through the cursor harness (built-in cursor-grok ->
+# cursor-grok-4.5-high). Cursor wraps the model's bare-JSON output in its
+# standard result envelope; the adapter's _extract_payload pulls it out. This
+# fixture is the parser-recipe evidence; a live
+# `cursor-agent -p --model cursor-grok-4.5-high --output-format json` proposer
+# run matches this envelope shape exactly.
+SAMPLE_CURSOR_GROK_STDOUT = json.dumps({
+    "type": "result",
+    "subtype": "success",
+    "is_error": False,
+    "duration_ms": 9002,
+    "result": json.dumps(_make_valid_proposer("cursor-grok")),
+    "session_id": "cg-1",
+    "request_id": "req-cg-1",
+    "usage": {"inputTokens": 130, "outputTokens": 650},
+})
+
 SAMPLE_CURSOR_STDOUT_FENCED = json.dumps({
     "type": "result",
     "subtype": "success",
@@ -266,6 +283,13 @@ SAMPLE_CURSOR_STDERR_QUOTA = "rate limit exceeded for your plan; retry after 60s
 # so the shared extractor runs directly on it. Payload may be bare or fenced;
 # empty stdout under a clean exit is the transient flake.
 SAMPLE_OPENCODE_STDOUT_BARE = json.dumps(VALID_PROPOSER_CODEX)
+# Grok routes through the opencode harness (built-in provider `grok` →
+# xai/grok-4.5). opencode emits the model's final text straight to stdout with
+# no JSON envelope, so a Grok proposer's output is a bare (or fenced) JSON
+# object the shared extractor runs on directly. This fixture is the parser
+# recipe evidence for the built-in grok provider; a live
+# `opencode run -m xai/grok-4.5` proposer run matches this shape.
+SAMPLE_OPENCODE_GROK_STDOUT = json.dumps(_make_valid_proposer("grok"))  # bare JSON, agent_id "grok"
 SAMPLE_OPENCODE_STDOUT_FENCED = (
     "I read the repo and here is the plan:\n\n```json\n"
     + json.dumps(VALID_PROPOSER_CODEX) + "\n```\n"
@@ -1345,6 +1369,92 @@ def test_config_resolve_builtin_composer_uses_cursor() -> bool:
     return _ok(ok, f"got {rp}")
 
 
+def test_config_resolve_builtin_grok_uses_opencode() -> bool:
+    print("\n[N] config.resolve_provider: grok maps to opencode harness / xai/grok-4.5")
+    from config import resolve_provider
+    rp = resolve_provider("grok", user_providers={})
+    ok = (rp.name == "grok" and rp.harness == "opencode" and rp.model == "xai/grok-4.5")
+    return _ok(ok, f"got {rp}")
+
+
+def test_opencode_preflight_recognizes_xai_key() -> bool:
+    print("\n[N] opencode preflight registers XAI_API_KEY as valid auth (grok recipe)")
+    from adapters import opencode as oc
+    return _ok("XAI_API_KEY" in oc._PROVIDER_KEY_ENVS, f"_PROVIDER_KEY_ENVS={oc._PROVIDER_KEY_ENVS}")
+
+
+def test_opencode_grok_recipe_extracts_valid_grok_payload() -> bool:
+    print("\n[N] opencode extractor pulls a schema-valid grok proposer payload (built-in grok recipe)")
+    from adapters import extract_json_from_text
+    payload = extract_json_from_text(SAMPLE_OPENCODE_GROK_STDOUT)
+    if not (isinstance(payload, dict) and payload.get("agent_id") == "grok"):
+        return _ok(False, f"extractor did not return a grok payload; got {payload!r}")
+    schema = run_moa._load_schema(run_moa.PROPOSER_SCHEMA_PATH)
+    errors = run_moa._validate_against_schema(payload, schema)
+    return _ok(len(errors) == 0, f"schema errors={errors[:3]}")
+
+
+def test_config_resolve_builtin_cursor_grok_uses_cursor() -> bool:
+    print("\n[N] config.resolve_provider: cursor-grok maps to cursor harness / cursor-grok-4.5-high")
+    from config import resolve_provider
+    rp = resolve_provider("cursor-grok", user_providers={})
+    ok = (rp.name == "cursor-grok" and rp.harness == "cursor" and rp.model == "cursor-grok-4.5-high")
+    return _ok(ok, f"got {rp}")
+
+
+def test_cursor_cmd_always_forces_plan_mode() -> bool:
+    print("\n[N] cursor _build_cursor_cmd: ALWAYS forces '--mode plan' (fail-closed read-only)")
+    from adapters import cursor as cur
+    cmd = cur._build_cursor_cmd("cursor-agent", "cursor-grok-4.5-high")
+    ok = (
+        "--mode" in cmd and cmd[cmd.index("--mode") + 1] == "plan"
+        and "-p" in cmd and "--trust" in cmd
+        and "--output-format" in cmd and cmd[cmd.index("--output-format") + 1] == "json"
+        and cmd[0] == "cursor-agent" and "cursor-grok-4.5-high" in cmd
+        # prompt is NEVER a positional argv entry (stdin only)
+        and not any(tok not in {
+            "cursor-agent", "-p", "--model", "cursor-grok-4.5-high",
+            "--mode", "plan", "--output-format", "json", "--trust",
+        } for tok in cmd)
+    )
+    return _ok(ok, f"cmd={cmd}")
+
+
+def test_cursor_plan_mode_unsupported_detection() -> bool:
+    print("\n[N] cursor _is_plan_mode_unsupported: detects '--mode' rejection, ignores unrelated errors")
+    from adapters import cursor as cur
+    rejects = [
+        ("error: unknown option '--mode'", ""),
+        ("", "unexpected argument '--mode' found"),
+        ("error: unrecognized option: --mode", ""),
+    ]
+    non_rejects = [
+        ("rate limit exceeded", ""),                       # unrelated failure
+        ("", "cursor-agent: authentication error"),        # unrelated failure
+        ("some unknown option --trust weirdness", ""),     # 'unknown option' but not about mode
+        ("error: unknown option '--model'", ""),           # --model must NOT match --mode
+        ("unrecognized model identifier", ""),             # 'mode' substring, no --mode token
+        ("error: unknown option '--trust'\n\nUsage: cursor-agent --mode plan ...", ""),  # --mode only in usage text (other line)
+        ("", ""),                                          # empty
+    ]
+    ok = (
+        all(cur._is_plan_mode_unsupported(e, o) for e, o in rejects)
+        and not any(cur._is_plan_mode_unsupported(e, o) for e, o in non_rejects)
+    )
+    return _ok(ok, "rejection detection did not match expectations")
+
+
+def test_cursor_grok_recipe_extracts_valid_payload() -> bool:
+    print("\n[N] cursor adapter extracts a schema-valid cursor-grok proposer payload (built-in recipe)")
+    from adapters import cursor as cursor_adapter
+    payload = cursor_adapter._extract_payload(SAMPLE_CURSOR_GROK_STDOUT)
+    if not (isinstance(payload, dict) and payload.get("agent_id") == "cursor-grok"):
+        return _ok(False, f"extractor did not return a cursor-grok payload; got {payload!r}")
+    schema = run_moa._load_schema(run_moa.PROPOSER_SCHEMA_PATH)
+    errors = run_moa._validate_against_schema(payload, schema)
+    return _ok(len(errors) == 0, f"schema errors={errors[:3]}")
+
+
 def test_config_resolve_builtin_qwen_uses_token_plan() -> bool:
     print("\n[N] config.resolve_provider: qwen maps to Qwen Token Plan via OpenCode")
     from config import resolve_provider
@@ -2022,6 +2132,13 @@ def main() -> int:
         test_config_resolve_builtin_glm_uses_opencode,
         test_config_resolve_builtin_kimi_uses_opencode,
         test_config_resolve_builtin_composer_uses_cursor,
+        test_config_resolve_builtin_grok_uses_opencode,
+        test_opencode_preflight_recognizes_xai_key,
+        test_opencode_grok_recipe_extracts_valid_grok_payload,
+        test_config_resolve_builtin_cursor_grok_uses_cursor,
+        test_cursor_grok_recipe_extracts_valid_payload,
+        test_cursor_cmd_always_forces_plan_mode,
+        test_cursor_plan_mode_unsupported_detection,
         test_config_resolve_builtin_qwen_uses_token_plan,
         test_provider_catalog_includes_optional_builtins,
         test_finalize_moves_misplaced_refiner_verification,

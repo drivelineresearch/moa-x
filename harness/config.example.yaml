@@ -14,6 +14,8 @@
 #   kimi      → {harness: opencode, model: opencode-go/kimi-k2.7-code}       # Kimi via opencode-go gateway
 #   qwen      → {harness: opencode, model: qwen-token-plan/qwen3.8-max-preview} # Token Plan, 600s cap
 #   composer  → {harness: cursor,   model: composer-2.5}                # Cursor Composer via cursor-agent
+#   grok      → {harness: opencode, model: xai/grok-4.5}                 # xAI Grok (direct) via opencode; needs XAI_API_KEY
+#   cursor-grok → {harness: cursor, model: cursor-grok-4.5-high}         # xAI Grok via Cursor; needs cursor-agent login / CURSOR_API_KEY
 #
 # Override a built-in's model via:
 #   --codex-model / --sonnet-model CLI flags, or
@@ -38,10 +40,22 @@ layers:
 # shell/.env shorthand: MOA_PROVIDER_<NAME>=<harness>:<model> (see .env.example).
 # YAML wins over the env shorthand on a name conflict.
 #
-# Example: 4-lane proposer mix adding one Cursor lane
+# Example: add xAI Grok as a 4th proposer. `grok` is a built-in (harness:
+# opencode, model xai/grok-4.5), so no `providers:` block is needed — just list
+# it. Requires XAI_API_KEY in .env or the shell (direct xAI API — opencode has
+# `xai` as a native provider, no extra CLI login). Override the model with
+# MOA_GROK_MODEL (e.g. xai/grok-build-0.1 for the coding-tuned variant, or
+# xai/grok-4.3).
 #
-# providers:
-#   cursor-grok: {harness: cursor, model: grok-4.3}
+# layers:
+#   proposers: [codex, glm, sonnet, grok]
+#   refiners:  [codex-reviewer, qwen]
+#
+# Example: 4-lane proposer mix adding the Cursor Grok lane. `cursor-grok` is a
+# built-in (harness: cursor, model cursor-grok-4.5-high) — no providers: block
+# needed. Needs cursor-agent login or CURSOR_API_KEY. Override the exact Cursor
+# model id with MOA_CURSOR_GROK_MODEL as Cursor's catalog advances.
+#
 # layers:
 #   proposers: [codex, glm, sonnet, cursor-grok]
 #   refiners:  [codex-reviewer, qwen]
@@ -67,7 +81,7 @@ layers:
 # providers:
 #   c-gpt:      {harness: cursor, model: gpt-5.5}
 #   c-composer: {harness: cursor, model: composer-2.5}
-#   c-grok:     {harness: cursor, model: grok-4.3}
+#   c-grok:     {harness: cursor, model: cursor-grok-4.5-high}
 # layers:
 #   proposers: [c-gpt, c-composer, c-grok]
 #   refiners:  [c-gpt, c-grok]

@@ -2040,7 +2040,7 @@ def main() -> int:
     parser.add_argument("--proposers",
                         default=os.environ.get("MOA_PROPOSERS"),
                         help="Comma-separated provider names (built-ins "
-                             "codex/glm/sonnet/kimi/qwen/composer plus user-named "
+                             "codex/glm/sonnet/kimi/qwen/composer/grok/cursor-grok plus user-named "
                              "providers). Default: the configured proposer layer.")
     parser.add_argument("--refiners",
                         default=os.environ.get("MOA_REFINERS"),

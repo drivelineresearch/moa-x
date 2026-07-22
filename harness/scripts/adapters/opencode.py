@@ -60,6 +60,7 @@ _PROVIDER_KEY_ENVS = (
     "OPENCODE_API_KEY",
     "OPENROUTER_API_KEY",
     "QWEN_TOKEN_PLAN_API_KEY",
+    "XAI_API_KEY",  # xAI Grok (built-in `grok` provider → xai/grok-4.5)
 )
 
 # Read-only permission policy handed to opencode via OPENCODE_CONFIG. Denying
@@ -271,6 +272,13 @@ def run(
             "-m", model,
             "--dir", str(repo_path),
             "--dangerously-skip-permissions",
+            # --print-logs routes progress/logs to stderr. Without it, current
+            # opencode (>=1.18) buffers on a TTY-style renderer and hangs forever
+            # when stdout/stderr are pipes (headless subprocess), producing an
+            # empty-output timeout. Logs on stderr don't affect stdout payload
+            # extraction. --log-level ERROR keeps stderr quiet so failure
+            # diagnosis stays accurate.
+            "--print-logs", "--log-level", "ERROR",
             "-f", str(prompt_file),
         ]
 

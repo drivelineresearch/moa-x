@@ -7,10 +7,13 @@ to claude-cli's outer envelope without --json-schema set:
     {"type": "result", "is_error": false, "result": "<MODEL TEXT>",
      "usage": {"inputTokens": ..., "outputTokens": ...}, ...}
 
-Read-only discipline is enforced by `--mode plan`, which is a CLI-level
-guarantee: the model cannot invoke write/edit tools. This replaces the
-prompt-rule directive the claude/opencode adapters use (those CLIs have
-no equivalent flag). See docs/cursor.md.
+Read-only discipline is fail-closed. `--mode plan` is a CLI-level guarantee
+(the model cannot invoke write/edit tools) and is ALWAYS passed — the adapter
+never launches cursor-agent without it. Builds that lack the flag (a brief
+2025.10 regression; current builds have it) reject the argv, and run() turns
+that into a clear "upgrade cursor-agent" error rather than downgrading to an
+unguarded run. The shared READ_ONLY_RULE is also prepended as defense-in-depth.
+See docs/cursor.md.
 
 Cursor has no --output-schema equivalent (codex-style hard schema
 enforcement), so the orchestrator validates the parsed payload against
@@ -26,6 +29,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -34,7 +38,48 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from adapters import extract_json_from_text, kill_proc_tree
+from adapters import READ_ONLY_RULE, extract_json_from_text, kill_proc_tree
+
+# A build that rejects `--mode plan` fails with an option-error phrase followed
+# by the `--mode` token ON THE SAME LINE, e.g. "unknown option '--mode'" or
+# "unexpected argument '--mode' found". Requiring both together (and a word
+# boundary after `mode`) avoids false positives from an unrelated `--model`
+# error, or from usage/help text that merely lists `--mode` on another line.
+_MODE_REJECT_RE = re.compile(
+    r"(?:unknown option|unexpected argument|unrecognized option|"
+    r"unrecognized argument|invalid option|no such option|unknown flag)"
+    r"[^\n]*?--mode\b",
+    re.IGNORECASE,
+)
+
+
+def _build_cursor_cmd(bin_name: str, model: str) -> list[str]:
+    """Assemble the cursor-agent argv. ALWAYS includes ``--mode plan`` — the
+    hard, CLI-level read-only guarantee (the model cannot invoke write/edit
+    tools). The adapter never omits it: a build that does not support the flag
+    rejects the argv and run() surfaces an upgrade error, rather than launching
+    an unguarded agent (fail-closed). The caller also prepends the
+    READ_ONLY_RULE to the prompt as defense-in-depth. ``--trust`` bypasses the
+    interactive workspace-trust prompt that otherwise aborts a headless run."""
+    return [bin_name, "-p", "--model", model, "--mode", "plan",
+            "--output-format", "json", "--trust"]
+
+
+def _is_plan_mode_unsupported(stderr: str, stdout: str) -> bool:
+    """True when a nonzero exit looks like the CLI rejecting ``--mode plan``.
+
+    A brief 2025.10 cursor-agent window removed the flag; on those builds
+    passing it exits nonzero with e.g. "unknown option '--mode'" / "unexpected
+    argument '--mode'". Detecting that lets run() tell the user to upgrade
+    instead of surfacing a cryptic exit code — and, critically, we FAIL rather
+    than retry without the flag (never downgrade the read-only guarantee).
+
+    Precise by design: the option-error phrase and the ``--mode`` token must
+    appear together on one line, so an unrelated ``--model`` error or usage
+    text that merely lists ``--mode`` elsewhere does not trip it. A false
+    positive here would only mislabel the error message, never weaken
+    enforcement (nothing retries) — but we keep it tight anyway."""
+    return bool(_MODE_REJECT_RE.search(f"{stderr}\n{stdout}"))
 
 
 @dataclass
@@ -144,10 +189,13 @@ def run(
     """Invoke cursor-agent -p with the given prompt.
 
     Args:
-        prompt: The full prompt text. Read-only enforcement is via
-            --mode plan at the CLI level, not via prompt prepend.
+        prompt: The full prompt text. Read-only is enforced by `--mode plan`
+            (always passed; a CLI-level guarantee) with the shared
+            READ_ONLY_RULE prepended as defense-in-depth. If the cursor-agent
+            build rejects `--mode plan`, the run FAILS with an upgrade hint —
+            it is never retried without the flag.
         repo_path: Working directory; passed via Popen cwd=.
-        model: Model id (e.g. "gpt-5.5", "claude-sonnet-4-6", "grok-4.20").
+        model: Model id (e.g. "gpt-5.5", "claude-sonnet-4-6", "cursor-grok-4.5-high").
         timeout_seconds: Hard wall-clock cap. Default 1200s, matching siblings.
         log_file: Optional path to write the full cursor output. ALWAYS
             written in every exit path so post-mortems never come up empty.
@@ -170,23 +218,23 @@ def run(
         env["XDG_CACHE_HOME"] = str(Path(tmpdir) / "cache")
         env["PYTHONDONTWRITEBYTECODE"] = "1"
 
-        # --mode plan gives CLI-level read-only enforcement (the model literally
-        # cannot invoke write/edit tools). --trust bypasses the first-run
-        # workspace-trust prompt in headless mode. See docs/cursor.md.
+        # Read-only enforcement is fail-closed: `--mode plan` (a CLI-level
+        # guarantee the model cannot invoke write/edit tools) is ALWAYS passed,
+        # and the READ_ONLY_RULE is prepended to the prompt as defense-in-depth.
+        # The adapter never launches without `--mode plan`: a build that lacks
+        # the flag (a brief 2025.10 regression; current builds have it) rejects
+        # the argv, and the nonzero-exit path below turns that into an "upgrade
+        # cursor-agent" error instead of downgrading to an unguarded run.
+        # `--trust` bypasses the interactive workspace-trust prompt that would
+        # otherwise abort a headless run in an untrusted directory.
         #
         # Prompt is sent via stdin, NOT as a positional argv entry. Refiner
         # prompts include the scout brief plus every proposer's full output
         # (tens of KB) and can exceed ARG_MAX on macOS/Linux. cursor-agent
         # reads stdin when no positional prompt is given. Codex does the
         # same; opencode can't (no stdin) so it takes the prompt by file.
-        cmd = [
-            _cursor_bin(),
-            "-p",
-            "--model", model,
-            "--mode", "plan",
-            "--output-format", "json",
-            "--trust",
-        ]
+        bin_name = _cursor_bin()
+        cmd = _build_cursor_cmd(bin_name, model)
 
         try:
             proc = subprocess.Popen(
@@ -200,7 +248,8 @@ def run(
                 start_new_session=True,
             )
             try:
-                stdout_text, stderr_text = proc.communicate(input=prompt, timeout=timeout_seconds)
+                stdout_text, stderr_text = proc.communicate(
+                    input=READ_ONLY_RULE + "\n\n" + prompt, timeout=timeout_seconds)
                 duration = time.monotonic() - start
                 stdout_captured = stdout_text or ""
                 stderr_captured = stderr_text or ""
@@ -240,11 +289,21 @@ def run(
             )
 
         if proc.returncode != 0:
+            if _is_plan_mode_unsupported(stderr_captured, stdout_captured):
+                err = (
+                    "cursor-agent rejected '--mode plan' (the read-only "
+                    "enforcement moa-x requires). This build predates or dropped "
+                    "plan mode; upgrade cursor-agent: "
+                    "curl https://cursor.com/install -fsS | bash. "
+                    "The run was NOT retried without read-only."
+                )
+            else:
+                err = f"cursor-agent exited with code {proc.returncode}"
             return CursorResult(
                 success=False, payload=None, raw_stdout=stdout_captured,
                 raw_stderr=stderr_captured, exit_code=proc.returncode,
                 duration_seconds=duration,
-                error_message=f"cursor-agent exited with code {proc.returncode}",
+                error_message=err,
             )
 
         # Surface in-envelope errors specifically before generic extract.

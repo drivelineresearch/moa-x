@@ -33,7 +33,7 @@ payloads.
 
 ### Built-in defaults
 
-These nine are always available without declaring them:
+These eleven are always available without declaring them:
 
 | Name | Harness | Default model |
 |---|---|---|
@@ -46,6 +46,8 @@ These nine are always available without declaring them:
 | `kimi` | `opencode` CLI | `opencode-go/kimi-k2.7-code` |
 | `qwen` | `opencode` CLI | `qwen-token-plan/qwen3.8-max-preview` |
 | `composer` | `cursor` CLI | `composer-2.5` |
+| `grok` | `opencode` CLI | `xai/grok-4.5` (needs `XAI_API_KEY`) |
+| `cursor-grok` | `cursor` CLI | `cursor-grok-4.5-high` |
 
 The default roster draws four labs from these: proposers
 `[codex, glm, sonnet]` (OpenAI, Zhipu, Anthropic), refiners
@@ -62,7 +64,7 @@ Add your own under `providers:` in `harness/config.yaml`:
 
 ```yaml
 providers:
-  cursor-grok: {harness: cursor, model: grok-4-20}
+  cursor-grok: {harness: cursor, model: cursor-grok-4.5-high}
 ```
 
 Then reference the name in `layers:`:
@@ -78,7 +80,7 @@ using the name uppercased with `-` → `_`:
 
 | Pattern | Example | What it does |
 |---|---|---|
-| `MOA_<NAME>_MODEL` | `MOA_CURSOR_GROK_MODEL=grok-4-20-thinking` | Override model for that provider |
+| `MOA_<NAME>_MODEL` | `MOA_CURSOR_GROK_MODEL=cursor-grok-4.5-medium` | Override model for that provider |
 | `MOA_<NAME>_TIMEOUT` | `MOA_CURSOR_GROK_TIMEOUT=900` | Wall-clock cap in seconds |
 
 ### Env-var shorthand: `MOA_PROVIDER_<NAME>`
@@ -127,7 +129,7 @@ Then edit. Example:
 
 ```yaml
 providers:
-  cursor-grok: {harness: cursor, model: grok-4-20}
+  cursor-grok: {harness: cursor, model: cursor-grok-4.5-high}
 layers:
   proposers: [codex, glm, sonnet, cursor-grok]
   refiners:  [codex-reviewer, qwen]
@@ -201,7 +203,7 @@ and [OpenCode setup](https://docs.qwencloud.com/developer-guides/clients-and-dev
 ```yaml
 # harness/config.yaml
 providers:
-  cursor-grok: {harness: cursor, model: grok-4-20}
+  cursor-grok: {harness: cursor, model: cursor-grok-4.5-high}
 layers:
   proposers: [codex, glm, sonnet, cursor-grok]
   refiners:  [codex-reviewer, qwen]
