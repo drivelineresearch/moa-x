@@ -162,3 +162,13 @@ MIT; see [LICENSE](LICENSE). Copyright (c) 2026 Kyle Boddy.
 ## Author
 
 Kyle Boddy.
+
+## Contributors
+
+[![Contributors](https://img.shields.io/github/contributors/drivelineresearch/moa-x?style=flat-square&logo=github&label=contributors)](https://github.com/drivelineresearch/moa-x/graphs/contributors)
+
+<p>
+  <a href="https://github.com/kyleboddy"><img src="https://github.com/kyleboddy.png?size=64" width="64" height="64" alt="@kyleboddy" title="@kyleboddy"></a>
+  <a href="https://github.com/mjfork"><img src="https://github.com/mjfork.png?size=64" width="64" height="64" alt="@mjfork" title="@mjfork"></a>
+  <a href="https://github.com/joewilsonai"><img src="https://github.com/joewilsonai.png?size=64" width="64" height="64" alt="@joewilsonai" title="@joewilsonai"></a>
+</p>
