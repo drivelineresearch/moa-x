@@ -65,7 +65,15 @@
         <figcaption><b>THE CONTROL ROOM</b><span>One local surface for every model, run, and decision trail</span></figcaption>
       </figure>
 
-      <div class="health-ribbon" id="health-ribbon" aria-label="Provider health"></div>
+      <div class="health-ribbon" id="health-ribbon" aria-label="Provider health" aria-busy="true">
+        <div class="loading-stage loading-stage-inline" role="status">
+          <picture>
+            <source media="(prefers-reduced-motion: reduce)" srcset="/static/images/pixel-codex-work.webp">
+            <img src="/static/images/pixel-codex-work-animated.webp" alt="">
+          </picture>
+          <div><strong>Checking the machine</strong><span>Finding authenticated provider accounts…</span></div>
+        </div>
+      </div>
 
       <section class="active-run" id="active-run-section" aria-labelledby="active-run-title">
         <div class="section-heading">
@@ -75,13 +83,12 @@
           </div>
           <a class="quiet-link" href="/runs" data-route="runs">View the archive →</a>
         </div>
-        <div id="active-run-card" class="empty-state compact">
-          <span class="empty-number">00</span>
-          <div>
-            <h3>The runway is clear</h3>
-            <p>No run is active. Start with a task, choose your roster, and send it.</p>
-          </div>
-          <button class="primary-button" type="button" data-route-button="new">Create a run</button>
+        <div id="active-run-card" class="loading-stage compact" role="status" aria-busy="true">
+          <picture>
+            <source media="(prefers-reduced-motion: reduce)" srcset="/static/images/pixel-codex-work.webp">
+            <img src="/static/images/pixel-codex-work-animated.webp" alt="">
+          </picture>
+          <div><h3>Checking active work</h3><p>Looking for queued and running jobs…</p></div>
         </div>
       </section>
 
@@ -94,8 +101,11 @@
             </div>
           </div>
           <div class="run-list" id="recent-runs" aria-live="polite" aria-busy="true">
-            <div class="run-loading" role="status">
-              <span class="run-spinner" aria-hidden="true"></span>
+            <div class="loading-stage compact" role="status">
+              <picture>
+                <source media="(prefers-reduced-motion: reduce)" srcset="/static/images/pixel-codex-work.webp">
+                <img src="/static/images/pixel-codex-work-animated.webp" alt="">
+              </picture>
               <div><h3>Loading latest runs</h3><p>Checking the local archive…</p></div>
             </div>
           </div>
@@ -109,7 +119,7 @@
     </section>
 
     <section class="view" data-view="new" aria-labelledby="new-run-title">
-      <header class="page-head narrow">
+      <header class="page-head new-run-head">
         <div>
           <p class="eyebrow">NEW RUN</p>
           <h1 id="new-run-title">Configure the run</h1>
@@ -119,9 +129,14 @@
 
       <div class="wizard-layout">
         <nav class="step-nav" aria-label="Run setup steps">
-          <button class="step-item is-active" type="button" data-step-target="1" data-step-index="01">Task</button>
-          <button class="step-item" type="button" data-step-target="2" data-step-index="02">Roster</button>
-          <button class="step-item" type="button" data-step-target="3" data-step-index="03">Review</button>
+          <button class="step-item is-active" type="button" data-step-target="1" data-step-index="01" aria-current="step">Task</button>
+          <button class="step-item" type="button" data-step-target="2" data-step-group="roster" data-step-index="02">Roster</button>
+          <button class="step-item" type="button" data-step-target="5" data-step-index="03">Review</button>
+        </nav>
+        <nav class="roster-subnav" id="roster-subnav" aria-label="Roster layers" hidden>
+          <button type="button" data-roster-step="2"><span>Layer 1</span>Proposers</button>
+          <button type="button" data-roster-step="3"><span>Layer 2</span>Refiners</button>
+          <button type="button" data-roster-step="4"><span>Layer 3</span>Aggregator</button>
         </nav>
 
         <form id="launch-form" class="wizard" autocomplete="off">
@@ -133,135 +148,179 @@
                 <p>Start with a clear task. Repository context is optional.</p>
               </div>
             </div>
-            <div class="field">
-              <label for="run-goal">Task or outcome</label>
-              <textarea id="run-goal" name="goal" rows="7" required placeholder="Review the billing pipeline and write an implementation plan for…"></textarea>
-              <small><span id="goal-count">0</span> characters · Draft saves in this browser</small>
-            </div>
-            <div class="task-context-grid">
-              <section class="source-picker" aria-labelledby="source-picker-title">
-                <div class="source-picker-head">
+            <div class="task-compose-layout">
+              <div class="task-prompt-column">
+                <div class="field task-prompt-field">
+                  <label for="run-goal">Task or outcome</label>
+                  <textarea id="run-goal" name="goal" rows="14" required placeholder="Review the billing pipeline and write an implementation plan for…"></textarea>
+                  <small><span id="goal-count">0</span> characters · Draft saves in this browser</small>
+                </div>
+                <div class="task-prompt-tip">
+                  <img src="/static/images/prompt-coach-teacher.webp" alt="" class="prompt-coach-thumb">
                   <div>
-                    <h3 id="source-picker-title">Context source <span>Optional</span></h3>
-                    <p>Run from the task alone, or give the ensemble a GitHub repository to inspect.</p>
+                    <span>STRONG BRIEF</span>
+                    <p>Describe the outcome, constraints, and what a useful final plan must decide. The ensemble will inspect the selected context.</p>
                   </div>
-                  <div class="source-tabs" role="group" aria-label="Context source">
-                    <button class="source-tab is-active" type="button" data-source-mode="brief">Task only</button>
-                    <button class="source-tab" type="button" data-source-mode="github">GitHub repo</button>
-                  </div>
+                  <button class="prompt-coach-button" id="prompt-coach-button" type="button">
+                    <small>Guided by Luna</small>
+                    Strengthen with AI
+                  </button>
+                  <button class="prompt-undo-button" id="prompt-undo-button" type="button" hidden>Undo prompt change</button>
                 </div>
-                <div class="source-context-panel" id="brief-source">
-                  <img src="/static/images/context-brief.webp" alt="">
-                  <div><strong>No repository needed</strong><p>Plan from your task and any reference files.</p></div>
-                </div>
-                <div class="source-context-panel github-source" id="github-source" hidden>
-                  <img src="/static/images/context-github.webp" alt="">
-                  <div class="field">
-                    <label for="github-repo"><span id="github-owner-label">{{ bootstrap.github_owner }}</span> repository</label>
-                    <select id="github-repo" name="github_repo">
-                      <option value="">Loading repositories…</option>
-                    </select>
-                    <small id="github-repo-meta">Repository metadata comes from the connected GitHub service.</small>
-                  </div>
-                </div>
-              </section>
-              <section class="attachment-picker" aria-labelledby="attachment-title">
-                <div class="attachment-intro">
-                  <img src="/static/images/context-upload.webp" alt="">
-                  <div>
-                    <h3 id="attachment-title">Reference files <span>Optional</span></h3>
-                    <p>Attach specs, notes, diagrams, or exported issue context.</p>
-                  </div>
-                </div>
-                <label class="drop-zone" id="drop-zone" for="run-files" tabindex="0">
-                  <input id="run-files" type="file" multiple accept=".pdf,.md,.markdown,.txt,.text,.csv,.tsv,.json,.yaml,.yml,.xml,.html,.htm,.rst,.log,.png,.jpg,.jpeg,.webp,.tif,.tiff,.bmp">
-                  <strong>Drop files here</strong>
-                  <span>PDF, text, or OCR-ready images · up to 10 files</span>
-                </label>
-                <div class="attachment-list" id="attachment-list" aria-live="polite"></div>
-              </section>
-            </div>
-            <div class="field-grid">
-              <div class="field">
-                <label for="run-name">Run name <span>Optional</span></label>
-                <input id="run-name" name="name" placeholder="Billing reliability review">
               </div>
-              <fieldset class="depth-field">
-                <legend>Planning depth</legend>
-                <div class="depth-layout">
-                  <figure class="depth-visual">
-                    <img id="depth-illustration" src="/static/images/context-effort.webp" alt="">
-                    <figcaption id="depth-caption">Three proposers and two refiners with each route’s configured effort.</figcaption>
-                  </figure>
-                  <div class="depth-control">
-                    <output id="depth-output" for="depth-range">Balanced</output>
-                    <input id="depth-range" type="range" min="0" max="2" step="1" value="1" aria-label="Planning depth" aria-valuetext="Balanced" aria-describedby="depth-caption">
-                    <div class="depth-stops" aria-hidden="true">
-                      <span>Quick</span><span>Balanced</span><span>Thorough</span>
+
+              <aside class="task-setup-rail" aria-label="Run setup controls">
+                <div class="field">
+                  <label for="run-name">Run name <span>Optional</span></label>
+                  <input id="run-name" name="name" placeholder="Billing reliability review">
+                </div>
+
+                <fieldset class="depth-field">
+                  <legend>Planning depth</legend>
+                  <div class="depth-layout">
+                    <figure class="depth-visual">
+                      <img id="depth-illustration" src="/static/images/context-effort.webp" alt="">
+                      <figcaption id="depth-caption">Three proposers and two refiners with each route’s configured effort.</figcaption>
+                    </figure>
+                    <div class="depth-control">
+                      <output id="depth-output" for="depth-range">Balanced</output>
+                      <input id="depth-range" type="range" min="0" max="2" step="1" value="1" aria-label="Planning depth" aria-valuetext="Balanced" aria-describedby="depth-caption">
+                      <div class="depth-stops" aria-hidden="true">
+                        <span>Quick</span><span>Balanced</span><span>Thorough</span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </fieldset>
+                </fieldset>
+
+                <section class="source-picker" aria-labelledby="source-picker-title">
+                  <div class="source-picker-head">
+                    <div>
+                      <h3 id="source-picker-title">Context source <span>Optional</span></h3>
+                      <p>Use the task alone or let the ensemble inspect a GitHub repository.</p>
+                    </div>
+                    <div class="source-tabs" role="group" aria-label="Context source">
+                      <button class="source-tab is-active" type="button" data-source-mode="brief">Task only</button>
+                      <button class="source-tab" type="button" data-source-mode="github">GitHub repo</button>
+                    </div>
+                  </div>
+                  <div class="source-context-panel" id="brief-source">
+                    <img src="/static/images/context-brief.webp" alt="">
+                    <div><strong>No repository needed</strong><p>Plan from your task and reference files.</p></div>
+                  </div>
+                  <div class="source-context-panel github-source" id="github-source" hidden>
+                    <img src="/static/images/context-github.webp" alt="">
+                    <div class="field">
+                      <label for="github-repo"><span id="github-owner-label">{{ bootstrap.github_owner }}</span> repository</label>
+                      <select id="github-repo" name="github_repo">
+                        <option value="">Loading repositories…</option>
+                      </select>
+                      <small id="github-repo-meta">Repository metadata comes from the connected GitHub service.</small>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="attachment-picker" aria-labelledby="attachment-title">
+                  <div class="attachment-intro">
+                    <img src="/static/images/context-upload.webp" alt="">
+                    <div>
+                      <h3 id="attachment-title">Reference files <span>Optional</span></h3>
+                      <p>Attach specs, notes, diagrams, or exported issue context.</p>
+                    </div>
+                  </div>
+                  <label class="drop-zone" id="drop-zone" for="run-files" tabindex="0">
+                    <input id="run-files" type="file" multiple accept=".pdf,.md,.markdown,.txt,.text,.csv,.tsv,.json,.yaml,.yml,.xml,.html,.htm,.rst,.log,.png,.jpg,.jpeg,.webp,.tif,.tiff,.bmp">
+                    <strong>Drop files here</strong>
+                    <span>PDF, text, or OCR-ready images · up to 10 files</span>
+                  </label>
+                  <div class="attachment-list" id="attachment-list" aria-live="polite"></div>
+                </section>
+              </aside>
             </div>
             <div class="step-actions">
               <span></span>
-              <button class="primary-button" type="button" data-next-step>Choose roster</button>
+              <button class="primary-button" type="button" data-next-step>Choose proposers</button>
             </div>
           </section>
 
           <section class="wizard-step" data-step="2">
-            <div class="form-section-head">
-              <span class="section-number">02</span>
-              <div>
-                <h2>Pick the team</h2>
-                <p>Use the defaults or tune each lane. Cross-lab refiners are the strongest setup.</p>
+            <div class="roster-stage-head">
+              <div class="form-section-head">
+                <span class="section-number">02</span>
+                <div><p class="eyebrow">LAYER 1</p><h2>Choose proposers</h2><p>Independent first passes create the raw material for review.</p></div>
               </div>
+              <button class="optimized-loadout" type="button" data-optimized-loadout="proposer"><span>Auto</span>Select Optimized Proposer Loadout <b aria-hidden="true">→</b></button>
             </div>
-            <figure class="section-illustration roster-illustration">
-              <img src="/static/images/context-roster.webp" alt="">
-              <figcaption>Independent proposals become stronger when reviewers come from a different lab.</figcaption>
-            </figure>
-            <div class="roster-builder">
-              <fieldset class="roster-lane">
+            <fieldset class="roster-lane roster-page">
                 <legend><span>Layer 1</span> Proposers <b id="proposer-count">0 selected</b></legend>
                 <p>Independent first passes. Choose two or more for useful diversity.</p>
-                <label class="model-search"><span class="sr-only">Search proposer models</span><input type="search" data-model-search="proposer" placeholder="Search providers or models"></label>
-                <div class="model-options" id="proposer-options"></div>
-              </fieldset>
-              <fieldset class="roster-lane">
-                <legend><span>Layer 2</span> Refiners <b id="refiner-count">0 selected</b></legend>
-                <p>Each reviewer sees every proposal and looks for missed risks.</p>
-                <label class="model-search"><span class="sr-only">Search refiner models</span><input type="search" data-model-search="refiner" placeholder="Search providers or models"></label>
-                <div class="model-options" id="refiner-options"></div>
-              </fieldset>
-              <fieldset class="roster-lane">
-                <legend><span>Layer 3</span> Aggregator</legend>
-                <p>The final editor reconciles the strongest ideas into one plan.</p>
-                <label class="model-search"><span class="sr-only">Search aggregator models</span><input type="search" data-model-search="aggregator" placeholder="Search providers or models"></label>
-                <div class="model-options" id="aggregator-options"></div>
-              </fieldset>
-            </div>
-            <div class="independence-callout" id="independence-callout" role="status">
-              <span>LAB CHECK</span>
-              <p>Select a roster to check refinement independence.</p>
-            </div>
+                <div class="model-options" id="proposer-options" aria-busy="true">
+                  <div class="loading-stage compact" role="status"><span class="run-spinner" aria-hidden="true"></span><div><h3>Loading proposer routes</h3><p>Checking local model availability…</p></div></div>
+                </div>
+            </fieldset>
             <div class="step-actions">
-              <button class="secondary-button" type="button" data-prev-step>Back</button>
-              <button class="primary-button" type="button" data-next-step>Review run</button>
+              <button class="secondary-button" type="button" data-prev-step>Back to task</button>
+              <button class="primary-button" type="button" data-next-step>Confirm proposers</button>
             </div>
           </section>
 
           <section class="wizard-step" data-step="3">
+            <div class="roster-stage-head">
+              <div class="form-section-head">
+                <span class="section-number">03</span>
+                <div><p class="eyebrow">LAYER 2</p><h2>Choose refiners</h2><p>Use independent reviewers to pressure-test every proposal.</p></div>
+              </div>
+              <button class="optimized-loadout" type="button" data-optimized-loadout="refiner"><span>Auto</span>Select Optimized Refiner Loadout <b aria-hidden="true">→</b></button>
+            </div>
+            <fieldset class="roster-lane roster-page">
+                <legend><span>Layer 2</span> Refiners <b id="refiner-count">0 selected</b></legend>
+                <p>Each reviewer sees every proposal and looks for missed risks.</p>
+                <div class="model-options" id="refiner-options" aria-busy="true">
+                  <div class="loading-stage compact" role="status"><span class="run-spinner" aria-hidden="true"></span><div><h3>Loading refiner routes</h3><p>Checking independent reviewers…</p></div></div>
+                </div>
+            </fieldset>
+            <div class="independence-callout" id="independence-callout" role="status">
+              <span>LAB CHECK</span>
+              <p>Select refiners and an aggregator to check independence.</p>
+            </div>
+            <div class="step-actions">
+              <button class="secondary-button" type="button" data-prev-step>Back to proposers</button>
+              <button class="primary-button" type="button" data-next-step>Confirm refiners</button>
+            </div>
+          </section>
+
+          <section class="wizard-step" data-step="4">
+            <div class="roster-stage-head">
+              <div class="form-section-head">
+                <span class="section-number">04</span>
+                <div><p class="eyebrow">LAYER 3</p><h2>Choose aggregator</h2><p>The final editor reconciles evidence into one coherent plan.</p></div>
+              </div>
+              <button class="optimized-loadout" type="button" data-optimized-loadout="aggregator"><span>Auto</span>Select Optimized Aggregator Loadout <b>Review</b><b aria-hidden="true">→</b></button>
+            </div>
+            <fieldset class="roster-lane roster-page">
+                <legend><span>Layer 3</span> Aggregator</legend>
+                <p>The final editor reconciles the strongest ideas into one plan.</p>
+                <div class="model-options" id="aggregator-options" aria-busy="true">
+                  <div class="loading-stage compact" role="status"><span class="run-spinner" aria-hidden="true"></span><div><h3>Loading aggregator routes</h3><p>Checking synthesis models…</p></div></div>
+                </div>
+            </fieldset>
+            <div class="step-actions">
+              <button class="secondary-button" type="button" data-prev-step>Back to refiners</button>
+              <button class="primary-button" type="button" data-next-step>Confirm aggregator</button>
+            </div>
+          </section>
+
+          <section class="wizard-step" data-step="5">
             <div class="form-section-head">
-              <span class="section-number">03</span>
+              <span class="section-number">05</span>
               <div>
                 <h2>Ready for dispatch</h2>
-                <p>Review the immutable snapshot. The job can keep running if this tab closes.</p>
+                <p>Review the ensemble network. The job can keep running if this tab closes.</p>
               </div>
             </div>
+            <div class="review-network" id="review-network" aria-label="Selected ensemble network"></div>
             <div class="review-sheet" id="review-sheet"></div>
             <div class="step-actions">
-              <button class="secondary-button" type="button" data-prev-step>Back</button>
+              <button class="secondary-button" type="button" data-prev-step>Back to aggregator</button>
               <button class="primary-button" type="submit" id="launch-button">Start run</button>
             </div>
           </section>
@@ -292,12 +351,24 @@
           <option value="failed">Failed</option>
           <option value="cancelled">Cancelled</option>
         </select>
-        <span id="run-result-count">0 runs</span>
+        <span id="run-result-count" role="status">Loading runs…</span>
       </div>
       <div class="archive-table-wrap">
         <table class="archive-table">
           <thead><tr><th>Run</th><th>Context</th><th>Roster</th><th>Started</th><th>Status</th><th></th></tr></thead>
-          <tbody id="run-archive"></tbody>
+          <tbody id="run-archive" aria-busy="true">
+            <tr class="archive-loading-row">
+              <td colspan="6">
+                <div class="loading-stage compact" role="status">
+                  <picture>
+                    <source media="(prefers-reduced-motion: reduce)" srcset="/static/images/pixel-codex-work.webp">
+                    <img src="/static/images/pixel-codex-work-animated.webp" alt="">
+                  </picture>
+                  <div><h3>Loading run archive</h3><p>Indexing saved plans, reports, and traces…</p></div>
+                </div>
+              </td>
+            </tr>
+          </tbody>
         </table>
       </div>
     </section>
@@ -311,8 +382,18 @@
         </div>
         <button class="secondary-button" type="button" id="probe-all-button">Recheck all</button>
       </header>
-      <div class="provider-summary" id="provider-summary"></div>
-      <div class="provider-grid" id="provider-grid"></div>
+      <div class="provider-summary" id="provider-summary" aria-busy="true">
+        <div class="loading-summary" role="status"><span class="run-spinner" aria-hidden="true"></span><strong>Building machine summary…</strong></div>
+      </div>
+      <div class="provider-grid" id="provider-grid" aria-busy="true">
+        <div class="loading-stage" role="status">
+          <picture>
+            <source media="(prefers-reduced-motion: reduce)" srcset="/static/images/pixel-opencode-work.webp">
+            <img src="/static/images/pixel-opencode-work-animated.webp" alt="">
+          </picture>
+          <div><h3>Checking provider accounts</h3><p>Reading CLI versions, authentication, and available model routes from this machine…</p></div>
+        </div>
+      </div>
       <aside class="security-note">
         <p class="eyebrow">LOCAL AUTHENTICATION MODEL</p>
         <h2>The browser never holds a provider secret</h2>
@@ -337,20 +418,26 @@
           <div class="run-actions" id="run-actions"></div>
         </div>
       </header>
-      <div class="phase-rail" id="phase-rail" aria-label="Run progress"></div>
+      <div class="phase-rail" id="phase-rail" aria-label="Run progress" aria-busy="true">
+        <div class="loading-bar" role="status"><span></span><b>Loading run state…</b></div>
+      </div>
       <div class="run-detail-grid">
         <section>
           <div class="section-heading">
             <div><p class="eyebrow">ENSEMBLE</p><h2>Agent lanes</h2></div>
             <span class="live-label" id="live-label">Connecting</span>
           </div>
-          <div class="agent-grid" id="agent-grid"></div>
+          <div class="agent-grid" id="agent-grid" aria-busy="true">
+            <div class="loading-stage compact" role="status"><span class="run-spinner" aria-hidden="true"></span><div><h3>Loading agent lanes</h3><p>Resolving the saved roster…</p></div></div>
+          </div>
         </section>
         <aside class="event-panel">
           <div class="section-heading">
             <div><p class="eyebrow">LIVE TRACE</p><h2>What’s happening</h2></div>
           </div>
-          <div class="event-feed" id="event-feed" aria-live="polite"></div>
+          <div class="event-feed" id="event-feed" aria-live="polite" aria-busy="true">
+            <div class="loading-stage compact" role="status"><span class="run-spinner" aria-hidden="true"></span><div><h3>Connecting to live trace</h3><p>Waiting for the latest worker event…</p></div></div>
+          </div>
         </aside>
       </div>
       <section class="result-panel" id="result-panel" hidden></section>
@@ -382,5 +469,23 @@
       <button class="primary-button" type="button" id="save-settings">Save preferences</button>
     </div>
   </form>
+</dialog>
+
+<dialog class="prompt-coach-dialog" id="prompt-coach-dialog" aria-labelledby="prompt-coach-title">
+  <div class="prompt-coach-shell">
+    <header class="prompt-coach-head">
+      <div class="prompt-coach-portrait">
+        <img src="/static/images/prompt-coach-teacher.webp" alt="Anime-style prompt teacher guiding ideas into a clear brief">
+      </div>
+      <div>
+        <p class="eyebrow">PROMPT STUDIO</p>
+        <h2 id="prompt-coach-title">Sharpen the mission</h2>
+        <p>Luna asks at most three useful questions. DeepSeek Flash takes over if Luna is unavailable.</p>
+      </div>
+      <button class="close-button prompt-coach-close" id="prompt-coach-close" type="button" aria-label="Close prompt studio"><span aria-hidden="true">×</span></button>
+    </header>
+    <div class="prompt-coach-progress" id="prompt-coach-progress" aria-label="Prompt coach progress"></div>
+    <section class="prompt-coach-body" id="prompt-coach-body" aria-live="polite"></section>
+  </div>
 </dialog>
 {% endblock %}

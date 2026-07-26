@@ -96,6 +96,20 @@ export async function getProviders() {
   return arrayFrom(payload, "providers").map(normalizeProvider);
 }
 
+export async function analyzePrompt(payload) {
+  return request("/api/prompt-helper/analyze", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function finalizePrompt(payload) {
+  return request("/api/prompt-helper/finalize", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function getModels() {
   try {
     const payload = await request("/api/models");
