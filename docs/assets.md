@@ -1,11 +1,28 @@
 # Visual assets and fonts
 
 MoA-X does not redistribute proprietary fonts or depend on a remote font
-service. The Web UI prefers Gotham when it is already installed on the local
-operating system, then falls back to a standard sans-serif stack. A clean
-public clone therefore works without downloading or licensing typography
-files, while a licensed local workstation can retain the intended Gotham
-appearance.
+service. The Web UI prefers Gotham when it is already installed in the
+viewer's operating system, then falls back to a standard sans-serif stack. A
+clean public clone therefore works without downloading or licensing
+typography files.
+
+For a trusted local deployment viewed from another computer, operators who
+already have appropriately licensed web-embeddable copies may place exactly
+these two runtime files in `$XDG_DATA_HOME/moa-x/fonts/` (normally
+`~/.local/share/moa-x/fonts/`):
+
+```text
+GothamOffice-Regular.woff2
+GothamOffice-Bold.woff2
+```
+
+The server then exposes those two files to the browser and switches the UI to
+Gotham Office automatically. Set `MOA_WEBUI_LOCAL_FONT_DIR` to use another
+machine-local directory. The route is an exact filename allowlist; no other
+file in that directory can be fetched. Font files belong to the local
+deployment, stay untracked, and must never be added to the public repository.
+Confirm that your font license permits browser embedding before enabling this
+option.
 
 The WebP/PNG illustrations under `harness/webui/static/images/` and
 `harness/report/assets/` were generated specifically for this project and are

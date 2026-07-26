@@ -45,11 +45,35 @@ REPO_ROOT = HARNESS_DIR.parent
 RUNNER = HARNESS_DIR / "scripts" / "run_moa.py"
 ACTIVE_STATES = {"queued", "running", "cancelling"}
 TERMINAL_STATES = {"completed", "failed", "cancelled", "imported"}
+LOCAL_FONT_FILES = {
+    "GothamOffice-Regular.woff2": "font/woff2",
+    "GothamOffice-Bold.woff2": "font/woff2",
+}
 
 
 def _default_data_dir() -> Path:
     base = Path(os.environ.get("XDG_DATA_HOME") or (Path.home() / ".local/share"))
     return base / "moa-x"
+
+
+def _default_local_font_dir() -> Path:
+    configured = os.environ.get("MOA_WEBUI_LOCAL_FONT_DIR")
+    if configured:
+        return Path(configured).expanduser()
+    return _default_data_dir() / "fonts"
+
+
+def _local_fonts_ready(font_dir: Path) -> bool:
+    return all((font_dir / filename).is_file() for filename in LOCAL_FONT_FILES)
+
+
+def _local_font_css() -> str:
+    return """
+.gotham-office-ready {
+  --font-display: "MoAX Gotham Office", "MoAX Gotham", Inter, ui-sans-serif, system-ui, sans-serif;
+  --font-body: "MoAX Gotham Office", "MoAX Gotham", Inter, ui-sans-serif, system-ui, sans-serif;
+}
+""".strip()
 
 
 def _roots_from_env() -> list[Path]:
@@ -336,6 +360,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         MAX_UPLOAD_BYTES=25 * 1024 * 1024,
         MAX_CONTENT_LENGTH=251 * 1024 * 1024,
         WORKSPACE_ROOTS=_roots_from_env(),
+        LOCAL_FONT_DIR=str(_default_local_font_dir()),
         START_WORKER=True,
         SSE_POLL_SECONDS=0.6,
     )
@@ -351,6 +376,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     brief_workspace_dir = (
         Path(app.config["BRIEF_WORKSPACE_DIR"]).expanduser().resolve()
     )
+    local_font_dir = Path(app.config["LOCAL_FONT_DIR"]).expanduser().resolve()
     for private_dir in (upload_dir, github_workspace_dir, brief_workspace_dir):
         private_dir.mkdir(parents=True, exist_ok=True)
         try:
@@ -389,6 +415,29 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                 "workspace": str(REPO_ROOT),
                 "github_owner": app.config["GITHUB_OWNER"],
             },
+            local_font_stylesheet=_local_fonts_ready(local_font_dir),
+        )
+
+    @app.get("/local-assets/fonts.css")
+    def local_font_stylesheet():
+        if not _local_fonts_ready(local_font_dir):
+            abort(404)
+        return Response(
+            _local_font_css(),
+            mimetype="text/css",
+            headers={"Cache-Control": "no-cache"},
+        )
+
+    @app.get("/local-assets/fonts/<filename>")
+    def local_font(filename: str):
+        mimetype = LOCAL_FONT_FILES.get(filename)
+        if mimetype is None or not _local_fonts_ready(local_font_dir):
+            abort(404)
+        return send_file(
+            local_font_dir / filename,
+            mimetype=mimetype,
+            conditional=True,
+            max_age=86_400,
         )
 
     @app.get("/favicon.ico")

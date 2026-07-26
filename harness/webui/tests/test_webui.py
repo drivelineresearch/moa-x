@@ -69,6 +69,7 @@ class WebUITest(unittest.TestCase):
                 "BRIEF_WORKSPACE_DIR": str(
                     self.root / "data" / "workspaces" / "brief"
                 ),
+                "LOCAL_FONT_DIR": str(self.root / "data" / "fonts"),
                 "WORKSPACE_ROOTS": [self.root],
                 "SSE_POLL_SECONDS": 0.01,
             }
@@ -77,6 +78,46 @@ class WebUITest(unittest.TestCase):
 
     def tearDown(self):
         self.temp.cleanup()
+
+    def test_local_fonts_are_optional_and_strictly_allowlisted(self):
+        page = self.client.get("/")
+        self.assertNotIn(b"/local-assets/fonts.css", page.data)
+        self.assertEqual(
+            self.client.get("/local-assets/fonts.css").status_code, 404
+        )
+
+        font_dir = Path(self.app.config["LOCAL_FONT_DIR"])
+        font_dir.mkdir(parents=True)
+        (font_dir / "GothamOffice-Regular.woff2").write_bytes(b"regular-font")
+        (font_dir / "GothamOffice-Bold.woff2").write_bytes(b"bold-font")
+
+        page = self.client.get("/")
+        self.assertIn(b"/local-assets/fonts.css", page.data)
+        self.assertIn(b"new FontFace", page.data)
+        self.assertIn(b"gotham-office-ready", page.data)
+        stylesheet = self.client.get("/local-assets/fonts.css")
+        self.assertEqual(stylesheet.status_code, 200)
+        self.assertIn(b'MoAX Gotham Office', stylesheet.data)
+        self.assertIn(b"gotham-office-ready", stylesheet.data)
+        font = self.client.get(
+            "/local-assets/fonts/GothamOffice-Regular.woff2"
+        )
+        self.assertEqual(font.status_code, 200)
+        self.assertEqual(font.mimetype, "font/woff2")
+        self.assertEqual(font.data, b"regular-font")
+        font.close()
+        self.assertEqual(
+            self.client.get(
+                "/local-assets/fonts/../private.otf"
+            ).status_code,
+            404,
+        )
+        self.assertEqual(
+            self.client.get(
+                "/local-assets/fonts/GothamOffice-Italic.woff2"
+            ).status_code,
+            404,
+        )
 
     def test_profile_and_job_lifecycle(self):
         profile = self.client.post(

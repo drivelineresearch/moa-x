@@ -25,9 +25,12 @@ public internet.
 No Node.js or frontend build tool is required. HTML, CSS, JavaScript, the
 operating-system font stack, and project-owned image assets are already
 versioned under `harness/webui/`. Gotham is preferred automatically when it
-is installed on the workstation but is not redistributed. Waitress is
-installed from `requirements-web.txt` and selected automatically; Flask's
-development server is only the fallback when Waitress is unavailable.
+is installed on the viewing workstation but is not redistributed. A server
+may also expose locally licensed Gotham Office Regular and Bold files from
+`$XDG_DATA_HOME/moa-x/fonts/` to remote browsers; see
+[`docs/assets.md`](assets.md) for the exact filenames and licensing boundary.
+Waitress is installed from `requirements-web.txt` and selected automatically;
+Flask's development server is only the fallback when Waitress is unavailable.
 
 The worker inherits the server process's `HOME`, `PATH`, environment, CLI
 keychains, and authenticated accounts. It never copies API keys or OAuth
@@ -40,6 +43,7 @@ The default data root is `$XDG_DATA_HOME/moa-x`, or
 
 ```text
 moa-x/
+├── fonts/               # optional, local-only Gotham Office runtime files
 ├── webui.sqlite3        # profiles, jobs, queue state, and events
 ├── uploads/             # durable uploaded source files
 └── workspaces/
