@@ -21,9 +21,9 @@ and credit you in the advisory unless you prefer otherwise.
 
 ## Scope
 
-MoA-X is a thin orchestrator around external vendor CLIs
-(`codex`, `claude`, `opencode`, `cursor`), however each one is
-authenticated. Reports in scope:
+MoA-X is a thin orchestrator around authenticated external vendor CLIs
+(`codex`, `claude`, `opencode`, `cursor`, `agy`) and includes an optional
+local Flask control room. Reports in scope:
 
 - Command injection, path traversal, or similar in the orchestrator or
   adapters (`harness/scripts/`)
@@ -33,6 +33,21 @@ authenticated. Reports in scope:
   or tmpdirs across MoA runs
 - Any path by which the harness writes to disk outside the session
   directory against the read-only discipline contract
+- Web UI command injection, path traversal, upload boundary failures,
+  cross-origin state changes, artifact disclosure beyond the configured
+  workspace/data roots, or GitHub allowlist bypasses
+
+The Web UI has no login, authorization layer, or tenant isolation. Its safe
+default is loopback-only. Direct public-internet exposure is unsupported and
+is not a vulnerability by itself; reports showing that a remote browser can
+access a server deliberately bound to a public interface without a protective
+proxy are out of scope.
+
+Uploaded PDF/text contents are copied into the run and embedded in prompts for
+every selected provider. They can also appear in local logs and the
+self-contained HTML report. Treat attachments as provider-bound data and do
+not upload secrets or regulated material unless every selected provider and
+the machine hosting the Web UI are approved to process it.
 
 Reports out of scope (please take these upstream):
 

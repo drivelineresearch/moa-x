@@ -1,6 +1,6 @@
 # Usage
 
-MoA-X has two entry points. Pick the one that matches how you work.
+MoA-X has three entry points. Pick the one that matches how you work.
 
 ## Inside Claude Code (primary)
 
@@ -29,21 +29,21 @@ What happens:
    fire in parallel by default: `codex` (codex harness), `glm`
    (opencode harness), and `sonnet` (claude harness) — OpenAI,
    Zhipu, and Anthropic. Additional lanes (a `cursor` provider,
-   Kimi, or any user provider) are available — see
+   Kimi, DeepSeek V4 Pro/Flash through OpenCode Go, or any user provider) are available — see
    [`docs/install.md`](install.md#optional-cursor-cli-extra-provider)
    and [`docs/config.md`](config.md). Each
-   reads the repo (codex with a filesystem-enforced read-only
-   sandbox; the others with read-only enforced by prompt), does web
-   research, and writes an independent plan to
+   reads the repo under adapter-specific read-only controls (filesystem
+   sandboxing for Codex, a hard tool allowlist for Claude, and a
+   permission-deny policy for OpenCode), does web research, and writes an independent plan to
    `.moa/<session>/layer1/`.
 4. **Broadcast refiners (Layer 2, parallel).** Two more subprocesses,
-   `codex-reviewer` (`gpt-5.6-sol`, high) and `qwen`
+   `codex-sol` (`gpt-5.6-sol`, high) and `qwen`
    (`qwen3.8-max-preview` — independent of the Anthropic aggregator), each
    receive every valid proposal and
    produce verification output in `.moa/<session>/layer2/`.
    "Broadcast" means every refiner sees every proposal, per the MoA
    paper.
-5. **Aggregator (Layer 3).** By default Claude Code's rolling `opus` alias in
+5. **Aggregator (Layer 3).** By default Claude Code on `claude-opus-5` in
    the parent session reads
    `.moa/<session>/synthesis-input.md`, synthesizes, honors refiner
    contradictions, and writes `.moa/<session>/final-plan.md` plus the
@@ -51,6 +51,28 @@ What happens:
    recorded Codex phase shown below.
 6. **Plan presented.** Claude shows you the plan and asks if you want
    to start executing.
+
+## Local Web UI
+
+Install the optional web dependencies and start the control room:
+
+```bash
+.venv/bin/pip install -r requirements-web.txt
+.venv/bin/python -m harness.webui
+```
+
+The UI accepts a raw goal, resolves the selected named-provider roster, queues
+the phase subprocesses, streams lifecycle events, and keeps run history in
+SQLite. It uses the CLI accounts already authenticated for the server's OS
+user.
+
+Repository context is optional. **Task only** launches create an isolated
+managed workspace for the task and any attachments. GitHub launches are restricted to
+the single owner configured by `MOA_WEBUI_GITHUB_OWNER` and shallow-clone
+through the authenticated `gh` CLI into managed XDG storage. Up to 10
+reference files (25 MB each) can be attached, copied into the run's
+`.moa/<session>/inputs/` snapshot, and converted into shared Markdown context
+for every model layer. See [`webui.md`](webui.md).
 
 ## Running standalone
 
@@ -76,7 +98,7 @@ You'll need to:
    python3 harness/scripts/run_moa.py \
      --scout-brief .moa/<session>/scout-brief.json \
      --phase layer3 \
-     --aggregator-provider codex-aggregator \
+     --aggregator-provider codex-sol \
      --aggregator-effort high
    ```
 
@@ -102,11 +124,11 @@ Each invocation creates a directory under `.moa/`:
 │   ├── glm-proposer.{json,log}
 │   └── sonnet-proposer.{json,log}
 ├── layer2/
-│   ├── codex-reviewer-refiner-broadcast.{json,log}
+│   ├── codex-sol-refiner-broadcast.{json,log}
 │   └── qwen-refiner-broadcast.{json,log}
 ├── layer3/
 │   ├── aggregation-output.schema.json
-│   └── codex-aggregator-aggregator.{json,log}
+│   └── codex-sol-aggregator.{json,log}
 ├── synthesis-input.md    # what the aggregator reads
 ├── manifest.json         # timing + per-layer success/failure
 ├── report.html           # self-contained HTML charts, plans, and logs

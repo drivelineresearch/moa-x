@@ -92,7 +92,10 @@ from adapters import codex as codex_adapter  # noqa: E402
 from adapters import claude as claude_adapter  # noqa: E402
 from adapters import cursor as cursor_adapter  # noqa: E402
 from adapters import opencode as opencode_adapter  # noqa: E402
+from adapters import agy as agy_adapter  # noqa: E402
+from adapters import gemini as gemini_adapter  # noqa: E402
 from adapters.claude import TEMPERATURE_DIVERSITY_SHIM  # noqa: E402
+from attachments import AttachmentError, prepare_attachment_context  # noqa: E402
 import config as harness_config  # noqa: E402
 
 VENV_PYTHON = SCRIPT_DIR.parent / ".venv" / "bin" / "python"
@@ -685,6 +688,7 @@ def _run_sonnet(
     session_dir: Path,
     timeout: int,
     model: str,
+    reasoning_effort: Optional[str] = None,
     agent_id: str = "sonnet",
     reviewing: Optional[list[str]] = None,
 ) -> LayerResult:
@@ -695,6 +699,7 @@ def _run_sonnet(
         schema_path=schema_path,
         repo_path=repo_path,
         model=model,
+        reasoning_effort=reasoning_effort,
         timeout_seconds=timeout,
         log_file=log_file,
     )
@@ -765,6 +770,7 @@ def _run_opencode(
     timeout: int,
     model: str,
     agent_id: str,
+    reasoning_effort: Optional[str] = None,
     reviewing: Optional[list[str]] = None,
 ) -> LayerResult:
     """Invoke the opencode adapter and lift its result into a LayerResult."""
@@ -777,6 +783,93 @@ def _run_opencode(
         schema_path=schema_path,
         timeout_seconds=timeout,
         log_file=log_file,
+        reasoning_effort=reasoning_effort,
+    )
+    layer_result = LayerResult(
+        agent_id=agent_id,
+        layer=layer,
+        role=role,
+        reviewing=reviewing,
+        success=result.success,
+        payload=result.payload,
+        duration_seconds=result.duration_seconds,
+        started_at=started_at,
+        error=result.error_message,
+        log_path=str(log_file.relative_to(session_dir)),
+        transient_empty=_has_transient_empty(result),
+    )
+    _finalize_result(layer_result, result.payload, schema_path, session_dir)
+    return layer_result
+
+
+def _run_agy(
+    *,
+    layer: int,
+    role: str,
+    prompt: str,
+    schema_path: Path,
+    repo_path: Path,
+    session_dir: Path,
+    timeout: int,
+    model: str,
+    agent_id: str,
+    reasoning_effort: Optional[str] = None,
+    reviewing: Optional[list[str]] = None,
+) -> LayerResult:
+    """Invoke AGY using its persisted local account and session prompt file."""
+    log_file = session_dir / f"layer{layer}" / f"{agent_id}-{role}.log"
+    prompt_file = session_dir / "prompts" / f"{agent_id}-{role}.md"
+    started_at = time.time()
+    result = agy_adapter.run(
+        prompt=prompt,
+        repo_path=repo_path,
+        model=model,
+        timeout_seconds=timeout,
+        log_file=log_file,
+        prompt_file=prompt_file,
+        schema_path=schema_path,
+        reasoning_effort=reasoning_effort,
+    )
+    layer_result = LayerResult(
+        agent_id=agent_id,
+        layer=layer,
+        role=role,
+        reviewing=reviewing,
+        success=result.success,
+        payload=result.payload,
+        duration_seconds=result.duration_seconds,
+        started_at=started_at,
+        error=result.error_message,
+        log_path=str(log_file.relative_to(session_dir)),
+        transient_empty=_has_transient_empty(result),
+    )
+    _finalize_result(layer_result, result.payload, schema_path, session_dir)
+    return layer_result
+
+
+def _run_gemini(
+    *,
+    layer: int,
+    role: str,
+    prompt: str,
+    schema_path: Path,
+    repo_path: Path,
+    session_dir: Path,
+    timeout: int,
+    model: str,
+    agent_id: str,
+    reviewing: Optional[list[str]] = None,
+) -> LayerResult:
+    """Invoke Gemini CLI using its persisted enterprise/API/Cloud account."""
+    log_file = session_dir / f"layer{layer}" / f"{agent_id}-{role}.log"
+    started_at = time.time()
+    result = gemini_adapter.run(
+        prompt=prompt,
+        repo_path=repo_path,
+        model=model,
+        timeout_seconds=timeout,
+        log_file=log_file,
+        schema_path=schema_path,
     )
     layer_result = LayerResult(
         agent_id=agent_id,
@@ -924,7 +1017,9 @@ def _dispatch_provider(
       2. timeout_for_harness[provider.harness] — set by --codex-timeout /
          --sonnet-timeout CLI flags or their MOA_*_TIMEOUT env equivalents
 
-    codex_effort applies only to the codex harness; ignored otherwise.
+    ``provider.effort`` is forwarded to adapters with native effort/variant
+    support (Claude, OpenCode, and AGY). Codex keeps its role-specific CLI
+    effort override, which is passed as ``codex_effort``.
     """
     before = _workspace_snapshot(repo_path, session_dir)
     h = provider.harness
@@ -947,6 +1042,7 @@ def _dispatch_provider(
             repo_path=repo_path, session_dir=session_dir,
             timeout=timeout,
             model=provider.model,
+            reasoning_effort=provider.effort,
             agent_id=provider.name,
             reviewing=reviewing,
         )
@@ -962,6 +1058,28 @@ def _dispatch_provider(
         )
     elif h == "opencode":
         result = _run_opencode(
+            layer=layer, role=role, prompt=prompt,
+            schema_path=PROPOSER_SCHEMA_PATH if "proposer" in role else REFINER_SCHEMA_PATH,
+            repo_path=repo_path, session_dir=session_dir,
+            timeout=timeout,
+            model=provider.model,
+            reasoning_effort=provider.effort,
+            agent_id=provider.name,
+            reviewing=reviewing,
+        )
+    elif h == "agy":
+        result = _run_agy(
+            layer=layer, role=role, prompt=prompt,
+            schema_path=PROPOSER_SCHEMA_PATH if "proposer" in role else REFINER_SCHEMA_PATH,
+            repo_path=repo_path, session_dir=session_dir,
+            timeout=timeout,
+            model=provider.model,
+            reasoning_effort=provider.effort,
+            agent_id=provider.name,
+            reviewing=reviewing,
+        )
+    elif h == "gemini":
+        result = _run_gemini(
             layer=layer, role=role, prompt=prompt,
             schema_path=PROPOSER_SCHEMA_PATH if "proposer" in role else REFINER_SCHEMA_PATH,
             repo_path=repo_path, session_dir=session_dir,
@@ -1435,7 +1553,7 @@ def write_synthesis_input(
         "`~/.claude/skills/mixture-of-agents/prompts/aggregator.md` if running "
         "as the installed skill) for "
         "the full aggregation protocol. Aggregate in the current host, or run "
-        "`run_moa.py --phase layer3 --aggregator-provider codex-aggregator` "
+        "`run_moa.py --phase layer3 --aggregator-provider codex-sol` "
         "to use the recorded Codex path. Synthesize the "
         f"{len(proposer_agent_ids)} proposer plans, honor the "
         f"{len(refiner_agent_ids)} refiner findings, surface disagreements across proposers "
@@ -1552,6 +1670,7 @@ def run_layer3(
             schema_path=schema_path,
             repo_path=repo_path,
             model=provider.model,
+            reasoning_effort=provider.effort,
             timeout_seconds=timeout,
             log_file=log_path,
         )
@@ -1626,7 +1745,9 @@ def update_manifest_layer3(
         "name": provider.name,
         "harness": provider.harness,
         "model": provider.model,
-        "reasoning_effort": codex_effort if provider.harness == "codex" else None,
+        "reasoning_effort": (
+            codex_effort if provider.harness == "codex" else provider.effort
+        ),
     }
     summary = manifest.setdefault("summary", {})
     summary["layer3_successes"] = int(result.success)
@@ -2021,8 +2142,8 @@ def main() -> int:
                              "the rolling 'opus' alias).")
     parser.add_argument("--aggregator-provider",
                         default=os.environ.get("MOA_AGGREGATOR"),
-                        help="Named provider for Layer 3. Use 'codex-aggregator' "
-                             "with --phase layer3 to aggregate through Codex.")
+                        help="Named provider for Layer 3. Curated choices are "
+                             "opus and codex-sol.")
     parser.add_argument("--aggregator-effort",
                         default=os.environ.get("MOA_AGGREGATOR_EFFORT") or "high",
                         choices=["low", "medium", "high", "xhigh"],
@@ -2040,7 +2161,9 @@ def main() -> int:
     parser.add_argument("--proposers",
                         default=os.environ.get("MOA_PROPOSERS"),
                         help="Comma-separated provider names (built-ins "
-                             "codex/glm/sonnet/kimi/qwen/composer/grok/cursor-grok plus user-named "
+                             "codex/glm/sonnet/kimi/qwen/deepseek/deepseek-flash/"
+                             "composer/grok/cursor-grok/"
+                             "agy-gemini-flash plus user-named "
                              "providers). Default: the configured proposer layer.")
     parser.add_argument("--refiners",
                         default=os.environ.get("MOA_REFINERS"),
@@ -2105,6 +2228,14 @@ def main() -> int:
     scout_brief = json.loads(args.scout_brief.read_text(encoding="utf-8"))
     session_dir = args.scout_brief.parent
     session_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        prepare_attachment_context(scout_brief, session_dir)
+    except AttachmentError as exc:
+        print(f"ERROR: attachment context could not be prepared: {exc}", file=sys.stderr)
+        return 2
+    args.scout_brief.write_text(
+        json.dumps(scout_brief, indent=2), encoding="utf-8"
+    )
     repo_path = args.repo or Path(scout_brief.get("repo_path", os.getcwd())).resolve()
 
     if not PROPOSER_SCHEMA_PATH.exists() or not REFINER_SCHEMA_PATH.exists():
@@ -2270,7 +2401,7 @@ def main() -> int:
             maybe_write_report(session_dir, not args.no_report)
             print()
             print("Next: aggregate synthesis-input.md in the current host, or run "
-                  "--phase layer3 --aggregator-provider codex-aggregator for the "
+                  "--phase layer3 --aggregator-provider codex-sol for the "
                   "recorded Codex path (see harness/prompts/aggregator.md)",
                   flush=True)
             return 0
@@ -2284,7 +2415,18 @@ def main() -> int:
         def _apply_model_override(providers, name, model):
             return [
                 harness_config.ResolvedProvider(
-                    name=p.name, harness=p.harness, model=model, timeout=p.timeout
+                    name=p.name, harness=p.harness, model=model,
+                    timeout=p.timeout, effort=p.effort,
+                )
+                if p.name == name else p
+                for p in providers
+            ]
+
+        def _apply_effort_override(providers, name, effort):
+            return [
+                harness_config.ResolvedProvider(
+                    name=p.name, harness=p.harness, model=p.model,
+                    timeout=p.timeout, effort=effort,
                 )
                 if p.name == name else p
                 for p in providers
@@ -2324,10 +2466,16 @@ def main() -> int:
 
         if args.codex_model and args.codex_model != "gpt-5.6-terra":
             final_proposers = _apply_model_override(final_proposers, "codex", args.codex_model)
+        final_proposers = _apply_effort_override(
+            final_proposers, "codex", args.codex_effort
+        )
         if args.codex_reviewer_model and args.codex_reviewer_model != "gpt-5.6-sol":
             final_refiners = _apply_model_override(
                 final_refiners, "codex-reviewer", args.codex_reviewer_model
             )
+        final_refiners = _apply_effort_override(
+            final_refiners, "codex-reviewer", args.codex_reviewer_effort
+        )
 
         if args.sonnet_model and args.sonnet_model != "sonnet":
             final_proposers = _apply_model_override(final_proposers, "sonnet", args.sonnet_model)
@@ -2337,6 +2485,7 @@ def main() -> int:
                 harness=final_aggregator.harness,
                 model=args.aggregator_model,
                 timeout=final_aggregator.timeout,
+                effort=final_aggregator.effort,
             )
 
         # --timeout is a master override: it must beat per-provider timeouts
@@ -2345,11 +2494,17 @@ def main() -> int:
         # per-call timeout in _dispatch resolves to the master value.
         if args.timeout is not None:
             final_proposers = [
-                harness_config.ResolvedProvider(name=p.name, harness=p.harness, model=p.model, timeout=args.timeout)
+                harness_config.ResolvedProvider(
+                    name=p.name, harness=p.harness, model=p.model,
+                    timeout=args.timeout, effort=p.effort,
+                )
                 for p in final_proposers
             ]
             final_refiners = [
-                harness_config.ResolvedProvider(name=p.name, harness=p.harness, model=p.model, timeout=args.timeout)
+                harness_config.ResolvedProvider(
+                    name=p.name, harness=p.harness, model=p.model,
+                    timeout=args.timeout, effort=p.effort,
+                )
                 for p in final_refiners
             ]
             final_aggregator = harness_config.ResolvedProvider(
@@ -2357,6 +2512,7 @@ def main() -> int:
                 harness=final_aggregator.harness,
                 model=final_aggregator.model,
                 timeout=args.timeout,
+                effort=final_aggregator.effort,
             )
 
         # ---------- Phase: layer3 only (aggregate retained synthesis) ----------
@@ -2378,8 +2534,8 @@ def main() -> int:
                 default_timeout = sonnet_timeout
             else:
                 print(
-                    "ERROR: --phase layer3 supports aggregators on the codex or "
-                    f"claude harness; got {final_aggregator.harness!r}",
+                    "ERROR: --phase layer3 supports aggregators on codex or claude; "
+                    f"got {final_aggregator.harness!r}",
                     file=sys.stderr,
                 )
                 return 2
@@ -2449,6 +2605,10 @@ def main() -> int:
                 ok, msg = cursor_adapter.check_available()
             elif harness == "opencode":
                 ok, msg = opencode_adapter.check_available()
+            elif harness == "agy":
+                ok, msg = agy_adapter.check_available()
+            elif harness == "gemini":
+                ok, msg = gemini_adapter.check_available()
             else:
                 ok, msg = False, f"unknown harness {harness!r}"
             available[harness] = ok
@@ -2464,6 +2624,8 @@ def main() -> int:
             "claude": sonnet_timeout,
             "cursor": _int_env("MOA_CURSOR_TIMEOUT") or sonnet_timeout,
             "opencode": _int_env("MOA_OPENCODE_TIMEOUT") or sonnet_timeout,
+            "agy": _int_env("MOA_AGY_TIMEOUT") or sonnet_timeout,
+            "gemini": _int_env("MOA_GEMINI_TIMEOUT") or sonnet_timeout,
         }
 
         started_at = time.time()
@@ -2485,12 +2647,13 @@ def main() -> int:
         if same_lab_refiners:
             print(
                 f"[orchestrator] WARN: refiners {same_lab_refiners} share the aggregator's "
-                "harness (claude); cross-lab refinement is recommended (see CLAUDE.md)",
+                f"harness ({final_aggregator.harness}); cross-lab refinement is "
+                "recommended (see CLAUDE.md)",
                 flush=True,
             )
         print(
             f"[orchestrator] timeouts: codex={codex_timeout}s "
-            f"sonnet={sonnet_timeout}s (opencode/cursor default to sonnet's "
+            f"sonnet={sonnet_timeout}s (opencode/cursor/agy default to sonnet's "
             f"unless MOA_<NAME>_TIMEOUT is set)"
             + (" (master --timeout applied)" if args.timeout is not None else ""),
             flush=True,
@@ -2500,12 +2663,29 @@ def main() -> int:
         # see exactly what models/effort/timeout the session ran with.
         config_snapshot = {
             "arm": "cross-lab",
-            "proposers": [{"name": p.name, "harness": p.harness, "model": p.model} for p in final_proposers],
-            "refiners": [{"name": p.name, "harness": p.harness, "model": p.model} for p in final_refiners],
+            "proposers": [
+                {
+                    "name": p.name, "harness": p.harness,
+                    "model": p.model, "effort": p.effort,
+                }
+                for p in final_proposers
+            ],
+            "refiners": [
+                {
+                    "name": p.name, "harness": p.harness,
+                    "model": p.model, "effort": p.effort,
+                }
+                for p in final_refiners
+            ],
             "aggregator": {
                 "name": final_aggregator.name,
                 "harness": final_aggregator.harness,
                 "model": final_aggregator.model,
+                "effort": (
+                    args.aggregator_effort
+                    if final_aggregator.harness == "codex"
+                    else final_aggregator.effort
+                ),
             },
             "codex_effort": args.codex_effort,
             "codex_reviewer_effort": args.codex_reviewer_effort,
@@ -2640,7 +2820,7 @@ def main() -> int:
             maybe_write_report(session_dir, not args.no_report)
             print()
             print("Next: aggregate synthesis-input.md in the current host, or run "
-                  "--phase layer3 --aggregator-provider codex-aggregator for the "
+                  "--phase layer3 --aggregator-provider codex-sol for the "
                   "recorded Codex path (see harness/prompts/aggregator.md)",
                   flush=True)
             return 0
@@ -2823,7 +3003,7 @@ def main() -> int:
         maybe_write_report(session_dir, not args.no_report)
         print()
         print("Next: aggregate synthesis-input.md in the current host, or run "
-              "--phase layer3 --aggregator-provider codex-aggregator for the "
+              "--phase layer3 --aggregator-provider codex-sol for the "
               "recorded Codex path (see harness/prompts/aggregator.md)",
               flush=True)
         return 0

@@ -13,7 +13,10 @@ Key differences from the other adapters:
   Code has no filesystem-sandbox flag, but mutating tools are unavailable.
 - --bare mode is NOT usable here because it strictly requires
   ANTHROPIC_API_KEY (OAuth / keychain auth is ignored in bare mode).
-  We use full mode + --dangerously-skip-permissions instead.
+  We use full mode with --safe-mode and --dangerously-skip-permissions
+  instead. Safe mode preserves auth while preventing machine/user/project
+  hooks from writing bookkeeping files into the repository during a
+  read-only planning run.
 - Claude Code emits an outer JSON envelope that includes:
     {
       "type": "result",
@@ -112,6 +115,12 @@ def check_available() -> tuple[bool, str]:
 # the first dogfood run). No Bash/Edit/Write (hard tool-level read-only,
 # stronger than trusting the prompt). No NotebookEdit, TodoWrite, etc.
 SONNET_READONLY_TOOLS = "Read,Grep,Glob,WebSearch,WebFetch"
+# Claude Code safe mode disables hooks, plugins, MCP servers, skills, and
+# CLAUDE.md auto-discovery while leaving the authenticated account and built-in
+# read tools available. This matters in parallel MoA runs: one user hook that
+# writes into the shared repository would otherwise make the workspace
+# immutability guard conservatively invalidate every concurrent lane.
+CLAUDE_ISOLATION_FLAG = "--safe-mode"
 
 
 def _write_log_file(log_file: Optional[Path], stdout: str, stderr: str) -> None:
@@ -144,6 +153,31 @@ def _schema_json_for_cli(schema_path: Path) -> str:
     return json.dumps(schema, separators=(",", ":"))
 
 
+def _build_cmd(
+    bin_name: str,
+    *,
+    model: str,
+    schema_json: str,
+    system_prompt_suffix: str,
+    reasoning_effort: Optional[str] = None,
+) -> list[str]:
+    """Build an authenticated but customization-isolated Claude invocation."""
+    cmd = [
+        bin_name,
+        "-p",
+        CLAUDE_ISOLATION_FLAG,
+        "--model", model,
+        "--dangerously-skip-permissions",
+        "--output-format", "json",
+        "--json-schema", schema_json,
+        "--append-system-prompt", system_prompt_suffix,
+        "--tools", SONNET_READONLY_TOOLS,
+    ]
+    if reasoning_effort:
+        cmd.extend(["--effort", reasoning_effort])
+    return cmd
+
+
 def run(
     *,
     prompt: str,
@@ -153,16 +187,18 @@ def run(
     timeout_seconds: int = 1200,  # orchestrator always passes --sonnet-timeout
     log_file: Optional[Path] = None,
     temperature_shim: Optional[str] = None,
+    reasoning_effort: Optional[str] = None,
 ) -> ClaudeResult:
     """Invoke claude -p with the given prompt and schema.
 
     Args:
-        prompt: The full prompt text. Passed as the positional arg to claude -p.
+        prompt: The full prompt text. Sent over stdin to avoid Linux argv size
+            limits when aggregation includes several large model artifacts.
         schema_path: Path to JSON Schema file. Passed to --json-schema.
         repo_path: Working directory. Claude Code's Read tool can access this
             tree without --add-dir (cwd is implicitly readable).
-        model: Claude model id or rolling alias. Default `sonnet`, which
-            Claude Code resolves to the latest available Sonnet model.
+        model: Explicit Claude model id. The curated route pins
+            `claude-sonnet-5` so provenance does not depend on a rolling alias.
         timeout_seconds: Hard wall-clock cap. Default 1200s (20 min) because
             sonnet with full tool access was observed taking >900s in the
             first dogfood run. The restricted tool set (no Agent) should
@@ -215,28 +251,22 @@ def run(
         # wrapper call normally.
         env.setdefault("CLAUDE_CODE_DISABLE_TELEMETRY", "1")
 
-        # `--tools` in claude-cli is variadic (<tools...>) and greedily
-        # consumes subsequent positional args. Use the `--` separator to
-        # unambiguously mark the end of option parsing so the final positional
-        # is treated as the prompt, not another tool name.
+        # The prompt is deliberately not placed on argv. Large synthesis
+        # payloads can exceed Linux MAX_ARG_STRLEN even when total ARG_MAX has
+        # headroom; Claude print mode accepts its text input on stdin.
         system_prompt_suffix = READ_ONLY_RULE
         if temperature_shim:
             # The claude CLI has no --temperature flag. Append a diversity
             # directive so self-moa instances produce meaningfully different
             # proposals, approximating the temperature=0.7 declared in the YAML.
             system_prompt_suffix = READ_ONLY_RULE + "\n\n" + temperature_shim
-        cmd = [
+        cmd = _build_cmd(
             _claude_bin(),
-            "-p",
-            "--model", model,
-            "--dangerously-skip-permissions",
-            "--output-format", "json",
-            "--json-schema", schema_json,
-            "--append-system-prompt", system_prompt_suffix,
-            "--tools", SONNET_READONLY_TOOLS,
-            "--",
-            prompt,
-        ]
+            model=model,
+            schema_json=schema_json,
+            system_prompt_suffix=system_prompt_suffix,
+            reasoning_effort=reasoning_effort,
+        )
 
         try:
             # Use explicit Popen + killpg on timeout so we can tear down the
@@ -246,7 +276,7 @@ def run(
             # after a subprocess.run timeout.
             proc = subprocess.Popen(
                 cmd,
-                stdin=None,
+                stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
@@ -255,7 +285,10 @@ def run(
                 start_new_session=True,  # isolate from parent signal group
             )
             try:
-                stdout_text, stderr_text = proc.communicate(timeout=timeout_seconds)
+                stdout_text, stderr_text = proc.communicate(
+                    input=prompt,
+                    timeout=timeout_seconds,
+                )
                 duration = time.monotonic() - start
                 stdout_captured = stdout_text or ""
                 stderr_captured = stderr_text or ""

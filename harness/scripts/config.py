@@ -14,8 +14,9 @@ CLI flags passed to run_moa.py still override everything — they are
 parsed after this module populates os.environ.
 
 Harnesses supported by the built-in adapters are {codex, claude, opencode,
-cursor}. Named providers (built-in codex/codex-reviewer/codex-aggregator/sonnet/opus/glm/kimi/qwen/composer/grok/cursor-grok plus user-defined
-entries in harness/config.yaml) map onto those harnesses.
+cursor, agy, gemini}. Curated named routes are declared in
+``BUILTIN_PROVIDERS`` below; user-defined entries in harness/config.yaml are
+layered on top.
 
 Typical usage:
 
@@ -59,6 +60,8 @@ DEFAULT_DOTENV_PATH = REPO_ROOT / ".env"
 _DEFAULT_BINS = {
     "codex": "codex",
     "claude": "claude",
+    "agy": "agy",
+    "gemini": "gemini",
 }
 
 
@@ -73,32 +76,49 @@ class ResolvedProvider:
     harness/config.yaml or MOA_<NAME>_TIMEOUT env var.
     """
     name: str                         # user-facing label, used as agent_id in payloads
-    harness: str                      # which adapter handles the call: codex, claude, opencode, cursor
+    harness: str                      # adapter: codex, claude, opencode, cursor, agy, gemini
     model: str                        # model id passed to the harness
     timeout: Optional[int] = None     # per-provider timeout in seconds; None → harness default
+    effort: Optional[str] = None      # provider-native reasoning effort / variant
 
 
-# Built-in named providers. Existing configs that reference legacy providers
-# continue to resolve through this table for back-compat. `codex-reviewer`
-# separates the default review model from the everyday proposer model, while
-# `opus` names the Claude Code Layer-3 aggregator. User-defined providers in
+# Built-in named providers. Existing configs that reference the legacy
+# `codex-reviewer` and `codex-aggregator` names continue to resolve through
+# this table for back-compat; the curated UI uses `codex-sol` instead.
+# User-defined providers in
 # harness/config.yaml under `providers:` are layered on top in resolve_provider.
 # Most built-ins carry timeout=None so the existing CLI flag / harness-level
 # env path (MOA_CODEX_TIMEOUT etc.) continues to apply. Qwen has a bounded
 # 600-second default so a failed preview-model refinement cannot stall a run
 # for twenty minutes.
 BUILTIN_PROVIDERS: dict[str, ResolvedProvider] = {
-    "codex":          ResolvedProvider(name="codex",          harness="codex",    model="gpt-5.6-terra"),
-    "codex-reviewer": ResolvedProvider(name="codex-reviewer", harness="codex",    model="gpt-5.6-sol"),
-    "codex-aggregator": ResolvedProvider(name="codex-aggregator", harness="codex", model="gpt-5.6-sol", timeout=600),
-    "sonnet":         ResolvedProvider(name="sonnet",         harness="claude",   model="sonnet"),
-    "opus":           ResolvedProvider(name="opus",           harness="claude",   model="opus"),
+    "codex":          ResolvedProvider(name="codex",          harness="codex",    model="gpt-5.6-terra", effort="high"),
+    "codex-sol":      ResolvedProvider(name="codex-sol",      harness="codex",    model="gpt-5.6-sol", effort="high"),
+    "codex-luna":     ResolvedProvider(name="codex-luna",     harness="codex",    model="gpt-5.6-luna", effort="medium"),
+    "codex-reviewer": ResolvedProvider(name="codex-reviewer", harness="codex",    model="gpt-5.6-sol", effort="high"),
+    "codex-aggregator": ResolvedProvider(name="codex-aggregator", harness="codex", model="gpt-5.6-sol", timeout=600, effort="high"),
+    # Pin current canonical Anthropic ids. Claude Code's rolling `sonnet`
+    # alias still resolved to 4.6 on 2.1.220 while Sonnet 5 was available
+    # explicitly, so aliases would make the UI and recorded provenance lie.
+    "sonnet":         ResolvedProvider(name="sonnet",         harness="claude",   model="claude-sonnet-5", effort="high"),
+    "opus":           ResolvedProvider(name="opus",           harness="claude",   model="claude-opus-5", effort="high"),
     "glm":            ResolvedProvider(name="glm",            harness="opencode", model="opencode-go/glm-5.2"),
-    "kimi":           ResolvedProvider(name="kimi",           harness="opencode", model="opencode-go/kimi-k2.7-code"),
+    "kimi":           ResolvedProvider(name="kimi",           harness="opencode", model="opencode-go/kimi-k3"),
     "qwen":           ResolvedProvider(name="qwen",           harness="opencode", model="qwen-token-plan/qwen3.8-max-preview", timeout=600),
+    "qwen-opencode":  ResolvedProvider(name="qwen-opencode",  harness="opencode", model="opencode-go/qwen3.7-max"),
+    "deepseek":       ResolvedProvider(name="deepseek",       harness="opencode", model="opencode-go/deepseek-v4-pro"),
+    "deepseek-flash": ResolvedProvider(name="deepseek-flash", harness="opencode", model="opencode-go/deepseek-v4-flash"),
     "composer":       ResolvedProvider(name="composer",       harness="cursor",   model="composer-2.5"),
-    "grok":           ResolvedProvider(name="grok",           harness="opencode", model="xai/grok-4.5"),
+    "grok":           ResolvedProvider(name="grok",           harness="opencode", model="opencode-go/grok-4.5"),
     "cursor-grok":    ResolvedProvider(name="cursor-grok",    harness="cursor",   model="cursor-grok-4.5-high"),
+    # Google providers are opt-in and intentionally absent from the shipped
+    # proposer/refiner defaults. AGY reuses the account signed into the local
+    # Antigravity CLI.
+    # The Web UI presents the two Gemini families and keeps reasoning effort
+    # separate from the family name. The high-suffixed route remains a hidden
+    # compatibility alias for saved configs.
+    "agy-gemini-high": ResolvedProvider(name="agy-gemini-high", harness="agy",    model="gemini-3.6-flash-high", effort="high"),
+    "agy-gemini-flash": ResolvedProvider(name="agy-gemini-flash", harness="agy",  model="gemini-3.6-flash-medium", effort="medium"),
 }
 
 
@@ -107,11 +127,12 @@ def resolve_provider(name: str, *, user_providers: dict[str, dict]) -> ResolvedP
 
     Lookup order:
       1. user_providers (from harness/config.yaml `providers:` block)
-      2. BUILTIN_PROVIDERS (codex, codex-reviewer, codex-aggregator, sonnet, opus, glm, kimi, qwen, composer, grok, cursor-grok)
+      2. BUILTIN_PROVIDERS (including opt-in AGY providers)
 
     Then env-var overrides apply per-field:
       - MOA_<NAME>_MODEL overrides .model
       - MOA_<NAME>_TIMEOUT overrides .timeout
+      - MOA_<NAME>_EFFORT overrides .effort
 
     Most built-in providers resolve with timeout=None so the existing
     --codex-timeout / --sonnet-timeout CLI flag path continues to apply at
@@ -134,25 +155,23 @@ def resolve_provider(name: str, *, user_providers: dict[str, dict]) -> ResolvedP
                 f"user provider {name!r} `timeout:` must be an integer (seconds); "
                 f"got {yaml_timeout!r}"
             )
+        yaml_effort = spec.get("effort")
+        if yaml_effort is not None and not isinstance(yaml_effort, str):
+            raise ValueError(
+                f"user provider {name!r} `effort:` must be a string; "
+                f"got {yaml_effort!r}"
+            )
         rp = ResolvedProvider(
             name=name,
             harness=spec["harness"],
             model=spec["model"],
             timeout=yaml_timeout,
+            effort=yaml_effort,
         )
     elif name in BUILTIN_PROVIDERS:
         rp = BUILTIN_PROVIDERS[name]
     else:
         valid = sorted(set(BUILTIN_PROVIDERS) | set(user_providers))
-        if name == "gemini":
-            raise ValueError(
-                "provider 'gemini' was removed in v0.3.0 (see docs/config.md "
-                "\"Migrating from gemini\"). Route a Gemini model through the "
-                "cursor harness instead — e.g. under `providers:` in "
-                "harness/config.yaml:\n"
-                "    cursor-gemini: {harness: cursor, model: gemini-3.1-pro}\n"
-                f"then add 'cursor-gemini' to your layers. Valid names now: {valid}"
-            )
         raise ValueError(
             f"unknown provider name {name!r}; valid names: {valid}"
         )
@@ -162,7 +181,8 @@ def resolve_provider(name: str, *, user_providers: dict[str, dict]) -> ResolvedP
     override_model = os.environ.get(f"{env_prefix}_MODEL")
     if override_model:
         rp = ResolvedProvider(
-            name=rp.name, harness=rp.harness, model=override_model, timeout=rp.timeout
+            name=rp.name, harness=rp.harness, model=override_model,
+            timeout=rp.timeout, effort=rp.effort,
         )
 
     override_timeout_raw = os.environ.get(f"{env_prefix}_TIMEOUT")
@@ -173,7 +193,17 @@ def resolve_provider(name: str, *, user_providers: dict[str, dict]) -> ResolvedP
             raise ValueError(
                 f"{env_prefix}_TIMEOUT must be an integer (seconds); got {override_timeout_raw!r}"
             ) from e
-        rp = ResolvedProvider(name=rp.name, harness=rp.harness, model=rp.model, timeout=override_timeout)
+        rp = ResolvedProvider(
+            name=rp.name, harness=rp.harness, model=rp.model,
+            timeout=override_timeout, effort=rp.effort,
+        )
+
+    override_effort = os.environ.get(f"{env_prefix}_EFFORT")
+    if override_effort:
+        rp = ResolvedProvider(
+            name=rp.name, harness=rp.harness, model=rp.model,
+            timeout=rp.timeout, effort=override_effort,
+        )
 
     return rp
 
@@ -196,10 +226,8 @@ def resolve_bin(provider: str) -> str:
     """Return the binary name/path for a provider.
 
     Honors MOA_<PROVIDER>_BIN (e.g. MOA_CODEX_BIN, MOA_CLAUDE_BIN) with a
-    default of the bare binary name on PATH. Only covers harnesses whose
-    binary the orchestrator resolves centrally (codex, claude); the cursor
-    and opencode adapters resolve their own bin via MOA_CURSOR_BIN /
-    MOA_OPENCODE_BIN.
+    default of the bare binary name on PATH. Cursor and OpenCode adapters
+    resolve their own renamed/multi-path binaries.
     """
     provider = provider.lower()
     if provider not in _DEFAULT_BINS:
@@ -320,7 +348,9 @@ def _user_providers_from_yaml(cfg: dict[str, Any]) -> dict[str, dict]:
 
 # Harnesses a provider spec may target. Used to validate MOA_PROVIDER_* env
 # definitions loudly at parse time instead of failing deep in dispatch.
-_KNOWN_HARNESSES = frozenset({"codex", "claude", "opencode", "cursor"})
+_KNOWN_HARNESSES = frozenset(
+    {"codex", "claude", "opencode", "cursor", "agy", "gemini"}
+)
 
 
 def _providers_from_env() -> dict[str, dict]:
@@ -372,7 +402,7 @@ class LoadedConfig:
 
 # Default layer assignments when no YAML / env override is set.
 _DEFAULT_PROPOSERS = ["codex", "glm", "sonnet"]
-_DEFAULT_REFINERS = ["codex-reviewer", "qwen"]
+_DEFAULT_REFINERS = ["codex-sol", "qwen"]
 _DEFAULT_AGGREGATOR = "opus"
 
 

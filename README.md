@@ -6,11 +6,11 @@
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license">
   <img src="https://img.shields.io/badge/python-3.9%2B-blue.svg" alt="Python 3.9+">
   <img src="https://img.shields.io/badge/runner-Claude%20Code-8b5cf6.svg" alt="Claude Code">
-  <img src="https://img.shields.io/badge/providers-codex%20%7C%20claude--code%20%7C%20opencode%20%7C%20cursor-informational" alt="supported CLIs">
+  <img src="https://img.shields.io/badge/providers-codex%20%7C%20claude%20%7C%20opencode%20%7C%20cursor%20%7C%20agy-informational" alt="supported CLIs">
 </p>
 
 <p align="center">
-  <img src="docs/moa-x-workflow.png" alt="MoA-X workflow: Scout → codex gpt-5.6-terra, GLM-5.2, and rolling Sonnet proposers → gpt-5.6-sol and Qwen 3.8 Max Preview broadcast refiners → rolling Opus aggregator → final plan, decision lineage, and self-contained interactive report" width="820">
+  <img src="docs/moa-x-workflow.png" alt="MoA-X workflow: Scout → GPT-5.6 Terra, GLM-5.2, and Claude Sonnet 5 proposers → GPT-5.6 Sol and Qwen 3.8 Max Preview broadcast refiners → Claude Opus 5 aggregator → final plan, decision lineage, and self-contained interactive report" width="820">
 </p>
 
 A small, CLI-native take on the 2024
@@ -18,18 +18,18 @@ A small, CLI-native take on the 2024
 a different job: producing **repo-grounded implementation plans** for
 coding agents instead of chat answers. The default roster puts proposers
 from three different labs to work — OpenAI `codex` (`gpt-5.6-terra`), Zhipu
-`glm` (GLM-5.2 via the `opencode` CLI), and Anthropic Claude Code's rolling
-`sonnet` alias — reading the repo in
+`glm` (GLM-5.2 via the `opencode` CLI), and Anthropic `sonnet`
+(`claude-sonnet-5` via Claude Code) — reading the repo in
 parallel, doing their own web research, and each writing an independent
-plan. Two refiners (`codex-reviewer` on `gpt-5.6-sol` at high reasoning and
+plan. Two refiners (`codex-sol` on `gpt-5.6-sol` at high reasoning and
 Alibaba Qwen `qwen3.8-max-preview`) then refine in broadcast mode (every
 refiner sees every plan). Finally, Layer 3 aggregates with the parent Claude
-Code session's rolling `opus` alias by default, or with a recorded Codex
+Code session on `claude-opus-5` by default, or with a recorded Codex
 subprocess (`gpt-5.6-sol` at high reasoning) when requested.
 
-Built to run **inside Claude Code** as a skill. Standalone Python works
-too. The harness ships built-in providers across four harnesses (`codex`,
-`claude`, `opencode`, `cursor`) and the roster — which providers run at
+Built to run **inside Claude Code** as a skill, or from the local Web UI.
+Standalone Python works too. The harness ships curated providers across five
+harnesses (`codex`, `claude`, `opencode`, `cursor`, `agy`) and the roster — which providers run at
 which layer, and how many — is pure config. API-based auth and more
 providers are already supported. See "Contributions we'd prioritize" below
 for the remaining gaps.
@@ -54,13 +54,54 @@ cp -r harness ~/.claude/skills/mixture-of-agents
 /mixture-of-agents
 ```
 
+## Local Web UI
+
+The Flask control room queues runs, streams phase events, shows local provider
+health, and indexes current and historical `.moa` sessions in SQLite. It uses
+the same `HOME`, `PATH`, environment, and authenticated CLI accounts as the
+server process; credentials are never copied into the browser or database.
+Tasks can run without a repository and may include up to 10 durable local
+file uploads (25 MB each). PDF, Markdown, common text formats, and locally
+OCRed images are copied into an isolated run snapshot, converted into one
+bounded Markdown context packet, and embedded in every proposer, refiner, and
+aggregator prompt. Local
+workspaces are optional. When repository context is useful, the GitHub picker
+can shallow-clone only an explicitly allowed GitHub owner through the
+machine's authenticated `gh` CLI. Browser-generated profile IDs
+remain in `localStorage`; profile names/settings, jobs, events, and history are
+retained in SQLite without adding a login system.
+
+```bash
+git clone https://github.com/drivelineresearch/moa-x.git
+cd moa-x
+python3 -m venv .venv
+.venv/bin/pip install -r requirements-web.txt
+MOA_WEBUI_GITHUB_OWNER=your-github-user-or-org \
+  .venv/bin/python -m harness.webui
+```
+
+Open `http://localhost:7340`. There is no frontend compilation step: the
+versioned HTML, CSS, JavaScript, and image assets are served directly by
+Flask/Waitress. The safe default bind is `127.0.0.1`. To opt into trusted-LAN
+access, set `MOA_WEBUI_HOST=0.0.0.0`; because the UI intentionally has no
+login, never expose that listener directly to the public internet. Set
+`MOA_WEBUI_PORT` to change the port and
+`MOA_WEBUI_WORKSPACE_ROOTS` (colon-separated on Linux/macOS) to bound backend
+path operations such as history import. New runs use Task only or an
+allowlisted GitHub repository. See [`docs/webui.md`](docs/webui.md)
+for clean-clone setup, Task-only storage, GitHub configuration, development,
+and the HTTP surface.
+
+AGY is the curated Google route and reuses the account already signed into
+`agy`; its live model probe determines which Gemini routes are available.
+
 ## Architecture at a glance
 
 ```
 Layer 0 — Scout brief           (parent Claude, in-place)
 Layer 1 — Proposers (parallel)    default: codex + glm + sonnet subprocesses
-Layer 2 — Broadcast refiners      default: codex-reviewer + qwen, each sees ALL proposals
-Layer 3 — Aggregator              default: parent rolling opus; optional recorded Codex phase
+Layer 2 — Broadcast refiners      default: codex-sol + qwen, each sees ALL proposals
+Layer 3 — Aggregator              default: parent Claude Opus 5; optional recorded Codex phase
 ```
 
 The roster is config-driven; the defaults above span four labs (OpenAI,
@@ -82,9 +123,11 @@ architecture work, not one-line fixes. Background in
 
 - [`docs/install.md`](docs/install.md): install the CLIs, verify, install as a Claude Code skill
 - [`docs/usage.md`](docs/usage.md): running via `/mixture-of-agents` (primary) or standalone
+- [`docs/webui.md`](docs/webui.md): local control-room setup, persistence, uploads, GitHub workspaces, security
 - [`docs/config.md`](docs/config.md): `.env` + `harness/config.yaml`, MOA_\* knob table, precedence, roster swaps
 - [`docs/architecture.md`](docs/architecture.md): the four layers, why broadcast, why this roster
 - [`docs/report.md`](docs/report.md): the self-contained HTML run report (`report.html`) — 3D pipeline, Gantt, verdict matrix, decision lineage
+- [`docs/assets.md`](docs/assets.md): asset provenance, font policy, animation sources, and contribution rules
 - [`CONTRIBUTING.md`](CONTRIBUTING.md): dev setup, PR protocol, where help is welcome
 - [`SECURITY.md`](SECURITY.md): private vulnerability reports
 - [`CLAUDE.md`](CLAUDE.md) / [`AGENTS.md`](AGENTS.md): guidance for coding agents working on this repo (AGENTS.md points at CLAUDE.md)
@@ -106,9 +149,11 @@ harness/               orchestrator, adapters, prompts, schemas
   README.md            skill-internal notes (lives with harness/ when copied into ~/.claude/skills/)
   config.example.yaml  copy to harness/config.yaml to override defaults
   prompts/             scout / proposer / refiner / aggregator
-  report/              HTML report template + vendored three.min.js
+  report/              HTML report template + embedded illustration assets
   scripts/             orchestrator + adapters + config + report + tests
+  webui/               Flask control plane, SQLite store, worker, and frontend
 requirements-cli.txt   install/auth notes for the provider CLIs
+requirements-web.txt   optional Flask control-room dependencies
 ```
 
 ## Contributions we'd prioritize
@@ -117,18 +162,19 @@ The core roster, named-provider system, API-key auth paths, Qwen Token Plan,
 phase checkpoints, and HTML reporting are now shipped. The highest-leverage
 remaining contributions are:
 
-- **A complete standalone host workflow.** `run_moa.py` handles the proposer
-  and refiner layers from any shell, and `--phase layer3` can now produce the
-  final plan, decision lineage, and refreshed report through Codex or Claude.
-  The remaining gap is a first-class command that creates the Layer 0 scout
-  brief and drives all phases from a raw spec without a parent session.
+- **A CLI-only raw-spec convenience command.** The Web UI can create a job
+  from a raw goal and drive every recorded phase. `run_moa.py` also handles
+  the proposer/refiner layers and recorded Layer 3 from a shell. The remaining
+  gap is a single non-Web CLI command that creates Layer 0 and drives all
+  phases without a parent session.
 - **Usage, quota, and cost observability.** Capture the token/usage metadata
   each CLI exposes, normalize it into the manifest and HTML report, distinguish
   subscription from metered runs, and make unknown cost explicit. A safe
   budget control could stop later dispatches before a configured ceiling is
   exceeded; it must not pretend it can undo an already-billed request.
-- **Tested provider recipes, not just model-name examples.** Qwen is already a
-  built-in provider. Contributions for DeepSeek, MiniMax, xAI Grok, Mistral,
+- **Tested provider recipes, not just model-name examples.** Qwen and the
+  authenticated OpenCode Go DeepSeek V4 Pro/Flash routes are already built in.
+  Contributions for MiniMax, xAI Grok, Mistral,
   or another credible coding model should include a reproducible config,
   credential preflight, captured parser fixtures, and an end-to-end smoke-test
   result. Most should use the existing OpenCode or Cursor adapter; discuss a

@@ -28,35 +28,53 @@ it, that test will tell you.
 
 A provider is a `{name, harness, model}` triple. The `harness` is
 which CLI gets invoked; the `model` is what that harness asks for;
-the `name` is a user-facing label that becomes the `agent_id` in
-payloads.
+the `name` is a stable route identifier that becomes the `agent_id` in
+payloads. Compatibility names such as `sonnet`, `opus`, `kimi`, and `qwen`
+remain stable while their resolved model ids can advance. The Web UI shows
+the canonical model label and keeps the route identifier in run provenance.
 
 ### Built-in defaults
 
-These eleven are always available without declaring them:
+These curated routes are always available without declaring them. The
+configuration name is a stable internal route identifier; the Web UI presents
+the canonical model and effort. Legacy `codex-reviewer` and
+`codex-aggregator` names still resolve for old configs but are hidden from
+the curated Web UI.
 
-| Name | Harness | Default model |
-|---|---|---|
-| `codex` | `codex` CLI | `gpt-5.6-terra` |
-| `codex-reviewer` | `codex` CLI | `gpt-5.6-sol` |
-| `codex-aggregator` | `codex` CLI | `gpt-5.6-sol` (Layer 3; 600s cap) |
-| `sonnet` | `claude` CLI | `sonnet` (rolling alias) |
-| `opus` | `claude` CLI | `opus` (rolling alias; Layer 3) |
-| `glm` | `opencode` CLI | `opencode-go/glm-5.2` |
-| `kimi` | `opencode` CLI | `opencode-go/kimi-k2.7-code` |
-| `qwen` | `opencode` CLI | `qwen-token-plan/qwen3.8-max-preview` |
-| `composer` | `cursor` CLI | `composer-2.5` |
-| `grok` | `opencode` CLI | `xai/grok-4.5` (needs `XAI_API_KEY`) |
-| `cursor-grok` | `cursor` CLI | `cursor-grok-4.5-high` |
+| Name | Harness | Default model | Effort |
+|---|---|---|---|
+| `codex` | `codex` CLI | `gpt-5.6-terra` | high |
+| `codex-sol` | `codex` CLI | `gpt-5.6-sol` | high |
+| `codex-luna` | `codex` CLI | `gpt-5.6-luna` | medium |
+| `sonnet` | `claude` CLI | `claude-sonnet-5` | high |
+| `opus` | `claude` CLI | `claude-opus-5` (Layer 3) | high |
+| `glm` | `opencode` CLI | `opencode-go/glm-5.2` | provider default |
+| `kimi` | `opencode` CLI | `opencode-go/kimi-k3` | provider default |
+| `qwen` | `opencode` CLI | `qwen-token-plan/qwen3.8-max-preview` | provider default |
+| `qwen-opencode` | `opencode` CLI | `opencode-go/qwen3.7-max` | provider default |
+| `deepseek` | `opencode` CLI | `opencode-go/deepseek-v4-pro` | provider default |
+| `deepseek-flash` | `opencode` CLI | `opencode-go/deepseek-v4-flash` | provider default |
+| `composer` | `cursor` CLI | `composer-2.5` | encoded in model id |
+| `grok` | `opencode` CLI | `opencode-go/grok-4.5` | provider default |
+| `cursor-grok` | `cursor` CLI | `cursor-grok-4.5-high` | encoded in model id |
+| `agy-gemini-flash` | `agy` CLI | `gemini-3.6-flash-medium` | medium |
+
+Every curated route can be a proposer or refiner. Only `codex-sol` and
+`opus` are offered as aggregators. DeepSeek uses the authenticated OpenCode
+Go account; `deepseek` is listed before Flash as the preferred
+full-capability route.
 
 The default roster draws four labs from these: proposers
 `[codex, glm, sonnet]` (OpenAI, Zhipu, Anthropic), refiners
-`[codex-reviewer, qwen]` (OpenAI, Alibaba), and aggregator `opus`.
+`[codex-sol, qwen]` (OpenAI, Alibaba), and aggregator `opus`.
 The refiners stay independent of the Anthropic aggregator.
 
-Override built-in models via CLI flags (`--codex-model`,
-`--codex-reviewer-model`, `--sonnet-model`, `--aggregator-model`) or the
-matching `MOA_<NAME>_MODEL` environment variables.
+Override built-in models with matching `MOA_<NAME>_MODEL` environment
+variables. Dedicated CLI flags remain for `codex`, `sonnet`, and the
+aggregator; `--codex-reviewer-model` is retained only for legacy configs.
+Provider effort can be set with `effort:` in YAML or
+`MOA_<NAME>_EFFORT`; the Web UI exposes only the values supported by each
+underlying CLI.
 
 ### User-defined providers
 
@@ -72,7 +90,7 @@ Then reference the name in `layers:`:
 ```yaml
 layers:
   proposers: [codex, glm, sonnet, cursor-grok]
-  refiners:  [codex-reviewer, qwen]
+  refiners:  [codex-sol, qwen]
 ```
 
 For user-named providers, model and timeout are overridable via env var
@@ -132,7 +150,7 @@ providers:
   cursor-grok: {harness: cursor, model: cursor-grok-4.5-high}
 layers:
   proposers: [codex, glm, sonnet, cursor-grok]
-  refiners:  [codex-reviewer, qwen]
+  refiners:  [codex-sol, qwen]
   aggregator: opus
 ```
 
@@ -144,26 +162,29 @@ layers:
 | `MOA_CLAUDE_BIN` | `claude` | Same for claude. |
 | `MOA_OPENCODE_BIN` | `opencode` | Same for opencode (GLM / Qwen harness). |
 | `MOA_CURSOR_BIN` | `cursor-agent` | Same for cursor (binary is `cursor-agent`, or `agent` on newer installs). |
+| `MOA_AGY_BIN` | `agy` | Same for the Antigravity consumer-Google harness. |
 | `MOA_CODEX_MODEL` | `gpt-5.6-terra` | Codex proposer model id. |
 | `MOA_CODEX_REVIEWER_MODEL` | `gpt-5.6-sol` | Codex reviewer model id. |
 | `MOA_CODEX_EFFORT` | `high` | One of `low`, `medium`, `high`, `xhigh`. Higher = better, slower. Default `--codex-timeout` scales with this. |
 | `MOA_CODEX_REVIEWER_EFFORT` | `high` | Independent reasoning effort for codex-harness refiners. |
-| `MOA_SONNET_MODEL` | `sonnet` | Rolling Claude Code alias for the Sonnet proposer. |
+| `MOA_SONNET_MODEL` | `claude-sonnet-5` | Pinned Claude Sonnet 5 proposer model. The stable provider name remains `sonnet`. |
 | `MOA_AGGREGATOR_MODEL` | provider model | Override the model recorded or invoked for Layer 3. |
 | `MOA_AGGREGATOR_EFFORT` | `high` | Reasoning effort for a Codex Layer-3 subprocess. |
 | `MOA_GLM_MODEL` | `opencode-go/glm-5.2` | Model id for the `glm` provider (opencode harness). Provider/model string. |
-| `MOA_KIMI_MODEL` | `opencode-go/kimi-k2.7-code` | Model id for the `kimi` provider (opencode harness). Provider/model string. |
+| `MOA_KIMI_MODEL` | `opencode-go/kimi-k3` | Model id for the `kimi` provider (opencode harness). Provider/model string. |
 | `MOA_QWEN_MODEL` | `qwen-token-plan/qwen3.8-max-preview` | Model id for the built-in Qwen Token Plan refiner. |
 | `MOA_CODEX_TIMEOUT` | effort-scaled | Wall-clock cap for codex calls. xhigh=1500s, high=1200s, medium/low=900s. |
 | `MOA_SONNET_TIMEOUT` | `1200` | Wall-clock cap for sonnet calls, in seconds. |
 | `MOA_OPENCODE_TIMEOUT` | `1200` | Harness-level wall-clock cap for opencode calls; built-in Qwen overrides this to `600`. |
 | `MOA_CURSOR_TIMEOUT` | `1200` | Wall-clock cap for cursor calls, in seconds. |
+| `MOA_AGY_TIMEOUT` | `1200` | Harness-level wall-clock cap for AGY. |
 | `MOA_<NAME>_MODEL` | — | Model override for any user-named provider (name uppercased, `-` → `_`). |
 | `MOA_<NAME>_TIMEOUT` | `1200` | Timeout override for any user-named provider. |
+| `MOA_<NAME>_EFFORT` | provider default | Provider-native effort/variant override. Codex supports `low` through `xhigh`; Claude additionally supports `max`; AGY supports `low`, `medium`, and `high`; OpenCode receives the value as `--variant`. Cursor effort stays encoded in its model id. |
 | `MOA_PROVIDER_<NAME>` | — | Define a provider inline as `<harness>:<model>` (name lowercased, `_` → `-`). No `config.yaml` needed. |
 | `MOA_PROPOSERS` | `codex,glm,sonnet` | Comma-separated provider names to spawn as proposers. |
-| `MOA_REFINERS` | `codex-reviewer,qwen` | Comma-separated provider names to spawn as refiners. |
-| `MOA_AGGREGATOR` | `opus` | Named Layer-3 provider. Set `codex-aggregator` when using `--phase layer3` through Codex. |
+| `MOA_REFINERS` | `codex-sol,qwen` | Comma-separated provider names to spawn as refiners. |
+| `MOA_AGGREGATOR` | `opus` | Named Layer-3 provider. Set `codex-sol` for the curated Codex path. |
 | `MOA_SKIP_LAYER2` | unset | Set to `1` to skip the refinement layer entirely. |
 | `MOA_NO_REPORT` | unset | Set to `1` to skip generating `<session>/report.html` after a run (same as `--no-report`). See [`docs/report.md`](report.md). |
 
@@ -177,15 +198,15 @@ provider with `--proposers ...qwen...` or `MOA_PROPOSERS`.
 
 ## Examples
 
-### Add Qwen Token Plan
+### Configure the default Qwen Token Plan refiner
 
-The optional built-in `qwen` provider uses Qwen Cloud Token Plan through the
+The default built-in `qwen` refiner uses Qwen Cloud Token Plan through the
 OpenCode harness. Store the dedicated `sk-sp-...` key in the gitignored
 `.env` file:
 
 ```bash
 QWEN_TOKEN_PLAN_API_KEY=sk-sp-...
-MOA_REFINERS=codex-reviewer,qwen
+MOA_REFINERS=codex-sol,qwen
 ```
 
 Its default model string is `qwen-token-plan/qwen3.8-max-preview`, with a
@@ -198,7 +219,7 @@ Token Plan keys and pay-as-you-go keys/endpoints are not interchangeable.
 See the official [Qwen Token Plan quick start](https://docs.qwencloud.com/token-plan/team/token-plan-team-quickstart)
 and [OpenCode setup](https://docs.qwencloud.com/developer-guides/clients-and-developer-tools/opencode).
 
-### 5-lane mix (defaults + cursor-grok)
+### 4-lane mix (defaults + cursor-grok)
 
 ```yaml
 # harness/config.yaml
@@ -206,72 +227,61 @@ providers:
   cursor-grok: {harness: cursor, model: cursor-grok-4.5-high}
 layers:
   proposers: [codex, glm, sonnet, cursor-grok]
-  refiners:  [codex-reviewer, qwen]
+  refiners:  [codex-sol, qwen]
 ```
 
 Adds an extra proposer lane without touching the built-in roster.
 
-### GLM / Kimi through Fireworks
+### GLM through Fireworks
 
-The `glm` and `kimi` defaults route through the opencode-go gateway
-(`opencode-go/…`). To run the same models through their native
-providers (`zhipuai/glm-5.2`, `moonshotai/kimi-k2.7-code`) or through
-Fireworks instead, declare user providers with those model strings:
+The `glm` default routes through the opencode-go gateway. To run GLM-5.2
+through its native provider (`zhipuai/glm-5.2`) or Fireworks instead, declare
+a user provider with that provider/model string:
 
 ```yaml
 # harness/config.yaml
 providers:
   glm-fw:  {harness: opencode, model: fireworks-ai/accounts/fireworks/models/glm-5p2}
-  kimi-fw: {harness: opencode, model: fireworks-ai/accounts/fireworks/models/kimi-k2p7-code}
 layers:
   proposers: [codex, glm-fw, sonnet]
-  refiners:  [codex-reviewer, kimi-fw]
+  refiners:  [codex-sol, qwen]
 ```
 
 Or define them inline without a config file:
 
 ```bash
 MOA_PROVIDER_GLM_FW=opencode:fireworks-ai/accounts/fireworks/models/glm-5p2
-MOA_PROVIDER_KIMI_FW=opencode:fireworks-ai/accounts/fireworks/models/kimi-k2p7-code
 MOA_PROPOSERS=codex,glm-fw,sonnet
-MOA_REFINERS=codex-reviewer,kimi-fw
+MOA_REFINERS=codex-sol,qwen
 ```
 
-### One CLI, many labs (cursor-everywhere)
+## Google models through AGY
+
+Google models are available through the opt-in AGY harness. It reuses the
+account already signed in locally; MoA-X does not ask for, copy, or store
+credentials.
+
+- `agy-gemini-flash` uses Antigravity CLI, the supported consumer
+  Google-account path. AGY 1.1.5+ is required for stable model slugs. The Web
+  UI keeps reasoning effort separate from the family name. Gemini 3.1 Pro is
+  not offered because AGY 1.1.7 resolves that advertised slug to Flash on this
+  machine.
+The adapter requires plan mode plus sandboxing and supports proposer and
+broadcast-refiner roles. AGY routes are deliberately absent from the default
+roster. Select one explicitly:
 
 ```yaml
-# harness/config.yaml
-providers:
-  c-gpt:    {harness: cursor, model: gpt-5.5-medium}
-  c-sonnet: {harness: cursor, model: claude-4.5-sonnet}
-  c-composer: {harness: cursor, model: composer-2.5}
 layers:
-  proposers: [c-gpt, c-sonnet, c-composer]
-  refiners:  [c-gpt, c-composer]
+  proposers: [codex, agy-gemini-flash, sonnet]
+  refiners:  [codex-sol, qwen]
 ```
 
-Consolidates billing through the Cursor CLI while keeping
-cross-lab diversity at the model level.
-
-## Migrating from gemini
-
-The `gemini` provider and its adapter were removed in v0.3.0. There
-is no longer a `gemini` harness, no built-in `gemini` provider, and
-no `MOA_GEMINI_*` knobs or `--gemini-model` / `--gemini-timeout`
-flags. The default roster's cross-lab diversity now comes from GLM
-(Zhipu) and Kimi (Moonshot) via the `opencode` harness.
-
-If you still want a Gemini model in the ensemble, route it through
-the `cursor` harness as a user provider:
-
-```yaml
-# harness/config.yaml
-providers:
-  cursor-gemini: {harness: cursor, model: gemini-3.1-pro}
-layers:
-  proposers: [codex, glm, sonnet, cursor-gemini]
-  refiners:  [codex-reviewer, qwen]
-```
+Run `agy models` to see the stable slugs enabled for the current account.
+Preflight rejects a configured AGY model that is not in that list. Custom
+providers can target the harness, for example
+`{harness: agy, model: gemini-3.6-flash-high}`. Model names and timeouts may
+also be overridden with `MOA_<NAME>_MODEL` / `MOA_<NAME>_TIMEOUT`;
+`MOA_AGY_BIN` selects a nonstandard executable path.
 
 ## Secrets
 

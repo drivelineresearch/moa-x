@@ -1,0 +1,272 @@
+"""Antigravity (``agy``) CLI adapter.
+
+AGY is the preferred Google consumer-account path. Authentication belongs to
+the CLI and is deliberately not copied into MoA-X: subprocesses inherit the
+same account state as an interactive ``agy`` invocation on this machine.
+
+The read-only contract is fail closed. Every invocation includes both
+``--mode plan`` and ``--sandbox``. Large MoA prompts are written beneath the
+active session and the argv contains only a short instruction pointing at the
+file, avoiding ARG_MAX failures.
+"""
+from __future__ import annotations
+
+import os
+import json
+import re
+import shutil
+import subprocess
+import tempfile
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional
+
+from adapters import READ_ONLY_RULE, extract_json_from_text, kill_proc_tree
+
+_MIN_VERSION = (1, 1, 5)
+_VERSION_RE = re.compile(r"\b(\d+)\.(\d+)\.(\d+)\b")
+_REQUIRED_HELP_FLAGS = (
+    "--print",
+    "--mode",
+    "--sandbox",
+    "--model",
+    "--dangerously-skip-permissions",
+)
+
+
+@dataclass
+class AgyResult:
+    success: bool
+    payload: Optional[dict]
+    raw_stdout: str
+    raw_stderr: str
+    exit_code: int
+    duration_seconds: float
+    error_message: Optional[str] = None
+    transient_empty: bool = False
+
+
+def _agy_bin() -> str:
+    return os.environ.get("MOA_AGY_BIN") or "agy"
+
+
+def _parse_version(text: str) -> Optional[tuple[int, int, int]]:
+    match = _VERSION_RE.search(text)
+    return tuple(int(part) for part in match.groups()) if match else None
+
+
+def list_models(*, timeout_seconds: int = 20) -> tuple[bool, list[str], str]:
+    """Return the stable model slugs visible to the current AGY account."""
+    bin_name = _agy_bin()
+    if not shutil.which(bin_name):
+        return False, [], f"agy CLI not found ({bin_name!r} not on PATH)"
+    try:
+        proc = subprocess.run(
+            [bin_name, "models"],
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
+        return False, [], f"agy models probe failed: {exc}"
+    models = [
+        line.strip()
+        for line in (proc.stdout or "").splitlines()
+        if line.strip() and not line.lstrip().startswith(("#", "Usage:"))
+    ]
+    if proc.returncode != 0:
+        detail = (proc.stderr or proc.stdout or "no output").strip().splitlines()[0]
+        return False, [], f"agy models exited {proc.returncode}: {detail}"
+    if not models:
+        return False, [], "agy models returned no model slugs (account may not be eligible)"
+    return True, models, f"{len(models)} models available"
+
+
+def check_available() -> tuple[bool, str]:
+    """Verify AGY, required safety flags, version, and persisted account state."""
+    bin_name = _agy_bin()
+    if not shutil.which(bin_name):
+        return False, (
+            f"agy CLI not found ({bin_name!r} not on PATH; install Antigravity "
+            "CLI and sign in with the account you want MoA-X to use)"
+        )
+    try:
+        version_proc = subprocess.run(
+            [bin_name, "--version"], capture_output=True, text=True, timeout=10
+        )
+        help_proc = subprocess.run(
+            [bin_name, "--help"], capture_output=True, text=True, timeout=10
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
+        return False, f"agy capability probe failed: {exc}"
+    version_text = (version_proc.stdout or "") + (version_proc.stderr or "")
+    version = _parse_version(version_text)
+    if version_proc.returncode != 0 or version is None:
+        return False, f"could not determine agy version: {version_text.strip() or 'no output'}"
+    if version < _MIN_VERSION:
+        return False, (
+            f"agy {'.'.join(map(str, version))} is too old; need 1.1.5+ for "
+            "stable model slugs and reliable headless output"
+        )
+    help_text = (help_proc.stdout or "") + (help_proc.stderr or "")
+    missing = [flag for flag in _REQUIRED_HELP_FLAGS if flag not in help_text]
+    if help_proc.returncode != 0 or missing:
+        return False, f"agy lacks required safe headless capabilities: {missing}"
+    models_ok, models, detail = list_models()
+    if not models_ok:
+        return False, detail
+    return True, (
+        f"agy {'.'.join(map(str, version))}; persisted account ready; "
+        f"{len(models)} model(s)"
+    )
+
+
+def _build_cmd(
+    bin_name: str,
+    *,
+    instruction: str,
+    model: str,
+    timeout_seconds: int,
+    internal_log: Path,
+    reasoning_effort: Optional[str] = None,
+) -> list[str]:
+    """Build the AGY command. Safety flags are intentionally unconditional."""
+    cmd = [
+        bin_name,
+        "--print", instruction,
+        "--mode", "plan",
+        "--sandbox",
+        "--dangerously-skip-permissions",
+        "--model", model,
+        "--print-timeout", f"{timeout_seconds}s",
+        "--log-file", str(internal_log),
+    ]
+    if reasoning_effort:
+        cmd.extend(["--effort", reasoning_effort])
+    return cmd
+
+
+def _write_capture(log_file: Optional[Path], stdout: str, stderr: str) -> None:
+    if log_file is None:
+        return
+    try:
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        log_file.write_text(
+            f"=== STDOUT ===\n{stdout}\n=== STDERR ===\n{stderr}\n",
+            encoding="utf-8",
+        )
+    except OSError:
+        pass
+
+
+def run(
+    *,
+    prompt: str,
+    repo_path: Path,
+    model: str,
+    timeout_seconds: int = 1200,
+    log_file: Optional[Path] = None,
+    prompt_file: Optional[Path] = None,
+    schema_path: Optional[Path] = None,
+    reasoning_effort: Optional[str] = None,
+) -> AgyResult:
+    """Run AGY headlessly using the CLI's already-authenticated local account."""
+    started = time.monotonic()
+    stdout = ""
+    stderr = ""
+    scratch_dir: Optional[tempfile.TemporaryDirectory[str]] = None
+    try:
+        if prompt_file is None:
+            if log_file is not None:
+                prompt_file = log_file.parents[1] / "prompts" / f"{log_file.stem}.md"
+            else:
+                scratch_dir = tempfile.TemporaryDirectory(prefix="moa-agy-")
+                prompt_file = Path(scratch_dir.name) / "prompt.md"
+        prompt_file.parent.mkdir(parents=True, exist_ok=True)
+        prompt_file.write_text(READ_ONLY_RULE + "\n\n" + prompt, encoding="utf-8")
+
+        internal_log = (
+            log_file.with_name(log_file.stem + "-agy.log")
+            if log_file is not None
+            else prompt_file.with_suffix(".agy.log")
+        )
+        internal_log.parent.mkdir(parents=True, exist_ok=True)
+        instruction = (
+            f"Read the complete task from {prompt_file.resolve()}. Treat that file "
+            "as instructions, inspect the current repository read-only, and return "
+            "only the requested JSON object. Do not modify files."
+        )
+        cmd = _build_cmd(
+            _agy_bin(),
+            instruction=instruction,
+            model=model,
+            timeout_seconds=timeout_seconds,
+            internal_log=internal_log,
+            reasoning_effort=reasoning_effort,
+        )
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                cwd=str(repo_path),
+                env=os.environ.copy(),
+                start_new_session=True,
+            )
+            try:
+                stdout, stderr = proc.communicate(timeout=timeout_seconds + 15)
+            except subprocess.TimeoutExpired:
+                kill_proc_tree(proc)
+                try:
+                    stdout, stderr = proc.communicate(timeout=5)
+                except Exception:
+                    stdout, stderr = "", ""
+                stderr = (stderr or "") + f"\n[orchestrator] timeout after {timeout_seconds}s"
+                return AgyResult(
+                    False, None, stdout or "", stderr, -1,
+                    time.monotonic() - started,
+                    f"timeout after {timeout_seconds}s",
+                )
+        except (FileNotFoundError, OSError) as exc:
+            return AgyResult(
+                False, None, "", str(exc), -1, time.monotonic() - started,
+                f"could not launch agy: {exc}",
+            )
+
+        stdout = stdout or ""
+        stderr = stderr or ""
+        if proc.returncode != 0:
+            detail = (stderr or stdout or "no output").strip()
+            return AgyResult(
+                False, None, stdout, stderr, proc.returncode,
+                time.monotonic() - started,
+                f"agy exited with code {proc.returncode}: {detail[:300]}",
+            )
+        required_keys: Optional[set[str]] = None
+        if schema_path is not None:
+            try:
+                required_keys = set(
+                    json.loads(schema_path.read_text(encoding="utf-8")).get("required") or []
+                )
+            except (OSError, json.JSONDecodeError):
+                required_keys = None
+        payload = extract_json_from_text(stdout, required_keys=required_keys)
+        if payload is None:
+            empty = not stdout.strip()
+            return AgyResult(
+                False, None, stdout, stderr, proc.returncode,
+                time.monotonic() - started,
+                "agy returned empty output" if empty else "could not extract JSON object from agy output",
+                transient_empty=empty,
+            )
+        return AgyResult(
+            True, payload, stdout, stderr, proc.returncode,
+            time.monotonic() - started,
+        )
+    finally:
+        _write_capture(log_file, stdout, stderr)
+        if scratch_dir is not None:
+            scratch_dir.cleanup()

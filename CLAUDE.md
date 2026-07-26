@@ -5,23 +5,27 @@
 MoA-X is a Mixture-of-Agents reference harness. `harness/scripts/run_moa.py`
 orchestrates a config-driven roster of CLI proposers and broadcast
 refiners; the shipped default is codex + glm + sonnet proposers and
-codex-reviewer + qwen refiners (GLM and Qwen run on the `opencode` CLI;
+codex-sol + qwen refiners (GLM and Qwen run on the `opencode` CLI;
 Qwen uses the Token Plan API). Layer 0 (scout) is handled by the parent agent.
-Layer 3 defaults to the parent Claude Code session using its rolling `opus`
-alias, but the orchestrator can also run it as a recorded Codex/Claude
+Layer 3 defaults to the parent Claude Code session on `claude-opus-5`
+(stable provider name `opus`), but the orchestrator can also run it as a recorded Codex/Claude
 subprocess with `--phase layer3`. Layer 3 adds `final-plan.md` plus a
 schema-validated `final-plan.json` provenance companion and refreshes the
 self-contained report's decision-lineage explorer.
 
-- `harness/`: orchestrator, adapters, prompts, schemas, and `report/`
-  (HTML report template + vendored three.min.js). Designed to be droppable
+- `harness/`: orchestrator, adapters, prompts, schemas, `report/`
+  (HTML report template + embedded illustration assets), and `webui/` (Flask
+  control plane, SQLite store, worker, and frontend). The CLI/skill assets are designed to be droppable
   into `~/.claude/skills/mixture-of-agents/` as a Claude Code skill.
 - `docs/`: topic-by-topic docs. Read the relevant one before structural changes:
   - `docs/install.md`: CLI install + skill install
   - `docs/usage.md`: `/mixture-of-agents` flow + standalone
   - `docs/config.md`: `.env` / `harness/config.yaml` precedence + knob table
-  - `docs/architecture.md`: the four layers, why broadcast, why this roster (and why gemini left)
+  - `docs/architecture.md`: the four layers, why broadcast, why this roster,
+    and why Google routes remain opt-in
   - `docs/report.md`: the self-contained HTML run report
+  - `docs/webui.md`: local control room, XDG storage, uploads, profiles,
+    allowlisted GitHub workspaces, and trusted-network boundary
 - `CONTRIBUTING.md`, `SECURITY.md`, `LICENSE`: community files.
 
 ## WHY
@@ -54,10 +58,10 @@ tests must run offline so CI stays credential-free.
 Rule 2 is non-negotiable. Rule 1 is a strong recommendation.
 
 1. **Recommend lab-independent refiners.** Layer 2 defaults to
-   `{codex-reviewer, qwen}` and the default aggregator uses Claude Code's
-   `opus` alias, so verification is independent of both the Sonnet proposer
+   `{codex-sol, qwen}` and the default aggregator uses Claude Opus 5
+   under the stable `opus` provider name, so verification is independent of both the Sonnet proposer
    and the Anthropic aggregator. If selecting the optional Codex aggregator,
-   reconsider the reviewer roster because `codex-reviewer` then shares its
+   reconsider the reviewer roster because `codex-sol` then shares its
    harness/lab.
    The harness no longer enforces this (the data model became neutral
    when named providers landed — see `docs/architecture.md`); it's a
@@ -76,18 +80,22 @@ Rule 2 is non-negotiable. Rule 1 is a strong recommendation.
   normalized usage/cost telemetry and safe pre-dispatch budget controls, not
   basic API-key authentication.
 - **Default roster is `[codex, glm, sonnet]` proposers,
-  `[codex-reviewer, qwen]` refiners, and `opus` aggregator** across harnesses
-  `{codex, claude, opencode, cursor}`. The model defaults are
-  `gpt-5.6-terra`, GLM-5.2, Claude Code's rolling `sonnet` alias,
+  `[codex-sol, qwen]` refiners, and `opus` aggregator** using the
+  `{codex, claude, opencode}` harnesses. The wider curated catalog also
+  includes routes through `{cursor, agy}`. The model defaults are
+  `gpt-5.6-terra`, GLM-5.2, Claude Sonnet 5 (`claude-sonnet-5`),
   `gpt-5.6-sol` at high reasoning, Qwen `qwen3.8-max-preview`, and Claude
-  Code's rolling `opus` alias. It's
+  Opus 5 (`claude-opus-5`). It's
   a default, not a cap — the roster is pure config (built-in names,
-  `providers:` in config.yaml, the built-ins `grok` (xAI Grok via opencode's
-  native `xai` provider — needs `XAI_API_KEY`), `cursor-grok` (Grok via
-  cursor-agent — needs login / `CURSOR_API_KEY`), and Qwen Token Plan, or the
-  `MOA_PROVIDER_<NAME>` env shorthand). Tested recipes for DeepSeek, MiniMax,
-  and Mistral are welcome; most are an opencode/cursor model string, but a new
-  *harness* needs its own adapter — open an issue first.
+  `providers:` in config.yaml, current Claude/OpenCode/Cursor/Google routes
+  documented in `docs/config.md` (including the authenticated OpenCode Go
+  DeepSeek V4 Pro and V4 Flash routes), or the
+  `MOA_PROVIDER_<NAME>` env shorthand). DeepSeek V4 Pro/Flash are tested
+  built-ins; recipes for MiniMax and Mistral are welcome. Most are an
+  opencode/cursor model string, but a new
+  *harness* needs its own adapter — open an issue first. Stable provider names
+  such as `sonnet`, `opus`, `qwen`, and `kimi` are compatibility/configuration
+  identifiers; manifests and the Web UI record their resolved current model.
 
 ## Config surface
 
@@ -114,12 +122,12 @@ then `harness/config.yaml`, then built-in defaults. Loader lives at
   IDE launcher). The adapter probes both; honor `MOA_CURSOR_BIN`. → `adapters/cursor.py`.
 - **Schema-unenforced adapters (cursor, opencode) share one JSON extractor.**
   Change `adapters.extract_json_from_text` once, not per-adapter.
-- **`gemini` is gone** and `resolve_provider('gemini')` raises a migration hint.
-  Don't reintroduce it without fixing the flakes. → `docs/architecture.md`.
+- **Google is opt-in through AGY.** Live probes control route availability;
+  execution fails closed on plan mode + sandbox and reuses local CLI auth.
+  → `docs/architecture.md`.
 - **The HTML run report is a single self-contained file.** `report.py` inlines
-  `harness/report/template.html` + vendored `three.min.js` + the session data —
-  zero network requests (tests assert no external `src=`/`href=`). Two gotchas:
-  Three.js is pinned to **r128 UMD** (later releases are ESM-only, which can't be
-  inlined into a bare `<script>`); and the session JSON is embedded in a
-  `<script type="application/json">` with `</` → `<\/` so a `</script>` inside a
-  captured log can't terminate the tag early. → `docs/report.md`.
+  `harness/report/template.html`, six editorial WebP illustrations, and the
+  session data — zero network requests (tests assert no external
+  `src=`/`href=`). The session JSON is embedded in a
+  `<script type="application/json">` with `</` → `<\/` so a `</script>` inside
+  a captured log can't terminate the tag early. → `docs/report.md`.

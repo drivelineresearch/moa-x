@@ -2,11 +2,12 @@
 
 Layered planning ensemble for Claude Code. The configured proposers — by
 default three models from three different labs (OpenAI codex/gpt-5.6-terra,
-Zhipu GLM-5.2 via OpenCode, and Claude Code's rolling `sonnet` alias) — read
+Zhipu GLM-5.2 via OpenCode, and Claude Sonnet 5 via the stable `sonnet`
+provider name) — read
 the repo, do heavy web research, and write independent plans. The refiners
 (gpt-5.6-sol high + Qwen qwen3.8-max-preview) then **broadcast-refine** by reading
 all the proposals and producing cross-verifications. Layer 3 then synthesizes
-one plan in the parent Claude Code session on its rolling `opus` alias, or in
+one plan in the parent Claude Code session on Claude Opus 5, or in
 an optional recorded Codex subprocess on `gpt-5.6-sol` at high reasoning.
 
 Use it for non-trivial architecture work, where a second and third
@@ -38,8 +39,8 @@ The skill will:
 ```
 Layer 0 — Scout brief                (parent Claude Code, in-place)
 Layer 1 — Proposers (parallel)       (default codex + glm + sonnet subprocesses)
-Layer 2 — Broadcast refiners         (default codex-reviewer + qwen, each sees all proposals)
-Layer 3 — Aggregator                 (parent rolling opus, or recorded Codex phase)
+Layer 2 — Broadcast refiners         (default codex-sol + qwen, each sees all proposals)
+Layer 3 — Aggregator                 (parent Claude Opus 5, or recorded Codex phase)
 ```
 
 Layer 0 happens in the parent REPL. Layer 3 may also happen there, or the
@@ -60,9 +61,9 @@ that a one-input view can't reveal.
 
 ### Why Sonnet is proposer-only
 
-Claude Code's rolling `opus` alias is the Layer 3 aggregator and its rolling
-`sonnet` alias is a Layer 1 proposer. Layer 2 is kept to
-`{codex-reviewer, qwen}` so verification is done by OpenAI + Alibaba,
+Claude Opus 5 (stable provider name `opus`) is the Layer 3 aggregator and
+Claude Sonnet 5 (stable provider name `sonnet`) is a Layer 1 proposer. Layer 2 is kept to
+`{codex-sol, qwen}` so verification is done by OpenAI + Alibaba,
 independent of both the Anthropic-family
 proposer (sonnet) AND the Anthropic-family aggregator (Opus). Using sonnet
 as a refiner would concentrate Anthropic models across two load-bearing
@@ -88,12 +89,13 @@ aggregator) is adapted from the paper but tuned for:
 - **Repo-grounded planning, not chat answers.** All CLIs read the
   actual code. Codex runs with a filesystem-enforced read-only
   sandbox; Claude gets a hard read-only tool allowlist; OpenCode denies edit
-  and shell tools through config; Cursor runs in plan mode. Prompts repeat the
-  read-only contract for every harness.
+  and shell tools through config; Cursor runs in plan mode; AGY requires plan
+  mode plus sandboxing. Prompts repeat the read-only contract for
+  every harness.
 - **Heavy web research.** Every proposer and refiner is told to run
   at least 6-8 web searches and cite 5+ external sources.
-- **CLI-first workflow.** Runs entirely from inside Claude Code,
-  with no separate web UI or deploy.
+- **CLI-first core.** The Claude Code skill remains the primary workflow; the
+  repository also ships a local Flask control room over the same orchestrator.
 
 ## Install
 
@@ -137,13 +139,13 @@ working directory by default):
 │   ├── sonnet-proposer.json
 │   └── sonnet-proposer.log
 ├── layer2/
-│   ├── codex-reviewer-refiner-broadcast.json
-│   ├── codex-reviewer-refiner-broadcast.log
+│   ├── codex-sol-refiner-broadcast.json
+│   ├── codex-sol-refiner-broadcast.log
 │   ├── qwen-refiner-broadcast.json
 │   └── qwen-refiner-broadcast.log
 ├── layer3/                # present after a subprocess aggregation
 │   ├── aggregation-output.schema.json
-│   └── codex-aggregator-aggregator.{json,log}
+│   └── codex-sol-aggregator.{json,log}
 ├── synthesis-input.md     # what the parent aggregator reads
 ├── manifest.json          # timing, success/failure per layer
 ├── report.html            # self-contained charts, plans, verdicts, and logs
@@ -177,7 +179,8 @@ The orchestrator keeps going under partial failure:
 
 External agents do not mutate the project working tree. Codex has filesystem
 sandboxing, Claude has a read-only tool allowlist, OpenCode denies edit and
-shell tools, and Cursor uses plan mode. The orchestrator writes only its
+shell tools, Cursor uses plan mode, and AGY requires plan mode plus sandboxing.
+The orchestrator writes only its
 gitignored `.moa/` session artifacts; the parent session edits project files
 only after you approve the final plan.
 
@@ -189,15 +192,13 @@ Most defaults are right. Things you can override:
 python3 ~/.claude/skills/mixture-of-agents/scripts/run_moa.py \
   --scout-brief .moa/<session>/scout-brief.json \
   --codex-model gpt-5.6-terra \
-  --codex-reviewer-model gpt-5.6-sol \
   --codex-effort high \
-  --codex-reviewer-effort high \
-  --sonnet-model sonnet \
-  --aggregator-model opus \
+  --sonnet-model claude-sonnet-5 \
+  --aggregator-model claude-opus-5 \
   --codex-timeout 1500 \
   --sonnet-timeout 1200 \
   --proposers codex,glm,sonnet \
-  --refiners codex-reviewer,qwen \
+  --refiners codex-sol,qwen \
   --skip-layer2          # debug only; skips refiners
 ```
 
@@ -207,7 +208,7 @@ To aggregate an existing session through Codex without rerunning Layers 1–2:
 python3 ~/.claude/skills/mixture-of-agents/scripts/run_moa.py \
   --scout-brief .moa/<session>/scout-brief.json \
   --phase layer3 \
-  --aggregator-provider codex-aggregator \
+  --aggregator-provider codex-sol \
   --aggregator-effort high
 ```
 
@@ -216,28 +217,32 @@ Layer 3 log/timing, and regenerates the report.
 
 Defaults:
 - `--codex-model gpt-5.6-terra`
-- `--codex-reviewer-model gpt-5.6-sol`
 - `--codex-effort high`
-- `--codex-reviewer-effort high`
-- `--sonnet-model sonnet` and `--aggregator-model opus` (rolling aliases)
-- `--aggregator-provider codex-aggregator --aggregator-effort high` for the
+- `--sonnet-model claude-sonnet-5` and
+  `--aggregator-model claude-opus-5`; stable provider names remain
+  `sonnet` and `opus`
+- `--aggregator-provider codex-sol --aggregator-effort high` for the
   optional Codex Layer 3 subprocess
-- `--proposers codex,glm,sonnet` and `--refiners codex-reviewer,qwen`
+- `--proposers codex,glm,sonnet` and `--refiners codex-sol,qwen`
 
 The default Qwen refiner routes `qwen-token-plan/qwen3.8-max-preview` through
 OpenCode with a 600-second cap. Set `QWEN_TOKEN_PLAN_API_KEY=sk-sp-...` in
 `.env`; Qwen can also be included in the proposer set.
 
 The codex and sonnet harnesses have dedicated flags. Every other harness
-(opencode for GLM + Qwen/Kimi, cursor) takes its model/timeout from the
+(opencode for GLM + Qwen/Kimi, cursor, AGY) takes its
+model/timeout/effort from the
 `providers:` block in `harness/config.yaml` or from `MOA_<NAME>_MODEL` /
-`MOA_<NAME>_TIMEOUT` env vars. You can also define a provider entirely from
+`MOA_<NAME>_TIMEOUT` / `MOA_<NAME>_EFFORT` env vars. You can also define a provider entirely from
 the environment with `MOA_PROVIDER_<NAME>=<harness>:<model>`, e.g.
 `MOA_PROVIDER_GLM=opencode:opencode-go/glm-5.2`. Opencode model ids are
-`provider/model` strings (`opencode-go/glm-5.2` and
-`opencode-go/kimi-k2.7-code` are the defaults; `zhipuai/glm-5.2`,
-`moonshotai/kimi-k2.7-code`, and Fireworks-hosted
-`fireworks-ai/accounts/fireworks/models/glm-5p2` also work).
+`provider/model` strings. Current built-ins use `opencode-go/glm-5.2`,
+`opencode-go/kimi-k3`, DeepSeek V4 Pro
+`opencode-go/deepseek-v4-pro`, DeepSeek V4 Flash
+`opencode-go/deepseek-v4-flash`, Qwen Token Plan
+`qwen-token-plan/qwen3.8-max-preview`, and OpenCode Go
+`opencode-go/qwen3.7-max`; Fireworks-hosted
+`fireworks-ai/accounts/fireworks/models/glm-5p2` is an alternate GLM route.
 
 Per-agent timeout defaults:
 - `--codex-timeout` scales with `--codex-effort`: xhigh=1500s, high=1200s, medium/low=900s
@@ -248,17 +253,20 @@ Per-agent timeout defaults:
 
 ### Want Gemini in the mix?
 
-Gemini's dedicated adapter was removed in v0.3.0, but you can still route a
-Gemini model through the **cursor** harness as a user-named provider. In
-`harness/config.yaml`:
+Use the opt-in AGY provider with the Google account already authenticated in
+the local CLI:
 
 ```yaml
-providers:
-  cursor-gemini: {harness: cursor, model: gemini-3.1-pro}
+layers:
+  proposers: [codex, agy-gemini-flash, sonnet]
+  refiners: [codex-sol, qwen]
 ```
 
-Then add `cursor-gemini` to `layers.proposers` (or `layers.refiners`), or
-pass it on the CLI: `--proposers codex,cursor-gemini,sonnet`.
+`agy-gemini-flash` exposes the verified Gemini 3.6 Flash family. Gemini 3.1
+Pro is intentionally not offered because AGY 1.1.7 resolves that advertised
+slug to Flash on the authenticated local account. The Flash route is opt-in,
+supports proposer/refiner roles, and is guarded by plan mode, sandboxing,
+schema validation, and the workspace snapshot check.
 
 ## Limits and caveats
 
@@ -301,19 +309,23 @@ Version history:
 - **v0.2.3:** Per-agent timeouts with effort-aware defaults
   (`--codex-timeout`, `--sonnet-timeout`). `--timeout` remains as a
   master override.
-- **v0.3.0:** Named-provider roster refactor. Harnesses are now codex,
-  claude, opencode, and cursor; the standalone Google adapter was dropped.
+- **v0.3.0:** Named-provider roster refactor. At that release, harnesses were
+  codex, claude, opencode, and cursor; the standalone Google adapter was dropped.
   Default roster spans four labs — proposers codex + glm + sonnet, refiners
-  codex-reviewer + qwen. Providers are declarable via `MOA_PROVIDER_<NAME>` env
-  shorthand or the config.yaml `providers:` block; route a Gemini model
-  through the cursor harness (`cursor-gemini`) if you still want one.
+  codex-sol + qwen. Providers are declarable via `MOA_PROVIDER_<NAME>` env
+  shorthand or the config.yaml `providers:` block.
 - **v0.4.0:** Self-contained HTML session report with pipeline, timing,
   verdict, plan, and log views; GLM and Kimi defaults moved to the
   `opencode-go` gateway.
-- **v0.4.1:** Qwen Token Plan became an optional built-in provider; Claude and
+- **v0.4.1:** Qwen Token Plan became a built-in provider; Claude and
   OpenCode structured-output handling, refiner normalization, optional-provider
   selection, routing diagnostics, documentation, and workflow art were
   hardened and refreshed.
+- **Current development:** AGY provides opt-in Google lanes, and the local
+  Flask control room adds queued runs, provider
+  probes, SQLite history, sandbox-independent PDF/text context extraction,
+  durable uploads, browser profiles, and exact-owner
+  GitHub workspaces configured with `MOA_WEBUI_GITHUB_OWNER`.
 
 ## Author
 

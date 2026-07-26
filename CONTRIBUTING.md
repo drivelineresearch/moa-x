@@ -26,6 +26,22 @@ python3 harness/scripts/test_offline.py
 
 New tests must run offline so CI stays credential-free.
 
+For Web UI work, install the optional local dependencies and run its focused
+suite as well:
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements-web.txt
+.venv/bin/python -m unittest harness.webui.tests.test_webui
+MOA_WEBUI_GITHUB_OWNER=your-github-user-or-org \
+  .venv/bin/python -m harness.webui
+```
+
+The browser surface is buildless—there is no checked-in `node_modules` or
+generated bundle. Keep runtime state out of the repository: `.moa/`, XDG
+uploads/workspaces, SQLite databases, reports, CLI auth stores, and `.env`
+files are local data, not fixtures.
+
 ## Pull request protocol
 
 1. Fork, branch, PR. Don't push to `main`.

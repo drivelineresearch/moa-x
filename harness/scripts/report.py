@@ -5,8 +5,8 @@ Reads a `.moa/<session>/` directory (manifest.json, scout-brief.json, the
 per-agent payload JSONs and logs, plus final-plan.md/final-plan.json if
 aggregation has run)
 and emits one standalone `report.html` with zero external requests: the page
-template, the vendored Three.js build, the session data, the decision
-lineage, and the rendered final plan are all inlined.
+template, editorial illustrations, session data, decision lineage, and the
+rendered final plan are all inlined.
 
 Usage:
     report.py --session .moa/<id> [-o OUT.html]
@@ -18,6 +18,7 @@ matching the rest of the harness.
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import re
 import sys
@@ -34,7 +35,15 @@ from run_moa import (
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPORT_DIR = SCRIPT_DIR.parent / "report"
 TEMPLATE_PATH = REPORT_DIR / "template.html"
-THREE_JS_PATH = REPORT_DIR / "three.min.js"
+REPORT_ASSET_DIR = REPORT_DIR / "assets"
+REPORT_ASSETS = {
+    "hero": "report-hero.webp",
+    "scout": "report-scout.webp",
+    "proposers": "report-proposers.webp",
+    "refiners": "report-refiners.webp",
+    "synthesis": "report-synthesis.webp",
+    "lineage": "report-lineage.webp",
+}
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 
@@ -293,6 +302,9 @@ def load_session(session_dir: Path) -> dict:
         "layer1": layer1,
         "layer2": layer2,
         "layer3": layer3,
+        # Keep the exact source alongside the rendered subset so readers can
+        # copy a portable Markdown version without reconstructing it from DOM.
+        "final_plan_markdown": final_plan_md if final_plan_md else None,
         "final_plan_html": render_markdown(final_plan_md) if final_plan_md else None,
         "final_plan_lineage": final_plan_lineage,
         "lineage_warnings": lineage_warnings,
@@ -308,34 +320,104 @@ def _esc(s: str) -> str:
 
 
 def _inline(text: str) -> str:
-    """Inline markdown on an already HTML-escaped string: code, bold, links.
+    """Inline markdown on already HTML-escaped text.
 
-    Inline-code spans are stashed to placeholders before bold/link run, so a
+    Inline-code spans are stashed to placeholders before emphasis/link runs, so a
     span like ``**not bold**`` or a bracketed URL inside backticks is rendered
     verbatim instead of being reformatted.
     """
     codes: list[str] = []
+    links: list[str] = []
 
     def _stash(m: "re.Match") -> str:
         codes.append(m.group(1))
-        return f"\x00{len(codes) - 1}\x00"
+        return f"\x00C{len(codes) - 1}\x00"
 
     text = re.sub(r"`([^`]+)`", _stash, text)
+
+    def _stash_link(m: "re.Match") -> str:
+        label = m.group(1)
+        label = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", label)
+        label = re.sub(r"(?<!\*)\*([^*\n]+)\*(?!\*)", r"<em>\1</em>", label)
+        links.append(
+            f'<a href="{m.group(2)}" target="_blank" rel="noopener">{label}</a>'
+        )
+        return f"\x00L{len(links) - 1}\x00"
+
+    text = re.sub(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", _stash_link, text)
     text = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", text)
+    text = re.sub(r"~~([^~]+)~~", r"<del>\1</del>", text)
+    text = re.sub(r"(?<!\*)\*([^*\n]+)\*(?!\*)", r"<em>\1</em>", text)
+    text = re.sub(r"(?<![\w_])_([^_\n]+)_(?![\w_])", r"<em>\1</em>", text)
     text = re.sub(
-        r"\[([^\]]+)\]\((https?://[^)\s]+)\)",
-        r'<a href="\2" target="_blank" rel="noopener">\1</a>',
+        r"\x00L(\d+)\x00", lambda m: links[int(m.group(1))], text
+    )
+    return re.sub(
+        r"\x00C(\d+)\x00",
+        lambda m: "<code>" + codes[int(m.group(1))] + "</code>",
         text,
     )
-    return re.sub(r"\x00(\d+)\x00", lambda m: "<code>" + codes[int(m.group(1))] + "</code>", text)
+
+
+def _split_table_row(line: str) -> list[str]:
+    """Split a Markdown table row without breaking escaped or code-span pipes."""
+    stripped = line.strip()
+    if stripped.startswith("|"):
+        stripped = stripped[1:]
+    if stripped.endswith("|") and not stripped.endswith(r"\|"):
+        stripped = stripped[:-1]
+
+    cells: list[str] = []
+    cell: list[str] = []
+    in_code = False
+    i = 0
+    while i < len(stripped):
+        char = stripped[i]
+        if char == "\\" and i + 1 < len(stripped):
+            following = stripped[i + 1]
+            if following in ("|", "\\", "`"):
+                cell.append(following)
+                i += 2
+                continue
+        if char == "`":
+            in_code = not in_code
+            cell.append(char)
+        elif char == "|" and not in_code:
+            cells.append("".join(cell).strip())
+            cell = []
+        else:
+            cell.append(char)
+        i += 1
+    cells.append("".join(cell).strip())
+    return cells
+
+
+def _table_alignments(line: str) -> Optional[list[str]]:
+    """Return column alignments when *line* is a valid table separator row."""
+    cells = _split_table_row(line)
+    if len(cells) < 2:
+        return None
+    alignments: list[str] = []
+    for cell in cells:
+        marker = cell.replace(" ", "")
+        if not re.fullmatch(r":?-{3,}:?", marker):
+            return None
+        if marker.startswith(":") and marker.endswith(":"):
+            alignments.append("center")
+        elif marker.endswith(":"):
+            alignments.append("right")
+        else:
+            alignments.append("left")
+    return alignments
 
 
 def render_markdown(md: str) -> str:
     """Render the markdown subset used by final-plan.md.
 
     Supports ATX headings, fenced code blocks, unordered/ordered lists,
-    blockquotes, horizontal rules, and inline code/bold/links. Deliberately
-    small — final plans are the only input and they stick to this subset.
+    blockquotes, horizontal rules, pipe tables, and common inline formatting.
+    Deliberately small — final plans are the only input and they stick to this
+    subset.
     """
     lines = md.replace("\r\n", "\n").split("\n")
     html: list[str] = []
@@ -440,6 +522,59 @@ def render_markdown(md: str) -> str:
             i += 1
             continue
 
+        # GitHub-style pipe table. Requiring a valid separator row keeps prose
+        # containing an incidental "|" from being mistaken for a table.
+        alignments = _table_alignments(lines[i + 1]) if i + 1 < n else None
+        header_cells = _split_table_row(line) if alignments is not None else []
+        if alignments is not None and len(header_cells) == len(alignments):
+            columns = len(header_cells)
+
+            def table_cell(tag: str, value: str, column: int) -> str:
+                alignment = alignments[column]
+                return (
+                    f'<{tag} class="align-{alignment}">'
+                    + _inline(_esc(value))
+                    + f"</{tag}>"
+                )
+
+            table = [
+                '<div class="table-scroll markdown-table-wrap" tabindex="0" '
+                'role="region" aria-label="Table in final recommendation">',
+                '<table class="dl markdown-table">',
+                "<thead><tr>"
+                + "".join(
+                    table_cell("th", value, column)
+                    for column, value in enumerate(header_cells)
+                )
+                + "</tr></thead>",
+            ]
+            i += 2
+            body_rows: list[str] = []
+            while i < n and lines[i].strip():
+                row = _split_table_row(lines[i])
+                if len(row) < 2 or "|" not in lines[i]:
+                    break
+                if len(row) < columns:
+                    row.extend([""] * (columns - len(row)))
+                elif len(row) > columns:
+                    # Preserve malformed-but-readable output rather than
+                    # silently dropping content beyond the declared columns.
+                    row = row[: columns - 1] + [" | ".join(row[columns - 1 :])]
+                body_rows.append(
+                    "<tr>"
+                    + "".join(
+                        table_cell("td", value, column)
+                        for column, value in enumerate(row)
+                    )
+                    + "</tr>"
+                )
+                i += 1
+            if body_rows:
+                table.append("<tbody>" + "".join(body_rows) + "</tbody>")
+            table.extend(["</table>", "</div>"])
+            html.append("\n".join(table))
+            continue
+
         if line.lstrip().startswith(">"):
             html.append("<blockquote>" + _inline(_esc(line.lstrip()[1:].strip())) + "</blockquote>")
             i += 1
@@ -461,27 +596,31 @@ def render_markdown(md: str) -> str:
 # ---------------------------------------------------------------------------
 
 def render_html(data: dict) -> str:
-    """Inline template + Three.js + session data into one standalone document."""
+    """Inline the template, illustrations, and data into one document."""
     if not TEMPLATE_PATH.exists():
         raise FileNotFoundError(f"template missing: {TEMPLATE_PATH}")
-    if not THREE_JS_PATH.exists():
-        raise FileNotFoundError(f"vendored three.min.js missing: {THREE_JS_PATH}")
 
     template = TEMPLATE_PATH.read_text(encoding="utf-8")
-    three_js = THREE_JS_PATH.read_text(encoding="utf-8")
 
     # Embed the data as raw text inside <script type="application/json">.
     # Escaping "</" as "<\/" keeps any "</script>" in a log or plan from
     # terminating the script element; JSON.parse restores it in the browser.
     data_json = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
+    asset_json = json.dumps(
+        {
+            key: "data:image/webp;base64,"
+            + base64.b64encode((REPORT_ASSET_DIR / filename).read_bytes()).decode("ascii")
+            for key, filename in REPORT_ASSETS.items()
+        }
+    )
 
     # str.replace (not re.sub) so "$" / "\1" in the data are never treated as
-    # substitution backreferences. Inject the fixed assets (title, library)
+    # substitution backreferences. Inject the fixed assets and title
     # first and the session data LAST, so an attacker-free but arbitrary log
     # that happens to contain a later token string can't have that token
     # expanded into the embedded JSON.
     out = template.replace("__PAGE_TITLE__", "MoA-X — " + _esc(data.get("session_id", "run")))
-    out = out.replace("/*__THREE_JS_LIB__*/", three_js)
+    out = out.replace("__REPORT_ASSET_JSON__", asset_json)
     out = out.replace("__MOA_DATA_JSON__", data_json)
     return out
 

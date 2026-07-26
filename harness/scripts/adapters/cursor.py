@@ -195,7 +195,8 @@ def run(
             build rejects `--mode plan`, the run FAILS with an upgrade hint —
             it is never retried without the flag.
         repo_path: Working directory; passed via Popen cwd=.
-        model: Model id (e.g. "gpt-5.5", "claude-sonnet-4-6", "cursor-grok-4.5-high").
+        model: Current account model id (e.g. "gpt-5.6-sol-high",
+            "claude-sonnet-5-high", or "cursor-grok-4.5-high").
         timeout_seconds: Hard wall-clock cap. Default 1200s, matching siblings.
         log_file: Optional path to write the full cursor output. ALWAYS
             written in every exit path so post-mortems never come up empty.
@@ -367,7 +368,7 @@ def _diagnose_failure(stdout: str, stderr: str) -> tuple[str, bool]:
 
     transient_empty=True only when:
       * envelope parsed cleanly with success semantics (no is_error)
-      * `result` text is empty / whitespace
+      * `result` text is empty or contains only an incomplete/progress response
       * stderr shows no quota / auth / rate-limit signal
 
     Empirically this is the dominant cursor-agent flake: the run reports
@@ -386,10 +387,13 @@ def _diagnose_failure(stdout: str, stderr: str) -> tuple[str, bool]:
                 "Re-run `cursor-agent login` or set CURSOR_API_KEY."), False
 
     envelope_result = _envelope_result_text(stdout)
-    if envelope_result is not None and not envelope_result.strip():
+    if envelope_result is not None:
+        incomplete = not envelope_result.strip()
         return (
-            "cursor-agent returned empty result text under a success envelope "
-            "(no quota or auth signal). Likely transient — re-dispatch typically recovers."
+            "cursor-agent returned "
+            + ("empty" if incomplete else "non-JSON/incomplete")
+            + " result text under a success envelope (no quota or auth signal). "
+            "Likely transient — one re-dispatch may recover."
         ), True
 
     return "could not extract payload from cursor-agent result text", False

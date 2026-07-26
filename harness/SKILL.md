@@ -3,10 +3,11 @@ name: mixture-of-agents
 description: |
   Run a non-trivial planning task through a layered ensemble of frontier models
   from four different labs (proposers codex/gpt-5.6-terra high +
-  opencode/glm-5.2 + rolling Sonnet; refiners gpt-5.6-sol high +
+  opencode/glm-5.2 + Claude Sonnet 5; refiners gpt-5.6-sol high +
   qwen3.8-max-preview) before producing a final implementation
   plan. The configured proposers run in parallel, broadcast refiners (each
-  sees all proposals) verify and cross-check, then Claude Code's `opus` alias
+  sees all proposals) verify and cross-check, then Claude Code on
+  `claude-opus-5` (stable provider name `opus`)
   aggregates in place. Adapted from the 2024 Mixture-of-Agents paper
   (arXiv:2406.04692) for repo-grounded planning, not chat-answer ensembling.
   Use when: (1) the user invokes /mixture-of-agents, (2) the user pastes a
@@ -32,12 +33,12 @@ allowed-tools:
 
 Layered ensemble planning. The configured proposers — by default three
 frontier models from three different labs (OpenAI's codex CLI at gpt-5.6-terra high,
-Zhipu's GLM at glm-5.2 via the opencode CLI, Anthropic's Claude Code CLI at
-Claude Code's rolling `sonnet` alias) — each produce an independent plan grounded in real repo
+Zhipu's GLM at glm-5.2 via the opencode CLI, and Anthropic's Claude Code CLI
+at `claude-sonnet-5`, under the stable provider name `sonnet`) — each produce an independent plan grounded in real repo
 code AND aggressive web research, then the refiners (default
-`codex-reviewer`/gpt-5.6-sol high + `qwen`/qwen3.8-max-preview)
+`codex-sol`/gpt-5.6-sol high + `qwen`/qwen3.8-max-preview)
 broadcast-refine by reading all the proposals and producing cross-verifications,
-then this Claude Code session, using its rolling `opus` alias, synthesizes everything into a final
+then this Claude Code session on `claude-opus-5` synthesizes everything into a final
 actionable plan.
 
 ## When to use this skill
@@ -77,19 +78,19 @@ Layer 1 — Proposers                        (3 parallel, headless, yolo/read-on
    │     │   (edit/bash denied by OPENCODE_CONFIG; read/web allowed)
    │     └→ .moa/<session>/layer1/glm-proposer.json
    │
-   └─ claude -p --model sonnet --dangerously-skip-permissions --json-schema ...
-         │   (rolling alias; hard read-only tool allowlist + workspace guard)
+   └─ claude -p --model claude-sonnet-5 --dangerously-skip-permissions --json-schema ...
+         │   (pinned current model; hard read-only tool allowlist + workspace guard)
          └→ .moa/<session>/layer1/sonnet-proposer.json
                    ↓
 Layer 2 — Broadcast refiners               (2 parallel; each sees ALL valid proposals)
    │
-   ├─ codex-reviewer @ gpt-5.6-sol/high refines the broadcast
-   │     └→ .moa/<session>/layer2/codex-reviewer-refiner-broadcast.json
+   ├─ codex-sol @ gpt-5.6-sol/high refines the broadcast
+   │     └→ .moa/<session>/layer2/codex-sol-refiner-broadcast.json
    │
    └─ qwen refines the broadcast (opencode @ qwen3.8-max-preview; 600s cap)
          └→ .moa/<session>/layer2/qwen-refiner-broadcast.json
                    ↓
-Layer 3 — Aggregation                      (parent rolling opus or recorded Codex phase)
+Layer 3 — Aggregation                      (parent Claude Opus 5 or recorded Codex phase)
    │
    ├─ read .moa/<session>/synthesis-input.md (built by orchestrator)
    ├─ pull strongest from each surviving proposer
@@ -115,9 +116,9 @@ orchestrator's recorded Codex/Claude subprocess phase.
 
 ### Why Sonnet is proposer-only (not also a refiner)
 
-Claude Code's rolling `opus` alias is the Layer 3 aggregator and its rolling
-`sonnet` alias is a Layer 1 proposer. Keeping Layer 2 to
-`{codex-reviewer, qwen}` means refinement is done by OpenAI + Alibaba,
+Claude Opus 5 (stable provider name `opus`) is the Layer 3 aggregator and
+Claude Sonnet 5 (stable provider name `sonnet`) is a Layer 1 proposer. Keeping Layer 2 to
+`{codex-sol, qwen}` means refinement is done by OpenAI + Alibaba,
 independent of BOTH the
 Anthropic-family proposer (sonnet) and the Anthropic-family aggregator
 (Opus). This preserves cross-lab independence where it matters most:
@@ -145,7 +146,7 @@ python3 ~/.claude/skills/mixture-of-agents/scripts/install_deps.py
 ```
 This is config-aware: it checks that every harness your resolved roster needs
 (for the default roster: codex, opencode for GLM + Qwen, and claude; plus
-cursor if a cursor-routed provider is configured) is installed and
+cursor or AGY when one of those routes is configured) is installed and
 authenticated. If anything fails, stop and surface the install/auth fix to
 the user. Do NOT
 try to authenticate them yourself. The user must run the login
@@ -191,12 +192,13 @@ via `AskUserQuestion` whether to dispatch the run.
 `codex + glm + sonnet`. Since PR #2 (named providers), the active
 proposer/refiner sets come from `harness/scripts/config.py`'s
 `load_resolved_config()` and may include user-defined names like
-`cursor-grok` or `cursor-sonnet`. Resolve them in this precedence
+`composer` or `cursor-grok`, or curated OpenCode Go routes such as
+`deepseek` and `deepseek-flash`. Resolve them in this precedence
 (highest first):
 
 1. `MOA_PROPOSERS` / `MOA_REFINERS` env vars (comma-separated names)
 2. `harness/config.yaml` → `layers.proposers` / `layers.refiners`
-3. Defaults: `[codex, glm, sonnet]`, `[codex-reviewer, qwen]`, aggregator `opus`
+3. Defaults: `[codex, glm, sonnet]`, `[codex-sol, qwen]`, aggregator `opus`
 
 User-defined provider names declared under `providers:` in
 `harness/config.yaml` (e.g. `c-grok: {harness: cursor, model: cursor-grok-4.5-high}`)
@@ -272,7 +274,7 @@ Layer 2 reads the Layer 1 outputs from disk, runs broadcast refiners in
 parallel, writes `.moa/<session_id>/synthesis-input.md` and the final
 `manifest.json`. Same progress lines as before:
 ```
-[orchestrator]   codex-reviewer refiner (saw codex,glm,sonnet): OK (76.1s)
+[orchestrator]   codex-sol refiner (saw codex,glm,sonnet): OK (76.1s)
 [orchestrator]   qwen refiner (saw codex,glm,sonnet): OK (65.3s)
 ```
 
@@ -297,10 +299,10 @@ Failure modes the orchestrator handles:
 
 ### Step 3 — Aggregate (parent or recorded subprocess)
 
-The default path is in-place aggregation. Verify the parent is using Claude
-Code's `opus` alias (`/model opus` when an explicit switch is needed). The
-alias intentionally tracks the latest Opus available to the installed Claude
-Code version; do not invent a model identifier.
+The default path is in-place aggregation. Verify the parent is using the
+canonical `claude-opus-5` route (`/model claude-opus-5` when an explicit
+switch is needed). The stable MoA-X provider name remains `opus`, but the
+resolved model recorded in manifests and the Web UI is `claude-opus-5`.
 
 Once the orchestrator returns, read `.moa/<session_id>/synthesis-input.md`.
 That file contains the frozen spec, the scout brief, all proposer outputs
@@ -325,7 +327,7 @@ Codex, run only Layer 3 against the retained session instead:
 python3 ~/.claude/skills/mixture-of-agents/scripts/run_moa.py \
   --scout-brief .moa/<session_id>/scout-brief.json \
   --phase layer3 \
-  --aggregator-provider codex-aggregator \
+  --aggregator-provider codex-sol \
   --aggregator-effort high
 ```
 
@@ -383,7 +385,8 @@ the whole point of the planning phase was deliberation.
    write, edit, create, or delete files. Codex has hard filesystem
    enforcement via `--sandbox read-only`; Claude gets a hard read-only tool
    allowlist; OpenCode denies edit and shell tools through `OPENCODE_CONFIG`;
-   and Cursor runs in `--mode plan`. The prompt repeats the rule for every
+   Cursor runs in `--mode plan`; and AGY requires plan mode plus sandboxing.
+   The prompt repeats the rule for every
    harness. A Git-visible before/after digest independently verifies the
    contract and marks any mutating agent as failed.
 
@@ -402,6 +405,7 @@ the whole point of the planning phase was deliberation.
 - `scripts/adapters/opencode.py` — opencode CLI subprocess wrapper (GLM, Qwen, Kimi)
 - `scripts/adapters/cursor.py` — cursor CLI subprocess wrapper (composer, user-named models)
 - `scripts/adapters/claude.py` — claude CLI subprocess wrapper (sonnet proposer)
+- `scripts/adapters/agy.py` — Antigravity wrapper for consumer Google accounts
 - `scripts/schemas/proposer.schema.json` — JSON Schema for Layer 1 outputs
 - `scripts/schemas/refiner.schema.json` — JSON Schema for Layer 2 outputs
 - `scripts/schemas/final-plan.schema.json` — JSON Schema for Layer 3 decision lineage
@@ -430,8 +434,8 @@ planning rather than chat-answer ensembling. Differences from the paper:
   proposer and the Anthropic aggregator, and (b) control wall clock. The
   paper's own ablation shows layer 2→3 has the worst latency-per-quality
   tradeoff, so 2 refiners is a deliberate "latency-conscious broadcast".
-- **In-place by default; subprocess when useful.** Parent Claude Code on its
-  rolling `opus` alias keeps the final plan in conversation context. The
+- **In-place by default; subprocess when useful.** Parent Claude Code on
+  `claude-opus-5` keeps the final plan in conversation context. The
   optional recorded subprocess makes the same final phase available from
   Codex and preserves auditable validation/timing in the run artifacts.
 - **Web research required.** All proposers and refiners are explicitly
@@ -439,5 +443,5 @@ planning rather than chat-answer ensembling. Differences from the paper:
   sources each. The cited sources are passed through to the aggregator.
 - **Repo grounded.** All CLIs run with read-only discipline (filesystem
   sandbox for Codex, tool allowlist for Claude, permission-deny policy for
-  OpenCode, and plan mode for Cursor), and the scout brief tells them which
+  OpenCode, plan mode for Cursor, and plan+sandbox for AGY/Gemini), and the scout brief tells them which
   files to focus on, bounding exploration cost.
