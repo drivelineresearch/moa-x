@@ -138,47 +138,49 @@
               <textarea id="run-goal" name="goal" rows="7" required placeholder="Review the billing pipeline and write an implementation plan for…"></textarea>
               <small><span id="goal-count">0</span> characters · Draft saves in this browser</small>
             </div>
-            <section class="source-picker" aria-labelledby="source-picker-title">
-              <div class="source-picker-head">
-                <div>
-                  <h3 id="source-picker-title">Context source <span>Optional</span></h3>
-                  <p>Run from the task alone, or give the ensemble a GitHub repository to inspect.</p>
+            <div class="task-context-grid">
+              <section class="source-picker" aria-labelledby="source-picker-title">
+                <div class="source-picker-head">
+                  <div>
+                    <h3 id="source-picker-title">Context source <span>Optional</span></h3>
+                    <p>Run from the task alone, or give the ensemble a GitHub repository to inspect.</p>
+                  </div>
+                  <div class="source-tabs" role="group" aria-label="Context source">
+                    <button class="source-tab is-active" type="button" data-source-mode="brief">Task only</button>
+                    <button class="source-tab" type="button" data-source-mode="github">GitHub repo</button>
+                  </div>
                 </div>
-                <div class="source-tabs" role="group" aria-label="Context source">
-                  <button class="source-tab is-active" type="button" data-source-mode="brief">Task only</button>
-                  <button class="source-tab" type="button" data-source-mode="github">GitHub repo</button>
+                <div class="source-context-panel" id="brief-source">
+                  <img src="/static/images/context-brief.webp" alt="">
+                  <div><strong>No repository needed</strong><p>Plan from your task and any reference files.</p></div>
                 </div>
-              </div>
-              <div class="source-context-panel" id="brief-source">
-                <img src="/static/images/context-brief.webp" alt="">
-                <div><strong>No repository needed</strong><p>MoA-X will plan from your task and any reference files you attach.</p></div>
-              </div>
-              <div class="source-context-panel github-source" id="github-source" hidden>
-                <img src="/static/images/context-github.webp" alt="">
-                <div class="field">
-                  <label for="github-repo"><span id="github-owner-label">{{ bootstrap.github_owner }}</span> repository</label>
-                  <select id="github-repo" name="github_repo">
-                    <option value="">Loading repositories…</option>
-                  </select>
-                  <small id="github-repo-meta">Repository metadata comes from the connected GitHub service.</small>
+                <div class="source-context-panel github-source" id="github-source" hidden>
+                  <img src="/static/images/context-github.webp" alt="">
+                  <div class="field">
+                    <label for="github-repo"><span id="github-owner-label">{{ bootstrap.github_owner }}</span> repository</label>
+                    <select id="github-repo" name="github_repo">
+                      <option value="">Loading repositories…</option>
+                    </select>
+                    <small id="github-repo-meta">Repository metadata comes from the connected GitHub service.</small>
+                  </div>
                 </div>
-              </div>
-            </section>
-            <section class="attachment-picker" aria-labelledby="attachment-title">
-              <div class="attachment-intro">
-                <img src="/static/images/context-upload.webp" alt="">
-                <div>
-                  <h3 id="attachment-title">Reference files <span>Optional</span></h3>
-                  <p>Attach specs, notes, diagrams, or exported issue context to this run.</p>
+              </section>
+              <section class="attachment-picker" aria-labelledby="attachment-title">
+                <div class="attachment-intro">
+                  <img src="/static/images/context-upload.webp" alt="">
+                  <div>
+                    <h3 id="attachment-title">Reference files <span>Optional</span></h3>
+                    <p>Attach specs, notes, diagrams, or exported issue context.</p>
+                  </div>
                 </div>
-              </div>
-              <label class="drop-zone" id="drop-zone" for="run-files" tabindex="0">
-                <input id="run-files" type="file" multiple accept=".pdf,.md,.markdown,.txt,.text,.csv,.tsv,.json,.yaml,.yml,.xml,.html,.htm,.rst,.log,.png,.jpg,.jpeg,.webp,.tif,.tiff,.bmp">
-                <strong>Drop files here</strong>
-                <span>PDF, text, or OCR-ready images · up to 10 files</span>
-              </label>
-              <div class="attachment-list" id="attachment-list" aria-live="polite"></div>
-            </section>
+                <label class="drop-zone" id="drop-zone" for="run-files" tabindex="0">
+                  <input id="run-files" type="file" multiple accept=".pdf,.md,.markdown,.txt,.text,.csv,.tsv,.json,.yaml,.yml,.xml,.html,.htm,.rst,.log,.png,.jpg,.jpeg,.webp,.tif,.tiff,.bmp">
+                  <strong>Drop files here</strong>
+                  <span>PDF, text, or OCR-ready images · up to 10 files</span>
+                </label>
+                <div class="attachment-list" id="attachment-list" aria-live="polite"></div>
+              </section>
+            </div>
             <div class="field-grid">
               <div class="field">
                 <label for="run-name">Run name <span>Optional</span></label>
@@ -326,6 +328,7 @@
             <p class="eyebrow" id="run-detail-kicker">RUN</p>
             <h1 id="run-detail-title">Loading run…</h1>
             <p class="lede" id="run-detail-meta"></p>
+            <div class="run-result-shortcuts" id="run-result-shortcuts" hidden></div>
           </div>
           <figure class="run-detail-visual">
             <img id="run-detail-art" src="/static/images/state-queued.webp" alt="">

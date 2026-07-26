@@ -985,6 +985,7 @@ function renderRunDetail(job = state.detailJob) {
   const visual = stateVisual(job);
   runArt.src = `/static/images/state-${visual.key}.webp`;
   $("#run-detail-art-caption").textContent = visual.label;
+  renderResultShortcuts(job);
   const phases = [
     ["Layer 0", "Scout"],
     ["Layer 1", "Propose"],
@@ -1314,8 +1315,44 @@ function renderEvents() {
 }
 
 function artifactEntries(artifacts) {
-  if (Array.isArray(artifacts)) return artifacts.map((item) => typeof item === "string" ? [item.split("/").pop(), item] : [item.name || item.label, item.url || item.path]);
-  return Object.entries(artifacts || {}).map(([name, value]) => [name, typeof value === "string" ? value : value?.url || value?.path]);
+  const entries = Array.isArray(artifacts)
+    ? artifacts.map((item) => typeof item === "string" ? [item.split("/").pop(), item] : [item.name || item.label, item.url || item.path])
+    : Object.entries(artifacts || {}).map(([name, value]) => [name, typeof value === "string" ? value : value?.url || value?.path]);
+  const priority = { report: 0, final_plan: 1, synthesis: 2, manifest: 3 };
+  return entries.sort(([left], [right]) => (priority[left] ?? 20) - (priority[right] ?? 20));
+}
+
+function artifactLabel(name, prominent = false) {
+  const labels = {
+    report: prominent ? "View final report" : "Report",
+    final_plan: prominent ? "Read final plan" : "Final plan",
+    synthesis: prominent ? "Read synthesis notes" : "Synthesis notes",
+    manifest: prominent ? "View run data" : "Run data",
+  };
+  return labels[name] || titleCase(name);
+}
+
+function artifactLinks(artifacts, prominent = false) {
+  return artifacts.map(([name, url], index) => `
+    <a class="${index === 0 && prominent ? "is-primary" : ""}" href="${escapeHtml(safeUrl(url))}" target="_blank" rel="noopener">
+      ${escapeHtml(artifactLabel(name, prominent))}
+    </a>
+  `).join("");
+}
+
+function renderResultShortcuts(job) {
+  const shortcuts = $("#run-result-shortcuts");
+  const artifacts = artifactEntries(job.artifacts).filter(([, url]) => url);
+  if (!artifacts.length) {
+    shortcuts.hidden = true;
+    shortcuts.innerHTML = "";
+    return;
+  }
+  shortcuts.hidden = false;
+  shortcuts.innerHTML = `
+    <span>Final results</span>
+    <div class="run-result-links">${artifactLinks(artifacts, true)}</div>
+  `;
 }
 
 function renderResult(job) {
@@ -1332,7 +1369,7 @@ function renderResult(job) {
     <p>${escapeHtml(job.summary || (job.status === "completed"
       ? "The ensemble finished and preserved the decision trail."
       : "Review the agent lanes and event trace for details."))}</p>
-    ${artifacts.length ? `<div class="result-links">${artifacts.map(([name, url]) => `<a href="${escapeHtml(safeUrl(url))}" target="_blank" rel="noopener">${escapeHtml(titleCase(name))}</a>`).join("")}</div>` : ""}
+    ${artifacts.length ? `<div class="result-links">${artifactLinks(artifacts)}</div>` : ""}
   `;
 }
 
