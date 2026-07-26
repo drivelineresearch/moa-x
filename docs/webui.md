@@ -24,9 +24,10 @@ public internet.
 
 No Node.js or frontend build tool is required. HTML, CSS, JavaScript, the
 operating-system font stack, and project-owned image assets are already
-versioned under `harness/webui/`. Waitress is installed from
-`requirements-web.txt` and selected automatically; Flask's development server
-is only the fallback when Waitress is unavailable.
+versioned under `harness/webui/`. Gotham is preferred automatically when it
+is installed on the workstation but is not redistributed. Waitress is
+installed from `requirements-web.txt` and selected automatically; Flask's
+development server is only the fallback when Waitress is unavailable.
 
 The worker inherits the server process's `HOME`, `PATH`, environment, CLI
 keychains, and authenticated accounts. It never copies API keys or OAuth

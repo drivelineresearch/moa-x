@@ -964,9 +964,14 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                     for raw_event in batch:
                         event = _event_view(raw_event)
                         cursor = event["seq"]
+                        wire_kind = (
+                            "worker-error"
+                            if event["kind"] == "error"
+                            else event["kind"]
+                        )
                         yield (
                             f"id: {cursor}\n"
-                            f"event: {event['kind']}\n"
+                            f"event: {wire_kind}\n"
                             f"data: {json.dumps(event)}\n\n"
                         )
                 else:

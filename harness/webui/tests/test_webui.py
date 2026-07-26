@@ -607,6 +607,33 @@ class WebUITest(unittest.TestCase):
         )
         self.assertIsNone(job["recovery"])
 
+    def test_sse_worker_error_does_not_use_browser_transport_event_name(self):
+        store = self.app.extensions["moa_store"]
+        session = self.root / ".moa" / "sse-error"
+        session.mkdir(parents=True)
+        store.insert_job(
+            {
+                "id": "sse-error",
+                "title": "SSE error",
+                "workspace": str(self.root),
+                "session_dir": str(session),
+                "goal": "Test SSE event names.",
+                "status": "failed",
+                "phase": "failed",
+                "config": {},
+                "created_at": 1,
+            }
+        )
+        store.append_event("sse-error", "error", "A real worker failure")
+        response = self.client.get("/api/jobs/sse-error/events", buffered=True)
+        payload = response.get_data(as_text=True)
+        self.assertIn("event: worker-error", payload)
+        self.assertNotIn("\nevent: error\n", payload)
+        api_source = (
+            Path(__file__).parents[1] / "static" / "js" / "api.js"
+        ).read_text()
+        self.assertIn('typeof message?.data !== "string"', api_source)
+
     def test_targeted_redispatch_does_not_show_copied_failure_as_current(self):
         store = self.app.extensions["moa_store"]
         session = self.root / ".moa" / "targeted-retry"
