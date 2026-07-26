@@ -7,6 +7,30 @@
   <meta name="theme-color" content="#FFFFFF">
   <title>{% block title %}MoA-X Control Room{% endblock %}</title>
   <link rel="stylesheet" href="/static/css/app.css">
+  {% if local_font_stylesheet %}
+  <link rel="stylesheet" href="/local-assets/fonts.css">
+  <script>
+    (() => {
+      if (!("FontFace" in window) || !document.fonts) return;
+      const faces = [
+        new FontFace(
+          "MoAX Gotham Office",
+          'url("/local-assets/fonts/GothamOffice-Regular.woff2") format("woff2")',
+          { style: "normal", weight: "400", display: "swap" }
+        ),
+        new FontFace(
+          "MoAX Gotham Office",
+          'url("/local-assets/fonts/GothamOffice-Bold.woff2") format("woff2")',
+          { style: "normal", weight: "700", display: "swap" }
+        )
+      ];
+      faces.forEach((face) => document.fonts.add(face));
+      Promise.all(faces.map((face) => face.load()))
+        .then(() => document.documentElement.classList.add("gotham-office-ready"))
+        .catch(() => {});
+    })();
+  </script>
+  {% endif %}
 </head>
 <body>
   <a class="skip-link" href="#main-content">Skip to content</a>
