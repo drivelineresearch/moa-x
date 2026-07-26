@@ -1,6 +1,26 @@
+/* Optional local-only face mapping. No font binaries are redistributed. */
+@font-face {
+  font-family: "MoAX Gotham";
+  src: local("Gotham-Book"), local("Gotham Book");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "MoAX Gotham";
+  src: local("Gotham-Medium"), local("Gotham Medium");
+  font-weight: 500 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: "MoAX Gotham";
+  src: local("Gotham-Ultra"), local("Gotham Ultra");
+  font-weight: 700 900;
+  font-display: swap;
+}
+
 :root {
-  --font-display: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-body: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-display: "MoAX Gotham", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-body: "MoAX Gotham", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --ink: #000000;
   --dark: #262626;
   --muted: #6B7280;

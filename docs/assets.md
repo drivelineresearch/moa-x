@@ -1,9 +1,11 @@
 # Visual assets and fonts
 
 MoA-X does not redistribute proprietary fonts or depend on a remote font
-service. The Web UI and self-contained report use an operating-system
-sans-serif stack, so a clean public clone works without downloading or
-licensing typography files.
+service. The Web UI prefers Gotham when it is already installed on the local
+operating system, then falls back to a standard sans-serif stack. A clean
+public clone therefore works without downloading or licensing typography
+files, while a licensed local workstation can retain the intended Gotham
+appearance.
 
 The WebP/PNG illustrations under `harness/webui/static/images/` and
 `harness/report/assets/` were generated specifically for this project and are

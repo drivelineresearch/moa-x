@@ -257,11 +257,17 @@ export function subscribeToJob(id, { onEvent, onState, onError } = {}) {
   let stopped = false;
   let pollTimer;
   let lastEventId = "";
+  const terminalStates = new Set(["completed", "failed", "cancelled", "imported"]);
 
   const poll = async () => {
     if (stopped) return;
     try {
-      onState?.(await getJob(id));
+      const job = await getJob(id);
+      onState?.(job);
+      if (terminalStates.has(job.status)) {
+        stopped = true;
+        onState?.({ connection: "settled" });
+      }
     } catch (error) {
       onError?.(error);
     } finally {
@@ -273,6 +279,10 @@ export function subscribeToJob(id, { onEvent, onState, onError } = {}) {
     const query = lastEventId ? `?after=${encodeURIComponent(lastEventId)}` : "";
     source = new EventSource(`/api/jobs/${encodeURIComponent(id)}/events${query}`, { withCredentials: true });
     const consume = (message) => {
+      // Native EventSource connection failures also use the "error" event
+      // name, but do not carry SSE data. Never turn that transport signal
+      // into a synthetic failed worker event in the run trace.
+      if (typeof message?.data !== "string") return;
       lastEventId = message.lastEventId || lastEventId;
       try {
         const event = JSON.parse(message.data);
@@ -287,16 +297,26 @@ export function subscribeToJob(id, { onEvent, onState, onError } = {}) {
       }
     };
     source.onmessage = consume;
-    ["job", "phase", "agent", "progress", "artifact", "warning", "error", "complete", "log", "heartbeat"].forEach((type) => {
+    ["job", "phase", "agent", "progress", "artifact", "warning", "worker-error", "complete", "log", "heartbeat"].forEach((type) => {
       source.addEventListener(type, consume);
     });
     source.onopen = () => onState?.({ connection: "live" });
-    source.onerror = () => {
+    source.onerror = async () => {
       source?.close();
-      if (!pollTimer && !stopped) {
-        onState?.({ connection: "polling" });
-        poll();
+      if (pollTimer || stopped) return;
+      try {
+        const job = await getJob(id);
+        onState?.(job);
+        if (terminalStates.has(job.status)) {
+          stopped = true;
+          onState?.({ connection: "settled" });
+          return;
+        }
+      } catch (error) {
+        onError?.(error);
       }
+      onState?.({ connection: "polling" });
+      poll();
     };
   } else {
     onState?.({ connection: "polling" });

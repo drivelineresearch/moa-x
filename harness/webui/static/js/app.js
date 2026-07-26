@@ -1365,7 +1365,11 @@ async function loadRunDetail(id) {
       },
       onState: (update) => {
         if (update.connection) {
-          live.textContent = update.connection === "live" ? "Live" : "Polling";
+          live.textContent = update.connection === "live"
+            ? "Live"
+            : update.connection === "settled"
+              ? (state.detailJob?.status === "completed" ? "Complete" : "Closed")
+              : "Polling";
           live.classList.toggle("is-live", update.connection === "live");
         } else if (update.id) renderRunDetail(update);
       },
