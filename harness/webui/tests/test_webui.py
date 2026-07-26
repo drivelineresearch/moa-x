@@ -6,11 +6,13 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from harness.scripts import run_moa
 from harness.webui.app import create_app
 from harness.webui.github import _run_gh, parse_repo_pointer
+from harness.webui import prompt_coach
 from harness.webui.worker import JobWorker
 
 
@@ -118,6 +120,128 @@ class WebUITest(unittest.TestCase):
             ).status_code,
             404,
         )
+
+    def test_initial_views_expose_visible_accessible_loading_states(self):
+        page = self.client.get("/")
+        self.assertEqual(page.status_code, 200)
+        for message in (
+            b"Checking provider accounts",
+            b"Loading run archive",
+            b"Loading latest runs",
+            b"Checking active work",
+            b"Loading proposer routes",
+            b"Loading agent lanes",
+            b"Connecting to live trace",
+        ):
+            self.assertIn(message, page.data)
+        self.assertGreaterEqual(page.data.count(b'aria-busy="true"'), 8)
+        self.assertIn(b"pixel-opencode-work-animated.webp", page.data)
+        self.assertIn(b"prefers-reduced-motion: reduce", page.data)
+        self.assertIn(b'class="task-compose-layout"', page.data)
+        self.assertIn(b'data-step-target="5"', page.data)
+        self.assertEqual(page.data.count(b"data-optimized-loadout="), 3)
+        self.assertNotIn(b"data-model-search=", page.data)
+        self.assertIn(b'id="review-network"', page.data)
+
+        app_source = (
+            Path(__file__).parents[1] / "static" / "js" / "app.js"
+        ).read_text()
+        self.assertIn("const settle = async", app_source)
+        self.assertIn('state.loading[key] = false', app_source)
+        self.assertIn("setButtonLoading", app_source)
+        self.assertIn("applyOptimizedRole", app_source)
+        self.assertIn("renderNetworkLayer", app_source)
+        self.assertIn(b'id="prompt-coach-button"', page.data)
+        self.assertIn(b'id="prompt-coach-dialog"', page.data)
+        self.assertIn(b"prompt-coach-teacher.webp", page.data)
+        self.assertIn("analyzePrompt", app_source)
+        self.assertIn("finalizePrompt", app_source)
+
+    @patch("harness.webui.app.analyze_prompt")
+    def test_prompt_helper_analyze_is_bounded_and_returns_model_metadata(
+        self, analyze_prompt
+    ):
+        analyze_prompt.return_value = {
+            "suitability": "needs_clarification",
+            "score": 58,
+            "summary": "Clarify the desired tradeoff.",
+            "questions": [
+                {
+                    "id": "priority",
+                    "prompt": "What matters most?",
+                    "why": "It changes the plan.",
+                    "options": [
+                        {
+                            "label": "Reliability",
+                            "description": "Prefer safer changes.",
+                            "recommended": True,
+                        },
+                        {
+                            "label": "Speed",
+                            "description": "Prefer the fastest path.",
+                            "recommended": False,
+                        },
+                    ],
+                    "allow_custom": True,
+                }
+            ],
+            "model": {
+                "provider": "codex",
+                "model": "gpt-5.6-luna",
+                "fallback": False,
+            },
+        }
+        response = self.client.post(
+            "/api/prompt-helper/analyze",
+            json={
+                "brief": "Improve billing reliability.",
+                "context_mode": "github",
+                "attachment_count": 2,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["questions"][0]["id"], "priority")
+        self.assertEqual(response.get_json()["model"]["model"], "gpt-5.6-luna")
+        analyze_prompt.assert_called_once_with(
+            "Improve billing reliability.",
+            context_mode="github",
+            attachment_count=2,
+        )
+
+    @patch("harness.webui.app.finalize_prompt")
+    def test_prompt_helper_finalize_returns_preview_without_mutating_job_state(
+        self, finalize_prompt
+    ):
+        finalize_prompt.return_value = {
+            "optimized_prompt": "Review billing reliability and prioritize safe fixes.",
+            "changes": ["Added a decision criterion."],
+            "assumptions": [],
+            "remaining_risks": [],
+            "model": {
+                "provider": "opencode",
+                "model": "opencode-go/deepseek-v4-flash",
+                "fallback": True,
+            },
+        }
+        response = self.client.post(
+            "/api/prompt-helper/finalize",
+            json={
+                "brief": "Improve billing.",
+                "questions": [{"id": "priority"}],
+                "answers": [{"question_id": "priority", "answer": "Reliability"}],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertIn("Review billing reliability", payload["optimized_prompt"])
+        self.assertTrue(payload["model"]["fallback"])
+
+    def test_prompt_helper_rejects_an_empty_brief(self):
+        response = self.client.post(
+            "/api/prompt-helper/analyze", json={"brief": "  "}
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Add a task", response.get_json()["error"])
 
     def test_profile_and_job_lifecycle(self):
         profile = self.client.post(
@@ -788,6 +912,45 @@ class WebUITest(unittest.TestCase):
         self.assertEqual(response.get_json()["imported"], ["historical"])
         job = self.client.get("/api/jobs/historical").get_json()
         self.assertEqual(job["status"], "completed")
+
+
+class PromptCoachTest(unittest.TestCase):
+    @patch("harness.webui.prompt_coach.opencode.run")
+    @patch("harness.webui.prompt_coach.codex.run")
+    def test_deepseek_flash_is_used_only_after_luna_fails(
+        self, codex_run, opencode_run
+    ):
+        codex_run.return_value = SimpleNamespace(
+            success=False, payload=None, error_message="temporary failure"
+        )
+        opencode_run.return_value = SimpleNamespace(
+            success=True,
+            payload={"optimized_prompt": "A stronger brief."},
+            error_message=None,
+        )
+        payload, model = prompt_coach._run(
+            "Return the structured result.", prompt_coach.FINALIZE_SCHEMA
+        )
+        self.assertEqual(payload["optimized_prompt"], "A stronger brief.")
+        self.assertEqual(model["model"], "opencode-go/deepseek-v4-flash")
+        self.assertTrue(model["fallback"])
+        self.assertEqual(codex_run.call_args.kwargs["model"], "gpt-5.6-luna")
+        opencode_run.assert_called_once()
+
+    @patch("harness.webui.prompt_coach.opencode.run")
+    @patch("harness.webui.prompt_coach.codex.run")
+    def test_luna_success_does_not_call_fallback(self, codex_run, opencode_run):
+        codex_run.return_value = SimpleNamespace(
+            success=True,
+            payload={"optimized_prompt": "A stronger brief."},
+            error_message=None,
+        )
+        _, model = prompt_coach._run(
+            "Return the structured result.", prompt_coach.FINALIZE_SCHEMA
+        )
+        self.assertEqual(model["model"], "gpt-5.6-luna")
+        self.assertFalse(model["fallback"])
+        opencode_run.assert_not_called()
 
 
 if __name__ == "__main__":

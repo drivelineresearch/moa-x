@@ -1,4 +1,5 @@
 import {
+  analyzePrompt,
   cancelJob,
   createJob,
   getJob,
@@ -15,6 +16,7 @@ import {
   saveProfile,
   subscribeToJob,
   uploadFiles,
+  finalizePrompt,
 } from "./api.js";
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -26,6 +28,13 @@ const PROVIDER_AVATARS = Object.freeze({
   opencode: "/static/images/provider-opencode.webp",
   cursor: "/static/images/provider-cursor.webp",
   agy: "/static/images/provider-agy.webp",
+});
+const REVIEW_PIXEL_ART = Object.freeze({
+  codex: "/static/images/pixel-codex.webp",
+  claude: "/static/images/pixel-claude.webp",
+  opencode: "/static/images/pixel-opencode.webp",
+  agy: "/static/images/pixel-agy.webp",
+  cursor: "/static/images/provider-cursor.webp",
 });
 const DEPTH_PRESENTATION = Object.freeze({
   quick: {
@@ -60,9 +69,17 @@ const state = {
   detailJob: null,
   events: [],
   eventStop: null,
+  promptCoach: { original: "", analysis: null, answers: [], index: 0, result: null, undo: "" },
   detailRefreshAt: 0,
   step: 1,
   profile: loadProfile(),
+  loading: {
+    providers: true,
+    models: true,
+    jobs: true,
+    workspaces: true,
+    githubRepos: true,
+  },
 };
 
 function loadProfile() {
@@ -162,6 +179,13 @@ function showToast(message, type = "info") {
   window.setTimeout(() => toast.remove(), 4600);
 }
 
+function setButtonLoading(button, loading, label, idleLabel) {
+  button.disabled = loading;
+  button.dataset.loading = String(loading);
+  button.setAttribute("aria-busy", String(loading));
+  button.textContent = loading ? label : idleLabel;
+}
+
 function closeInfoPopover() {
   const popover = $("#info-popover");
   popover.hidden = true;
@@ -249,6 +273,7 @@ function renderMachineHealth() {
 
 function renderHealthRibbon() {
   const target = $("#health-ribbon");
+  target.setAttribute("aria-busy", "false");
   if (!state.providers.length) {
     target.innerHTML = `<div class="health-cell is-error"><i></i><div><strong>No provider data</strong><small>Check the local server</small></div></div>`;
     return;
@@ -273,11 +298,14 @@ function renderProviderSummary() {
     <div class="summary-stat"><strong>${installed}</strong><span>CLIs installed on this machine</span></div>
     <div class="summary-stat"><strong>${models || state.models.length}</strong><span>Discovered model choices</span></div>
   `;
+  $("#provider-summary").setAttribute("aria-busy", "false");
 }
 
 function renderProviders() {
+  if (state.loading.providers) return;
   renderProviderSummary();
   const target = $("#provider-grid");
+  target.setAttribute("aria-busy", "false");
   if (!state.providers.length) {
     target.innerHTML = `<div class="empty-state"><span class="empty-number">—</span><div><h3>No provider probes returned</h3><p>Make sure the Flask server can access the same HOME, PATH, and environment as your terminal.</p></div></div>`;
     return;
@@ -370,7 +398,9 @@ function activeJob() {
 }
 
 function renderActiveJob() {
+  if (state.loading.jobs) return;
   const target = $("#active-run-card");
+  target.setAttribute("aria-busy", "false");
   const job = activeJob();
   if (!job) {
     target.className = "empty-state compact";
@@ -404,6 +434,7 @@ function renderActiveJob() {
 }
 
 function renderRecentRuns() {
+  if (state.loading.jobs) return;
   const target = $("#recent-runs");
   target.setAttribute("aria-busy", "false");
   const recent = state.jobs.filter((job) => !["running", "queued"].includes(job.status)).slice(0, 5);
@@ -431,7 +462,9 @@ function filteredJobs() {
 }
 
 function renderArchive() {
+  if (state.loading.jobs) return;
   const jobs = filteredJobs();
+  $("#run-archive").setAttribute("aria-busy", "false");
   $("#run-result-count").textContent = `${jobs.length} run${jobs.length === 1 ? "" : "s"}`;
   $("#run-archive").innerHTML = jobs.length ? jobs.map((job) => `
     <tr>
@@ -516,6 +549,7 @@ function displayModelName(option) {
 function renderModelOptions(role, targetId, inputType) {
   const options = modelsForRole(role);
   const target = $(targetId);
+  target.setAttribute("aria-busy", "false");
   const groups = options.reduce((map, option) => {
     const key = option.harness || option.lab || "other";
     if (!map.has(key)) map.set(key, []);
@@ -678,8 +712,9 @@ function selectRoutes(role, preferred, limit) {
   inputs.forEach((input) => { input.checked = chosen.includes(input); });
 }
 
-function setSelectedEffort(mode) {
-  $$(".route-choice:checked").forEach((route) => {
+function setSelectedEffort(mode, role = "") {
+  const selector = role ? `.route-choice[name="${role}"]:checked` : ".route-choice:checked";
+  $$(selector).forEach((route) => {
     const range = $("[data-effort-range]", route.closest(".model-option"));
     if (range) {
       const values = (range.dataset.effortValues || "").split(",").filter(Boolean);
@@ -714,56 +749,46 @@ function syncDepthPresentation(preset) {
   $("#depth-caption").textContent = presentation.caption;
 }
 
+function optimizedProfile(preset) {
+  const profiles = {
+    quick: {
+      proposer: { preferred: ["codex", "sonnet"], limit: 2 },
+      refiner: { preferred: ["qwen"], limit: 1 },
+      aggregator: { preferred: ["opus"], limit: 1 },
+    },
+    balanced: {
+      proposer: { preferred: ["codex", "glm", "sonnet"], limit: 3 },
+      refiner: { preferred: ["codex-sol", "qwen"], limit: 2 },
+      aggregator: { preferred: ["opus"], limit: 1 },
+    },
+    thorough: {
+      proposer: { preferred: ["codex", "glm", "sonnet", "agy-gemini-flash"], limit: 4 },
+      refiner: { preferred: ["codex-sol", "qwen", "agy-gemini-flash"], limit: 3 },
+      aggregator: { preferred: ["opus"], limit: 1 },
+    },
+  };
+  return profiles[preset] || profiles.balanced;
+}
+
+function applyOptimizedRole(role, announce = true) {
+  const config = optimizedProfile(state.depthPreset)[role];
+  if (!config) return;
+  selectRoutes(role, config.preferred, config.limit);
+  syncEffortControls();
+  setSelectedEffort(state.depthPreset, role);
+  updateRosterChecks();
+  if (announce) showToast(`Optimized ${role} loadout restored for ${titleCase(state.depthPreset)} depth.`);
+}
+
 function applyDepthPreset(preset, announce = true) {
   state.depthPreset = preset;
   syncDepthPresentation(preset);
-  const profiles = {
-    quick: {
-      proposers: ["codex", "sonnet"],
-      refiners: ["qwen"],
-      aggregator: ["opus"],
-      counts: [2, 1],
-    },
-    balanced: {
-      proposers: ["codex", "glm", "sonnet"],
-      refiners: ["codex-sol", "qwen"],
-      aggregator: ["opus"],
-      counts: [3, 2],
-    },
-    thorough: {
-      proposers: ["codex", "glm", "sonnet", "agy-gemini-flash"],
-      refiners: ["codex-sol", "qwen", "agy-gemini-flash"],
-      aggregator: ["opus"],
-      counts: [4, 3],
-    },
-  };
-  const profile = profiles[preset] || profiles.balanced;
-  selectRoutes("proposer", profile.proposers, profile.counts[0]);
-  selectRoutes("refiner", profile.refiners, profile.counts[1]);
-  selectRoutes("aggregator", profile.aggregator, 1);
-  syncEffortControls();
-  setSelectedEffort(preset);
-  updateRosterChecks();
+  ["proposer", "refiner", "aggregator"].forEach((role) => applyOptimizedRole(role, false));
   if (announce) showToast(`${titleCase(preset)} depth applied to the roster.`);
 }
 
-function filterModelOptions(role, query) {
-  const target = $(`#${role}-options`);
-  const term = query.trim().toLowerCase();
-  $$("[data-model-group]", target).forEach((group) => {
-    const providerMatch = !term || group.dataset.providerSearch.includes(term);
-    let visibleRows = 0;
-    $$("[data-model-row]", group).forEach((row) => {
-      const visible = providerMatch || row.dataset.search.includes(term);
-      row.classList.toggle("is-filtered-out", !visible);
-      if (visible) visibleRows += 1;
-    });
-    group.classList.toggle("is-filtered-out", visibleRows === 0);
-    if (term && visibleRows && !group.dataset.unavailable) group.open = true;
-  });
-}
-
 function renderRoster() {
+  if (state.loading.providers || state.loading.models) return;
   renderModelOptions("proposer", "#proposer-options", "checkbox");
   renderModelOptions("refiner", "#refiner-options", "checkbox");
   renderModelOptions("aggregator", "#aggregator-options", "radio");
@@ -874,6 +899,42 @@ function renderReview() {
   const source = state.sourceMode === "github"
     ? (repo ? `GitHub · ${repo.fullName}` : "GitHub repository")
     : "Task only";
+  const networkNodes = (role) => $$(`input[name="${role}"]:checked`).map((input) => {
+    const route = modelsForRole(role).find((item) => item.id === input.value);
+    const harness = route?.harness || input.value;
+    return {
+      id: input.value,
+      name: route?.name || titleCase(input.value),
+      model: displayModelName(route) || input.dataset.model || input.value,
+      harness,
+      image: REVIEW_PIXEL_ART[harness] || PROVIDER_AVATARS[harness] || "/static/images/moax-mark.webp",
+    };
+  });
+  const renderNetworkLayer = (label, title, nodes) => `
+    <section class="network-layer">
+      <header><span>${escapeHtml(label)}</span><strong>${escapeHtml(title)}</strong></header>
+      <div class="network-node-list">${nodes.map((node) => `
+        <article class="network-node">
+          <span class="network-avatar" data-harness="${escapeHtml(node.harness)}"><img src="${escapeHtml(node.image)}" alt=""></span>
+          <div><strong title="${escapeHtml(node.name)}">${escapeHtml(node.name)}</strong><small title="${escapeHtml(node.model)}">${escapeHtml(node.model)}</small></div>
+        </article>
+      `).join("")}</div>
+    </section>
+  `;
+  const proposersNetwork = networkNodes("proposer");
+  const refinersNetwork = networkNodes("refiner");
+  const aggregatorNetwork = networkNodes("aggregator");
+  $("#review-network").innerHTML = `
+    ${renderNetworkLayer("Layer 1", "Proposers", proposersNetwork)}
+    <div class="network-bridge" aria-hidden="true"><span>Share</span></div>
+    ${renderNetworkLayer("Layer 2", "Refiners", refinersNetwork)}
+    <div class="network-bridge" aria-hidden="true"><span>Unify</span></div>
+    ${renderNetworkLayer("Layer 3", "Aggregator", aggregatorNetwork)}
+    <div class="network-context">
+      <img src="/static/images/context-roster.webp" alt="">
+      <div><strong>${escapeHtml(titleCase(state.depthPreset))} ensemble · ${proposersNetwork.length + refinersNetwork.length + aggregatorNetwork.length} agents</strong><p>${escapeHtml(source)} flows through independent proposals, broadcast review, and one evidence-backed synthesis.</p></div>
+    </div>
+  `;
   $("#review-sheet").innerHTML = `
     <dl>
       <div class="review-row"><dt>Goal</dt><dd>${escapeHtml(goal || "Add a task")}</dd></div>
@@ -889,10 +950,22 @@ function renderReview() {
 }
 
 function setStep(step) {
-  state.step = Math.max(1, Math.min(3, step));
+  state.step = Math.max(1, Math.min(5, step));
   $$(".wizard-step").forEach((node) => node.classList.toggle("is-active", Number(node.dataset.step) === state.step));
-  $$(".step-item").forEach((node) => node.classList.toggle("is-active", Number(node.dataset.stepTarget) === state.step));
-  if (state.step === 3) renderReview();
+  $$(".step-item").forEach((node) => {
+    const active = node.dataset.stepGroup === "roster"
+      ? state.step >= 2 && state.step <= 4
+      : Number(node.dataset.stepTarget) === state.step;
+    node.classList.toggle("is-active", active);
+    if (active) node.setAttribute("aria-current", "step"); else node.removeAttribute("aria-current");
+  });
+  $("#roster-subnav").hidden = state.step < 2 || state.step > 4;
+  $$("[data-roster-step]").forEach((node) => {
+    const active = Number(node.dataset.rosterStep) === state.step;
+    node.classList.toggle("is-active", active);
+    if (active) node.setAttribute("aria-current", "step"); else node.removeAttribute("aria-current");
+  });
+  if (state.step === 5) renderReview();
   $(".wizard-step.is-active h2")?.focus?.({ preventScroll: true });
   const behavior = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
   requestAnimationFrame(() => window.scrollTo({ top: 0, behavior }));
@@ -905,18 +978,212 @@ function validateStep(step) {
   }
   if (step === 2) {
     if (!selectedValues("proposer").length) return showToast("Choose at least one proposer.", "error"), false;
+  }
+  if (step === 3) {
     if (!selectedValues("refiner").length) return showToast("Choose at least one refiner.", "error"), false;
+  }
+  if (step === 4) {
     if (!selectedValues("aggregator").length) return showToast("Choose an aggregator.", "error"), false;
   }
   return true;
 }
 
+function coachModelLabel(model = {}) {
+  return model.fallback ? "DeepSeek V4 Flash · backup" : "GPT-5.6 Luna";
+}
+
+function renderCoachProgress(stage) {
+  const active = stage === "analyze" ? 1 : stage === "questions" ? 2 : 3;
+  $("#prompt-coach-progress").innerHTML = [1, 2, 3]
+    .map((step) => `<span class="${step <= active ? "is-active" : ""}"></span>`)
+    .join("");
+}
+
+function renderCoachLoading(title, detail, stage = "analyze") {
+  renderCoachProgress(stage);
+  const body = $("#prompt-coach-body");
+  body.setAttribute("aria-busy", "true");
+  body.innerHTML = `
+    <div class="coach-loading" role="status">
+      <div class="coach-process-visual" aria-hidden="true">
+        <div class="coach-process-questions"><i>?</i><i>?</i><i>?</i></div>
+        <div class="coach-process-stream"><b></b><b></b><b></b></div>
+        <div class="coach-process-brief"><span></span><span></span><span></span><span></span></div>
+      </div>
+      <div><h3>${escapeHtml(title)}</h3><p>${escapeHtml(detail)}</p></div>
+    </div>
+  `;
+}
+
+function coachNotes(title, items = []) {
+  const values = Array.isArray(items) ? items : [];
+  return `<div><strong>${escapeHtml(title)}</strong>${
+    values.length
+      ? `<ul>${values.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
+      : `<p class="muted">None noted.</p>`
+  }</div>`;
+}
+
+async function finishPromptCoach() {
+  const coach = state.promptCoach;
+  renderCoachLoading("Drafting the stronger brief", "Turning your choices into a precise mission without changing your intent.", "preview");
+  try {
+    coach.result = await finalizePrompt({
+      brief: coach.original,
+      questions: coach.analysis?.questions || [],
+      answers: coach.answers,
+      context_mode: state.sourceMode,
+      attachment_count: state.pendingFiles.length,
+    });
+    renderCoachPreview();
+  } catch (error) {
+    $("#prompt-coach-body").removeAttribute("aria-busy");
+    $("#prompt-coach-body").innerHTML = `
+      <div class="coach-question"><p class="eyebrow">COACH UNAVAILABLE</p><h3>The draft is still safe.</h3>
+      <p>${escapeHtml(error.message)}</p><div class="coach-actions"><button class="secondary-button" id="coach-error-close" type="button">Keep my draft</button><button class="primary-button" id="coach-error-retry" type="button">Try again</button></div></div>`;
+    $("#coach-error-close").addEventListener("click", () => $("#prompt-coach-dialog").close());
+    $("#coach-error-retry").addEventListener("click", finishPromptCoach);
+  }
+}
+
+function renderCoachQuestion() {
+  const coach = state.promptCoach;
+  const questions = coach.analysis?.questions || [];
+  const question = questions[coach.index];
+  if (!question) return finishPromptCoach();
+  renderCoachProgress("questions");
+  const body = $("#prompt-coach-body");
+  body.removeAttribute("aria-busy");
+  const prior = coach.answers[coach.index]?.answer || "";
+  const recommended = question.options.find((option) => option.recommended)?.label || question.options[0]?.label || "";
+  const selected = prior || recommended;
+  body.innerHTML = `
+    <div class="coach-question">
+      <p class="eyebrow">QUESTION ${coach.index + 1} OF ${questions.length} · ${escapeHtml(coachModelLabel(coach.analysis.model))}</p>
+      <h3>${escapeHtml(question.prompt)}</h3>
+      <p>${escapeHtml(question.why)}</p>
+      <div class="coach-options">
+        ${question.options.map((option, index) => `
+          <label class="coach-option">
+            <input type="radio" name="coach-answer" value="${escapeHtml(option.label)}" ${selected === option.label ? "checked" : ""}>
+            <span><strong>${escapeHtml(option.label)}</strong><small>${escapeHtml(option.description)}</small></span>
+            ${option.recommended ? "<em>Recommended</em>" : ""}
+          </label>`).join("")}
+        ${question.allow_custom ? `
+          <label class="coach-option coach-custom-option">
+            <input type="radio" name="coach-answer" value="__custom" ${prior && !question.options.some((option) => option.label === prior) ? "checked" : ""}>
+            <span><strong>Something else</strong><small>Write the answer in your own words.</small></span>
+          </label>
+          <div class="field coach-custom"><input id="coach-custom-answer" maxlength="1000" placeholder="Add your answer…" value="${prior && !question.options.some((option) => option.label === prior) ? escapeHtml(prior) : ""}"></div>` : ""}
+      </div>
+      <div class="coach-actions">
+        <button class="secondary-button" id="coach-back" type="button" ${coach.index === 0 ? "disabled" : ""}>Back</button>
+        <button class="primary-button" id="coach-next" type="button">${coach.index === questions.length - 1 ? "Build preview" : "Next question"}</button>
+      </div>
+    </div>`;
+  $("#coach-custom-answer")?.addEventListener("focus", () => {
+    $('input[name="coach-answer"][value="__custom"]')?.click();
+  });
+  $("#coach-back").addEventListener("click", () => {
+    coach.index = Math.max(0, coach.index - 1);
+    renderCoachQuestion();
+  });
+  $("#coach-next").addEventListener("click", () => {
+    const picked = $('input[name="coach-answer"]:checked');
+    let answer = picked?.value || "";
+    if (answer === "__custom") answer = $("#coach-custom-answer")?.value.trim() || "";
+    if (!answer) return showToast("Choose an answer or add your own.", "error");
+    coach.answers[coach.index] = { question_id: question.id, answer };
+    if (coach.index < questions.length - 1) {
+      coach.index += 1;
+      renderCoachQuestion();
+    } else {
+      finishPromptCoach();
+    }
+  });
+}
+
+function renderCoachAnalysis() {
+  const coach = state.promptCoach;
+  const questions = coach.analysis?.questions || [];
+  if (questions.length) return renderCoachQuestion();
+  renderCoachProgress("questions");
+  const body = $("#prompt-coach-body");
+  body.removeAttribute("aria-busy");
+  body.innerHTML = `
+    <div class="coach-question">
+      <p class="eyebrow">BRIEF SCORE · ${Number(coach.analysis?.score || 0)}/100 · ${escapeHtml(coachModelLabel(coach.analysis?.model))}</p>
+      <h3>No clarification needed.</h3>
+      <p>${escapeHtml(coach.analysis?.summary || "This task is ready for the ensemble.")}</p>
+      <div class="coach-actions"><button class="secondary-button" id="coach-ready-close" type="button">Keep as written</button><button class="primary-button" id="coach-ready-polish" type="button">Create polished preview</button></div>
+    </div>`;
+  $("#coach-ready-close").addEventListener("click", () => $("#prompt-coach-dialog").close());
+  $("#coach-ready-polish").addEventListener("click", finishPromptCoach);
+}
+
+function renderCoachPreview() {
+  const coach = state.promptCoach;
+  renderCoachProgress("preview");
+  const body = $("#prompt-coach-body");
+  body.removeAttribute("aria-busy");
+  body.innerHTML = `
+    <div class="coach-question">
+      <p class="eyebrow">PREVIEW · ${escapeHtml(coachModelLabel(coach.result?.model))}</p>
+      <h3>Your intent, made ensemble-ready.</h3>
+      <div class="coach-preview-grid">
+        <article class="coach-preview-card"><h3>Original</h3><pre>${escapeHtml(coach.original)}</pre></article>
+        <article class="coach-preview-card is-optimized"><h3>Optimized brief</h3><pre>${escapeHtml(coach.result.optimized_prompt)}</pre></article>
+      </div>
+      <div class="coach-notes">
+        ${coachNotes("What changed", coach.result.changes)}
+        ${coachNotes("Assumptions", coach.result.assumptions)}
+        ${coachNotes("Still worth checking", coach.result.remaining_risks)}
+      </div>
+      <div class="coach-actions"><button class="secondary-button" id="coach-keep-original" type="button">Keep original</button><button class="primary-button" id="coach-apply" type="button">Use optimized brief</button></div>
+    </div>`;
+  $("#coach-keep-original").addEventListener("click", () => $("#prompt-coach-dialog").close());
+  $("#coach-apply").addEventListener("click", () => {
+    coach.undo = $("#run-goal").value;
+    $("#run-goal").value = coach.result.optimized_prompt;
+    $("#goal-count").textContent = $("#run-goal").value.length;
+    localStorage.setItem("moax.runDraft", $("#run-goal").value);
+    $("#prompt-undo-button").hidden = false;
+    $("#prompt-coach-dialog").close();
+    showToast("Optimized brief applied. You can still edit or undo it.");
+  });
+}
+
+async function openPromptCoach() {
+  const brief = $("#run-goal").value.trim();
+  if (!brief) return showToast("Add a task or outcome before strengthening it.", "error");
+  state.promptCoach = { original: brief, analysis: null, answers: [], index: 0, result: null, undo: state.promptCoach.undo || "" };
+  $("#prompt-coach-dialog").showModal();
+  renderCoachLoading("Reading the mission", "Luna is checking fit, ambiguity, constraints, and the decisions your ensemble needs to make.");
+  try {
+    state.promptCoach.analysis = await analyzePrompt({
+      brief,
+      context_mode: state.sourceMode,
+      attachment_count: state.pendingFiles.length,
+    });
+    renderCoachAnalysis();
+  } catch (error) {
+    $("#prompt-coach-body").removeAttribute("aria-busy");
+    $("#prompt-coach-body").innerHTML = `
+      <div class="coach-question"><p class="eyebrow">COACH UNAVAILABLE</p><h3>Your draft was not changed.</h3><p>${escapeHtml(error.message)}</p>
+      <div class="coach-actions"><button class="secondary-button" id="coach-analyze-close" type="button">Close</button><button class="primary-button" id="coach-analyze-retry" type="button">Try again</button></div></div>`;
+    $("#coach-analyze-close").addEventListener("click", () => $("#prompt-coach-dialog").close());
+    $("#coach-analyze-retry").addEventListener("click", () => {
+      $("#prompt-coach-dialog").close();
+      openPromptCoach();
+    });
+  }
+}
+
 async function launchRun(event) {
   event.preventDefault();
-  if (!validateStep(1) || !validateStep(2)) return;
+  if (![1, 2, 3, 4].every(validateStep)) return;
   const button = $("#launch-button");
-  button.disabled = true;
-  button.textContent = "Dispatching…";
+  setButtonLoading(button, true, "Dispatching…", "Start run");
   const proposers = selectedValues("proposer");
   const refiners = selectedValues("refiner");
   const aggregator = selectedValues("aggregator")[0];
@@ -959,8 +1226,7 @@ async function launchRun(event) {
   } catch (error) {
     showToast(error.message, "error");
   } finally {
-    button.disabled = false;
-    button.textContent = "Start run";
+    setButtonLoading(button, false, "Dispatching…", "Start run");
   }
 }
 
@@ -997,6 +1263,7 @@ function renderRunDetail(job = state.detailJob) {
       <strong>${label}</strong><small>${name}</small>
     </div>
   `).join("");
+  $("#phase-rail").setAttribute("aria-busy", "false");
   const actions = $("#run-actions");
   if (["running", "queued", "cancelling"].includes(job.status)) {
     actions.innerHTML = `<button class="danger-button" type="button" data-cancel-run="${escapeHtml(job.id)}">Cancel run</button>`;
@@ -1007,6 +1274,8 @@ function renderRunDetail(job = state.detailJob) {
   }
   renderAgents(job);
   renderEvents();
+  $("#agent-grid").setAttribute("aria-busy", "false");
+  $("#event-feed").setAttribute("aria-busy", "false");
   renderResult(job);
 }
 
@@ -1375,6 +1644,13 @@ function renderResult(job) {
 
 async function loadRunDetail(id) {
   $("#run-detail-title").textContent = "Loading run…";
+  $("#run-detail-meta").textContent = "Retrieving the saved run and its latest worker state.";
+  $("#phase-rail").setAttribute("aria-busy", "true");
+  $("#phase-rail").innerHTML = `<div class="loading-bar" role="status"><span></span><b>Loading run state…</b></div>`;
+  $("#agent-grid").setAttribute("aria-busy", "true");
+  $("#agent-grid").innerHTML = `<div class="loading-stage compact" role="status"><span class="run-spinner" aria-hidden="true"></span><div><h3>Loading agent lanes</h3><p>Resolving the saved roster…</p></div></div>`;
+  $("#event-feed").setAttribute("aria-busy", "true");
+  $("#event-feed").innerHTML = `<div class="loading-stage compact" role="status"><span class="run-spinner" aria-hidden="true"></span><div><h3>Connecting to live trace</h3><p>Waiting for the latest worker event…</p></div></div>`;
   state.events = [];
   try {
     const job = await getJob(id);
@@ -1418,31 +1694,44 @@ async function loadRunDetail(id) {
   } catch (error) {
     $("#run-detail-title").textContent = "Run unavailable";
     $("#run-detail-meta").textContent = error.message;
+    ["#phase-rail", "#agent-grid", "#event-feed"].forEach((selector) => {
+      $(selector).setAttribute("aria-busy", "false");
+    });
+    $("#phase-rail").innerHTML = "";
+    $("#agent-grid").innerHTML = `<div class="empty-state"><span class="empty-number">!</span><div><h3>Agent lanes unavailable</h3><p>${escapeHtml(error.message)}</p></div></div>`;
+    $("#event-feed").innerHTML = `<div class="empty-state"><span class="empty-number">!</span><div><h3>Trace unavailable</h3><p>Return to the archive and try opening this run again.</p></div></div>`;
     showToast(error.message, "error");
   }
 }
 
 async function refreshData() {
+  const settle = async (key, request, apply, render) => {
+    try {
+      apply(await request);
+      return true;
+    } finally {
+      state.loading[key] = false;
+      render();
+    }
+  };
   const results = await Promise.allSettled([
-    getProviders(),
-    getModels(),
-    getJobs({ limit: 100 }),
-    getWorkspaces(),
-    getGithubRepos(),
+    settle("providers", getProviders(), (providers) => {
+      state.providers = providers.filter((provider) => provider.id !== "gemini");
+    }, () => {
+      renderMachineHealth();
+      renderHealthRibbon();
+      renderProviders();
+      renderRoster();
+    }),
+    settle("models", getModels(), (models) => { state.models = models; }, renderRoster),
+    settle("jobs", getJobs({ limit: 100 }), (jobs) => { state.jobs = jobs; }, () => {
+      renderActiveJob();
+      renderRecentRuns();
+      renderArchive();
+    }),
+    settle("workspaces", getWorkspaces(), (workspaces) => { state.workspaces = workspaces; }, () => {}),
+    settle("githubRepos", getGithubRepos(), (repos) => { state.githubRepos = repos; }, renderGithubRepos),
   ]);
-  if (results[0].status === "fulfilled") state.providers = results[0].value.filter((provider) => provider.id !== "gemini");
-  if (results[1].status === "fulfilled") state.models = results[1].value;
-  if (results[2].status === "fulfilled") state.jobs = results[2].value;
-  if (results[3].status === "fulfilled") state.workspaces = results[3].value;
-  if (results[4].status === "fulfilled") state.githubRepos = results[4].value;
-  renderMachineHealth();
-  renderHealthRibbon();
-  renderProviders();
-  renderActiveJob();
-  renderRecentRuns();
-  renderArchive();
-  renderGithubRepos();
-  renderRoster();
   const failures = results.filter((result) => result.status === "rejected");
   if (failures.length && failures.length < results.length) {
     showToast("Some local data is still loading. Available controls remain active.");
@@ -1490,8 +1779,7 @@ function bindEvents() {
     }
     const probeButton = event.target.closest("[data-probe-provider]");
     if (probeButton) {
-      probeButton.disabled = true;
-      probeButton.textContent = "Checking…";
+      setButtonLoading(probeButton, true, "Checking…", "Check again");
       try {
         const provider = await probeProvider(probeButton.dataset.probeProvider);
         const index = state.providers.findIndex((item) => item.id === provider.id);
@@ -1503,28 +1791,26 @@ function bindEvents() {
         showToast(`${provider.name} check finished.`);
       } catch (error) {
         showToast(error.message, "error");
+        setButtonLoading(probeButton, false, "Checking…", "Check again");
       }
       return;
     }
     const cancelButton = event.target.closest("[data-cancel-run]");
     if (cancelButton) {
       if (!window.confirm("Cancel this run and stop its active child processes?")) return;
-      cancelButton.disabled = true;
-      cancelButton.textContent = "Cancelling…";
+      setButtonLoading(cancelButton, true, "Cancelling…", "Cancel run");
       try {
         await cancelJob(cancelButton.dataset.cancelRun);
         showToast("Cancellation requested.");
       } catch (error) {
         showToast(error.message, "error");
-        cancelButton.disabled = false;
-        cancelButton.textContent = "Cancel run";
+        setButtonLoading(cancelButton, false, "Cancelling…", "Cancel run");
       }
       return;
     }
     const retryButton = event.target.closest("[data-redispatch-run]");
     if (retryButton) {
-      retryButton.disabled = true;
-      retryButton.textContent = "Queuing…";
+      setButtonLoading(retryButton, true, "Queuing…", "Redispatch failures");
       try {
         const recovery = state.detailJob?.recovery;
         const recentPhase = [...state.events].reverse().find((item) => ["layer1", "layer2"].includes(item.phase))?.phase;
@@ -1544,8 +1830,7 @@ function bindEvents() {
       } catch (error) {
         showToast(error.message, "error");
       } finally {
-        retryButton.disabled = false;
-        retryButton.textContent = "Redispatch failures";
+        setButtonLoading(retryButton, false, "Queuing…", "Redispatch failures");
       }
     }
   });
@@ -1589,10 +1874,15 @@ function bindEvents() {
   $$("#launch-form [data-prev-step]").forEach((button) => button.addEventListener("click", () => setStep(state.step - 1)));
   $$(".step-item").forEach((button) => button.addEventListener("click", () => {
     const target = Number(button.dataset.stepTarget);
-    if (target < state.step || validateStep(state.step)) setStep(target);
+    if (target < state.step || Array.from({ length: target - 1 }, (_, index) => index + 1).every(validateStep)) setStep(target);
   }));
-  $$("[data-model-search]").forEach((input) => input.addEventListener("input", () => {
-    filterModelOptions(input.dataset.modelSearch, input.value);
+  $$("[data-roster-step]").forEach((button) => button.addEventListener("click", () => {
+    const target = Number(button.dataset.rosterStep);
+    if (target < state.step || Array.from({ length: target - 1 }, (_, index) => index + 1).every(validateStep)) setStep(target);
+  }));
+  $$("[data-optimized-loadout]").forEach((button) => button.addEventListener("click", () => {
+    applyOptimizedRole(button.dataset.optimizedLoadout);
+    if (validateStep(state.step)) setStep(state.step + 1);
   }));
   $("#depth-range").addEventListener("input", (event) => {
     applyDepthPreset(DEPTH_KEYS[Number(event.target.value)] || "balanced", false);
@@ -1621,14 +1911,24 @@ function bindEvents() {
     $("#goal-count").textContent = $("#run-goal").value.length;
     localStorage.setItem("moax.runDraft", $("#run-goal").value);
   });
+  $("#prompt-coach-button").addEventListener("click", openPromptCoach);
+  $("#prompt-coach-close").addEventListener("click", () => $("#prompt-coach-dialog").close());
+  $("#prompt-undo-button").addEventListener("click", () => {
+    if (!state.promptCoach.undo) return;
+    $("#run-goal").value = state.promptCoach.undo;
+    $("#goal-count").textContent = $("#run-goal").value.length;
+    localStorage.setItem("moax.runDraft", $("#run-goal").value);
+    state.promptCoach.undo = "";
+    $("#prompt-undo-button").hidden = true;
+    showToast("Prompt change undone.");
+  });
   $("#run-search").addEventListener("input", renderArchive);
   $("#run-status-filter").addEventListener("change", renderArchive);
   $("#import-history-button").addEventListener("click", async () => {
     const button = $("#import-history-button");
     const workspace = state.workspaces[0]?.path;
     if (!workspace) return showToast("No local workspace is available to scan.", "error");
-    button.disabled = true;
-    button.textContent = "Scanning .moa…";
+    setButtonLoading(button, true, "Scanning .moa…", "Import .moa history");
     try {
       const result = await importHistory(workspace);
       state.jobs = await getJobs({ limit: 100 });
@@ -1638,14 +1938,12 @@ function bindEvents() {
     } catch (error) {
       showToast(error.message, "error");
     } finally {
-      button.disabled = false;
-      button.textContent = "Import .moa history";
+      setButtonLoading(button, false, "Scanning .moa…", "Import .moa history");
     }
   });
   $("#probe-all-button").addEventListener("click", async () => {
     const button = $("#probe-all-button");
-    button.disabled = true;
-    button.textContent = "Checking machine…";
+    setButtonLoading(button, true, "Checking machine…", "Recheck all");
     try {
       state.providers = (await probeAllProviders()).filter((provider) => provider.id !== "gemini");
       renderProviders();
@@ -1656,8 +1954,7 @@ function bindEvents() {
     } catch (error) {
       showToast(error.message, "error");
     } finally {
-      button.disabled = false;
-      button.textContent = "Recheck all";
+      setButtonLoading(button, false, "Checking machine…", "Recheck all");
     }
   });
   $$("[data-open-panel='settings']").forEach((button) => button.addEventListener("click", () => {
@@ -1702,6 +1999,7 @@ async function init() {
   $("#goal-count").textContent = $("#run-goal").value.length;
   const current = routeFromPath();
   await navigate(current.route, current.id, false);
+  const dataRefresh = refreshData();
   try {
     const saved = await getProfile(state.profile.id);
     if (saved) {
@@ -1715,7 +2013,7 @@ async function init() {
   } catch {
     saveProfile(state.profile).catch(() => {});
   }
-  await refreshData();
+  await dataRefresh;
   window.setInterval(async () => {
     if (document.hidden || state.route === "run-detail") return;
     try {

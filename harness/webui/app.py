@@ -35,6 +35,8 @@ from .github import (
     parse_repo_pointer,
 )
 from .providers import ROUTE_META, model_catalog, probe_provider, provider_catalog
+from .prompt_coach import PromptCoachError, analyze as analyze_prompt
+from .prompt_coach import finalize as finalize_prompt
 from .store import Store
 from .worker import JobWorker
 
@@ -707,6 +709,40 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     def providers():
         refresh = request.args.get("refresh", "1") != "0"
         return jsonify({"providers": provider_catalog(probe=refresh)})
+
+    @app.post("/api/prompt-helper/analyze")
+    def prompt_helper_analyze():
+        body = request.get_json(silent=True) or {}
+        try:
+            return jsonify(
+                analyze_prompt(
+                    body.get("brief"),
+                    context_mode=body.get("context_mode"),
+                    attachment_count=body.get("attachment_count"),
+                )
+            )
+        except ValueError as exc:
+            return _error(str(exc))
+        except PromptCoachError as exc:
+            return _error(str(exc), 503)
+
+    @app.post("/api/prompt-helper/finalize")
+    def prompt_helper_finalize():
+        body = request.get_json(silent=True) or {}
+        try:
+            return jsonify(
+                finalize_prompt(
+                    body.get("brief"),
+                    questions=body.get("questions"),
+                    answers=body.get("answers"),
+                    context_mode=body.get("context_mode"),
+                    attachment_count=body.get("attachment_count"),
+                )
+            )
+        except ValueError as exc:
+            return _error(str(exc))
+        except PromptCoachError as exc:
+            return _error(str(exc), 503)
 
     @app.post("/api/providers/<provider_id>/probe")
     def provider_probe(provider_id: str):
