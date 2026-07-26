@@ -155,7 +155,7 @@ INVALID_PROPOSER_PAYLOAD_MISSING_EVIDENCE_KEY = {
 SAMPLE_CODEX_STDOUT = (
     "OpenAI Codex v0.118.0 (research preview)\n"
     "--------\n"
-    "workdir: /home/kyle/repo\n"
+    "workdir: /home/example/repo\n"
     "model: gpt-5.4\n"
     "approval: never\n"
     "sandbox: read-only\n"
@@ -544,9 +544,29 @@ def test_claude_extractor_fallback_to_fenced_result() -> bool:
 def test_claude_schema_copy_omits_dialect_metadata() -> bool:
     print("\n[N] Claude CLI schema copy omits unsupported $schema metadata")
     schema_path = SCRIPT_DIR / "schemas" / "proposer.schema.json"
-    cli_schema = json.loads(claude_adapter._schema_json_for_cli(schema_path))
-    ok = "$schema" not in cli_schema and "agent_id" in cli_schema.get("required", [])
-    return _ok(ok, f"keys={list(cli_schema)[:6]}")
+    schema_json = claude_adapter._schema_json_for_cli(schema_path)
+    cli_schema = json.loads(schema_json)
+    cmd = claude_adapter._build_cmd(
+        "claude",
+        model="claude-sonnet-5",
+        schema_json=schema_json,
+        system_prompt_suffix="read only",
+        reasoning_effort="high",
+    )
+    ok = (
+        "$schema" not in cli_schema
+        and "agent_id" in cli_schema.get("required", [])
+        and "--safe-mode" in cmd
+        and cmd[cmd.index("--tools") + 1] == claude_adapter.SONNET_READONLY_TOOLS
+        and cmd[cmd.index("--effort") + 1] == "high"
+    )
+    return _ok(
+        ok,
+        (
+            f"keys={list(cli_schema)[:6]}, "
+            f"isolation={claude_adapter.CLAUDE_ISOLATION_FLAG}, tools=read-only"
+        ),
+    )
 
 
 def test_cursor_extractor_finds_payload_in_bare_result() -> bool:
@@ -578,6 +598,22 @@ def test_cursor_diagnose_failure_flags_transient_empty() -> bool:
     )
     return _ok(transient is True and "transient" in msg.lower(),
                f"transient={transient}, msg={msg!r}")
+
+
+def test_cursor_diagnose_progress_only_is_transient() -> bool:
+    print("\n[N] cursor progress-only success envelopes receive one bounded retry")
+    from adapters import cursor as cursor_adapter
+    envelope = json.dumps({
+        "type": "result",
+        "subtype": "success",
+        "is_error": False,
+        "result": "Researching the requested architecture before drafting.",
+    })
+    msg, transient = cursor_adapter._diagnose_failure(envelope, "")
+    return _ok(
+        transient is True and "incomplete" in msg.lower(),
+        f"transient={transient}, msg={msg!r}",
+    )
 
 
 def test_cursor_diagnose_failure_quota_is_not_transient() -> bool:
@@ -1036,7 +1072,7 @@ def test_install_deps_qwen_requires_dedicated_key() -> bool:
         failures: list[str] = []
         _install_deps._check_provider_credentials(loaded, failures)
         missing_fails = failures == ["Qwen Token Plan credential"]
-        _os.environ["QWEN_TOKEN_PLAN_API_KEY"] = "sk-sp-test-only"
+        _os.environ["QWEN_TOKEN_PLAN_API_KEY"] = "sk-sp-test-only"  # pragma: allowlist secret
         failures = []
         _install_deps._check_provider_credentials(loaded, failures)
         present_passes = not failures
@@ -1082,10 +1118,15 @@ def test_config_resolve_builtin_codex() -> bool:
     return _ok(ok, f"got {rp}")
 
 def test_config_resolve_builtin_sonnet_uses_claude_harness() -> bool:
-    print("\n[17] config.resolve_provider: sonnet name maps to claude harness")
+    print("\n[17] config.resolve_provider: sonnet pins Claude Sonnet 5")
     from config import resolve_provider
     rp = resolve_provider("sonnet", user_providers={})
-    ok = (rp.name == "sonnet" and rp.harness == "claude" and rp.model == "sonnet")
+    ok = (
+        rp.name == "sonnet"
+        and rp.harness == "claude"
+        and rp.model == "claude-sonnet-5"
+        and rp.effort == "high"
+    )
     return _ok(ok, f"got {rp}")
 
 def test_config_resolve_unknown_name_raises() -> bool:
@@ -1139,6 +1180,34 @@ def test_config_resolve_env_timeout_malformed_raises() -> bool:
         except ValueError as e:
             return _ok("integer" in str(e), f"got {e}")
         return _ok(False, "expected ValueError")
+    finally:
+        if prior is None:
+            _os.environ.pop(key, None)
+        else:
+            _os.environ[key] = prior
+
+
+def test_config_resolve_provider_effort_precedence() -> bool:
+    print("\n[18dd] config.resolve_provider carries YAML effort and honors env override")
+    import os as _os
+    from config import resolve_provider
+    key = "MOA_CLAUDE_DEEP_EFFORT"
+    prior = _os.environ.get(key)
+    user = {
+        "claude-deep": {
+            "harness": "claude",
+            "model": "claude-opus-5",
+            "effort": "medium",
+        }
+    }
+    try:
+        yaml_value = resolve_provider("claude-deep", user_providers=user)
+        _os.environ[key] = "max"
+        env_value = resolve_provider("claude-deep", user_providers=user)
+        return _ok(
+            yaml_value.effort == "medium" and env_value.effort == "max",
+            f"yaml={yaml_value.effort} env={env_value.effort}",
+        )
     finally:
         if prior is None:
             _os.environ.pop(key, None)
@@ -1326,6 +1395,18 @@ def test_opencode_diagnose_not_found_is_not_transient() -> bool:
     return _ok(transient is False and "routing" in msg.lower(), f"transient={transient}, msg={msg!r}")
 
 
+def test_opencode_tool_404_does_not_mask_model_output() -> bool:
+    print("\n[N] opencode non-empty malformed output outranks tool-level 404 noise")
+    from adapters import opencode as opencode_adapter
+    msg, transient = opencode_adapter._diagnose_failure(
+        '{"agent_id":"glm","plan":[', "WebFetch Transport error: 404"
+    )
+    return _ok(
+        transient is True and "unparseable" in msg.lower(),
+        f"transient={transient}, msg={msg!r}",
+    )
+
+
 def test_opencode_result_carries_transient_empty_field() -> bool:
     print("\n[N] OpenCodeResult dataclass exposes transient_empty (default False)")
     from adapters import opencode as opencode_adapter
@@ -1345,6 +1426,56 @@ def test_opencode_check_available_returns_tuple() -> bool:
     return _ok(ok, f"got {result}")
 
 
+def test_opencode_model_readiness_is_route_specific() -> bool:
+    print("\n[N] opencode model readiness distinguishes persisted accounts from env-key routes")
+    import os
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    from adapters import opencode as oc
+
+    auth = SimpleNamespace(
+        returncode=0,
+        stdout="Credentials\nOpenCode Go api\n",
+        stderr="",
+    )
+    with (
+        patch.object(oc.shutil, "which", return_value="/usr/bin/opencode"),
+        patch.object(oc.subprocess, "run", return_value=auth),
+        patch.dict(os.environ, {"QWEN_TOKEN_PLAN_API_KEY": ""}, clear=False),
+    ):
+        result = oc.check_models_available(
+            ["opencode-go/glm-5.2", "qwen-token-plan/qwen3.8-max-preview"]
+        )
+    ok = (
+        result["opencode-go/glm-5.2"][0] is True
+        and result["qwen-token-plan/qwen3.8-max-preview"][0] is False
+    )
+    return _ok(ok, f"got {result}")
+
+
+def test_opencode_model_readiness_accepts_qwen_token_plan_key() -> bool:
+    print("\n[N] opencode model readiness recognizes Qwen Token Plan env auth")
+    import os
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    from adapters import opencode as oc
+
+    auth = SimpleNamespace(returncode=0, stdout="0 credentials", stderr="")
+    with (
+        patch.object(oc.shutil, "which", return_value="/usr/bin/opencode"),
+        patch.object(oc.subprocess, "run", return_value=auth),
+        patch.dict(
+            os.environ,
+            {"QWEN_TOKEN_PLAN_API_KEY": "test-only"},  # pragma: allowlist secret
+            clear=False,
+        ),
+    ):
+        result = oc.check_model_available(
+            "qwen-token-plan/qwen3.8-max-preview"
+        )
+    return _ok(result[0] is True, f"got {result}")
+
+
 def test_config_resolve_builtin_glm_uses_opencode() -> bool:
     print("\n[N] config.resolve_provider: glm maps to opencode harness / opencode-go model")
     from config import resolve_provider
@@ -1357,7 +1488,11 @@ def test_config_resolve_builtin_kimi_uses_opencode() -> bool:
     print("\n[N] config.resolve_provider: kimi maps to opencode harness / opencode-go model")
     from config import resolve_provider
     rp = resolve_provider("kimi", user_providers={})
-    ok = (rp.name == "kimi" and rp.harness == "opencode" and rp.model == "opencode-go/kimi-k2.7-code")
+    ok = (
+        rp.name == "kimi"
+        and rp.harness == "opencode"
+        and rp.model == "opencode-go/kimi-k3"
+    )
     return _ok(ok, f"got {rp}")
 
 
@@ -1370,10 +1505,14 @@ def test_config_resolve_builtin_composer_uses_cursor() -> bool:
 
 
 def test_config_resolve_builtin_grok_uses_opencode() -> bool:
-    print("\n[N] config.resolve_provider: grok maps to opencode harness / xai/grok-4.5")
+    print("\n[N] config.resolve_provider: grok maps to authenticated OpenCode Go route")
     from config import resolve_provider
     rp = resolve_provider("grok", user_providers={})
-    ok = (rp.name == "grok" and rp.harness == "opencode" and rp.model == "xai/grok-4.5")
+    ok = (
+        rp.name == "grok"
+        and rp.harness == "opencode"
+        and rp.model == "opencode-go/grok-4.5"
+    )
     return _ok(ok, f"got {rp}")
 
 
@@ -1469,18 +1608,151 @@ def test_config_resolve_builtin_qwen_uses_token_plan() -> bool:
 
 
 def test_provider_catalog_includes_optional_builtins() -> bool:
-    print("\n[N] CLI provider catalog includes the default qwen and codex-reviewer providers")
+    print("\n[N] CLI catalog includes curated Codex routes and legacy aliases")
     from config import load_provider_catalog
     catalog = load_provider_catalog(config_path=Path("/nonexistent"))
     ok = (
         catalog.get("qwen") is not None
         and catalog["qwen"].model == "qwen-token-plan/qwen3.8-max-preview"
+        and catalog["codex-sol"].model == "gpt-5.6-sol"
+        and catalog["codex-sol"].effort == "high"
+        and catalog["codex-luna"].model == "gpt-5.6-luna"
+        and catalog["codex-luna"].effort == "medium"
+        and catalog["deepseek"].model == "opencode-go/deepseek-v4-pro"
+        and catalog["deepseek-flash"].model == "opencode-go/deepseek-v4-flash"
         and catalog.get("codex-reviewer") is not None
         and catalog["codex-reviewer"].model == "gpt-5.6-sol"
+        and catalog.get("codex-aggregator") is not None
         and catalog.get("opus") is not None
-        and catalog["opus"].model == "opus"
+        and catalog["opus"].model == "claude-opus-5"
     )
     return _ok(ok, f"names={sorted(catalog)}")
+
+
+def test_dispatch_propagates_native_provider_effort() -> bool:
+    print("\n[N] orchestrator propagates provider effort to Claude/OpenCode/AGY")
+    from unittest import mock
+
+    cases = [
+        ("claude", "_run_sonnet", "claude-sonnet-5", "max"),
+        ("opencode", "_run_opencode", "opencode-go/glm-5.2", "high"),
+        ("agy", "_run_agy", "gemini-3.6-flash-medium", "low"),
+    ]
+    observed = {}
+
+    def fake_run(**kwargs):
+        observed[kwargs["agent_id"]] = kwargs.get("reasoning_effort")
+        return run_moa.LayerResult(
+            agent_id=kwargs["agent_id"], layer=1, role="proposer", success=True
+        )
+
+    for harness, target, model, effort in cases:
+        provider = run_moa.harness_config.ResolvedProvider(
+            name=f"{harness}-fixture",
+            harness=harness,
+            model=model,
+            effort=effort,
+        )
+        with (
+            mock.patch.object(run_moa, "_workspace_snapshot", return_value=None),
+            mock.patch.object(run_moa, target, side_effect=fake_run),
+        ):
+            run_moa._dispatch_provider(
+                provider=provider,
+                layer=1,
+                role="proposer",
+                prompt="fixture",
+                repo_path=Path("."),
+                session_dir=Path(".moa/fixture"),
+                timeout_for_harness={harness: 30},
+                codex_effort="high",
+            )
+    ok = all(observed[f"{h}-fixture"] == effort for h, _, _, effort in cases)
+    return _ok(ok, f"observed={observed}")
+
+
+def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
+    print("\n[N] Web UI model catalog is provider-grouped with current curated routes")
+    repo_root = SCRIPT_DIR.parent.parent
+    repo_provider = repo_root / "harness" / "webui" / "providers.py"
+    if repo_provider.exists():
+        if str(repo_root) not in sys.path:
+            sys.path.insert(0, str(repo_root))
+        from harness.webui import providers as web_providers
+    else:
+        # Installed skills have webui/ beside scripts/ rather than inside a
+        # top-level harness package. Load the module directly so this offline
+        # test does not require importing Flask through webui.__init__.
+        import importlib.util
+        installed_provider = SCRIPT_DIR.parent / "webui" / "providers.py"
+        spec = importlib.util.spec_from_file_location(
+            "moax_installed_web_providers", installed_provider
+        )
+        if spec is None or spec.loader is None:
+            return _ok(False, f"cannot load {installed_provider}")
+        web_providers = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(web_providers)
+
+    models = web_providers.model_catalog(probe=False)
+    by_id = {item["id"]: item for item in models}
+    groups = {
+        item["id"]: item for item in web_providers.provider_catalog(probe=False)
+    }
+    expected = {
+        "codex-sol": ("codex", "gpt-5.6-sol"),
+        "codex-luna": ("codex", "gpt-5.6-luna"),
+        "sonnet": ("claude", "claude-sonnet-5"),
+        "opus": ("claude", "claude-opus-5"),
+        "glm": ("opencode", "opencode-go/glm-5.2"),
+        "kimi": ("opencode", "opencode-go/kimi-k3"),
+        "qwen": ("opencode", "qwen-token-plan/qwen3.8-max-preview"),
+        "qwen-opencode": ("opencode", "opencode-go/qwen3.7-max"),
+        "deepseek": ("opencode", "opencode-go/deepseek-v4-pro"),
+        "deepseek-flash": ("opencode", "opencode-go/deepseek-v4-flash"),
+        "composer": ("cursor", "composer-2.5"),
+        "cursor-grok": ("cursor", "cursor-grok-4.5-high"),
+        "agy-gemini-flash": ("agy", "gemini-3.6-flash-medium"),
+    }
+    routes_ok = all(
+        name in by_id
+        and by_id[name]["provider_id"] == provider_id
+        and by_id[name]["model"] == model
+        for name, (provider_id, model) in expected.items()
+    )
+    effort_ok = (
+        by_id["sonnet"]["effort"] == "high"
+        and by_id["sonnet"]["effort_options"]
+        == ["low", "medium", "high", "xhigh", "max"]
+        and by_id["codex"]["supports_effort"]
+        and by_id["agy-gemini-flash"]["effort_options"]
+        == ["low", "medium", "high"]
+    )
+    grouped_ok = (
+        groups["claude"]["lab"] == "Anthropic"
+        and any(route["id"] == "sonnet" for route in groups["claude"]["routes"])
+        and any(route["id"] == "qwen-opencode" for route in groups["opencode"]["routes"])
+        and [route["id"] for route in groups["opencode"]["routes"] if route["id"].startswith("deepseek")]
+        == ["deepseek", "deepseek-flash"]
+        and {route["id"] for route in groups["cursor"]["routes"]}
+        == {"composer", "cursor-grok"}
+    )
+    role_ok = (
+        {item["id"] for item in models if "aggregator" in item["roles"]}
+        == {"codex-sol", "opus"}
+        and by_id["opus"]["roles"] == ["proposer", "refiner", "aggregator"]
+        and by_id["deepseek"]["roles"] == ["proposer", "refiner"]
+        and by_id["deepseek-flash"]["roles"] == ["proposer", "refiner"]
+    )
+    hidden_ok = (
+        {"codex-reviewer", "codex-aggregator", "agy-gemini-high", "gemini-cli-pro",
+         "cursor-sol", "cursor-gemini"}.isdisjoint(by_id)
+        and "gemini" not in groups
+    )
+    return _ok(
+        routes_ok and effort_ok and grouped_ok and role_ok and hidden_ok,
+        f"routes={len(models)} grouped={grouped_ok} effort={effort_ok} "
+        f"roles={role_ok} hidden={hidden_ok}",
+    )
 
 
 def test_finalize_moves_misplaced_refiner_verification() -> bool:
@@ -1511,15 +1783,85 @@ def test_finalize_moves_misplaced_refiner_verification() -> bool:
     return _ok(ok, f"success={result.success} schema_valid={result.schema_valid}")
 
 
-def test_gemini_provider_raises_migration_hint() -> bool:
-    print("\n[N] config.resolve_provider('gemini') raises with the v0.3.0 migration hint")
+def test_google_provider_builtins_are_opt_in_and_resolve() -> bool:
+    print("\n[N] config: AGY builtins resolve without changing default roster")
+    import config as harness_config
     from config import resolve_provider
+    agy = resolve_provider("agy-gemini-high", user_providers={})
+    defaults = harness_config.load_resolved_config(config_path=Path("/nonexistent"))
+    default_names = {p.name for p in defaults.proposers + defaults.refiners}
     try:
-        resolve_provider("gemini", user_providers={})
-    except ValueError as e:
-        msg = str(e)
-        return _ok("removed in v0.3.0" in msg and "cursor" in msg, f"got: {msg[:120]}")
-    return _ok(False, "expected ValueError for removed 'gemini' provider")
+        resolve_provider("gemini-cli-pro", user_providers={})
+    except ValueError:
+        gemini_removed = True
+    else:
+        gemini_removed = False
+    ok = (
+        agy.harness == "agy"
+        and agy.model == "gemini-3.6-flash-high"
+        and "agy-gemini-high" not in default_names
+        and gemini_removed
+    )
+    return _ok(
+        ok,
+        f"agy={agy}, gemini_removed={gemini_removed}, defaults={sorted(default_names)}",
+    )
+
+
+def test_agy_cmd_is_fail_closed() -> bool:
+    print("\n[N] agy command uses plan+sandbox with explicit headless read approval")
+    from adapters import agy as agy_adapter
+    cmd = agy_adapter._build_cmd(
+        "agy",
+        instruction="read prompt",
+        model="gemini-3.6-flash-high",
+        timeout_seconds=60,
+        internal_log=Path("/tmp/agy.log"),
+    )
+    ok = (
+        cmd[cmd.index("--mode") + 1] == "plan"
+        and "--sandbox" in cmd
+        and "--dangerously-skip-permissions" in cmd
+    )
+    return _ok(ok, f"cmd={cmd}")
+
+
+def test_gemini_cmd_is_fail_closed() -> bool:
+    print("\n[N] Gemini CLI command always includes plan mode, sandbox, and stream-json")
+    from adapters import gemini as gemini_adapter
+    cmd = gemini_adapter._build_cmd("gemini", "gemini-3.1-pro-preview")
+    ok = (
+        cmd[cmd.index("--approval-mode") + 1] == "plan"
+        and "--sandbox" in cmd
+        and cmd[cmd.index("--output-format") + 1] == "stream-json"
+        and "--yolo" not in cmd
+    )
+    return _ok(ok, f"cmd={cmd}")
+
+
+def test_gemini_stream_json_extracts_payload() -> bool:
+    print("\n[N] Gemini CLI stream-json parser extracts assistant JSON")
+    from adapters import gemini as gemini_adapter
+    expected = _make_valid_proposer("gemini-cli-pro")
+    output = "\n".join([
+        json.dumps({"type": "init", "session_id": "offline"}),
+        json.dumps({"type": "message", "role": "assistant",
+                    "content": json.dumps(expected), "delta": True}),
+        json.dumps({"type": "result", "status": "success"}),
+    ])
+    got = gemini_adapter._extract_payload(output)
+    return _ok(got == expected, f"agent_id={got.get('agent_id') if got else None}")
+
+
+def test_gemini_tier_ineligible_detection() -> bool:
+    print("\n[N] Gemini CLI distinguishes migrated consumer tier")
+    from adapters import gemini as gemini_adapter
+    return _ok(
+        gemini_adapter._tier_ineligible(
+            "IneligibleTierError: Your account moved to Antigravity CLI"
+        ),
+        "tier signal recognized",
+    )
 
 
 def test_config_env_provider_definition_parsed() -> bool:
@@ -1672,17 +2014,19 @@ def _write_fixture_session(tmp: Path, partial: bool = False) -> Path:
 
 
 def test_report_generates_single_self_contained_file() -> bool:
-    print("\n[N] report.py emits one file with no external src/href asset refs")
+    print("\n[N] report.py emits one illustrated file with no external asset refs")
     tmp = Path(_tempfile.mkdtemp())
     try:
         session = _write_fixture_session(tmp)
         out = report_module.generate(session, session / "report.html")
         html = out.read_text(encoding="utf-8")
         external = _re.findall(r'(?:src|href)="https?://[^"]*"', html)
-        # Three.js and the main script must be inlined, not linked.
-        inlined = "THREE" in html and "<script>" in html
+        art_count = html.count("data:image/webp;base64,")
+        # The report script and all six editorial illustrations must be
+        # embedded directly in the portable HTML artifact.
+        inlined = "<script>" in html and art_count == 6
         return _ok(not external and inlined and len(html) > 100_000,
-                   f"external_refs={external[:2]}, bytes={len(html)}")
+                   f"external_refs={external[:2]}, art={art_count}, bytes={len(html)}")
     finally:
         _shutil.rmtree(tmp, ignore_errors=True)
 
@@ -1697,6 +2041,7 @@ def test_report_embedded_json_round_trips() -> bool:
         ids = [r["agent_id"] for r in data["layer1"]] + [r["agent_id"] for r in data["layer2"]]
         ok = (set(ids) == {"codex", "glm", "cursor-grok", "kimi"}
               and data["title"].startswith("Add a widget")
+              and data["final_plan_markdown"].startswith("# Final plan")
               and data["final_plan_html"] and "<strong>this</strong>" in data["final_plan_html"]
               and data["final_plan_lineage"]["steps"][0]["id"] == "add-redis-wrapper"
               and data["lineage_warnings"] == [])
@@ -1838,6 +2183,43 @@ def test_report_markdown_code_span_shields_bold() -> bool:
     return _ok(ok, f"html={html!r}")
 
 
+def test_report_markdown_tables_and_emphasis_render() -> bool:
+    print("\n[N] final-plan Markdown tables render safely and responsively")
+    md = (
+        "## Where the proposers disagreed\n\n"
+        "| Point | Positions | Adjudication |\n"
+        "| :--- | :---: | ---: |\n"
+        "| Bottleneck | `cudaStreamSynchronize(0)` and *both* paths | Step 6 |\n"
+        r"| Escaped pipe | `a|b` and left \| right | **Keep evidence** |"
+        "\n\nOrdinary prose | remains prose.\n"
+    )
+    html = report_module.render_markdown(md)
+    ok = (
+        '<table class="dl markdown-table">' in html
+        and "<thead><tr>" in html
+        and '<th class="align-left">Point</th>' in html
+        and '<th class="align-center">Positions</th>' in html
+        and '<th class="align-right">Adjudication</th>' in html
+        and "<code>cudaStreamSynchronize(0)</code>" in html
+        and "<em>both</em>" in html
+        and "<code>a|b</code>" in html
+        and "left | right" in html
+        and "<strong>Keep evidence</strong>" in html
+        and "<p>Ordinary prose | remains prose.</p>" in html
+        and 'role="region"' in html
+    )
+    return _ok(ok, f"html={html!r}")
+
+
+def test_report_markdown_malformed_table_stays_text() -> bool:
+    print("\n[N] malformed table-like text does not become an HTML table")
+    html = report_module.render_markdown(
+        "| Header | Other |\n| -- | not-a-separator |\n| value | other |\n"
+    )
+    ok = "<table" not in html and "| Header | Other |" in html
+    return _ok(ok, f"html={html!r}")
+
+
 def test_report_markdown_nested_ordered_list_keeps_numbering() -> bool:
     print("\n[N] final-plan ordered list stays open across nested metadata bullets")
     md = (
@@ -1973,7 +2355,7 @@ def test_workspace_guard_detects_git_mutation() -> bool:
 
 
 def test_report_template_accessibility_contracts() -> bool:
-    print("\n[N] report template uses native disclosure controls and keyboard tabs")
+    print("\n[N] report template has accessible disclosures, copy status, and compact stages")
     template = report_module.TEMPLATE_PATH.read_text(encoding="utf-8")
     ok = (
         'el("button", { class: "c-head"' in template
@@ -1981,6 +2363,13 @@ def test_report_template_accessibility_contracts() -> bool:
         and 'event.key === "ArrowDown"' in template
         and ".lineage-node:focus { outline: 3px" in template
         and ".lineage-node:focus { outline: none" not in template
+        and 'text: "Copy final plan as Markdown"' in template
+        and '"aria-live": "polite"' in template
+        and "navigator.clipboard.writeText(markdown)" in template
+        and "document.execCommand" not in template
+        and "The Markdown is selected below" in template
+        and 'class: "timeline-shell"' in template
+        and "Each stage uses its own readable scale." in template
     )
     return _ok(ok)
 
@@ -2105,6 +2494,7 @@ def main() -> int:
         test_config_resolve_user_provider_yaml_timeout,
         test_config_resolve_env_timeout_override,
         test_config_resolve_env_timeout_malformed_raises,
+        test_config_resolve_provider_effort_precedence,
         test_config_builtin_timeout_is_none,
         test_config_yaml_providers_block,
         test_config_resolve_layer_mixed,
@@ -2115,6 +2505,7 @@ def main() -> int:
         test_cursor_extractor_handles_fenced_json,
         test_cursor_extractor_returns_none_on_is_error,
         test_cursor_diagnose_failure_flags_transient_empty,
+        test_cursor_diagnose_progress_only_is_transient,
         test_cursor_diagnose_failure_quota_is_not_transient,
         test_cursor_diagnose_failure_empty_stdout_is_not_transient,
         test_cursor_result_carries_transient_empty_field,
@@ -2127,8 +2518,11 @@ def main() -> int:
         test_opencode_diagnose_empty_is_transient,
         test_opencode_diagnose_quota_is_not_transient,
         test_opencode_diagnose_not_found_is_not_transient,
+        test_opencode_tool_404_does_not_mask_model_output,
         test_opencode_result_carries_transient_empty_field,
         test_opencode_check_available_returns_tuple,
+        test_opencode_model_readiness_is_route_specific,
+        test_opencode_model_readiness_accepts_qwen_token_plan_key,
         test_config_resolve_builtin_glm_uses_opencode,
         test_config_resolve_builtin_kimi_uses_opencode,
         test_config_resolve_builtin_composer_uses_cursor,
@@ -2141,8 +2535,14 @@ def main() -> int:
         test_cursor_plan_mode_unsupported_detection,
         test_config_resolve_builtin_qwen_uses_token_plan,
         test_provider_catalog_includes_optional_builtins,
+        test_dispatch_propagates_native_provider_effort,
+        test_webui_model_catalog_is_provider_grouped_and_current,
         test_finalize_moves_misplaced_refiner_verification,
-        test_gemini_provider_raises_migration_hint,
+        test_google_provider_builtins_are_opt_in_and_resolve,
+        test_agy_cmd_is_fail_closed,
+        test_gemini_cmd_is_fail_closed,
+        test_gemini_stream_json_extracts_payload,
+        test_gemini_tier_ineligible_detection,
         test_config_env_provider_definition_parsed,
         test_config_env_provider_malformed_raises,
         test_refiner_schema_accepts_five_proposer_roster,
@@ -2161,6 +2561,8 @@ def main() -> int:
         test_report_missing_manifest_exits_2,
         test_report_markdown_subset_renders,
         test_report_markdown_code_span_shields_bold,
+        test_report_markdown_tables_and_emphasis_render,
+        test_report_markdown_malformed_table_stays_text,
         test_report_markdown_nested_ordered_list_keeps_numbering,
         test_boolean_env_flags_parse_explicit_values,
         test_schema_validator_pattern_and_upper_bounds,

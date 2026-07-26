@@ -26,13 +26,14 @@ opencode auth login    # interactive login
 # or export a provider key (no login needed):
 #   export ZHIPU_API_KEY=...       # GLM
 #   export MOONSHOT_API_KEY=...    # Kimi
-#   export FIREWORKS_API_KEY=...   # GLM / Kimi via Fireworks
+#   export FIREWORKS_API_KEY=...   # alternate GLM route via Fireworks
 #   export QWEN_TOKEN_PLAN_API_KEY=sk-sp-...  # default Qwen refiner
 ```
 
 The default roster is `codex` (`gpt-5.6-terra` proposer and
-`gpt-5.6-sol` high reviewer), `sonnet`/`opus` rolling aliases via Claude
-Code, `glm` (`opencode-go/glm-5.2`), and Qwen through `opencode` — four labs:
+`gpt-5.6-sol` high reviewer), pinned `claude-sonnet-5`/`claude-opus-5`
+routes via Claude Code, `glm` (`opencode-go/glm-5.2`), and Qwen through
+`opencode` — four labs:
 OpenAI, Anthropic, Zhipu, and Alibaba.
 
 The built-in `qwen` refiner uses the Qwen Cloud Token Plan endpoint and
@@ -69,6 +70,41 @@ Then add a `providers:` block to `harness/config.yaml`. See
 `harness/config.example.yaml` for examples. The built-in `composer`
 provider (harness `cursor`, model `composer-2.5`) is available once
 the CLI is installed.
+
+### Optional: AGY
+
+Google providers reuse existing local AGY authentication; MoA-X never prompts
+for a key. Install AGY 1.1.5+, sign in interactively once, and verify
+`agy models`. Select `agy-gemini-flash` explicitly; the default roster does
+not require AGY, and live probes determine availability. Gemini 3.1 Pro is
+not exposed because the current AGY route resolves it to Flash.
+
+### Optional: Local Web UI and GitHub picker
+
+```bash
+# From a clean clone of this repository:
+python3 -m venv .venv
+.venv/bin/pip install -r requirements-web.txt
+# Optional but recommended for PNG/JPEG/WebP/TIFF/BMP attachment OCR:
+sudo apt install tesseract-ocr       # Ubuntu/Debian
+# brew install tesseract             # macOS
+MOA_WEBUI_GITHUB_OWNER=your-github-user-or-org \
+  .venv/bin/python -m harness.webui
+```
+
+The Web UI uses the same authenticated CLI state as the launching OS user. If
+you want its repository picker, install and authenticate GitHub CLI:
+
+```bash
+gh auth status
+```
+
+`MOA_WEBUI_GITHUB_OWNER` is a single-user-or-organization allowlist, not a
+cosmetic filter. It defaults to `drivelineresearch` for this upstream project;
+forks and independent installs should set it explicitly. The server binds to
+`127.0.0.1:7340` by default. See [`webui.md`](webui.md) for clean-clone
+verification, XDG storage, uploads, profiles, bind controls, and the
+trusted-network warning.
 
 ## 2. Verify
 
@@ -119,7 +155,7 @@ retained session's Codex-backed Layer 3:
 python3 harness/scripts/run_moa.py \
   --scout-brief path/to/your-scout-brief.json \
   --phase layer3 \
-  --aggregator-provider codex-aggregator \
+  --aggregator-provider codex-sol \
   --aggregator-effort high
 ```
 

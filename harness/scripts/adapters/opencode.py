@@ -4,8 +4,8 @@ Invokes `opencode run` headlessly. OpenCode is the harness we route
 Chinese-lab frontier models through — GLM (Zhipu), Kimi (Moonshot), and
 Qwen (Alibaba Cloud Token Plan) — plus Fireworks-hosted variants. Model ids
 are `provider/model` strings, e.g.
-`opencode-go/glm-5.2`, `opencode-go/kimi-k2.7-code` (the defaults), the
-direct-provider `zhipuai/glm-5.2` / `moonshotai/kimi-k2.7-code`, or
+`opencode-go/glm-5.2`, `opencode-go/kimi-k3`,
+`opencode-go/qwen3.7-max`, direct-provider routes, or
 `fireworks-ai/accounts/fireworks/models/glm-5p2`, or
 `qwen-token-plan/qwen3.8-max-preview`.
 
@@ -46,7 +46,7 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Iterable, Optional
 
 from adapters import READ_ONLY_RULE, extract_json_from_text, kill_proc_tree
 
@@ -180,6 +180,65 @@ def check_available() -> tuple[bool, str]:
     )
 
 
+def check_models_available(models: Iterable[str]) -> dict[str, tuple[bool, str]]:
+    """Report readiness for each configured OpenCode model route.
+
+    OpenCode can hold credentials for several unrelated providers. A generic
+    ``auth list`` success therefore cannot prove that a specific model route is
+    usable. Keep the Web UI honest by matching the route prefix to either its
+    persisted provider account or the corresponding environment credential.
+    """
+    requested = list(dict.fromkeys(models))
+    bin_name = _opencode_bin()
+    if not shutil.which(bin_name):
+        detail = f"opencode CLI not found ({bin_name!r} not on PATH)"
+        return {model: (False, detail) for model in requested}
+
+    try:
+        proc = subprocess.run(
+            [bin_name, "auth", "list"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        listed = ((proc.stdout or "") + "\n" + (proc.stderr or "")).lower()
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
+        listed = ""
+        probe_error = f"opencode auth probe failed: {exc}"
+    else:
+        probe_error = ""
+
+    def ready(model: str) -> tuple[bool, str]:
+        provider = model.split("/", 1)[0].lower()
+        if provider == "opencode-go":
+            ok = "opencode go" in listed or bool(os.environ.get("OPENCODE_API_KEY"))
+            return ok, "OpenCode Go account ready" if ok else "OpenCode Go login required"
+        if provider == _QWEN_TOKEN_PLAN_PROVIDER_ID:
+            ok = bool(os.environ.get("QWEN_TOKEN_PLAN_API_KEY"))
+            return ok, "Qwen Token Plan key ready" if ok else "QWEN_TOKEN_PLAN_API_KEY required"
+        if provider == "fireworks-ai":
+            ok = "fireworks ai" in listed or bool(os.environ.get("FIREWORKS_API_KEY"))
+            return ok, "Fireworks account ready" if ok else "Fireworks login or key required"
+        if provider == "xai":
+            ok = bool(os.environ.get("XAI_API_KEY"))
+            return ok, "xAI key ready" if ok else "XAI_API_KEY required"
+
+        env_name = f"{provider.upper().replace('-', '_')}_API_KEY"
+        ok = bool(os.environ.get(env_name))
+        if ok:
+            return True, f"{env_name} ready"
+        if probe_error:
+            return False, probe_error
+        return False, f"no credential detected for OpenCode provider {provider!r}"
+
+    return {model: ready(model) for model in requested}
+
+
+def check_model_available(model: str) -> tuple[bool, str]:
+    """Convenience wrapper for callers checking one OpenCode route."""
+    return check_models_available([model])[model]
+
+
 def _write_log_file(log_file: Optional[Path], stdout: str, stderr: str) -> None:
     """Write the adapter's captured output to disk, swallowing IO errors.
 
@@ -207,6 +266,7 @@ def run(
     schema_path: Optional[Path] = None,
     timeout_seconds: int = 1200,
     log_file: Optional[Path] = None,
+    reasoning_effort: Optional[str] = None,
 ) -> OpenCodeResult:
     """Invoke `opencode run` with the given prompt.
 
@@ -279,8 +339,10 @@ def run(
             # extraction. --log-level ERROR keeps stderr quiet so failure
             # diagnosis stays accurate.
             "--print-logs", "--log-level", "ERROR",
-            "-f", str(prompt_file),
         ]
+        if reasoning_effort:
+            cmd.extend(["--variant", reasoning_effort])
+        cmd.extend(["-f", str(prompt_file)])
 
         try:
             proc = subprocess.Popen(
@@ -374,9 +436,11 @@ def run(
 def _diagnose_failure(stdout: str, stderr: str) -> tuple[str, bool]:
     """Diagnose why the run yielded no payload. Returns (message, transient_empty).
 
-    transient_empty=True only when stdout is empty / has no parseable JSON and
-    stderr shows no quota or auth signal — the recoverable empty-output flake.
-    Quota and auth failures are non-transient (a retry won't help).
+    transient_empty=True when stdout is empty or contains an incomplete /
+    malformed model response and stderr shows no quota or auth signal. Tool
+    calls can emit 404/transport noise on stderr even when the model route
+    itself worked, so a non-empty model response takes precedence over the
+    routing classifier. Quota and auth failures remain non-transient.
     """
     stderr_lower = (stderr or "").lower()
     quota_hit = any(
@@ -397,10 +461,13 @@ def _diagnose_failure(stdout: str, stderr: str) -> tuple[str, bool]:
     if auth_hit:
         return ("opencode authentication error (see stderr). Run `opencode auth "
                 "login` or export the provider's API key."), False
+    if stdout and stdout.strip():
+        return (
+            "opencode produced non-empty but unparseable/incomplete JSON under "
+            "a clean auth state. Likely transient — one re-dispatch may recover."
+        ), True
     if routing_hit:
         return ("opencode provider/model routing error (see stderr). Check the "
                 "custom provider base URL, transport, and model id."), False
-    if not stdout or not stdout.strip():
-        return ("opencode produced empty stdout under a clean exit (no quota/auth "
-                "signal). Likely transient — re-dispatch typically recovers."), True
-    return "could not extract a JSON payload from opencode output", False
+    return ("opencode produced empty stdout under a clean exit (no quota/auth "
+            "signal). Likely transient — one re-dispatch may recover."), True

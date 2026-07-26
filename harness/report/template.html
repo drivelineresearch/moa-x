@@ -9,9 +9,8 @@
    MoA-X run report — white surface (Driveline design language).
    Pure white canvas, 8px Mine Shaft top bar, goldenrod sole accent,
    ZERO box-shadows, hand-crafted SVG charts. No external requests.
-   Font strategy: Gotham/Lato are proprietary and cannot be inlined without a
-   license, so this self-contained artifact uses a heavy system stack for the
-   "Gotham" headline role (uppercase, bold) and a clean system sans for body.
+   Font strategy: use a portable system stack so this self-contained report
+   redistributes no font binaries and makes no external font requests.
 --------------------------------------------------------------------------- */
 :root {
   --gold: #FFA300;
@@ -34,9 +33,11 @@
 }
 *, *::before, *::after { box-sizing: border-box; }
 svg, svg * { filter: none; }
-html { scroll-behavior: smooth; }
+html { scroll-behavior: smooth; max-width: 100%; overflow-x: hidden; }
 body {
   margin: 0;
+  max-width: 100%;
+  overflow-x: hidden;
   background: var(--white);
   color: var(--ink);
   font-family: var(--font-body);
@@ -44,12 +45,12 @@ body {
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
 }
-a { color: var(--burnt); text-decoration: none; border-bottom: 1px solid var(--track); }
+a { color: var(--burnt); text-decoration: none; border-bottom: 1px solid var(--track); overflow-wrap: anywhere; }
 a:hover { color: var(--gold); border-color: var(--gold); }
 
 .topbar { height: 8px; background: var(--ink); width: 100%; position: sticky; top: 0; z-index: 60; }
 
-.wrap { max-width: 1180px; margin: 0 auto; padding: 0 28px; }
+.wrap { width: 100%; max-width: 1180px; min-width: 0; margin: 0 auto; padding: 0 28px; }
 
 h1, h2, h3, .head { font-family: var(--font-head); text-transform: uppercase; letter-spacing: 0.01em; font-weight: 800; }
 h2.section-title { font-size: 1.6rem; margin: 0 0 4px; }
@@ -61,20 +62,93 @@ section.block:first-of-type { border-top: none; }
 
 /* ---- Header ---- */
 header.report-head { padding: 40px 0 30px; }
-.report-head .eyebrow { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.report-head .eyebrow { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
 .brandmark { font-family: var(--font-head); font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; font-size: 1.1rem; }
 .brandmark .x { color: var(--gold); }
 .report-head h1 { font-size: 2.5rem; line-height: 1.14; margin: 0 0 18px; max-width: 26ch; letter-spacing: 0.005em; }
+.head-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 0 0 22px; }
+.final-jump {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 10px 16px;
+  border: 1px solid var(--ink);
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--white);
+  font-family: var(--font-head);
+  font-size: .76rem;
+  font-weight: 800;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+.final-jump:hover, .final-jump:focus-visible { border-color: var(--gold); background: var(--gold); color: var(--ink); }
+.final-jump:focus-visible { outline: 3px solid rgba(255,163,0,.35); outline-offset: 3px; }
+.head-actions .action-note { color: var(--secondary); font-size: .78rem; }
 .meta-row { display: flex; flex-wrap: wrap; gap: 8px 26px; align-items: center; color: var(--secondary); font-size: 0.85rem; margin-bottom: 20px; }
 .meta-row b { color: var(--ink); font-weight: 700; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
-.chip { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px; border: 1px solid var(--track); border-radius: 999px; font-size: 0.8rem; background: var(--white); }
+.chip { display: inline-flex; max-width: 100%; align-items: center; gap: 7px; padding: 5px 12px; border: 1px solid var(--track); border-radius: 999px; font-size: 0.8rem; background: var(--white); overflow-wrap: anywhere; }
 .chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--gold); }
 .chip .role { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; }
 .badge { display: inline-block; padding: 4px 11px; border-radius: 6px; font-family: var(--font-head); font-weight: 800; text-transform: uppercase; font-size: 0.68rem; letter-spacing: 0.08em; }
 .badge.ok { background: var(--gold); color: var(--white); }
 .badge.warn { background: var(--red); color: var(--white); }
 .badge.neutral { background: var(--panel); color: var(--ink); }
+.report-art { position: relative; margin: 22px 0 24px; overflow: hidden; border: 1px solid var(--track); border-radius: 12px; background: var(--panel); }
+.report-art img { width: 100%; height: 210px; display: block; object-fit: cover; object-position: center; }
+.report-art.hero-art { margin-top: 22px; }
+.report-art.hero-art img { height: clamp(240px, 31vw, 350px); object-position: center 44%; }
+.report-art.scout-art img { object-position: center 48%; }
+.report-art figcaption {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  max-width: min(78%, 560px);
+  padding: 8px 11px;
+  color: var(--white);
+  background: rgba(38, 38, 38, .88);
+  border-left: 3px solid var(--gold);
+  border-radius: 4px;
+  font-size: .72rem;
+  line-height: 1.35;
+}
+
+/* ---- Reader-first summary ---- */
+.executive-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(220px, .5fr);
+  gap: 22px;
+  align-items: start;
+  margin: 0 0 22px;
+  padding: 22px;
+  border: 1px solid var(--track);
+  border-left: 5px solid var(--gold);
+  border-radius: 12px;
+  background: var(--white);
+}
+.executive-overview .label { color: var(--burnt); font-family: var(--font-head); font-size: .66rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+.executive-overview h3 { margin: 5px 0 8px; font-size: 1.1rem; line-height: 1.35; text-transform: none; }
+.executive-overview p { margin: 0; color: var(--secondary); }
+.executive-facts { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.executive-facts li { padding: 8px 10px; border-radius: 7px; background: var(--panel); font-size: .78rem; }
+.executive-facts b { color: var(--ink); }
+
+/* ---- Static contributor network ---- */
+.agent-network { margin-top: 24px; border: 1px solid var(--track); border-radius: 12px; overflow: hidden; }
+.agent-network .network-copy { padding: 20px 20px 0; }
+.agent-network .network-copy h3 { margin: 4px 0 6px; font-size: 1.08rem; text-transform: none; }
+.agent-network .network-copy p { margin: 0; color: var(--secondary); font-size: .84rem; }
+.agent-network .report-art { margin: 18px 20px; }
+.agent-network .report-art img { height: clamp(190px, 26vw, 280px); }
+.network-flow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--track); }
+.network-stage { position: relative; min-width: 0; padding: 16px; border-right: 1px solid var(--track); }
+.network-stage:last-child { border-right: 0; }
+.network-stage .stage-n { color: var(--gold); font-family: var(--font-head); font-size: .62rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.network-stage .stage-title { margin: 3px 0 5px; font-weight: 800; }
+.network-stage .stage-desc { color: var(--secondary); font-size: .76rem; line-height: 1.45; }
+.network-roster { margin-top: 8px; color: var(--ink); font-family: var(--font-mono); font-size: .7rem; overflow-wrap: anywhere; }
 
 /* ---- Sticky nav ---- */
 nav.mininav { position: sticky; top: 8px; z-index: 50; background: rgba(255,255,255,0.94); backdrop-filter: blur(4px); border-bottom: 1px solid var(--track); }
@@ -90,22 +164,16 @@ nav.mininav a.active { color: var(--ink); background: var(--panel); box-shadow: 
 .tile .v { font-family: var(--font-head); font-weight: 800; font-size: 1.9rem; line-height: 1; }
 .tile .v small { font-size: 0.9rem; color: var(--secondary); }
 
-/* ---- Hero (Three.js) ---- */
-#hero { position: relative; width: 100%; height: 440px; border: 1px solid var(--track); border-radius: 12px; overflow: hidden; background: var(--white); }
-#hero canvas { display: block; width: 100%; height: 100%; cursor: grab; }
-#hero canvas:active { cursor: grabbing; }
-#hero .hint { position: absolute; bottom: 12px; left: 14px; font-size: 0.72rem; color: var(--muted); pointer-events: none; }
-#hero-fallback { display: none; }
-
 /* ---- Collapsibles ---- */
-.collapse { border: 1px solid var(--track); border-radius: 12px; margin-bottom: 14px; overflow: hidden; }
+.collapse { max-width: 100%; min-width: 0; border: 1px solid var(--track); border-radius: 12px; margin-bottom: 14px; overflow: hidden; }
 .collapse > .c-head { display: flex; width: 100%; align-items: center; gap: 12px; padding: 16px 20px; cursor: pointer; user-select: none; background: var(--white); border: 0; color: var(--ink); font: inherit; text-align: left; }
 .collapse > .c-head:hover { background: var(--panel); }
 .collapse > .c-head:focus-visible { outline: 3px solid var(--gold); outline-offset: -3px; }
-.collapse > .c-head .c-title { font-family: var(--font-head); font-weight: 800; text-transform: uppercase; font-size: 0.92rem; letter-spacing: 0.02em; flex: 1; }
+.collapse > .c-head .c-title { min-width: 0; overflow-wrap: anywhere; font-family: var(--font-head); font-weight: 800; text-transform: uppercase; font-size: 0.92rem; letter-spacing: 0.02em; flex: 1; }
 .collapse > .c-head .caret { color: var(--muted); transition: transform 0.2s ease; font-size: 0.8rem; }
 .collapse.open > .c-head .caret { transform: rotate(90deg); }
 .collapse > .c-body { max-height: 0; overflow: hidden; transition: max-height 0.32s ease; }
+.collapse > .c-body, .collapse > .c-body > .pad { min-width: 0; }
 .collapse > .c-body > .pad { padding: 4px 20px 22px; }
 .reduced .collapse > .c-body { transition: none; }
 
@@ -113,7 +181,7 @@ nav.mininav a.active { color: var(--ink); background: var(--panel); box-shadow: 
 .pip-ok { background: var(--green); }
 .pip-fail { background: var(--red); }
 .pip-warn { background: var(--gold); }
-.c-head .mini-stats { display: flex; gap: 14px; color: var(--secondary); font-size: 0.76rem; }
+.c-head .mini-stats { min-width: 0; display: flex; gap: 14px; color: var(--secondary); font-size: 0.76rem; overflow-wrap: anywhere; }
 .c-head .mini-stats span b { color: var(--ink); }
 
 /* ---- Text + code ---- */
@@ -128,22 +196,23 @@ code.inline { font-family: var(--font-mono); font-size: 0.85em; background: var(
 .step .step-title { font-weight: 700; margin: 2px 0 6px; }
 .step .why { color: var(--secondary); margin-bottom: 10px; }
 .ev-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
-.ev { display: inline-flex; align-items: center; gap: 6px; font-size: 0.74rem; padding: 3px 9px; border-radius: 6px; border: 1px solid var(--track); font-family: var(--font-mono); }
+.ev { display: inline-flex; max-width: 100%; align-items: center; gap: 6px; font-size: 0.74rem; padding: 3px 9px; border-radius: 6px; border: 1px solid var(--track); font-family: var(--font-mono); overflow-wrap: anywhere; white-space: normal; }
 .ev.code { background: var(--panel); }
 .ev.ext { background: var(--white); }
 .ev .tag { text-transform: uppercase; font-family: var(--font-head); font-size: 0.6rem; letter-spacing: 0.06em; color: var(--muted); }
 .files { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
-.file-tok { font-family: var(--font-mono); font-size: 0.74rem; color: var(--secondary); background: var(--panel); padding: 2px 7px; border-radius: 4px; }
+.file-tok { max-width: 100%; font-family: var(--font-mono); font-size: 0.74rem; color: var(--secondary); background: var(--panel); padding: 2px 7px; border-radius: 4px; overflow-wrap: anywhere; white-space: normal; }
 .risk { font-size: 0.82rem; color: var(--secondary); padding-left: 16px; position: relative; margin: 3px 0; }
 .risk::before { content: "△"; position: absolute; left: 0; color: var(--gold); font-size: 0.7rem; top: 2px; }
 
 /* ---- Tables ---- */
-table.dl { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+.table-scroll { width: 100%; max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; -webkit-overflow-scrolling: touch; }
+table.dl { width: 100%; min-width: 620px; border-collapse: collapse; font-size: 0.88rem; }
 table.dl th, table.dl td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--track); }
 table.dl th { font-family: var(--font-head); text-transform: uppercase; font-size: 0.66rem; letter-spacing: 0.08em; color: var(--muted); font-weight: 800; }
 
 /* ---- Verdict matrix ---- */
-.matrix { overflow-x: auto; }
+.matrix { width: 100%; max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; -webkit-overflow-scrolling: touch; }
 .matrix table { border-collapse: separate; border-spacing: 6px; }
 .matrix th { font-family: var(--font-head); text-transform: uppercase; font-size: 0.66rem; letter-spacing: 0.06em; color: var(--secondary); padding: 4px 8px; text-align: center; font-weight: 800; }
 .matrix th.rowh { text-align: right; color: var(--ink); }
@@ -169,7 +238,7 @@ table.dl th { font-family: var(--font-head); text-transform: uppercase; font-siz
 .vdetail .vd-path { font-family: var(--font-mono); font-size: 0.78rem; color: var(--burnt); }
 
 /* ---- Cards / disagreements ---- */
-.cardgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+.cardgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 14px; }
 .dcard { border: 1px solid var(--track); border-left: 3px solid var(--gold); border-radius: 10px; padding: 14px 16px; }
 .dcard .who { font-family: var(--font-head); text-transform: uppercase; font-weight: 800; font-size: 0.68rem; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 6px; }
 .dcard .pt { font-weight: 700; margin-bottom: 6px; }
@@ -192,7 +261,7 @@ table.dl th { font-family: var(--font-head); text-transform: uppercase; font-siz
 .log-tabs button { font-family: var(--font-head); text-transform: uppercase; font-weight: 700; font-size: 0.68rem; letter-spacing: 0.05em; padding: 6px 14px; border: 1px solid var(--track); background: var(--white); border-radius: 6px; cursor: pointer; color: var(--secondary); }
 .log-tabs button.active { background: var(--ink); color: var(--white); border-color: var(--ink); }
 .log-filter { width: 100%; padding: 8px 12px; border: 1px solid var(--track); border-radius: 8px; font-family: var(--font-mono); font-size: 0.8rem; margin-bottom: 10px; }
-.log-view { font-family: var(--font-mono); font-size: 0.78rem; background: var(--panel); border-radius: 10px; max-height: 460px; overflow: auto; padding: 12px 0; }
+.log-view { width: 100%; max-width: 100%; font-family: var(--font-mono); font-size: 0.78rem; background: var(--panel); border-radius: 10px; max-height: 460px; overflow: auto; padding: 12px 0; }
 .log-line { display: flex; padding: 0 14px; white-space: pre-wrap; word-break: break-word; }
 .log-line:hover { background: rgba(255,163,0,0.08); }
 .log-line .ln { color: var(--muted); user-select: none; min-width: 46px; text-align: right; padding-right: 14px; flex: none; }
@@ -203,6 +272,9 @@ table.dl th { font-family: var(--font-head); text-transform: uppercase; font-siz
 .controls { display: flex; gap: 8px; margin-bottom: 16px; }
 .btn { font-family: var(--font-head); text-transform: uppercase; font-weight: 700; font-size: 0.68rem; letter-spacing: 0.05em; padding: 7px 14px; border: 1px solid var(--track); background: var(--white); border-radius: 6px; cursor: pointer; color: var(--ink); }
 .btn:hover { background: var(--panel); }
+.btn:focus-visible { outline: 3px solid rgba(255,163,0,.35); outline-offset: 2px; }
+.btn.primary { min-height: 40px; padding: 9px 14px; border-color: var(--ink); background: var(--ink); color: var(--white); }
+.btn.primary:hover { border-color: var(--gold); background: var(--gold); color: var(--ink); }
 
 /* ---- Scope columns ---- */
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
@@ -212,6 +284,11 @@ table.dl th { font-family: var(--font-head); text-transform: uppercase; font-siz
 .qa .a { color: var(--secondary); }
 
 /* ---- Final plan render ---- */
+.plan-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin: 0 0 18px; padding: 14px; border: 1px solid var(--track); border-radius: 10px; background: var(--panel); }
+.plan-actions .copy-status { color: var(--secondary); font-size: .78rem; }
+.plan-actions .copy-status.ok { color: #0b7a5a; font-weight: 700; }
+.plan-actions .copy-status.fail { color: #b3271e; font-weight: 700; }
+.plan-actions .copy-fallback { flex-basis: 100%; width: 100%; min-height: 150px; padding: 10px 12px; border: 1px solid var(--gold); border-radius: 7px; background: var(--white); color: var(--ink); font: .76rem/1.45 var(--font-mono); resize: vertical; }
 .plan-render h1, .plan-render h2, .plan-render h3 { text-transform: none; font-family: var(--font-head); margin: 22px 0 8px; }
 .plan-render h1 { font-size: 1.5rem; } .plan-render h2 { font-size: 1.2rem; } .plan-render h3 { font-size: 1rem; }
 .plan-render p { margin: 8px 0; } .plan-render ul, .plan-render ol { padding-left: 22px; }
@@ -219,18 +296,47 @@ table.dl th { font-family: var(--font-head); text-transform: uppercase; font-siz
 .plan-render pre { font-family: var(--font-mono); font-size: 0.82rem; background: var(--panel); border-radius: 10px; padding: 14px 16px; overflow-x: auto; }
 .plan-render code { font-family: var(--font-mono); background: var(--panel); padding: 1px 5px; border-radius: 4px; font-size: 0.85em; }
 .plan-render pre code { background: none; padding: 0; }
+.plan-render .markdown-table-wrap { margin: 14px 0 20px; border: 1px solid var(--track); border-radius: 10px; }
+.plan-render .markdown-table { margin: 0; background: var(--white); }
+.plan-render .markdown-table th { background: var(--panel); color: var(--ink); }
+.plan-render .markdown-table th.align-center, .plan-render .markdown-table td.align-center { text-align: center; }
+.plan-render .markdown-table th.align-right, .plan-render .markdown-table td.align-right { text-align: right; }
+.plan-render .markdown-table td { vertical-align: top; line-height: 1.5; overflow-wrap: anywhere; }
+.plan-render .markdown-table tbody tr:last-child td { border-bottom: 0; }
+
+/* ---- Compact stage timeline ---- */
+.timeline-shell { border: 1px solid var(--track); border-radius: 12px; overflow: hidden; background: var(--white); }
+.timeline-stage { padding: 18px 20px 20px; border-top: 1px solid var(--track); }
+.timeline-stage:first-child { border-top: 0; }
+.timeline-stage-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 14px; }
+.timeline-stage-title { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 12px; min-width: 0; }
+.timeline-stage-title .number { color: var(--burnt); font-family: var(--font-head); font-size: .66rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.timeline-stage-title h3 { margin: 0; font-size: .94rem; text-transform: none; }
+.timeline-stage-meta { color: var(--secondary); font-size: .72rem; text-align: right; }
+.timeline-gap { margin: -2px 0 14px; padding: 7px 10px; border-left: 3px solid var(--gold); background: rgba(255,163,0,.08); color: var(--secondary); font-size: .74rem; }
+.timeline-rows { display: grid; gap: 10px; }
+.timeline-row { display: grid; grid-template-columns: minmax(130px, 190px) minmax(180px, 1fr) 64px; align-items: center; gap: 12px; min-width: 0; }
+.timeline-who { min-width: 0; }
+.timeline-who .name { overflow-wrap: anywhere; font-weight: 800; font-size: .78rem; }
+.timeline-who .role { color: var(--secondary); font-size: .68rem; text-transform: capitalize; }
+.timeline-track { position: relative; height: 22px; overflow: hidden; border-radius: 999px; background: var(--panel); }
+.timeline-bar { position: absolute; top: 0; bottom: 0; min-width: 5px; border-radius: 999px; background: var(--gold); }
+.timeline-bar.failed { background: var(--red); opacity: .72; }
+.timeline-bar.transient { background: var(--gold); opacity: .55; }
+.timeline-duration { color: var(--secondary); font-size: .72rem; white-space: nowrap; }
+.timeline-legend { margin: 12px 0 0; color: var(--secondary); font-size: .72rem; line-height: 1.5; }
 
 /* ---- Decision lineage explorer ---- */
-.lineage-shell { border: 1px solid var(--track); border-radius: 12px; overflow: hidden; background: var(--white); }
+.lineage-shell { width: 100%; max-width: 100%; min-width: 0; border: 1px solid var(--track); border-radius: 12px; overflow: hidden; background: var(--white); }
 .lineage-summary { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 18px 20px; border-bottom: 1px solid var(--track); background: var(--panel); }
-.lineage-summary .copy { max-width: 76ch; }
+.lineage-summary .copy { min-width: 0; max-width: 76ch; }
 .lineage-summary .title { font-family: var(--font-head); text-transform: uppercase; font-weight: 800; font-size: 0.82rem; }
-.lineage-summary .desc { color: var(--secondary); font-size: 0.82rem; margin-top: 4px; }
+.lineage-summary .desc { color: var(--secondary); font-size: 0.82rem; margin-top: 4px; overflow-wrap: anywhere; }
 .confidence { flex: none; border: 1px solid var(--track); background: var(--white); border-radius: 999px; padding: 5px 10px; font-family: var(--font-head); font-size: 0.64rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; }
 .confidence.high { border-color: rgba(16,185,129,0.55); color: #0b7a5a; }
 .confidence.medium { border-color: rgba(255,163,0,0.75); color: #9a6300; }
 .confidence.low { border-color: rgba(239,68,68,0.55); color: #b3271e; }
-.lineage-layout { display: grid; grid-template-columns: 270px minmax(0, 1fr); min-height: 470px; }
+.lineage-layout { width: 100%; max-width: 100%; min-width: 0; display: grid; grid-template-columns: 270px minmax(0, 1fr); min-height: 470px; }
 .lineage-steps { border-right: 1px solid var(--track); padding: 14px; background: #fafafa; }
 .lineage-step-btn { display: block; width: 100%; text-align: left; border: 1px solid transparent; background: transparent; color: var(--ink); padding: 11px 12px; border-radius: 8px; cursor: pointer; font-family: var(--font-body); margin-bottom: 5px; }
 .lineage-step-btn:hover { background: var(--white); border-color: var(--track); }
@@ -243,7 +349,7 @@ table.dl th { font-family: var(--font-head); text-transform: uppercase; font-siz
 .lineage-legend i { display: inline-block; width: 24px; height: 0; border-top: 2px solid var(--green); }
 .lineage-legend i.adapted { border-color: var(--gold); border-top-style: dashed; }
 .lineage-legend i.review { border-color: var(--ink); border-top-style: dotted; }
-.lineage-viewport { overflow-x: auto; padding: 2px 10px 0; }
+.lineage-viewport { width: 100%; max-width: 100%; min-width: 0; overflow-x: auto; overscroll-behavior-inline: contain; -webkit-overflow-scrolling: touch; padding: 2px 10px 0; }
 .lineage-viewport svg { display: block; min-width: 760px; }
 .lineage-node { cursor: pointer; }
 .lineage-node:focus { outline: 3px solid var(--gold); outline-offset: 3px; }
@@ -272,21 +378,34 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
 .empty-note { color: var(--muted); font-style: italic; }
 
 @media (max-width: 720px) {
+  .wrap { padding: 0 16px; }
   .report-head h1 { font-size: 2rem; }
+  .executive-overview { grid-template-columns: 1fr; padding: 18px; }
+  .network-flow { grid-template-columns: 1fr 1fr; }
+  .network-stage:nth-child(2) { border-right: 0; }
+  .network-stage:nth-child(-n+2) { border-bottom: 1px solid var(--track); }
+  .report-art img { height: 180px; }
+  .report-art.hero-art img { height: 220px; }
+  .report-art figcaption { position: static; max-width: none; border-radius: 0; }
   .two-col { grid-template-columns: 1fr; }
-  #hero { height: 340px; }
   .lineage-layout { grid-template-columns: 1fr; }
-  .lineage-steps { border-right: 0; border-bottom: 1px solid var(--track); display: flex; overflow-x: auto; gap: 6px; }
+  .lineage-steps { width: 100%; max-width: 100%; min-width: 0; border-right: 0; border-bottom: 1px solid var(--track); display: flex; overflow-x: auto; overscroll-behavior-inline: contain; gap: 6px; }
   .lineage-step-btn { min-width: 210px; margin-bottom: 0; }
   .lineage-summary { flex-direction: column; }
+  .c-head { flex-wrap: wrap; }
+  .c-head .mini-stats { width: 100%; padding-left: 22px; flex-wrap: wrap; }
+  .timeline-stage { padding: 16px; }
+  .timeline-stage-head { display: block; }
+  .timeline-stage-meta { margin-top: 5px; text-align: left; }
+  .timeline-row { grid-template-columns: 1fr 56px; gap: 6px 10px; }
+  .timeline-who { grid-column: 1 / -1; }
 }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
 }
 @media print {
-  nav.mininav, #hero .hint, .controls, .log-filter, .log-tabs, .lineage-steps { display: none !important; }
+  nav.mininav, .controls, .log-filter, .log-tabs, .lineage-steps { display: none !important; }
   .collapse > .c-body { max-height: none !important; }
-  #hero { display: none; } #hero-fallback { display: block !important; }
   section.block { padding: 20px 0; }
 }
 </style>
@@ -302,11 +421,11 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
 
 <div id="tooltip"></div>
 
-<script>/*__THREE_JS_LIB__*/</script>
 <script>
 "use strict";
 (function () {
   var DATA = JSON.parse(document.getElementById("moa-data").textContent);
+  var ART = __REPORT_ASSET_JSON__;
   var REDUCED = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   if (REDUCED) document.body.classList.add("reduced");
 
@@ -335,20 +454,40 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
   var app = document.getElementById("app");
   var sections = [];
   function addSection(id, navLabel, node) { sections.push({ id: id, label: navLabel }); app.appendChild(node); }
+  function reportArt(key, alt, caption, className) {
+    if (!ART[key]) return null;
+    return el("figure", { class: "report-art " + (className || "") }, [
+      el("img", { src: ART[key], alt: alt, loading: key === "hero" ? "eager" : "lazy" }),
+      el("figcaption", { text: caption })
+    ]);
+  }
+  function scrollTable(table) {
+    return el("div", { class: "table-scroll", tabindex: "0", role: "region", "aria-label": "Scrollable table" }, table);
+  }
 
   // ---------------------------------------------------------------- Header
   (function () {
     var head = el("header", { class: "report-head" });
     head.appendChild(el("div", { class: "eyebrow" }, [
       el("div", { class: "brandmark", html: 'MoA<span class="x">-X</span> &nbsp;RUN REPORT' }),
-      el("div", { class: "badge " + (DATA.partial ? "warn" : "neutral"), text: DATA.partial ? "Partial (Layer 1 only)" : "Full session" })
+      el("div", { class: "badge " + (DATA.partial ? "warn" : "neutral"), text: DATA.partial ? "Partial (recommendations only)" : "Full session" })
     ]));
     head.appendChild(el("h1", { text: DATA.title || DATA.session_id }));
+    head.appendChild(el("div", { class: "head-actions" }, [
+      el("a", { class: "final-jump", href: "#plan", text: DATA.final_plan_html ? "Jump to final recommendation →" : "Check recommendation status →" }),
+      el("span", { class: "action-note", text: DATA.final_plan_html ? "Skip the process details and start with the answer." : "This run may still need its final synthesis." })
+    ]));
+    head.appendChild(reportArt(
+      "hero",
+      "Independent researchers sending evidence toward one coherent architectural blueprint",
+      "Independent model lanes. One evidence-backed decision trail.",
+      "hero-art"
+    ));
     var l2badge;
-    if (DATA.layer2_mode === "broadcast") l2badge = el("span", { class: "badge ok", text: "broadcast" });
-    else if (DATA.layer2_mode === "degraded_non_broadcast") l2badge = el("span", { class: "badge warn", text: "degraded" });
+    if (DATA.layer2_mode === "broadcast") l2badge = el("span", { class: "badge ok", text: "all recommendations reviewed" });
+    else if (DATA.layer2_mode === "degraded_non_broadcast") l2badge = el("span", { class: "badge warn", text: "limited review" });
     else l2badge = el("span", { class: "badge neutral", text: DATA.layer2_mode || "n/a" });
-    var l2span = el("span", {}, ["Layer 2 "]); l2span.appendChild(l2badge);
+    var l2span = el("span", {}, ["Review mode "]); l2span.appendChild(l2badge);
     head.appendChild(el("div", { class: "meta-row" }, [
       el("span", { html: "Session <b>" + esc(DATA.session_id) + "</b>" }),
       el("span", { html: "Generated <b>" + esc(DATA.generated_at) + "</b>" }),
@@ -378,17 +517,18 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
     var l1 = DATA.layer1 || [], l2 = DATA.layer2 || [], l3 = DATA.layer3 || [];
     var agentSecs = l1.concat(l2, l3).reduce(function (a, r) { return a + (r.duration_seconds || 0); }, 0);
     var sec = el("section", { class: "block", id: "overview" });
-    sec.appendChild(el("div", { class: "section-kicker", text: "Overview" }));
-    sec.appendChild(el("h2", { class: "section-title", text: "The run at a glance" }));
+    sec.appendChild(el("div", { class: "section-kicker", text: "Start here" }));
+    sec.appendChild(el("h2", { class: "section-title", text: "What happened and what to read" }));
+    sec.appendChild(buildExecutiveOverview(l1, l2, l3));
     var tiles = el("div", { class: "tiles" });
     function tile(k, v, sub) { return el("div", { class: "tile" }, [el("div", { class: "k", text: k }), el("div", { class: "v", html: v + (sub ? ' <small>' + sub + '</small>' : '') })]); }
-    tiles.appendChild(tile("Proposers", l1.filter(function (r) { return r.success; }).length + "/" + l1.length));
-    tiles.appendChild(tile("Refiners", l2.filter(function (r) { return r.success; }).length + "/" + l2.length));
-    if (l3.length) tiles.appendChild(tile("Aggregator", l3.filter(function (r) { return r.success; }).length + "/" + l3.length));
-    tiles.appendChild(tile("Agent time", fmtDur(agentSecs)));
-    tiles.appendChild(tile("Wall-clock", fmtDur(DATA.duration_seconds)));
+    tiles.appendChild(tile("Independent plans", l1.filter(function (r) { return r.success; }).length + "/" + l1.length));
+    tiles.appendChild(tile("Reviews", l2.filter(function (r) { return r.success; }).length + "/" + l2.length));
+    if (l3.length) tiles.appendChild(tile("Final synthesis", l3.filter(function (r) { return r.success; }).length + "/" + l3.length));
+    tiles.appendChild(tile("Total model time", fmtDur(agentSecs)));
+    tiles.appendChild(tile("Elapsed time", fmtDur(DATA.duration_seconds)));
     var speedup = DATA.duration_seconds ? (agentSecs / DATA.duration_seconds).toFixed(1) + "×" : "—";
-    tiles.appendChild(tile("Parallel gain", speedup));
+    tiles.appendChild(tile("Parallel speed-up", speedup));
     sec.appendChild(tiles);
     var health = DATA.summary || {}, healthItems = [];
     if ((health.timeout_failures || []).length) healthItems.push("Timed out: " + health.timeout_failures.join(", "));
@@ -402,15 +542,72 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
       healthNotice.appendChild(ul(healthItems));
       sec.appendChild(healthNotice);
     }
-    sec.appendChild(buildHero());
-    addSection("overview", "Overview", sec);
+    sec.appendChild(buildAgentNetwork());
+    addSection("overview", "Summary", sec);
   })();
+  function buildExecutiveOverview(l1, l2, l3) {
+    var lineage = DATA.final_plan_lineage || {};
+    var hasFinal = !!DATA.final_plan_html;
+    var successful = l1.concat(l2, l3).filter(function (r) { return r.success; }).length;
+    var total = l1.length + l2.length + l3.length;
+    var box = el("div", { class: "executive-overview" });
+    box.appendChild(el("div", {}, [
+      el("div", { class: "label", text: hasFinal ? "Executive overview" : "Run status" }),
+      el("h3", { text: lineage.title || (hasFinal ? "A final recommendation is ready" : "The final recommendation is not available yet") }),
+      el("p", { text: lineage.summary || (hasFinal
+        ? "The team produced a final recommendation from the independent plans and review findings below. Start with the recommendation, then use the decision trail when you need to understand why a step was chosen."
+        : "The recorded work is still useful, but this report does not yet contain a final recommendation. Review the completed plans and checks below, then finish aggregation and regenerate the report.") })
+    ]));
+    box.appendChild(el("ul", { class: "executive-facts" }, [
+      el("li", { html: "<b>" + successful + " of " + total + "</b> recorded contributors completed successfully" }),
+      el("li", { html: "<b>" + l1.length + "</b> independent plan" + (l1.length === 1 ? "" : "s") + " and <b>" + l2.length + "</b> review" + (l2.length === 1 ? "" : "s") }),
+      el("li", { html: hasFinal ? "<b>Final recommendation:</b> available below" : "<b>Final recommendation:</b> not yet recorded" })
+    ]));
+    return box;
+  }
+  function buildAgentNetwork() {
+    var l1 = DATA.layer1 || [], l2 = DATA.layer2 || [], l3 = DATA.layer3 || [];
+    var sb = DATA.scout_brief || {};
+    var agg = DATA.config && DATA.config.aggregator;
+    var card = el("div", { class: "agent-network", role: "group", "aria-label": "How the recommendation was built" });
+    card.appendChild(el("div", { class: "network-copy" }, [
+      el("div", { class: "section-kicker", text: "Who contributed" }),
+      el("h3", { text: "How the recommendation came together" }),
+      el("p", { text: "The same work is shown as a simple four-stage flow: define the problem, collect independent recommendations, challenge them, and produce one final answer." })
+    ]));
+    var art = reportArt(
+      ART.lineage ? "lineage" : "synthesis",
+      "Illustrated network of independent contributors feeding evidence into one final recommendation",
+      "Independent viewpoints converge only after review.",
+      "network-art"
+    );
+    if (art) card.appendChild(art);
+    var flow = el("div", { class: "network-flow" });
+    function names(rows) {
+      if (!rows.length) return "Not run";
+      return rows.map(function (r) { return r.agent_id + (r.success ? "" : " (did not complete)"); }).join(" · ");
+    }
+    function stage(number, title, desc, roster) {
+      return el("div", { class: "network-stage" }, [
+        el("div", { class: "stage-n", text: "Stage " + number }),
+        el("div", { class: "stage-title", text: title }),
+        el("div", { class: "stage-desc", text: desc }),
+        el("div", { class: "network-roster", text: roster })
+      ]);
+    }
+    flow.appendChild(stage("01", "Frame the task", sb.frozen_spec ? "A written brief fixed the goal and boundaries before recommendations began." : "The run recorded the task context available to the team.", "Scout brief"));
+    flow.appendChild(stage("02", "Develop options", l1.length + " independent contributor" + (l1.length === 1 ? "" : "s") + " worked from the same brief.", names(l1)));
+    flow.appendChild(stage("03", "Review the options", l2.length ? l2.length + " reviewer" + (l2.length === 1 ? "" : "s") + " checked the recommendations and their evidence." : "No review stage was recorded for this run.", names(l2)));
+    flow.appendChild(stage("04", "Choose a direction", DATA.final_plan_html ? "The reviewed material was combined into the final recommendation." : "A final recommendation has not yet been recorded.", l3.length ? names(l3) : (agg ? [agg.name, agg.model].filter(Boolean).join(" · ") : "Configured parent session")));
+    card.appendChild(flow);
+    return card;
+  }
 
   // ---------------------------------------------------------------- Timeline (SVG Gantt)
   (function () {
     var sec = el("section", { class: "block", id: "timeline" });
     sec.appendChild(el("div", { class: "section-kicker", text: "Timeline" }));
-    sec.appendChild(el("h2", { class: "section-title", text: "When each agent ran" }));
+    sec.appendChild(el("h2", { class: "section-title", text: "Who worked when" }));
     sec.appendChild(buildGantt());
     addSection("timeline", "Timeline", sec);
   })();
@@ -419,8 +616,9 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
   (function () {
     var sb = DATA.scout_brief || {};
     var sec = el("section", { class: "block", id: "scout" });
-    sec.appendChild(el("div", { class: "section-kicker", text: "Layer 0" }));
-    sec.appendChild(el("h2", { class: "section-title", text: "Scout brief — what was asked" }));
+    sec.appendChild(el("div", { class: "section-kicker", text: "Starting point" }));
+    sec.appendChild(el("h2", { class: "section-title", text: "What the team was asked to solve" }));
+    sec.appendChild(reportArt("scout", "Research scout organizing repository evidence into a mission brief", "The brief freezes scope before any model proposes a solution.", "scout-art"));
     var body = el("div");
     if (sb.frozen_spec) { body.appendChild(el("div", { class: "subhead", text: "Frozen spec" })); body.appendChild(el("div", { class: "codeblock", text: sb.frozen_spec })); }
     var cols = el("div", { class: "two-col" });
@@ -438,19 +636,20 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
     }
     if (sb.notes) { body.appendChild(el("div", { class: "subhead", text: "Notes" })); body.appendChild(el("p", { text: sb.notes })); }
     sec.appendChild(collapsible("Scout brief", "pip-ok", null, body, false));
-    addSection("scout", "Scout", sec);
+    addSection("scout", "Task brief", sec);
   })();
   function ul(items) { var u = el("ul"); (items || []).forEach(function (i) { u.appendChild(el("li", { text: i })); }); return u; }
 
   // ---------------------------------------------------------------- Layer 1 proposers
   (function () {
     var sec = el("section", { class: "block", id: "proposers" });
-    sec.appendChild(el("div", { class: "section-kicker", text: "Layer 1" }));
-    sec.appendChild(el("h2", { class: "section-title", text: "Proposers — parallel plans" }));
+    sec.appendChild(el("div", { class: "section-kicker", text: "Independent input" }));
+    sec.appendChild(el("h2", { class: "section-title", text: "Independent recommendations" }));
+    sec.appendChild(reportArt("proposers", "Independent researchers developing parallel architecture proposals", "Parallel lanes preserve genuinely different approaches before review."));
     sec.appendChild(controlBar("proposers"));
     (DATA.layer1 || []).forEach(function (r) { sec.appendChild(proposerCard(r)); });
     if (!(DATA.layer1 || []).length) sec.appendChild(el("p", { class: "empty-note", text: "No proposer results recorded." }));
-    addSection("proposers", "Proposers", sec);
+    addSection("proposers", "Recommendations", sec);
   })();
   function proposerCard(r) {
     var body = el("div");
@@ -478,14 +677,14 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
             el("td", { text: s.relevance || s.summary || "" })
           ]));
         });
-        body.appendChild(t);
+        body.appendChild(scrollTable(t));
       }
     }
     var stats = [];
     if (p && p.plan) stats.push(["steps", p.plan.length]);
     if (p && p.plan) stats.push(["evidence", p.plan.reduce(function (a, s) { return a + ((s.evidence || []).length); }, 0)]);
     stats.push(["dur", fmtDur(r.duration_seconds)]);
-    return collapsible(r.agent_id + " proposer", statusPip(r), stats, body, false);
+    return collapsible(r.agent_id + " recommendation", statusPip(r), stats, body, false);
   }
   function planStep(s, i) {
     var d = el("div", { class: "step" });
@@ -517,25 +716,26 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
     var l2 = all.filter(function (r) { return r.success && r.payload; });
     var failed = all.filter(function (r) { return !(r.success && r.payload); });
     var sec = el("section", { class: "block", id: "refiners" });
-    sec.appendChild(el("div", { class: "section-kicker", text: "Layer 2" }));
-    sec.appendChild(el("h2", { class: "section-title", text: "Refiners — the cross-examination" }));
+    sec.appendChild(el("div", { class: "section-kicker", text: "Review" }));
+    sec.appendChild(el("h2", { class: "section-title", text: "Review and challenge" }));
+    sec.appendChild(reportArt("refiners", "Reviewers comparing every proposal and tracing risks across them", "Every refiner sees every proposal, making disagreement and verification visible."));
     if (DATA.layer2_mode === "degraded_non_broadcast")
-      sec.appendChild(el("div", { class: "notice", html: "<b>Degraded, non-broadcast.</b> Only one proposer succeeded, so refiners reviewed a single perspective. Apply lower confidence to their findings." }));
+      sec.appendChild(el("div", { class: "notice", html: "<b>Limited review.</b> Only one independent recommendation completed, so reviewers saw a single perspective. Treat their findings with lower confidence." }));
     // A failed refiner must stay visible — hiding it makes a broken refinement
     // pass look like a smaller-but-healthy run.
     failed.forEach(function (r) {
-      sec.appendChild(el("div", { class: "notice", html: "<b>" + esc(r.agent_id) + " refiner failed.</b> " + esc(r.error || "unknown error") }));
+      sec.appendChild(el("div", { class: "notice", html: "<b>" + esc(r.agent_id) + " review failed.</b> " + esc(r.error || "unknown error") }));
     });
     if (!l2.length) {
       sec.appendChild(el("p", { class: "empty-note", text: DATA.layer2_mode === "skipped" ? "Layer 2 was skipped for this run." : "No successful refiner outputs." }));
-      addSection("refiners", "Refiners", sec); return;
+      addSection("refiners", "Review", sec); return;
     }
-    sec.appendChild(el("div", { class: "subhead", text: "Verdict matrix — refiners × proposers" }));
+    sec.appendChild(el("div", { class: "subhead", text: "How each reviewer assessed each recommendation" }));
     sec.appendChild(verdictMatrix(l2));
     sec.appendChild(el("div", { class: "subhead", text: "Evidence verification" }));
     l2.forEach(function (r) { sec.appendChild(verificationRow(r)); });
     l2.forEach(function (r) { sec.appendChild(refinerDetail(r)); });
-    addSection("refiners", "Refiners", sec);
+    addSection("refiners", "Review", sec);
   })();
   function verdictMatrix(l2) {
     var proposers = {};
@@ -617,22 +817,24 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
       body.appendChild(el("div", { class: "subhead", text: "Additional research" }));
       var t = el("table", { class: "dl" }); t.appendChild(el("tr", {}, [el("th", { text: "Source" }), el("th", { text: "What it adds" })]));
       p.additional_research.forEach(function (s) { t.appendChild(el("tr", {}, [el("td", {}, s.url ? el("a", { href: s.url, target: "_blank", rel: "noopener", text: s.title || s.url }) : document.createTextNode(s.title || "")), el("td", { text: s.what_it_adds || "" })])); });
-      body.appendChild(t);
+      body.appendChild(scrollTable(t));
     }
     var reviewed = (r.reviewing || []).join(", ");
-    return collapsible(r.agent_id + " refiner — full findings", statusPip(r), [["reviewed", reviewed || "—"], ["dur", fmtDur(r.duration_seconds)]], body, false);
+    return collapsible(r.agent_id + " review — full findings", statusPip(r), [["reviewed", reviewed || "—"], ["dur", fmtDur(r.duration_seconds)]], body, false);
   }
 
-  // ---------------------------------------------------------------- Decision lineage
+  // Decision lineage — why each step survived (legacy report label).
+  // ---------------------------------------------------------------- Decision trail
   (function () {
     var sec = el("section", { class: "block", id: "lineage" });
-    sec.appendChild(el("div", { class: "section-kicker", text: "Layer 3 · provenance" }));
-    sec.appendChild(el("h2", { class: "section-title", text: "Decision lineage — why each step survived" }));
-    sec.appendChild(el("p", { class: "section-note", text: "Select a final-plan step, then inspect the proposal steps and refiner findings that shaped it. Solid, dashed, and dotted paths distinguish adoption, adaptation, and review without relying on color alone." }));
+    sec.appendChild(el("div", { class: "section-kicker", text: "Decision trail" }));
+    sec.appendChild(el("h2", { class: "section-title", text: "Why the final steps were chosen" }));
+    sec.appendChild(el("p", { class: "section-note", text: "Choose a final step to see which earlier recommendations and review findings shaped it. Solid lines mean used as written, dashed lines mean revised, and dotted lines show reviewer influence." }));
+    sec.appendChild(reportArt("lineage", "Archivist tracing evidence and review findings into a final architecture decision", "Follow each accepted decision back to its proposal evidence and refiner signal."));
     if (DATA.final_plan_lineage) {
       sec.appendChild(buildLineageExplorer(DATA.final_plan_lineage));
     } else {
-      sec.appendChild(el("div", { class: "notice info", text: "No usable final-plan.json yet. Legacy reports still show the Markdown plan; re-run aggregation with the current prompt to add traceable decision lineage." }));
+      sec.appendChild(el("div", { class: "notice info", text: "This run does not include a traceable decision file. The written recommendation is still shown below when available; finish the final synthesis and regenerate the report to add its decision trail." }));
     }
     if (DATA.lineage_warnings && DATA.lineage_warnings.length) {
       var warn = el("div", { class: "notice lineage-warning" });
@@ -640,7 +842,7 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
       warn.appendChild(ul(DATA.lineage_warnings));
       sec.appendChild(warn);
     }
-    addSection("lineage", "Lineage", sec);
+    addSection("lineage", "Why these choices", sec);
   })();
 
   function buildLineageExplorer(lineage) {
@@ -663,9 +865,9 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
     var rail = el("div", { class: "lineage-steps", role: "tablist", "aria-label": "Final plan steps" });
     var main = el("div", { class: "lineage-main" });
     var legend = el("div", { class: "lineage-legend" }, [
-      el("span", {}, [el("i"), document.createTextNode("adopted")]),
-      el("span", {}, [el("i", { class: "adapted" }), document.createTextNode("adapted")]),
-      el("span", {}, [el("i", { class: "review" }), document.createTextNode("refiner influence")])
+      el("span", {}, [el("i"), document.createTextNode("used as written")]),
+      el("span", {}, [el("i", { class: "adapted" }), document.createTextNode("revised")]),
+      el("span", {}, [el("i", { class: "review" }), document.createTextNode("reviewer influence")])
     ]);
     var viewport = el("div", { class: "lineage-viewport", role: "tabpanel", id: "lineage-panel" });
     var detail = el("div", { class: "lineage-detail", "aria-live": "polite" });
@@ -751,8 +953,8 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
     var svg = svgEl("svg", { viewBox: "0 0 " + W + " " + H, width: "100%", height: H, role: "img", "aria-label": "Decision lineage for " + step.title });
     var defs = svgEl("defs", {}), marker = svgEl("marker", { id: "lineage-arrow-" + step.id, viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 6, markerHeight: 6, orient: "auto-start-reverse" });
     marker.appendChild(svgEl("path", { d: "M 0 0 L 10 5 L 0 10 z", fill: C.muted })); defs.appendChild(marker); svg.appendChild(defs);
-    svg.appendChild(svgText(32, 24, "PROPOSAL SOURCES", { fill: C.muted, "font-size": 10, "font-weight": 800, "letter-spacing": "0.08em" }));
-    svg.appendChild(svgText(338, 24, "REFINER SIGNALS", { fill: C.muted, "font-size": 10, "font-weight": 800, "letter-spacing": "0.08em" }));
+    svg.appendChild(svgText(32, 24, "SOURCE RECOMMENDATIONS", { fill: C.muted, "font-size": 10, "font-weight": 800, "letter-spacing": "0.08em" }));
+    svg.appendChild(svgText(338, 24, "REVIEW FINDINGS", { fill: C.muted, "font-size": 10, "font-weight": 800, "letter-spacing": "0.08em" }));
     svg.appendChild(svgText(650, 24, "FINAL DECISION", { fill: C.muted, "font-size": 10, "font-weight": 800, "letter-spacing": "0.08em" }));
 
     function ys(count) {
@@ -841,29 +1043,81 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
   // ---------------------------------------------------------------- Aggregation
   (function () {
     var sec = el("section", { class: "block", id: "plan" });
-    sec.appendChild(el("div", { class: "section-kicker", text: "Layer 3" }));
-    sec.appendChild(el("h2", { class: "section-title", text: "Aggregated final plan" }));
+    sec.appendChild(el("div", { class: "section-kicker", text: "Recommendation" }));
+    sec.appendChild(el("h2", { class: "section-title", text: "Final recommendation" }));
+    sec.appendChild(reportArt("synthesis", "Lead architect combining proposal fragments into one coherent master plan", "The aggregator reconciles alternatives into one implementable plan."));
     var aggregator = DATA.config && DATA.config.aggregator, layer3 = DATA.layer3 || [];
     var aggregatorLabel = aggregator ? esc(aggregator.name) + " / " + esc(aggregator.model) : "Claude Code / opus";
-    if (layer3.length) sec.appendChild(el("p", { class: "section-note", html: "Layer 3 ran as a recorded <b>" + aggregatorLabel + " subprocess</b>. Its timing appears in the timeline and its captured output is available in Raw logs." }));
-    else sec.appendChild(el("p", { class: "section-note", html: "Layer 3 aggregation is performed in the configured parent host session (" + aggregatorLabel + ") unless the optional <code>--phase layer3</code> subprocess path is used." }));
-    if (DATA.final_plan_html) sec.appendChild(el("div", { class: "plan-render", html: DATA.final_plan_html }));
-    else sec.appendChild(el("div", { class: "notice info", text: "No final-plan.md yet — aggregate in the configured parent host or run --phase layer3, then regenerate the report to embed the plan and decision lineage." }));
-    addSection("plan", "Final plan", sec);
+    if (layer3.length) sec.appendChild(el("p", { class: "section-note", html: "The final recommendation was produced by <b>" + aggregatorLabel + "</b>. Its runtime appears in the timeline and its captured output is available in Technical logs." }));
+    else sec.appendChild(el("p", { class: "section-note", html: "The final recommendation is produced in the configured parent session (" + aggregatorLabel + ")." }));
+    if (DATA.final_plan_html) {
+      if (DATA.final_plan_markdown) sec.appendChild(buildPlanCopyControl());
+      sec.appendChild(el("div", { class: "plan-render", html: DATA.final_plan_html }));
+    } else sec.appendChild(el("div", { class: "notice info", text: "No final recommendation has been recorded yet. Finish the final synthesis, then regenerate this report to include the recommendation and its decision trail." }));
+    addSection("plan", "Final recommendation", sec);
   })();
+  function buildPlanCopyControl() {
+    var status = el("span", { class: "copy-status", role: "status", "aria-live": "polite", text: "Copies the complete recommendation with headings, lists, and links intact." });
+    var fallback = el("textarea", {
+      class: "copy-fallback",
+      hidden: "hidden",
+      readonly: "readonly",
+      "aria-label": "Final plan Markdown ready to copy"
+    });
+    var button = el("button", {
+      class: "btn primary",
+      type: "button",
+      text: "Copy final plan as Markdown",
+      onclick: function () { copyFinalPlanMarkdown(button, status, fallback); }
+    });
+    return el("div", { class: "plan-actions" }, [button, status, fallback]);
+  }
+  function copyFinalPlanMarkdown(button, status, fallback) {
+    var markdown = DATA.final_plan_markdown || "";
+    var originalLabel = "Copy final plan as Markdown";
+    button.disabled = true;
+    status.className = "copy-status";
+    status.textContent = "Copying…";
+
+    function showManualFallback() {
+      button.textContent = originalLabel;
+      button.disabled = false;
+      status.className = "copy-status fail";
+      status.textContent = "Automatic copy is unavailable on this connection. The Markdown is selected below—press Ctrl+C or Cmd+C.";
+      fallback.value = markdown;
+      fallback.hidden = false;
+      fallback.focus();
+      fallback.select();
+    }
+
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      navigator.clipboard.writeText(markdown).then(function () {
+        button.textContent = "Copied";
+        status.className = "copy-status ok";
+        status.textContent = "Final plan copied as Markdown.";
+      }).catch(showManualFallback).finally(function () {
+        button.disabled = false;
+        window.setTimeout(function () {
+          if (button.textContent === "Copied") button.textContent = originalLabel;
+        }, 2400);
+      });
+    } else {
+      showManualFallback();
+    }
+  }
 
   // ---------------------------------------------------------------- Raw logs
   (function () {
     var all = (DATA.layer1 || []).concat(DATA.layer2 || [], DATA.layer3 || []);
     var sec = el("section", { class: "block", id: "logs" });
-    sec.appendChild(el("div", { class: "section-kicker", text: "Diagnostics" }));
-    sec.appendChild(el("h2", { class: "section-title", text: "Raw agent logs" }));
+    sec.appendChild(el("div", { class: "section-kicker", text: "Technical details" }));
+    sec.appendChild(el("h2", { class: "section-title", text: "Raw contributor logs" }));
     sec.appendChild(controlBar("logs"));
     all.forEach(function (r) {
       if (!r.log || (!r.log.stdout && !r.log.stderr)) return;
       sec.appendChild(collapsible(r.agent_id + " · " + r.role, statusPip(r), [["dur", fmtDur(r.duration_seconds)]], logViewer(r), false));
     });
-    addSection("logs", "Logs", sec);
+    addSection("logs", "Technical logs", sec);
   })();
   function logViewer(r) {
     var box = el("div");
@@ -897,12 +1151,12 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
     return box;
   }
 
-  // ---------------------------------------------------------------- Footer flowchart
+  // ---------------------------------------------------------------- Reading guide
   (function () {
     var sec = el("section", { class: "block flow", id: "how" });
-    sec.appendChild(el("div", { class: "section-kicker", text: "Reference" }));
-    sec.appendChild(el("h2", { class: "section-title", text: "How MoA-X works" }));
-    sec.appendChild(el("div", { html: staticFlowSVG() }));
+    sec.appendChild(el("div", { class: "section-kicker", text: "Reading guide" }));
+    sec.appendChild(el("h2", { class: "section-title", text: "How to use this report" }));
+    sec.appendChild(el("p", { class: "section-note", text: "Start with the final recommendation. Use the decision trail to understand why a step was selected, the review section to see challenges and checks, and the technical logs only when you need the raw model output." }));
     app.appendChild(sec);
     var f = el("footer", { class: "foot" });
     f.appendChild(el("div", { class: "wrap", html: "Generated by <code class='inline'>harness/scripts/report.py</code> · MoA-X mixture-of-agents harness · self-contained, no network required." }));
@@ -959,208 +1213,83 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
     });
   }
 
-  // ---------------------------------------------------------------- Gantt
+  // ---------------------------------------------------------------- Compact stage timeline
   function buildGantt() {
     var l1 = DATA.layer1 || [], l2 = DATA.layer2 || [], l3 = DATA.layer3 || [];
-    var t0 = DATA.started_at || 0;
-    function span(r, layer, derivedStart) {
-      var start = (r.started_at && t0) ? (r.started_at - t0) : derivedStart;
-      return { r: r, layer: layer, start: Math.max(0, start), dur: r.duration_seconds || 0 };
-    }
-    var l1max = l1.reduce(function (a, r) { return Math.max(a, r.duration_seconds || 0); }, 0);
-    var l2max = l2.reduce(function (a, r) { return Math.max(a, r.duration_seconds || 0); }, 0);
-    var rows = l1.map(function (r) { return span(r, 1, 0); })
-      .concat(l2.map(function (r) { return span(r, 2, l1max); }))
-      .concat(l3.map(function (r) { return span(r, 3, l1max + l2max); }));
-    if (!rows.length) return el("p", { class: "empty-note", text: "No timing data." });
-    var total = rows.reduce(function (a, s) { return Math.max(a, s.start + s.dur); }, 0) || 1;
-    var W = 900, labelW = 130, chartW = W - labelW - 20, rowH = 34, top = 20, H = top + rows.length * rowH + 30;
-    var svg = svgEl("svg", { viewBox: "0 0 " + W + " " + H, width: "100%", height: "" + H, role: "img", "aria-label": "Agent timeline" });
-    // grid
-    var ticks = 5;
-    for (var i = 0; i <= ticks; i++) {
-      var x = labelW + (chartW * i / ticks);
-      svg.appendChild(svgEl("line", { x1: x, y1: top - 6, x2: x, y2: H - 24, stroke: C.track, "stroke-width": 1, "stroke-dasharray": "2 4" }));
-      svg.appendChild(svgText(x, H - 8, fmtDur(total * i / ticks), { fill: C.muted, "font-size": 10, "text-anchor": "middle" }));
-    }
-    var lastLayer = 0;
-    rows.forEach(function (s, idx) {
-      var y = top + idx * rowH;
-      if (s.layer !== lastLayer) {
-        if (lastLayer !== 0) {
-        svg.appendChild(svgEl("line", { x1: 0, y1: y - 4, x2: W, y2: y - 4, stroke: C.ink, "stroke-width": 1 }));
-        }
-        svg.appendChild(svgText(4, y - 8, "LAYER " + s.layer, { fill: C.ink, "font-size": 9, "font-weight": 800, "letter-spacing": "0.08em" }));
-        lastLayer = s.layer;
+    var t0 = typeof DATA.started_at === "number" ? DATA.started_at : 0;
+    var definitions = [
+      { number: 1, title: "Independent recommendations", rows: l1 },
+      { number: 2, title: "Review and challenge", rows: l2 },
+      { number: 3, title: "Final decision", rows: l3 }
+    ].filter(function (stage) { return stage.rows.length; });
+    if (!definitions.length) return el("p", { class: "empty-note", text: "No timing data." });
+
+    var shell = el("div", { class: "timeline-shell", role: "group", "aria-label": "Contributor timing by stage" });
+    var derivedStart = 0, previousEnd = 0;
+    definitions.forEach(function (definition) {
+      var spans = definition.rows.map(function (r) {
+        var recorded = typeof r.started_at === "number" && t0 ? r.started_at - t0 : null;
+        return {
+          r: r,
+          start: Math.max(0, recorded == null ? derivedStart : recorded),
+          dur: Math.max(0, Number(r.duration_seconds) || 0)
+        };
+      });
+      var stageStart = spans.reduce(function (value, span) { return Math.min(value, span.start); }, Infinity);
+      if (!isFinite(stageStart)) stageStart = derivedStart;
+      var stageEnd = spans.reduce(function (value, span) { return Math.max(value, span.start + span.dur); }, stageStart);
+      var activeWindow = Math.max(1, stageEnd - stageStart);
+      var handoffDelay = Math.max(0, stageStart - previousEnd);
+
+      var stage = el("section", { class: "timeline-stage", "aria-label": "Stage " + definition.number + ": " + definition.title });
+      stage.appendChild(el("div", { class: "timeline-stage-head" }, [
+        el("div", { class: "timeline-stage-title" }, [
+          el("span", { class: "number", text: "Stage " + definition.number }),
+          el("h3", { text: definition.title })
+        ]),
+        el("div", { class: "timeline-stage-meta", text: "Began " + fmtOffset(stageStart) + " · active for " + fmtDur(activeWindow) })
+      ]));
+      if (definition.number > 1 && handoffDelay > 5) {
+        stage.appendChild(el("div", {
+          class: "timeline-gap",
+          text: fmtDur(handoffDelay) + " between stages for handoff, waiting, or retries."
+        }));
       }
-      svg.appendChild(svgText(labelW - 10, y + rowH / 2 + 4, s.r.agent_id, { fill: C.ink, "font-size": 12, "text-anchor": "end", "font-weight": 600 }));
-      var bx = labelW + (chartW * s.start / total);
-      var bw = Math.max(3, chartW * s.dur / total);
-      var color = s.r.success ? C.gold : (s.r.transient_empty ? C.gold : C.red);
-      var bar = svgEl("rect", { x: bx, y: y + 7, width: bw, height: rowH - 16, rx: 8, fill: color, opacity: s.r.success ? 1 : 0.55 });
-      bar.setAttribute("data-tip", (s.r.success ? "OK" : ("FAIL — " + (s.r.error || ""))) + " · " + fmtDur(s.dur));
-      bar.setAttribute("data-tiph", s.r.agent_id + " " + s.r.role);
-      svg.appendChild(bar);
-      svg.appendChild(svgText(bx + bw + 6, y + rowH / 2 + 4, fmtDur(s.dur), { fill: C.secondary || C.muted, "font-size": 10 }));
-    });
-    var note = el("p", { class: "empty-note", style: "margin-top:14px", html: "Bars use recorded per-agent start offsets when present; older manifests fall back to layer-derived offsets." });
-    var box = el("div"); box.appendChild(svg); box.appendChild(note); return box;
-  }
 
-  // ---------------------------------------------------------------- Three.js hero
-  function buildHero() {
-    var host = el("div", { id: "hero" });
-    host.appendChild(el("div", { class: "hint", text: REDUCED ? "Motion reduced — static view" : "Drag to orbit · click a node to jump to its section" }));
-    var fallback = el("div", { id: "hero-fallback", html: staticFlowSVG() });
-    host.appendChild(fallback);
-    // Reduced motion: skip WebGL entirely and show the static SVG pipeline.
-    if (REDUCED) fallback.style.display = "block";
-    else setTimeout(function () { initThree(host); }, 0);
-    return host;
-  }
-  function initThree(host) {
-    if (typeof THREE === "undefined") { host.querySelector("#hero-fallback").style.display = "block"; return; }
-    var W = host.clientWidth, H = host.clientHeight;
-    var scene = new THREE.Scene();
-    var camera = new THREE.PerspectiveCamera(45, W / H, 0.1, 100);
-    camera.position.set(0, 1.5, 15);
-    var renderer;
-    try { renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); }
-    catch (e) { host.querySelector("#hero-fallback").style.display = "block"; return; }
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    renderer.setSize(W, H);
-    renderer.setClearColor(0xffffff, 0);
-    host.insertBefore(renderer.domElement, host.firstChild);
-    scene.add(new THREE.AmbientLight(0xffffff, 0.85));
-    var key = new THREE.DirectionalLight(0xffffff, 0.6); key.position.set(4, 8, 10); scene.add(key);
-
-    var group = new THREE.Group(); scene.add(group);
-    var COL = { gold: 0xFFA300, green: 0x10B981, red: 0xEF4444, ink: 0x262626 };
-    var nodes = [];
-    function addNode(x, y, label, dur, status, target) {
-      var maxDur = 500;
-      var rad = 0.34 + 0.5 * Math.min(1, Math.sqrt((dur || 30) / maxDur));
-      var color = status === "fail" ? COL.red : (status === "anchor" ? COL.gold : COL.green);
-      var geo = new THREE.SphereGeometry(rad, 28, 28);
-      var mat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.45, metalness: 0.1 });
-      var m = new THREE.Mesh(geo, mat); m.position.set(x, y, 0);
-      m.userData = { target: target, base: y };
-      group.add(m); nodes.push(m);
-      group.add(makeLabel(label, x, y - rad - 0.42));
-      return m;
-    }
-    function makeLabel(text, x, y) {
-      var cv = document.createElement("canvas"); var s = 256; cv.width = s; cv.height = 64;
-      var ctx = cv.getContext("2d"); ctx.fillStyle = "#262626";
-      ctx.font = "bold 30px Arial, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillText(text.toUpperCase(), s / 2, 32);
-      var tex = new THREE.CanvasTexture(cv); tex.needsUpdate = true;
-      var spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
-      spr.position.set(x, y, 0); spr.scale.set(2.4, 0.6, 1); return spr;
-    }
-    function edge(a, b) {
-      var g = new THREE.BufferGeometry().setFromPoints([a.position, b.position]);
-      var line = new THREE.Line(g, new THREE.LineBasicMaterial({ color: COL.gold, transparent: true, opacity: 0.35 }));
-      group.add(line);
-      return { a: a, b: b };
-    }
-
-    var l1 = (DATA.layer1 || []), l2 = (DATA.layer2 || []), l3 = (DATA.layer3 || []);
-    var scout = addNode(-6.5, 0, "scout", 20, "anchor", "scout");
-    function spread(n, i) { return n <= 1 ? 0 : (i - (n - 1) / 2) * 2.4; }
-    var pNodes = l1.map(function (r, i) { return addNode(-2.2, spread(l1.length, i), r.agent_id, r.duration_seconds, r.success ? "ok" : "fail", "proposers"); });
-    var rNodes = l2.map(function (r, i) { return addNode(2.2, spread(l2.length, i), r.agent_id, r.duration_seconds, r.success ? "ok" : "fail", "refiners"); });
-    var agg = null;
-    if (!DATA.partial) {
-      var aggConfig = ((DATA.config || {}).aggregator || {}), aggRun = l3[0];
-      agg = addNode(6.5, 0, aggConfig.name || "aggregator", aggRun ? aggRun.duration_seconds : 60, aggRun && !aggRun.success ? "fail" : "anchor", "plan");
-    }
-
-    var edges = [];
-    pNodes.forEach(function (p) { edges.push(edge(scout, p)); });
-    // broadcast: every proposer → every refiner
-    pNodes.forEach(function (p) { rNodes.forEach(function (rf) { edges.push(edge(p, rf)); }); });
-    if (agg) rNodes.forEach(function (rf) { edges.push(edge(rf, agg)); });
-    if (agg && !rNodes.length) pNodes.forEach(function (p) { edges.push(edge(p, agg)); });
-
-    // particles
-    var particles = [];
-    if (!REDUCED) edges.forEach(function (e, i) {
-      var pg = new THREE.SphereGeometry(0.09, 10, 10);
-      var pm = new THREE.MeshBasicMaterial({ color: COL.gold });
-      var mesh = new THREE.Mesh(pg, pm); group.add(mesh);
-      particles.push({ mesh: mesh, e: e, t: (i * 0.13) % 1 });
-    });
-
-    // custom drag-orbit
-    var rotY = -0.15, rotX = 0.12, dragging = false, px = 0, py = 0, autoV = 0.0022;
-    var cv = renderer.domElement;
-    cv.addEventListener("mousedown", function (e) { dragging = true; px = e.clientX; py = e.clientY; });
-    window.addEventListener("mouseup", function () { dragging = false; });
-    window.addEventListener("mousemove", function (e) {
-      if (!dragging) return;
-      rotY += (e.clientX - px) * 0.008; rotX += (e.clientY - py) * 0.006;
-      rotX = Math.max(-0.8, Math.min(0.8, rotX)); px = e.clientX; py = e.clientY;
-    });
-    cv.addEventListener("touchstart", function (e) { if (e.touches[0]) { dragging = true; px = e.touches[0].clientX; py = e.touches[0].clientY; } }, { passive: true });
-    cv.addEventListener("touchmove", function (e) { if (dragging && e.touches[0]) { rotY += (e.touches[0].clientX - px) * 0.008; rotX += (e.touches[0].clientY - py) * 0.006; rotX = Math.max(-0.8, Math.min(0.8, rotX)); px = e.touches[0].clientX; py = e.touches[0].clientY; } }, { passive: true });
-    cv.addEventListener("touchend", function () { dragging = false; });
-
-    // click → raycast
-    var ray = new THREE.Raycaster(), mouse = new THREE.Vector2(), downPos = null;
-    cv.addEventListener("mousedown", function (e) { downPos = [e.clientX, e.clientY]; });
-    cv.addEventListener("click", function (e) {
-      if (downPos && (Math.abs(e.clientX - downPos[0]) + Math.abs(e.clientY - downPos[1])) > 6) return;
-      var rect = cv.getBoundingClientRect();
-      mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-      ray.setFromCamera(mouse, camera);
-      var hit = ray.intersectObjects(nodes);
-      if (hit.length && hit[0].object.userData.target) {
-        var t = document.getElementById(hit[0].object.userData.target);
-        if (t) t.scrollIntoView({ behavior: REDUCED ? "auto" : "smooth", block: "start" });
-      }
-    });
-
-    function resize() { W = host.clientWidth; H = host.clientHeight; camera.aspect = W / H; camera.updateProjectionMatrix(); renderer.setSize(W, H); }
-    window.addEventListener("resize", resize);
-
-    var clock = 0;
-    function frame() {
-      if (!REDUCED && !dragging) rotY += autoV;
-      group.rotation.y = rotY; group.rotation.x = rotX;
-      if (!REDUCED) {
-        clock += 0.006;
-        nodes.forEach(function (n, i) { n.position.y = n.userData.base + Math.sin(clock * 1.4 + i) * 0.05; });
-        particles.forEach(function (p) {
-          p.t += 0.01; if (p.t > 1) p.t -= 1;
-          p.mesh.position.lerpVectors(p.e.a.position, p.e.b.position, p.t);
+      var rows = el("div", { class: "timeline-rows" });
+      spans.forEach(function (span) {
+        var left = Math.max(0, Math.min(100, (span.start - stageStart) / activeWindow * 100));
+        var width = Math.max(.8, Math.min(100 - left, span.dur / activeWindow * 100));
+        var state = span.r.success ? "completed" : (span.r.transient_empty ? "returned no usable response" : "did not complete");
+        var barClass = "timeline-bar" + (span.r.success ? "" : (span.r.transient_empty ? " transient" : " failed"));
+        var track = el("div", {
+          class: "timeline-track",
+          role: "img",
+          "aria-label": span.r.agent_id + " " + state + " in " + fmtDur(span.dur)
         });
-      }
-      renderer.render(scene, camera);
-      if (!REDUCED) requestAnimationFrame(frame);
-    }
-    frame();
-    if (REDUCED) renderer.render(scene, camera);
+        track.appendChild(el("span", { class: barClass, style: "left:" + left.toFixed(2) + "%;width:" + width.toFixed(2) + "%" }));
+        rows.appendChild(el("div", { class: "timeline-row" }, [
+          el("div", { class: "timeline-who" }, [
+            el("div", { class: "name", text: span.r.agent_id }),
+            el("div", { class: "role", text: String(span.r.role || "contributor").replace(/-/g, " ") + " · " + state })
+          ]),
+          track,
+          el("div", { class: "timeline-duration", text: fmtDur(span.dur) })
+        ]));
+      });
+      stage.appendChild(rows);
+      shell.appendChild(stage);
+      previousEnd = Math.max(previousEnd, stageEnd);
+      derivedStart = previousEnd;
+    });
+    shell.appendChild(el("p", {
+      class: "timeline-legend",
+      style: "padding:0 20px 16px",
+      text: "Each stage uses its own readable scale. Delays between stages are called out in text instead of appearing as large empty gaps."
+    }));
+    return shell;
   }
-
-  // ---------------------------------------------------------------- static SVG flow
-  function staticFlowSVG() {
-    var g = C.gold, ink = C.ink, tk = C.track;
-    function box(x, label, sub) {
-      return '<rect x="' + x + '" y="60" width="150" height="70" rx="12" fill="#fff" stroke="' + tk + '"/>' +
-        '<text x="' + (x + 75) + '" y="90" text-anchor="middle" font-family="Arial" font-weight="800" font-size="13" fill="' + ink + '">' + label + '</text>' +
-        '<text x="' + (x + 75) + '" y="110" text-anchor="middle" font-family="Arial" font-size="10" fill="' + C.muted + '">' + sub + '</text>';
-    }
-    function arrow(x1, x2) { return '<line x1="' + x1 + '" y1="95" x2="' + (x2 - 8) + '" y2="95" stroke="' + g + '" stroke-width="2"/>' + '<polygon points="' + (x2 - 8) + ',90 ' + x2 + ',95 ' + (x2 - 8) + ',100" fill="' + g + '"/>'; }
-    return '<svg viewBox="0 0 900 190" width="100%" role="img" aria-label="MoA-X four-layer pipeline">' +
-      box(10, "SCOUT", "Layer 0 · brief") + arrow(160, 210) +
-      box(210, "PROPOSERS", "Layer 1 · parallel") + arrow(360, 410) +
-      box(410, "REFINERS", "Layer 2 · broadcast") + arrow(560, 610) +
-      box(610, "AGGREGATOR", "Layer 3 · " + (((DATA.config || {}).aggregator || {}).model || "opus")) +
-      '<text x="450" y="165" text-anchor="middle" font-family="Arial" font-size="11" fill="' + C.muted + '">Each refiner reviews every proposer — cross-lab verification before synthesis.</text>' +
-      '</svg>';
-  }
+  function fmtOffset(seconds) { return seconds < 1 ? "at run start" : fmtDur(seconds) + " into the run"; }
 
   // ---------------------------------------------------------------- SVG helpers
   function svgEl(tag, attrs) { var n = document.createElementNS("http://www.w3.org/2000/svg", tag); for (var k in attrs) n.setAttribute(k, attrs[k]); return n; }

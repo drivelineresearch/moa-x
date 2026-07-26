@@ -7,7 +7,7 @@ The brand images are current and live:
   the README and `docs/architecture.md` (generated from Prompt 1).
 
 The banner reflects the four-lab default roster. The workflow image shows the
-current default proposers (Codex Terra, GLM 5.2, rolling Sonnet), current
+current default proposers (Codex Terra, GLM 5.2, Claude Sonnet 5), current
 broadcast refiners (Codex Sol and Qwen 3.8), default Opus aggregation, and the
 generated plan/report artifacts. The prompts below are the source of truth for
 regenerating or tweaking them — keep the same style so the pair stays visually
@@ -48,7 +48,7 @@ Z-path exactly as written below.
 > each with a monitor showing a globe icon (web research). Desk colors and
 > labels identify the default proposer roster: a GREEN desk labeled "Codex
 > Terra", a VIOLET desk labeled "GLM 5.2", and an ORANGE desk labeled "Sonnet
-> latest". A bold red ribbon reading "READ-ONLY" bands across all three desks,
+> 5". A bold red ribbon reading "READ-ONLY" bands across all three desks,
 > with a padlock icon. JSON pages drop out of each output tray.
 >
 > ③ BROADCAST REFINERS (bottom-left quadrant): two people at desks reviewing
@@ -60,7 +60,7 @@ Z-path exactly as written below.
 > drawing on a drafting table, assembling a blueprint and three outputs: a
 > document labeled "final-plan.md", a small linked-node data card labeled
 > "final-plan.json", and a browser card labeled "report.html" containing tiny
-> bar-chart, timeline, and decision-lineage shapes. Add a small "Opus latest"
+> bar-chart, timeline, and decision-lineage shapes. Add a small "Opus 5"
 > label in the corner; Opus is the default, while the docs separately describe
 > the optional recorded Codex Layer 3.
 >
@@ -73,7 +73,7 @@ Z-path exactly as written below.
 
 Notes for whoever runs it:
 - Image models render obscure logos unreliably — the desk-front **text labels**
-  (`Codex Terra`, `GLM 5.2`, `Sonnet latest`, `Codex Sol`, `Qwen 3.8`) carry
+  (`Codex Terra`, `GLM 5.2`, `Sonnet 5`, `Codex Sol`, `Qwen 3.8`) carry
   the identification; logo motifs are nice-to-have accents, not load-bearing.
 - Keep Qwen in Layer 2. It is a default broadcast refiner, not the optional
   proposer shown by the v0.4.1 illustration.

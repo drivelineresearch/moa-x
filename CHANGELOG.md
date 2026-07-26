@@ -7,6 +7,14 @@ versioning.
 
 ### Added
 
+- Local-first Flask control room with a persistent SQLite run archive,
+  browser-local profiles, task-only and managed GitHub launches, reference
+  uploads, lifecycle events, provider health, and responsive run review.
+- Curated current routes for GPT-5.6 Terra/Sol/Luna, Claude Sonnet/Opus 5,
+  OpenCode Go, Qwen Token Plan, Cursor Grok, and AGY Gemini 3.6 Flash
+  High/Medium. The Web UI restricts aggregation to Opus or GPT-5.6 Sol.
+- Generated provider portraits, workflow/state art, favicon, and responsive
+  control-room illustrations.
 - Interactive decision-lineage explorer in `report.html`, backed by a new
   schema-validated `final-plan.json` companion that links every aggregated
   step to exact proposer steps and refiner findings.
@@ -16,16 +24,15 @@ versioning.
   `--phase layer3` path reuses retained proposer/refiner output, validates one
   strict Markdown-plus-lineage bundle, records timing and logs, and refreshes
   the HTML report without rerunning Layers 1 or 2.
-- Built-in `codex-aggregator` provider (`gpt-5.6-sol`, high reasoning) and
-  dedicated `MOA_AGGREGATOR_EFFORT` control.
+- Canonical `codex-sol` provider (`gpt-5.6-sol`, high reasoning) and dedicated
+  `MOA_AGGREGATOR_EFFORT` control. Older reviewer/aggregator names remain
+  compatibility aliases only.
 
 ### Changed
 
-- Default proposers now use Codex `gpt-5.6-terra`, GLM 5.2, and Claude Code's
-  rolling `sonnet` alias. Default broadcast refiners now use Codex
-  `gpt-5.6-sol` at high reasoning plus Qwen Token Plan
-  `qwen3.8-max-preview`; the default interactive aggregator remains Claude
-  Code's rolling `opus` alias.
+- Default proposers use Codex `gpt-5.6-terra`, GLM 5.2, and pinned Claude
+  Sonnet 5. Default broadcast refiners use canonical `codex-sol` plus Qwen
+  `qwen3.8-max-preview`; the default aggregator is pinned Claude Opus 5.
 - Qwen Token Plan is now part of the default refiner roster and has a bounded
   600-second timeout instead of inheriting the OpenCode harness timeout.
 - The report now includes recorded Layer 3 status, timing, logs, and run-health
@@ -41,6 +48,12 @@ versioning.
   appear between steps.
 - Structured-output extraction is shared, bounded, escape-tolerant, and strict
   about required root fields across adapters.
+- Claude receives large synthesis prompts over stdin instead of argv.
+  Cursor/OpenCode incomplete outputs receive exactly one bounded redispatch,
+  and OpenCode readiness is evaluated per configured route.
+- AGY headless runs explicitly approve read tools inside plan+sandbox mode.
+  The misleading Pro alias was replaced by the Gemini 3.6 Flash High model
+  actually served by the authenticated consumer account.
 - Proposer/refiner payloads are isolated as data, model identity is verified,
   and every harness is covered by a Git-visible before/after workspace guard.
 - Report disclosures and lineage tabs now expose consistent keyboard and ARIA
@@ -48,13 +61,15 @@ versioning.
 
 ### Validation
 
-- Offline suite: 92/92 tests pass.
-- Live cross-lab smoke: all three proposers and both broadcast refiners passed
-  with no timeout, identity, schema, transient-empty, or workspace-mutation
+- Offline suite: 110/110 tests pass; focused Flask suite: 10/10.
+- Five paid ensemble configurations exercised every surfaced route. Terra,
+  Luna, Sol, Sonnet, Opus, Cursor Grok, GLM, Grok, Kimi, Qwen Token Plan,
+  Qwen OpenCode, and both AGY Flash routes returned schema-valid artifacts.
+- A 103,507-byte synthesis completed through Opus over stdin. Composer returned
+  progress-only output on both its initial attempt and bounded retry, so the
+  Web UI leaves it visible but disabled. Across the matrix there were no
+  timeouts, identity mismatches, workspace mutations, auth failures, or quota
   failures.
-- Live Codex-only Layer 3 smoke completed in 150.4 seconds, produced two
-  lineage-valid final steps with no stale references, and regenerated the
-  self-contained report.
 
 ## [0.4.1] — 2026-07-19
 

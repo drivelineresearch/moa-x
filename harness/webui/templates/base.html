@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#FFFFFF">
+  <title>{% block title %}MoA-X Control Room{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to content</a>
+  {% block body %}{% endblock %}
+  <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="true"></div>
+  <script>
+    window.MOAX_BOOTSTRAP = {{ bootstrap|default({})|tojson }};
+  </script>
+  <script type="module" src="/static/js/app.js"></script>
+</body>
+</html>

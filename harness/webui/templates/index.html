@@ -1,0 +1,383 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="app-shell">
+  <aside class="sidebar" id="sidebar" aria-label="Primary">
+    <a class="brand" href="/" data-route="overview" aria-label="MoA-X overview">
+      <img class="brand-image" src="/static/images/moax-mark.webp" alt="">
+      <span class="brand-name">MOA–X</span>
+    </a>
+
+    <nav class="primary-nav">
+      <a class="nav-item is-active" href="/" data-route="overview">
+        <span class="nav-index">01</span>Overview
+      </a>
+      <a class="nav-item" href="/new" data-route="new">
+        <span class="nav-index">02</span>New run
+      </a>
+      <a class="nav-item" href="/runs" data-route="runs">
+        <span class="nav-index">03</span>Run archive
+      </a>
+      <a class="nav-item" href="/providers" data-route="providers">
+        <span class="nav-index">04</span>Providers
+      </a>
+    </nav>
+
+    <div class="sidebar-foot">
+      <div class="machine-state">
+        <span class="signal-dot" id="machine-signal"></span>
+        <div>
+          <strong id="machine-label">Checking machine</strong>
+          <span id="machine-detail">Local control plane</span>
+        </div>
+      </div>
+      <div class="profile-identity">
+        <span>LOCAL PROFILE</span>
+        <strong id="sidebar-profile-name">Local operator</strong>
+      </div>
+      <button class="text-button" type="button" data-open-panel="settings">Local preferences</button>
+    </div>
+  </aside>
+
+  <header class="mobile-header">
+    <a class="brand brand-mobile" href="/" data-route="overview">
+      <img class="brand-image" src="/static/images/moax-mark.webp" alt="">
+      <span class="brand-name">MOA–X</span>
+    </a>
+    <button class="menu-button" id="menu-button" type="button" aria-expanded="false" aria-controls="sidebar">Menu</button>
+  </header>
+
+  <main class="main" id="main-content" tabindex="-1">
+    <section class="view is-visible" data-view="overview" aria-labelledby="overview-title">
+      <header class="page-head">
+        <div>
+          <p class="eyebrow">LOCAL MISSION CONTROL</p>
+          <h1 id="overview-title">Parallel thinking.<br><em>One clear plan.</em></h1>
+          <p class="lede">Configure the ensemble, follow its progress, and revisit every decision.</p>
+        </div>
+        <button class="primary-button overview-create-button" type="button" data-route-button="new">
+          <span>Start here</span>
+          <strong>Create a run <span aria-hidden="true">→</span></strong>
+        </button>
+      </header>
+
+      <figure class="hero-visual">
+        <img src="/static/images/control-room-hero.webp" alt="Illustrated MoA-X control room where parallel research lanes converge into one decision">
+        <figcaption><b>THE CONTROL ROOM</b><span>One local surface for every model, run, and decision trail</span></figcaption>
+      </figure>
+
+      <div class="health-ribbon" id="health-ribbon" aria-label="Provider health"></div>
+
+      <section class="active-run" id="active-run-section" aria-labelledby="active-run-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">ON THE MACHINE</p>
+            <h2 id="active-run-title">Active work</h2>
+          </div>
+          <a class="quiet-link" href="/runs" data-route="runs">View the archive →</a>
+        </div>
+        <div id="active-run-card" class="empty-state compact">
+          <span class="empty-number">00</span>
+          <div>
+            <h3>The runway is clear</h3>
+            <p>No run is active. Start with a task, choose your roster, and send it.</p>
+          </div>
+          <button class="primary-button" type="button" data-route-button="new">Create a run</button>
+        </div>
+      </section>
+
+      <section class="overview-grid">
+        <div class="recent-panel">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">RECENT DECISIONS</p>
+              <h2>Latest runs</h2>
+            </div>
+          </div>
+          <div class="run-list" id="recent-runs" aria-live="polite" aria-busy="true">
+            <div class="run-loading" role="status">
+              <span class="run-spinner" aria-hidden="true"></span>
+              <div><h3>Loading latest runs</h3><p>Checking the local archive…</p></div>
+            </div>
+          </div>
+        </div>
+        <aside class="roster-note">
+          <p class="eyebrow">ENSEMBLE PRINCIPLE</p>
+          <h2>Cross-lab by design</h2>
+          <p>Independent refiners catch the blind spots a single model family can miss.</p>
+        </aside>
+      </section>
+    </section>
+
+    <section class="view" data-view="new" aria-labelledby="new-run-title">
+      <header class="page-head narrow">
+        <div>
+          <p class="eyebrow">NEW RUN</p>
+          <h1 id="new-run-title">Configure the run</h1>
+          <p class="lede">Use the provider accounts already authenticated on this machine.</p>
+        </div>
+      </header>
+
+      <div class="wizard-layout">
+        <nav class="step-nav" aria-label="Run setup steps">
+          <button class="step-item is-active" type="button" data-step-target="1" data-step-index="01">Task</button>
+          <button class="step-item" type="button" data-step-target="2" data-step-index="02">Roster</button>
+          <button class="step-item" type="button" data-step-target="3" data-step-index="03">Review</button>
+        </nav>
+
+        <form id="launch-form" class="wizard" autocomplete="off">
+          <section class="wizard-step is-active" data-step="1">
+            <div class="form-section-head">
+              <span class="section-number">01</span>
+              <div>
+                <h2>What are we solving?</h2>
+                <p>Start with a clear task. Repository context is optional.</p>
+              </div>
+            </div>
+            <div class="field">
+              <label for="run-goal">Task or outcome</label>
+              <textarea id="run-goal" name="goal" rows="7" required placeholder="Review the billing pipeline and write an implementation plan for…"></textarea>
+              <small><span id="goal-count">0</span> characters · Draft saves in this browser</small>
+            </div>
+            <section class="source-picker" aria-labelledby="source-picker-title">
+              <div class="source-picker-head">
+                <div>
+                  <h3 id="source-picker-title">Context source <span>Optional</span></h3>
+                  <p>Run from the task alone, or give the ensemble a GitHub repository to inspect.</p>
+                </div>
+                <div class="source-tabs" role="group" aria-label="Context source">
+                  <button class="source-tab is-active" type="button" data-source-mode="brief">Task only</button>
+                  <button class="source-tab" type="button" data-source-mode="github">GitHub repo</button>
+                </div>
+              </div>
+              <div class="source-context-panel" id="brief-source">
+                <img src="/static/images/context-brief.webp" alt="">
+                <div><strong>No repository needed</strong><p>MoA-X will plan from your task and any reference files you attach.</p></div>
+              </div>
+              <div class="source-context-panel github-source" id="github-source" hidden>
+                <img src="/static/images/context-github.webp" alt="">
+                <div class="field">
+                  <label for="github-repo"><span id="github-owner-label">{{ bootstrap.github_owner }}</span> repository</label>
+                  <select id="github-repo" name="github_repo">
+                    <option value="">Loading repositories…</option>
+                  </select>
+                  <small id="github-repo-meta">Repository metadata comes from the connected GitHub service.</small>
+                </div>
+              </div>
+            </section>
+            <section class="attachment-picker" aria-labelledby="attachment-title">
+              <div class="attachment-intro">
+                <img src="/static/images/context-upload.webp" alt="">
+                <div>
+                  <h3 id="attachment-title">Reference files <span>Optional</span></h3>
+                  <p>Attach specs, notes, diagrams, or exported issue context to this run.</p>
+                </div>
+              </div>
+              <label class="drop-zone" id="drop-zone" for="run-files" tabindex="0">
+                <input id="run-files" type="file" multiple accept=".pdf,.md,.markdown,.txt,.text,.csv,.tsv,.json,.yaml,.yml,.xml,.html,.htm,.rst,.log,.png,.jpg,.jpeg,.webp,.tif,.tiff,.bmp">
+                <strong>Drop files here</strong>
+                <span>PDF, text, or OCR-ready images · up to 10 files</span>
+              </label>
+              <div class="attachment-list" id="attachment-list" aria-live="polite"></div>
+            </section>
+            <div class="field-grid">
+              <div class="field">
+                <label for="run-name">Run name <span>Optional</span></label>
+                <input id="run-name" name="name" placeholder="Billing reliability review">
+              </div>
+              <fieldset class="depth-field">
+                <legend>Planning depth</legend>
+                <div class="depth-layout">
+                  <figure class="depth-visual">
+                    <img id="depth-illustration" src="/static/images/context-effort.webp" alt="">
+                    <figcaption id="depth-caption">Three proposers and two refiners with each route’s configured effort.</figcaption>
+                  </figure>
+                  <div class="depth-control">
+                    <output id="depth-output" for="depth-range">Balanced</output>
+                    <input id="depth-range" type="range" min="0" max="2" step="1" value="1" aria-label="Planning depth" aria-valuetext="Balanced" aria-describedby="depth-caption">
+                    <div class="depth-stops" aria-hidden="true">
+                      <span>Quick</span><span>Balanced</span><span>Thorough</span>
+                    </div>
+                  </div>
+                </div>
+              </fieldset>
+            </div>
+            <div class="step-actions">
+              <span></span>
+              <button class="primary-button" type="button" data-next-step>Choose roster</button>
+            </div>
+          </section>
+
+          <section class="wizard-step" data-step="2">
+            <div class="form-section-head">
+              <span class="section-number">02</span>
+              <div>
+                <h2>Pick the team</h2>
+                <p>Use the defaults or tune each lane. Cross-lab refiners are the strongest setup.</p>
+              </div>
+            </div>
+            <figure class="section-illustration roster-illustration">
+              <img src="/static/images/context-roster.webp" alt="">
+              <figcaption>Independent proposals become stronger when reviewers come from a different lab.</figcaption>
+            </figure>
+            <div class="roster-builder">
+              <fieldset class="roster-lane">
+                <legend><span>Layer 1</span> Proposers <b id="proposer-count">0 selected</b></legend>
+                <p>Independent first passes. Choose two or more for useful diversity.</p>
+                <label class="model-search"><span class="sr-only">Search proposer models</span><input type="search" data-model-search="proposer" placeholder="Search providers or models"></label>
+                <div class="model-options" id="proposer-options"></div>
+              </fieldset>
+              <fieldset class="roster-lane">
+                <legend><span>Layer 2</span> Refiners <b id="refiner-count">0 selected</b></legend>
+                <p>Each reviewer sees every proposal and looks for missed risks.</p>
+                <label class="model-search"><span class="sr-only">Search refiner models</span><input type="search" data-model-search="refiner" placeholder="Search providers or models"></label>
+                <div class="model-options" id="refiner-options"></div>
+              </fieldset>
+              <fieldset class="roster-lane">
+                <legend><span>Layer 3</span> Aggregator</legend>
+                <p>The final editor reconciles the strongest ideas into one plan.</p>
+                <label class="model-search"><span class="sr-only">Search aggregator models</span><input type="search" data-model-search="aggregator" placeholder="Search providers or models"></label>
+                <div class="model-options" id="aggregator-options"></div>
+              </fieldset>
+            </div>
+            <div class="independence-callout" id="independence-callout" role="status">
+              <span>LAB CHECK</span>
+              <p>Select a roster to check refinement independence.</p>
+            </div>
+            <div class="step-actions">
+              <button class="secondary-button" type="button" data-prev-step>Back</button>
+              <button class="primary-button" type="button" data-next-step>Review run</button>
+            </div>
+          </section>
+
+          <section class="wizard-step" data-step="3">
+            <div class="form-section-head">
+              <span class="section-number">03</span>
+              <div>
+                <h2>Ready for dispatch</h2>
+                <p>Review the immutable snapshot. The job can keep running if this tab closes.</p>
+              </div>
+            </div>
+            <div class="review-sheet" id="review-sheet"></div>
+            <div class="step-actions">
+              <button class="secondary-button" type="button" data-prev-step>Back</button>
+              <button class="primary-button" type="submit" id="launch-button">Start run</button>
+            </div>
+          </section>
+        </form>
+      </div>
+    </section>
+
+    <section class="view" data-view="runs" aria-labelledby="runs-title">
+      <header class="page-head">
+        <div>
+          <p class="eyebrow">LOCAL ARCHIVE</p>
+          <h1 id="runs-title">Run archive</h1>
+        </div>
+        <div class="run-actions">
+          <button class="secondary-button" type="button" id="import-history-button">Import .moa history</button>
+        </div>
+      </header>
+      <div class="filter-bar" role="search">
+        <label class="search-field">
+          <span class="sr-only">Search runs</span>
+          <input type="search" id="run-search" placeholder="Search goal, context, or model">
+        </label>
+        <select id="run-status-filter" aria-label="Filter by status">
+          <option value="">All statuses</option>
+          <option value="running">Running</option>
+          <option value="queued">Queued</option>
+          <option value="completed">Completed</option>
+          <option value="failed">Failed</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+        <span id="run-result-count">0 runs</span>
+      </div>
+      <div class="archive-table-wrap">
+        <table class="archive-table">
+          <thead><tr><th>Run</th><th>Context</th><th>Roster</th><th>Started</th><th>Status</th><th></th></tr></thead>
+          <tbody id="run-archive"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="view" data-view="providers" aria-labelledby="providers-title">
+      <header class="page-head">
+        <div>
+          <p class="eyebrow">MACHINE ACCOUNTS</p>
+          <h1 id="providers-title">Machine accounts</h1>
+          <p class="lede">Provider credentials stay with each local CLI.</p>
+        </div>
+        <button class="secondary-button" type="button" id="probe-all-button">Recheck all</button>
+      </header>
+      <div class="provider-summary" id="provider-summary"></div>
+      <div class="provider-grid" id="provider-grid"></div>
+      <aside class="security-note">
+        <p class="eyebrow">LOCAL AUTHENTICATION MODEL</p>
+        <h2>The browser never holds a provider secret</h2>
+        <p>Codex, Claude, OpenCode, Gemini, and AGY use the accounts and tokens they can already access under the operating-system user running this server. “Connected” means a capability probe succeeded on this machine.</p>
+      </aside>
+    </section>
+
+    <section class="view run-detail-view" data-view="run-detail" aria-labelledby="run-detail-title">
+      <header class="run-detail-head">
+        <button class="back-button" type="button" data-route-button="runs">← Run archive</button>
+        <div class="run-title-row">
+          <div>
+            <p class="eyebrow" id="run-detail-kicker">RUN</p>
+            <h1 id="run-detail-title">Loading run…</h1>
+            <p class="lede" id="run-detail-meta"></p>
+          </div>
+          <figure class="run-detail-visual">
+            <img id="run-detail-art" src="/static/images/state-queued.webp" alt="">
+            <figcaption id="run-detail-art-caption">Queued</figcaption>
+          </figure>
+          <div class="run-actions" id="run-actions"></div>
+        </div>
+      </header>
+      <div class="phase-rail" id="phase-rail" aria-label="Run progress"></div>
+      <div class="run-detail-grid">
+        <section>
+          <div class="section-heading">
+            <div><p class="eyebrow">ENSEMBLE</p><h2>Agent lanes</h2></div>
+            <span class="live-label" id="live-label">Connecting</span>
+          </div>
+          <div class="agent-grid" id="agent-grid"></div>
+        </section>
+        <aside class="event-panel">
+          <div class="section-heading">
+            <div><p class="eyebrow">LIVE TRACE</p><h2>What’s happening</h2></div>
+          </div>
+          <div class="event-feed" id="event-feed" aria-live="polite"></div>
+        </aside>
+      </div>
+      <section class="result-panel" id="result-panel" hidden></section>
+    </section>
+  </main>
+</div>
+
+<div class="info-popover" id="info-popover" role="tooltip" aria-labelledby="info-popover-title" hidden>
+  <strong id="info-popover-title"></strong>
+  <p id="info-popover-body"></p>
+</div>
+
+<dialog class="settings-dialog" id="settings-dialog">
+  <form method="dialog">
+    <div class="dialog-head">
+      <div><p class="eyebrow">THIS BROWSER</p><h2>Local preferences</h2></div>
+      <button class="close-button" value="cancel" aria-label="Close">Close</button>
+    </div>
+    <div class="field">
+      <label for="profile-name">Display name</label>
+      <input id="profile-name" maxlength="40" placeholder="Alex">
+      <small>Used to group runs on this shared machine. This is not an account or privacy boundary.</small>
+    </div>
+    <label class="confirm-row">
+      <input type="checkbox" id="compact-events">
+      <span>Show compact event summaries by default</span>
+    </label>
+    <div class="dialog-actions">
+      <button class="primary-button" type="button" id="save-settings">Save preferences</button>
+    </div>
+  </form>
+</dialog>
+{% endblock %}

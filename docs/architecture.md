@@ -6,7 +6,7 @@ pointed at a different job: producing repo-grounded implementation
 plans for coding agents instead of chat answers.
 
 <p align="center">
-  <img src="moa-x-workflow.png" alt="MoA-X workflow: Scout → gpt-5.6-terra, GLM-5.2, and rolling Sonnet proposers → gpt-5.6-sol and Qwen 3.8 Max Preview broadcast refiners → rolling Opus aggregator → final plan, decision lineage, and report" width="700">
+  <img src="moa-x-workflow.png" alt="MoA-X workflow: Scout → GPT-5.6 Terra, GLM-5.2, and Claude Sonnet 5 proposers → GPT-5.6 Sol and Qwen 3.8 Max Preview broadcast refiners → Claude Opus 5 aggregator → final plan, decision lineage, and report" width="700">
 </p>
 
 ## The four layers
@@ -14,8 +14,8 @@ plans for coding agents instead of chat answers.
 ```
 Layer 0 — Scout brief           (parent Claude, in-place)
 Layer 1 — Proposers (parallel)    default: codex + glm + sonnet subprocesses
-Layer 2 — Broadcast refiners      default: codex-reviewer + qwen, each sees ALL proposals
-Layer 3 — Aggregator              default: parent rolling opus; optional recorded Codex phase
+Layer 2 — Broadcast refiners      default: codex-sol + qwen, each sees ALL proposals
+Layer 3 — Aggregator              default: parent Claude Opus 5; optional recorded Codex phase
 ```
 
 The roster (which providers run at which layer, and how many) is
@@ -30,12 +30,12 @@ models do.
 `glm` (GLM-5.2 via the `opencode` CLI), and Anthropic `claude` (in Sonnet
 mode). Each produces an independent plan. Every proposer reads the repo
 (codex with a filesystem-enforced read-only sandbox; opencode with a
-permission-deny policy plus the prompt rule; sonnet with read-only
-enforced by prompt) and does web research. Different labs tend to mean
+permission-deny policy plus the prompt rule; sonnet with a hard read-only
+tool allowlist) and does web research. Different labs tend to mean
 different training data, different tool-use behavior, and different blind
 spots.
 
-**Layer 2: broadcast refiners.** The default refiners are `codex-reviewer`
+**Layer 2: broadcast refiners.** The default refiners are `codex-sol`
 (`gpt-5.6-sol` at high reasoning) and `qwen` (Alibaba
 `qwen3.8-max-preview` through Qwen Token Plan and `opencode`). Each sees all the
 proposals and produces verification output: which claims are verified,
@@ -43,10 +43,10 @@ which are contradicted, what's missing, what the proposers disagreed on.
 "Broadcast" means every refiner sees every proposal, not cross-pair. This
 is paper-faithful to Wang et al.
 
-**Layer 3: aggregation.** By default parent Claude Code, set to its rolling
-`opus` alias, synthesizes one plan you can act on. The same retained synthesis
+**Layer 3: aggregation.** By default parent Claude Code on
+`claude-opus-5` synthesizes one plan you can act on. The same retained synthesis
 can instead run through `--phase layer3 --aggregator-provider
-codex-aggregator`, which invokes `gpt-5.6-sol` at high reasoning, validates
+codex-sol`, which invokes `gpt-5.6-sol` at high reasoning, validates
 the Markdown and exact decision-lineage pointers, records the subprocess, and
 regenerates the report. Both paths honor contradicted findings, pull in
 missing steps, and surface disagreements instead of silently picking a side.
@@ -67,9 +67,10 @@ reveal. v0.2 corrected this.
 
 ## Why Sonnet is proposer-only
 
-Claude Code's rolling `opus` alias is the Layer 3 aggregator and its rolling
-`sonnet` alias is a Layer 1 proposer. The default Layer 2 is
-`{codex-reviewer, qwen}` so verification is done by OpenAI and Alibaba,
+Claude Code's `claude-opus-5` route is the Layer 3 aggregator and
+`claude-sonnet-5` is a Layer 1 proposer. The stable internal provider names
+remain `opus` and `sonnet`. The default Layer 2 is
+`{codex-sol, qwen}` so verification is done by OpenAI and Alibaba,
 independent of both:
 
 - the Anthropic-family proposer (Sonnet), and
@@ -86,7 +87,7 @@ aggregator's harness).
 
 ## Why this roster
 
-The default roster spans four labs — OpenAI (`codex`/`codex-reviewer`), Zhipu
+The default roster spans four labs — OpenAI (`codex`/`codex-sol`), Zhipu
 (`glm`), Anthropic (`sonnet`/`opus`), and Alibaba (`qwen`).
 
 - **Cross-lab diversity beats quantity.** The paper's own ablation
@@ -98,40 +99,43 @@ The default roster spans four labs — OpenAI (`codex`/`codex-reviewer`), Zhipu
   parallel fan-out, though the wall-clock cost is bounded since layers
   run in parallel.
 - **It's a default, not a cap.** The roster is pure config (see
-  [`config.md`](config.md)); Qwen Token Plan ships in the default refiner set.
-  Tested recipes for DeepSeek, MiniMax, xAI Grok, Mistral, or other
-  frontier models are welcome. Most should slot into the existing `opencode`
+  [`config.md`](config.md)); Qwen Token Plan ships in the default refiner set,
+  while DeepSeek V4 Pro/Flash are curated OpenCode Go routes.
+  Tested recipes for MiniMax, xAI Grok, Mistral, or other frontier models are
+  welcome. Most should slot into the existing `opencode`
   or `cursor` adapter. A genuinely new *harness* still needs its own adapter,
   preflight, and prompt-assumption review, so open an issue first. See
   [`CONTRIBUTING.md`](../CONTRIBUTING.md).
 
-### Why gemini was removed
+### Why Google is opt-in
 
-Through v0.2 the third lab was Google `gemini` (via the gemini CLI). It
-was removed in v0.3.0 because it was the harness's dominant flake source:
-the CLI routinely returned a success-shaped envelope with an empty
-response (utility-model quota exhaustion silently dropping the JSON),
-it has no CLI-level read-only mode (only a prompt rule), and it forced
-the prompt onto argv where large refiner prompts hit ARG_MAX. GLM-5.2
-(via opencode) took the third-lab slot: comparable frontier coding
-quality, real permission-level read-only, and file-based prompt delivery
-that sidesteps the argv limit. Anyone who still wants a Gemini model can
-route it through the `cursor` harness as a user-named provider — see
-[`config.md`](config.md#migrating-from-gemini).
+GLM-5.2 via OpenCode holds the default third-lab proposer slot. Google models
+are exposed only through the opt-in AGY routes, which reuse the authenticated
+local Antigravity account and require plan mode plus sandboxing. Live AGY
+probes decide whether the Pro and Flash routes are currently available. See
+[`config.md`](config.md#google-models-through-agy).
 
 ### Why provider names instead of fixed roles
 
 A provider in moa-x is a `{name, harness, model}` triple. The `harness`
-is which CLI gets invoked (`codex`, `claude`, `opencode`, `cursor`); the
+is which CLI gets invoked (`codex`, `claude`, `opencode`, `cursor`, or `agy`); the
 `model` is what that harness asks for (e.g. `gpt-5.6-terra`, `opencode-go/glm-5.2`,
-`cursor-grok-4.5-high`); the `name` is a user-facing label that becomes the
-`agent_id` in payloads. The codebase ships built-in names `codex`,
-`codex-reviewer`, `sonnet`, `opus`, `glm`, `kimi`, `qwen`, `composer`, `grok`, `cursor-grok`; users add their own under
+`cursor-grok-4.5-high`); the `name` is a stable route identifier that becomes
+the `agent_id` in payloads. Compatibility names remain stable even when their
+resolved model advances; the Web UI presents the canonical model label. The
+curated surface ships `codex`, `codex-sol`, `codex-luna`, `sonnet`, `opus`,
+`glm`, `kimi`, `qwen`, `qwen-opencode`, `composer`, `grok`, `cursor-grok`,
+`deepseek`, `deepseek-flash`, and `agy-gemini-flash`. The two DeepSeek
+routes resolve to OpenCode Go's current V4 Pro and V4 Flash model ids and can
+participate as proposers or refiners. Legacy `codex-reviewer`,
+`codex-aggregator`, and `agy-gemini-high` names remain resolvable for existing
+configs but are hidden from the Web UI. Users add their own under
 `providers:` in `harness/config.yaml` or via the
 `MOA_PROVIDER_<NAME>=<harness>:<model>` env shorthand.
 
 This split exists because the Cursor CLI breaks the one-CLI-one-lab
-assumption — `cursor-agent --model gpt-5.5-medium` and `codex --model gpt-5.6-terra`
+assumption — `cursor-agent --model gpt-5.6-sol-high` and
+`codex --model gpt-5.6-terra`
 both hit OpenAI. Encoding the lab in the harness identifier would
 have meant pretending Cursor was three or four different harnesses;
 splitting the data model is cleaner.
@@ -167,7 +171,7 @@ priorities.
 Previously this list also called "API-key fallback" and "more than
 three providers" non-goals. Neither is anymore. The underlying CLIs support
 subscription and/or API-key auth, the default roster spans four labs, Qwen is
-an optional built-in, and the roster is user config. The one constraint we
+a built-in default refiner, and the roster is user config. The one constraint we
 still recommend (not enforce) is lab-independence at refinement and
 aggregation (see "Why sonnet is proposer-only" above); the shipped
 default honors it and the orchestrator warns when a roster breaks it.

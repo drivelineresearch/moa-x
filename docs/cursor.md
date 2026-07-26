@@ -161,64 +161,34 @@ Cursor's CLI uses **machine ids**, which differ from the friendly names
 on https://cursor.com/docs/models. Run `cursor-agent --list-models` to
 see what your account can use.
 
-Examples (from a current install):
+Examples verified against `cursor-agent --list-models` on 2026-07-25:
 
 | Friendly name        | CLI machine id              |
 | -------------------- | --------------------------- |
-| GPT-5.5              | `gpt-5.5-medium` (also `-high`, `-extra-high`) |
-| Claude 4.7 Opus      | `claude-opus-4-7-medium` (or `-thinking-high`, etc.) |
-| Claude 4.5 Sonnet    | `claude-4.5-sonnet`         |
 | Composer 2.5         | `composer-2.5` (Cursor's in-house model) |
-| Gemini 3.1 Pro       | `gemini-3.1-pro` (used by the Gemini migration example below) |
 | Grok 4.5 (Cursor)    | `cursor-grok-4.5-high` (also `-medium`, `-low`; each has a `-fast` variant) |
-| Kimi K2.7 Code       | `kimi-k2.7-code`            |
 
 Notes:
 
-- Anthropic models in Cursor are listed without a fixed thinking
-  budget; reasoning controls live in the suffix (`-low`, `-medium`,
-  `-high`, `-thinking-low`, etc.).
 - Cursor's Grok ids are `cursor-`-prefixed with the reasoning tier baked
   in: `cursor-grok-4.5-high` / `-medium` / `-low` (append `-fast` for the
   faster variant). The bare `grok-4-20` id from older catalogs is gone —
   always confirm with `cursor-agent --list-models`.
-- moa-x does not validate model ids — Cursor errors are surfaced
-  verbatim if you typo.
+- `install_deps.py` validates configured Cursor ids against the current
+  account's `cursor-agent --list-models` output before dispatch.
 
-## Per-model lab routing
+## Curated Cursor surface
 
-Cursor doesn't publish a structured model-to-lab map in their CLI
-reference, but the model list at https://cursor.com/docs/models groups
-identifiers by provider. Useful summary as of 2026-04:
+MoA-X intentionally exposes only `composer` and `cursor-grok` as curated
+Cursor routes. Cursor's broader catalog changes independently; advanced users
+can still declare a custom provider in `harness/config.yaml`. Cursor billing
+does not provide a bring-your-own-provider-key path.
 
-| Lab       | Cursor model prefixes                                     |
-| --------- | ---------------------------------------------------------- |
-| OpenAI    | `gpt-*`                                                    |
-| Anthropic | `claude-*`                                                 |
-| Google    | `gemini-*`                                                 |
-| xAI       | `grok-*`                                                   |
-| Moonshot  | `kimi-*`                                                   |
-| Zhipu     | `glm-*`                                                    |
-| Cursor    | `composer-*` (Cursor's own foundation models)              |
-
-### Cursor-hosted GLM / Kimi vs opencode
-
-Cursor's catalog also routes Kimi K2.7 Code and GLM 5.2. If you already
-pay for Cursor, routing those through the cursor harness is a valid
-alternative to the default `opencode` lanes — one subscription, one CLI.
-The catch: **the Cursor CLI has no bring-your-own-key path**, so
-Cursor-hosted GLM/Kimi run on Cursor's billing, not your Zhipu /
-Moonshot keys. If you want to run GLM 5.2 or Kimi K2.7 Code on your own
-provider keys, use the `opencode` harness (the default) instead — it
-reads `ZHIPU_API_KEY` / `MOONSHOT_API_KEY` directly.
-
-moa-x does not infer lab from model id at runtime. The `lab` concept
-is intentionally absent from the data model — see
-[`docs/architecture.md`](./architecture.md). If you want to recreate
-the historical "Layer 2 should not be Anthropic" rule when using
-Cursor for everything, set `refiners:` to non-Anthropic models in
-`harness/config.yaml` (e.g. `[c-gpt, c-gemini]` from the
-example config).
+The Web UI currently shows Composer as unavailable: two full-schema live
+attempts completed with progress narration but no final JSON, including the
+single bounded retry. Cursor Grok remains enabled. The Composer name is kept
+for compatible configs and can be re-enabled when its headless structured
+output becomes reliable.
 
 ## Configuration examples
 
@@ -229,7 +199,7 @@ Add the Grok lane on top of the default ensemble. `cursor-grok`
 ```yaml
 layers:
   proposers: [codex, glm, sonnet, cursor-grok]
-  refiners:  [codex-reviewer, qwen]
+  refiners:  [codex-sol, qwen]
 ```
 
 To pin a different Cursor Grok tier, override the built-in's model:
@@ -239,58 +209,24 @@ providers:
   cursor-grok: {harness: cursor, model: cursor-grok-4.5-medium}
 layers:
   proposers: [codex, glm, sonnet, cursor-grok]
-  refiners:  [codex-reviewer, qwen]
+  refiners:  [codex-sol, qwen]
 ```
 
-One CLI delivering everything (the consolidate-around-Cursor case):
+Google models use the separate AGY surface:
 
 ```yaml
-providers:
-  c-gpt:    {harness: cursor, model: gpt-5.5-medium}
-  c-sonnet: {harness: cursor, model: claude-4.5-sonnet}
-  c-gemini: {harness: cursor, model: gemini-3.1-pro}
 layers:
-  proposers: [c-gpt, c-sonnet, c-gemini]
-  refiners:  [c-gpt, c-gemini]
-  # CLAUDE.md recommends keeping refiners off the aggregator's lab
-  # (Anthropic). The orchestrator warns but doesn't block.
+  proposers: [codex, agy-gemini-flash, sonnet]
+  refiners:  [codex-sol, qwen]
 ```
 
-Migrating from the removed `gemini` provider (v0.3.0 dropped the gemini
-harness and built-in provider). If you relied on a Gemini lane, route it
-through Cursor as a user-defined provider:
-
-```yaml
-providers:
-  cursor-gemini: {harness: cursor, model: gemini-3.1-pro}
-layers:
-  proposers: [codex, glm, sonnet, cursor-gemini]
-  refiners:  [codex-reviewer, qwen]
-```
-
-(This runs on Cursor billing — the Cursor CLI has no bring-your-own-key
-path for Google models.)
+AGY routes are opt-in and do not change the default roster.
 
 Override a model at runtime:
 
 ```bash
 MOA_CURSOR_GROK_MODEL=cursor-grok-4.5-medium python harness/scripts/run_moa.py ...
 ```
-
-Per-provider timeout (for slower thinking models):
-
-```yaml
-providers:
-  cursor-opus-think: {harness: cursor, model: claude-opus-4-7-thinking-high, timeout: 1800}
-```
-
-Or via env:
-
-```
-MOA_CURSOR_OPUS_THINK_TIMEOUT=1800
-```
-
-(`-` in the provider name becomes `_` in the env var, then uppercased.)
 
 ## Concurrency and rate limits
 
@@ -327,14 +263,15 @@ checks only what your config actually needs:
 - **Cursor model availability**: each cursor provider's `model:` is
   checked against `cursor-agent --list-models`. Catches the most
   common typo class (friendly names vs machine ids:
-  `gpt-5.5` vs `gpt-5.5-medium`, `grok-4.5` vs `cursor-grok-4.5-high`).
+  `gpt-5.6-sol` vs `gpt-5.6-sol-high`, `grok-4.5` vs
+  `cursor-grok-4.5-high`).
 - **Auth probe**: each needed harness's `check_available()` runs (which
   for cursor uses `cursor-agent whoami`). Stale tokens / expired
   sessions surface here, before a real run wastes wall-clock.
 
 If `harness/config.yaml` doesn't exist, preflight falls back to the
 built-in default ensemble (`proposers: [codex, glm, sonnet]`,
-`refiners: [codex-reviewer, qwen]`), which preserves the "is the moa-x shipped
+`refiners: [codex-sol, qwen]`), which preserves the "is the moa-x shipped
 baseline ready?" diagnostic.
 
 ## What this integration does NOT cover

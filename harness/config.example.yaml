@@ -6,33 +6,40 @@
 #
 # Built-in named providers (no need to declare):
 #   codex          → {harness: codex,    model: gpt-5.6-terra}          # OpenAI proposer
-#   codex-reviewer → {harness: codex,    model: gpt-5.6-sol}            # OpenAI reviewer (high)
-#   codex-aggregator → {harness: codex,  model: gpt-5.6-sol}            # optional Layer 3 (high, 600s)
-#   sonnet         → {harness: claude,   model: sonnet}                 # rolling Claude Code alias
-#   opus           → {harness: claude,   model: opus}                   # rolling Layer-3 alias
+#   codex-sol      → {harness: codex,    model: gpt-5.6-sol}            # high; proposer/refiner/aggregator
+#   codex-luna     → {harness: codex,    model: gpt-5.6-luna}           # medium; proposer/refiner
+# Legacy compatibility names `codex-reviewer` and `codex-aggregator` still
+# resolve, but new configs should use `codex-sol`.
+#   sonnet         → {harness: claude,   model: claude-sonnet-5}        # pinned current Sonnet
+#   opus           → {harness: claude,   model: claude-opus-5}          # pinned current Layer-3 model
 #   glm       → {harness: opencode, model: opencode-go/glm-5.2}             # GLM via opencode-go gateway
-#   kimi      → {harness: opencode, model: opencode-go/kimi-k2.7-code}       # Kimi via opencode-go gateway
+#   kimi      → {harness: opencode, model: opencode-go/kimi-k3}              # Kimi via opencode-go gateway
 #   qwen      → {harness: opencode, model: qwen-token-plan/qwen3.8-max-preview} # Token Plan, 600s cap
+#   qwen-opencode → {harness: opencode, model: opencode-go/qwen3.7-max}       # bundled OpenCode route
+#   deepseek  → {harness: opencode, model: opencode-go/deepseek-v4-pro}       # preferred DeepSeek V4 route
+#   deepseek-flash → {harness: opencode, model: opencode-go/deepseek-v4-flash} # faster DeepSeek V4 route
 #   composer  → {harness: cursor,   model: composer-2.5}                # Cursor Composer via cursor-agent
-#   grok      → {harness: opencode, model: xai/grok-4.5}                 # xAI Grok (direct) via opencode; needs XAI_API_KEY
+#   grok      → {harness: opencode, model: opencode-go/grok-4.5}         # xAI Grok via OpenCode Go
 #   cursor-grok → {harness: cursor, model: cursor-grok-4.5-high}         # xAI Grok via Cursor; needs cursor-agent login / CURSOR_API_KEY
+#   agy-gemini-flash → {harness: agy, model: gemini-3.6-flash-medium}    # Gemini 3.6 Flash via the local AGY account
 #
 # Override a built-in's model via:
 #   --codex-model / --sonnet-model CLI flags, or
 #   MOA_<NAME>_MODEL env vars (e.g. MOA_GLM_MODEL, MOA_KIMI_MODEL, MOA_CODEX_MODEL).
 #   e.g. run glm through Fireworks instead of Zhipu direct:
 #     MOA_GLM_MODEL=fireworks-ai/accounts/fireworks/models/glm-5p2
+#   Reasoning effort/variant can be set with providers.<name>.effort or
+#   MOA_<NAME>_EFFORT where the underlying CLI supports it.
 #
-# NOTE: gemini was removed in v0.3.0. To run a Gemini model, route it through
-# the cursor harness as a user-named provider (see the migration example below).
+# AGY is opt-in and reuses the account already authenticated locally.
 #
 # Layer assignments: subset of (built-in names ∪ user-named providers).
 layers:
   proposers: [codex, glm, sonnet]
-  refiners:  [codex-reviewer, qwen]
+  refiners:  [codex-sol, qwen]
   aggregator: opus
   # To run `--phase layer3` through Codex instead, set:
-  # aggregator: codex-aggregator
+  # aggregator: codex-sol
   # Set true to skip the refinement layer entirely.
   skip_refinement: false
 
@@ -41,15 +48,13 @@ layers:
 # YAML wins over the env shorthand on a name conflict.
 #
 # Example: add xAI Grok as a 4th proposer. `grok` is a built-in (harness:
-# opencode, model xai/grok-4.5), so no `providers:` block is needed — just list
-# it. Requires XAI_API_KEY in .env or the shell (direct xAI API — opencode has
-# `xai` as a native provider, no extra CLI login). Override the model with
-# MOA_GROK_MODEL (e.g. xai/grok-build-0.1 for the coding-tuned variant, or
-# xai/grok-4.3).
+# opencode, model opencode-go/grok-4.5), so no `providers:` block is needed —
+# just list it. It reuses the authenticated OpenCode Go account. Override the
+# model with MOA_GROK_MODEL; a direct `xai/...` route requires XAI_API_KEY.
 #
 # layers:
 #   proposers: [codex, glm, sonnet, grok]
-#   refiners:  [codex-reviewer, qwen]
+#   refiners:  [codex-sol, qwen]
 #
 # Example: 4-lane proposer mix adding the Cursor Grok lane. `cursor-grok` is a
 # built-in (harness: cursor, model cursor-grok-4.5-high) — no providers: block
@@ -58,41 +63,36 @@ layers:
 #
 # layers:
 #   proposers: [codex, glm, sonnet, cursor-grok]
-#   refiners:  [codex-reviewer, qwen]
+#   refiners:  [codex-sol, qwen]
 #
 # Example: also use Qwen Token Plan as a fourth proposer. Put the dedicated
 # `sk-sp-...` key in .env as QWEN_TOKEN_PLAN_API_KEY; never put it here.
 #
 # layers:
 #   proposers: [codex, glm, sonnet, qwen]
-#   refiners:  [codex-reviewer, qwen]
+#   refiners:  [codex-sol, qwen]
 #
-# Example: run GLM + Kimi through Fireworks serverless instead of the defaults
+# DeepSeek V4 through the authenticated OpenCode Go account. Both curated
+# routes can be proposers or refiners; aggregators remain Opus or Codex Sol.
+#
+# layers:
+#   proposers: [codex, deepseek, sonnet]
+#   refiners:  [codex-sol, deepseek-flash]
+#   aggregator: opus
+#
+# Example: run GLM-5.2 through Fireworks serverless instead of opencode-go
 #
 # providers:
 #   glm-fw:  {harness: opencode, model: fireworks-ai/accounts/fireworks/models/glm-5p2}
-#   kimi-fw: {harness: opencode, model: fireworks-ai/accounts/fireworks/models/kimi-k2p7-code}
 # layers:
 #   proposers: [codex, glm-fw, sonnet]
-#   refiners:  [codex-reviewer, kimi-fw]
+#   refiners:  [codex-sol, qwen]
 #
-# Example: everything through the Cursor CLI (one binary, many labs)
+# Google consumer account via AGY (requires agy 1.1.5+ and local sign-in)
 #
-# providers:
-#   c-gpt:      {harness: cursor, model: gpt-5.5}
-#   c-composer: {harness: cursor, model: composer-2.5}
-#   c-grok:     {harness: cursor, model: cursor-grok-4.5-high}
 # layers:
-#   proposers: [c-gpt, c-composer, c-grok]
-#   refiners:  [c-gpt, c-grok]
-#
-# Migration: a Gemini model via the cursor harness (gemini built-in was removed)
-#
-# providers:
-#   cursor-gemini: {harness: cursor, model: gemini-3.1-pro}
-# layers:
-#   proposers: [codex, cursor-gemini, sonnet]
-#   refiners:  [codex-reviewer, qwen]
+#   proposers: [codex, agy-gemini-flash, sonnet]
+#   refiners:  [codex-sol, qwen]
 #
 # CLAUDE.md recommends keeping refiner labs disjoint from the aggregator
 # (Anthropic). This is no longer harness-enforced — see the doc for context.

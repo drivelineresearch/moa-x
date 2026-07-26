@@ -16,6 +16,13 @@ venv/
 # MoA session artifacts
 .moa/
 
+# Optional Web UI state (normally stored outside the repository via XDG)
+*.sqlite
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+.webui-data/
+
 # Working files (specs, plans, scratch) — not part of upstream PR
 tmp/
 

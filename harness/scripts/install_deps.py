@@ -12,7 +12,7 @@ the same path run_moa.py uses) and verifies coherence:
     against schemas hardcoded to a fixed provider set.
   - Cursor-only model-availability: cross-checks each cursor provider's
     `model:` against `cursor-agent --list-models`. Cursor uses machine
-    ids (gpt-5.5-medium, cursor-grok-4.5-high) that differ from friendly names —
+    ids (gpt-5.6-sol-high, cursor-grok-4.5-high) that differ from friendly names —
     this catches typos before a real run wastes wall-clock.
   - Skill assets and schema strict-mode lint.
 
@@ -47,7 +47,7 @@ if TYPE_CHECKING:
     from config import LoadedConfig, ResolvedProvider
 
 
-ALL_HARNESSES = ("codex", "claude", "cursor", "opencode")
+ALL_HARNESSES = ("codex", "claude", "cursor", "opencode", "agy", "gemini")
 
 
 def _check(label: str, cmd: list[str]) -> tuple[bool, str]:
@@ -122,12 +122,16 @@ def _check_needed_harnesses(loaded_cfg: "LoadedConfig", failures: list[str]) -> 
     from adapters import claude as claude_adapter
     from adapters import cursor as cursor_adapter
     from adapters import opencode as opencode_adapter
+    from adapters import agy as agy_adapter
+    from adapters import gemini as gemini_adapter
 
     adapter_for = {
         "codex": codex_adapter,
         "claude": claude_adapter,
         "cursor": cursor_adapter,
         "opencode": opencode_adapter,
+        "agy": agy_adapter,
+        "gemini": gemini_adapter,
     }
     install_hint = {
         "codex":  "npm i -g @openai/codex && codex login",
@@ -136,6 +140,9 @@ def _check_needed_harnesses(loaded_cfg: "LoadedConfig", failures: list[str]) -> 
         "opencode": "curl -fsSL https://opencode.ai/install | bash  (then: opencode auth login, "
                     "or export ZHIPU_API_KEY / MOONSHOT_API_KEY / FIREWORKS_API_KEY / "
                     "QWEN_TOKEN_PLAN_API_KEY)",
+        "agy": "install/update Antigravity CLI, then run agy interactively to sign in",
+        "gemini": "authenticate Gemini CLI with an eligible enterprise/API/Cloud account; "
+                  "consumer Google accounts should use an agy-* provider",
     }
 
     for harness in sorted(needed):
@@ -227,7 +234,7 @@ def _check_cursor_models(loaded_cfg: "LoadedConfig", needed: set[str], failures:
 
     Cursor uses machine ids that diverge from the friendly names on
     cursor.com/docs/models — this catches the most common typo class
-    (gpt-5.5 vs gpt-5.5-medium, grok-4.5 vs cursor-grok-4.5-high)."""
+    (GPT-5.6 Sol vs gpt-5.6-sol-high, Grok 4.5 vs cursor-grok-4.5-high)."""
     if "cursor" not in needed:
         return
     cursor_providers = [p for p in loaded_cfg.proposers + loaded_cfg.refiners if p.harness == "cursor"]
@@ -287,6 +294,35 @@ def _check_cursor_models(loaded_cfg: "LoadedConfig", needed: set[str], failures:
             failures.append(f"cursor model {p.model}")
 
 
+def _check_agy_models(loaded_cfg: "LoadedConfig", needed: set[str], failures: list[str]) -> None:
+    """Fail early when an AGY provider names a model the signed-in account lacks."""
+    if "agy" not in needed:
+        return
+    providers = [
+        p for p in loaded_cfg.proposers + loaded_cfg.refiners if p.harness == "agy"
+    ]
+    if not providers:
+        return
+    print("")
+    print("  AGY model availability (current persisted account):")
+    from adapters import agy as agy_adapter
+    ok, models, detail = agy_adapter.list_models()
+    if not ok:
+        print(f"    FAIL — {detail}")
+        failures.append("agy models")
+        return
+    available = set(models)
+    for provider in providers:
+        if provider.model in available:
+            print(f"    {provider.name} → {provider.model}: OK")
+        else:
+            print(
+                f"    {provider.name} → {provider.model}: FAIL — not visible "
+                "to the signed-in AGY account"
+            )
+            failures.append(f"agy model {provider.model}")
+
+
 def _check_assets(failures: list[str]) -> None:
     skill_dir = SCRIPT_DIR.parent
     required = [
@@ -296,6 +332,8 @@ def _check_assets(failures: list[str]) -> None:
         skill_dir / "scripts" / "adapters" / "opencode.py",
         skill_dir / "scripts" / "adapters" / "claude.py",
         skill_dir / "scripts" / "adapters" / "cursor.py",
+        skill_dir / "scripts" / "adapters" / "agy.py",
+        skill_dir / "scripts" / "adapters" / "gemini.py",
         skill_dir / "scripts" / "schemas" / "proposer.schema.json",
         skill_dir / "scripts" / "schemas" / "refiner.schema.json",
         skill_dir / "scripts" / "schemas" / "final-plan.schema.json",
@@ -371,6 +409,7 @@ def main() -> int:
     needed = _check_needed_harnesses(loaded_cfg, failures)
     _check_schema_coherence(loaded_cfg, failures)
     _check_cursor_models(loaded_cfg, needed, failures)
+    _check_agy_models(loaded_cfg, needed, failures)
     _check_assets(failures)
     _check_strict_lint(failures)
 
