@@ -6,8 +6,8 @@ import {
   getJobs,
   getGithubRepos,
   getModels,
-  getProfile,
   getProviders,
+  getSession,
   getWorkspaces,
   importHistory,
   probeAllProviders,
@@ -85,10 +85,40 @@ const state = {
 function loadProfile() {
   let profile;
   try { profile = JSON.parse(localStorage.getItem("moax.profile") || "{}"); } catch { profile = {}; }
-  const id = profile.id || (crypto.randomUUID ? crypto.randomUUID() : `local-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+  const id = profile.id || newProfileId();
   const next = { id, name: profile.name || "Local operator", compactEvents: profile.compactEvents ?? true };
   localStorage.setItem("moax.profile", JSON.stringify(next));
   return next;
+}
+
+function newProfileId() {
+  return crypto.randomUUID
+    ? crypto.randomUUID()
+    : `local-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function applySessionProfile(saved) {
+  state.profile.id = saved.id || state.profile.id;
+  state.profile.name = saved.display_name || saved.name || state.profile.name;
+  state.profile.compactEvents = saved.settings?.compact_events ?? state.profile.compactEvents;
+  localStorage.setItem("moax.profile", JSON.stringify(state.profile));
+  updateProfileChrome();
+}
+
+async function establishProfileSession() {
+  const session = await getSession();
+  if (session) {
+    applySessionProfile(session);
+    return;
+  }
+  try {
+    applySessionProfile(await saveProfile(state.profile));
+  } catch (error) {
+    if (![403, 409].includes(error.status)) throw error;
+    state.profile.id = newProfileId();
+    localStorage.setItem("moax.profile", JSON.stringify(state.profile));
+    applySessionProfile(await saveProfile(state.profile));
+  }
 }
 
 function installBrandAssets() {
@@ -762,8 +792,8 @@ function optimizedProfile(preset) {
       aggregator: { preferred: ["opus"], limit: 1 },
     },
     thorough: {
-      proposer: { preferred: ["codex", "glm", "sonnet", "agy-gemini-flash"], limit: 4 },
-      refiner: { preferred: ["codex-sol", "qwen", "agy-gemini-flash"], limit: 3 },
+      proposer: { preferred: ["codex", "glm", "sonnet", "agy-gemini-pro"], limit: 4 },
+      refiner: { preferred: ["codex-sol", "qwen", "agy-gemini-pro"], limit: 3 },
       aggregator: { preferred: ["opus"], limit: 1 },
     },
   };
@@ -1997,23 +2027,17 @@ async function init() {
   updateProfileChrome();
   $("#run-goal").value = localStorage.getItem("moax.runDraft") || "";
   $("#goal-count").textContent = $("#run-goal").value.length;
+  try {
+    await establishProfileSession();
+  } catch (error) {
+    showToast(
+      `Private profile session could not be established: ${error.message}`,
+      "error",
+    );
+  }
   const current = routeFromPath();
   await navigate(current.route, current.id, false);
-  const dataRefresh = refreshData();
-  try {
-    const saved = await getProfile(state.profile.id);
-    if (saved) {
-      state.profile.name = saved.display_name || saved.name || state.profile.name;
-      state.profile.compactEvents = saved.settings?.compact_events ?? state.profile.compactEvents;
-      localStorage.setItem("moax.profile", JSON.stringify(state.profile));
-      updateProfileChrome();
-    } else {
-      saveProfile(state.profile).catch(() => {});
-    }
-  } catch {
-    saveProfile(state.profile).catch(() => {});
-  }
-  await dataRefresh;
+  await refreshData();
   window.setInterval(async () => {
     if (document.hidden || state.route === "run-detail") return;
     try {

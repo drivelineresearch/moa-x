@@ -75,9 +75,9 @@ the CLI is installed.
 
 Google providers reuse existing local AGY authentication; MoA-X never prompts
 for a key. Install AGY 1.1.5+, sign in interactively once, and verify
-`agy models`. Select `agy-gemini-flash` explicitly; the default roster does
-not require AGY, and live probes determine availability. Gemini 3.1 Pro is
-not exposed because the current AGY route resolves it to Flash.
+`agy models`. Select `agy-gemini-pro` for deeper planning or
+`agy-gemini-flash` for lower latency; the default roster does not require AGY,
+and live probes determine availability.
 
 ### Optional: Local Web UI and GitHub picker
 

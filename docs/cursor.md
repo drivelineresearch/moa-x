@@ -216,11 +216,12 @@ Google models use the separate AGY surface:
 
 ```yaml
 layers:
-  proposers: [codex, agy-gemini-flash, sonnet]
+  proposers: [codex, agy-gemini-pro, sonnet]
   refiners:  [codex-sol, qwen]
 ```
 
-AGY routes are opt-in and do not change the default roster.
+AGY routes are opt-in and do not change the default roster. Prefer Pro for
+planning depth; use Flash for latency-sensitive runs.
 
 Override a model at runtime:
 

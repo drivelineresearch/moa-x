@@ -177,6 +177,10 @@ export async function saveProfile(profile) {
   });
 }
 
+export async function getSession() {
+  return request("/api/session");
+}
+
 export async function importHistory(workspace) {
   return request("/api/history/import", {
     method: "POST",

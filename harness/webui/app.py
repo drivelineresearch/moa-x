@@ -6,10 +6,12 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import shutil
 import time
 import uuid
 from datetime import UTC, datetime
+from functools import wraps
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +36,13 @@ from .github import (
     list_repositories,
     parse_repo_pointer,
 )
+from .monitoring import (
+    DEFAULT_INTERVAL_SECONDS,
+    OperationalError,
+    ProviderHealthMonitor,
+    capture_operational_error,
+    configure_sentry,
+)
 from .providers import ROUTE_META, model_catalog, probe_provider, provider_catalog
 from .prompt_coach import PromptCoachError, analyze as analyze_prompt
 from .prompt_coach import finalize as finalize_prompt
@@ -51,6 +60,8 @@ LOCAL_FONT_FILES = {
     "GothamOffice-Regular.woff2": "font/woff2",
     "GothamOffice-Bold.woff2": "font/woff2",
 }
+PROFILE_COOKIE_NAME = "moax_profile_token"
+PROFILE_TOKEN_MAX_AGE = 365 * 24 * 60 * 60
 
 
 def _default_data_dir() -> Path:
@@ -351,6 +362,12 @@ def _error(message: str, status: int = 400):
 
 
 def create_app(test_config: dict[str, Any] | None = None) -> Flask:
+    # Load repo-local .env before initializing integrations. Existing process
+    # environment values retain precedence.
+    from .providers import harness_config
+
+    harness_config.apply_config_to_env()
+    sentry_enabled = not (test_config or {}).get("TESTING") and configure_sentry()
     data_dir = _default_data_dir()
     app = Flask(__name__, template_folder="templates", static_folder="static")
     app.config.from_mapping(
@@ -364,7 +381,15 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         WORKSPACE_ROOTS=_roots_from_env(),
         LOCAL_FONT_DIR=str(_default_local_font_dir()),
         START_WORKER=True,
+        START_PROVIDER_MONITOR=True,
+        PROVIDER_MONITOR_INTERVAL_SECONDS=float(
+            os.environ.get(
+                "MOA_PROVIDER_MONITOR_INTERVAL_SECONDS",
+                DEFAULT_INTERVAL_SECONDS,
+            )
+        ),
         SSE_POLL_SECONDS=0.6,
+        PROFILE_COOKIE_SECURE=False,
     )
     if test_config:
         app.config.update(test_config)
@@ -393,17 +418,56 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     # Only the worker-owning process may reconcile orphaned active jobs;
     # otherwise opening a second UI instance would falsely interrupt live runs.
     if app.config["START_WORKER"]:
-        store.reconcile_interrupted_jobs()
+        interrupted_jobs = store.reconcile_interrupted_jobs()
+        if interrupted_jobs:
+            capture_operational_error(
+                OperationalError(
+                    f"{len(interrupted_jobs)} active run(s) interrupted by Web UI restart"
+                ),
+                operation="worker.restart_interrupted_jobs",
+                context={
+                    "interrupted_count": len(interrupted_jobs),
+                    "job_ids": interrupted_jobs[:20],
+                },
+            )
     worker = JobWorker(store, RUNNER)
     app.extensions["moa_store"] = store
     app.extensions["moa_worker"] = worker
-    if not app.config.get("TESTING") and (
-        REPO_ROOT in app.config["WORKSPACE_ROOTS"]
-        or any(root in REPO_ROOT.parents for root in app.config["WORKSPACE_ROOTS"])
-    ):
-        _import_history(store, REPO_ROOT)
+    app.extensions["moa_sentry_enabled"] = sentry_enabled
     if app.config["START_WORKER"]:
         worker.start()
+    if app.config["START_WORKER"] and app.config["START_PROVIDER_MONITOR"]:
+        provider_monitor = ProviderHealthMonitor(
+            lambda: provider_catalog(probe=True),
+            interval_seconds=app.config["PROVIDER_MONITOR_INTERVAL_SECONDS"],
+        )
+        provider_monitor.start()
+        app.extensions["moa_provider_monitor"] = provider_monitor
+
+    def current_profile() -> dict[str, Any] | None:
+        token = str(request.cookies.get(PROFILE_COOKIE_NAME) or "")
+        if not re.fullmatch(r"[A-Za-z0-9_-]{32,160}", token):
+            return None
+        digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        return store.get_profile_by_token_hash(digest)
+
+    def require_profile(view):
+        @wraps(view)
+        def wrapped(*args, **kwargs):
+            profile = current_profile()
+            if not profile:
+                return _error("private browser session required", 401)
+            return view(profile, *args, **kwargs)
+
+        return wrapped
+
+    def owned_job(
+        profile: dict[str, Any], job_id: str
+    ) -> dict[str, Any] | None:
+        job = store.get_job(job_id)
+        if not job or job.get("profile_id") != profile["id"]:
+            return None
+        return job
 
     @app.get("/")
     @app.get("/new")
@@ -462,16 +526,19 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         )
 
     @app.get("/api/workspaces")
-    def workspaces():
+    @require_profile
+    def workspaces(profile: dict[str, Any]):
         roots = app.config["WORKSPACE_ROOTS"]
         recent = []
         seen = set()
-        for job in store.list_jobs(limit=100):
+        for job in store.list_jobs(limit=100, profile_id=profile["id"]):
             workspace = job["workspace"]
             if workspace not in seen:
                 seen.add(workspace)
                 recent.append(workspace)
-        github_workspaces = store.list_github_workspaces()
+        github_workspaces = store.list_github_workspaces(
+            profile_id=profile["id"]
+        )
         for workspace in github_workspaces:
             path = workspace["local_path"]
             if path not in seen and Path(path).is_dir():
@@ -511,7 +578,19 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         profile_id = str(body.get("id") or "").strip()
         if not re.fullmatch(r"[A-Za-z0-9_-]{6,80}", profile_id):
             return _error("profile id must be 6-80 URL-safe characters")
+        session_profile = current_profile()
         existing = store.get_profile(profile_id)
+        if session_profile and session_profile["id"] != profile_id:
+            return _error(
+                "this browser is already bound to another private profile",
+                409,
+            )
+        if (
+            existing
+            and not session_profile
+            and store.profile_token_claimed(profile_id)
+        ):
+            return _error("profile is private to another browser", 403)
         display_name = str(
             body.get("display_name")
             or body.get("name")
@@ -523,39 +602,57 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             if isinstance(body.get("settings"), dict)
             else (existing or {}).get("settings") or {}
         )
-        return jsonify(
-            _profile_view(store.upsert_profile(profile_id, display_name, settings))
-        )
+        profile = store.upsert_profile(profile_id, display_name, settings)
+        token = None
+        if not session_profile:
+            token = secrets.token_urlsafe(48)
+            digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
+            if not store.claim_profile_token(profile_id, digest):
+                return _error("profile could not be claimed", 409)
+            profile = store.get_profile(profile_id) or profile
+        response = jsonify(_profile_view(profile))
+        if token:
+            response.set_cookie(
+                PROFILE_COOKIE_NAME,
+                token,
+                max_age=PROFILE_TOKEN_MAX_AGE,
+                httponly=True,
+                secure=bool(app.config["PROFILE_COOKIE_SECURE"]),
+                samesite="Strict",
+                path="/",
+            )
+        return response
+
+    @app.get("/api/session")
+    def profile_session():
+        profile = current_profile()
+        return jsonify(_profile_view(profile) if profile else None)
 
     @app.get("/api/profiles/<profile_id>")
-    def get_profile(profile_id: str):
-        if not re.fullmatch(r"[A-Za-z0-9_-]{6,80}", profile_id):
-            return _error("invalid profile id")
-        profile = store.get_profile(profile_id)
-        if not profile:
-            # A browser generates its profile id before the first server save.
-            # Returning JSON null avoids an expected 404 polluting the console;
-            # the client follows this response by creating the profile.
-            return jsonify(None)
+    @require_profile
+    def get_profile(profile: dict[str, Any], profile_id: str):
+        if profile["id"] != profile_id:
+            return _error("profile not found", 404)
         return jsonify(_profile_view(profile))
 
     @app.get("/api/uploads")
-    def uploads():
+    @require_profile
+    def uploads(profile: dict[str, Any]):
         limit = min(max(request.args.get("limit", 100, type=int), 1), 250)
-        profile_id = request.args.get("profile_id")
         return jsonify(
             {
                 "uploads": [
                     _upload_view(upload)
                     for upload in store.list_uploads(
-                        profile_id=profile_id, limit=limit
+                        profile_id=profile["id"], limit=limit
                     )
                 ]
             }
         )
 
     @app.post("/api/uploads")
-    def create_upload():
+    @require_profile
+    def create_upload(profile: dict[str, Any]):
         incoming_files = request.files.getlist("files") or request.files.getlist(
             "file"
         )
@@ -566,10 +663,8 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             return _error("one or more multipart files are required")
         if len(incoming_files) > 10:
             return _error("at most 10 files may be uploaded at once")
-        profile_id = str(request.form.get("profile_id") or "").strip() or None
-        if profile_id and not re.fullmatch(r"[A-Za-z0-9_-]{6,80}", profile_id):
-            return _error("invalid profile id")
-        profile_dir = upload_dir / (profile_id or "shared")
+        profile_id = profile["id"]
+        profile_dir = upload_dir / profile_id
         profile_dir.mkdir(parents=True, exist_ok=True)
         uploaded = []
         for incoming in incoming_files:
@@ -613,9 +708,10 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         return jsonify({"uploads": uploaded}), 201
 
     @app.get("/api/uploads/<upload_id>/content")
-    def upload_content(upload_id: str):
+    @require_profile
+    def upload_content(profile: dict[str, Any], upload_id: str):
         upload = store.get_upload(upload_id)
-        if not upload:
+        if not upload or upload.get("profile_id") != profile["id"]:
             return _error("upload not found", 404)
         path = Path(upload["stored_path"])
         if not path.is_file() or upload_dir not in path.resolve().parents:
@@ -628,21 +724,30 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         )
 
     @app.get("/api/uploads/<upload_id>")
-    def get_upload(upload_id: str):
+    @require_profile
+    def get_upload(profile: dict[str, Any], upload_id: str):
         upload = store.get_upload(upload_id)
-        if not upload:
+        if not upload or upload.get("profile_id") != profile["id"]:
             return _error("upload not found", 404)
         return jsonify(_upload_view(upload))
 
     @app.get("/api/github/repos")
-    def github_repositories():
+    @require_profile
+    def github_repositories(profile: dict[str, Any]):
         try:
             raw_repos = list_repositories(app.config["GITHUB_OWNER"])
         except GitHubWorkspaceError as exc:
+            capture_operational_error(
+                exc,
+                operation="github.list_repositories",
+                context={"owner": app.config["GITHUB_OWNER"]},
+            )
             return _error(str(exc), 502)
         local_by_id = {
             item["id"]: item["local_path"]
-            for item in store.list_github_workspaces()
+            for item in store.list_github_workspaces(
+                profile_id=profile["id"]
+            )
             if Path(item["local_path"]).is_dir()
         }
         repos = []
@@ -669,7 +774,8 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         )
 
     @app.post("/api/workspaces/github")
-    def github_workspace():
+    @require_profile
+    def github_workspace(profile: dict[str, Any]):
         body = request.get_json(silent=True) or {}
         pointer = str(body.get("repo") or "").strip()
         git_ref = (
@@ -681,9 +787,6 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             )
         except ValueError as exc:
             return _error(str(exc))
-        profile_id = str(body.get("profile_id") or "").strip() or None
-        if profile_id and not re.fullmatch(r"[A-Za-z0-9_-]{6,80}", profile_id):
-            return _error("invalid profile id")
         try:
             result = clone_repository(
                 pointer,
@@ -692,11 +795,17 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                 owner_allowlist=app.config["GITHUB_OWNER"],
             )
         except (GitHubWorkspaceError, ValueError) as exc:
+            if isinstance(exc, GitHubWorkspaceError):
+                capture_operational_error(
+                    exc,
+                    operation="github.clone_workspace",
+                    context={"owner": app.config["GITHUB_OWNER"]},
+                )
             return _error(str(exc), 502)
         workspace = store.upsert_github_workspace(
             owner=owner,
             repo=repo,
-            profile_id=profile_id,
+            profile_id=profile["id"],
             local_path=result["path"],
             remote_url=result["remote_url"],
         )
@@ -711,7 +820,8 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         return jsonify({"providers": provider_catalog(probe=refresh)})
 
     @app.post("/api/prompt-helper/analyze")
-    def prompt_helper_analyze():
+    @require_profile
+    def prompt_helper_analyze(profile: dict[str, Any]):
         body = request.get_json(silent=True) or {}
         try:
             return jsonify(
@@ -724,10 +834,15 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         except ValueError as exc:
             return _error(str(exc))
         except PromptCoachError as exc:
+            capture_operational_error(
+                exc,
+                operation="prompt_coach.analyze",
+            )
             return _error(str(exc), 503)
 
     @app.post("/api/prompt-helper/finalize")
-    def prompt_helper_finalize():
+    @require_profile
+    def prompt_helper_finalize(profile: dict[str, Any]):
         body = request.get_json(silent=True) or {}
         try:
             return jsonify(
@@ -742,6 +857,10 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         except ValueError as exc:
             return _error(str(exc))
         except PromptCoachError as exc:
+            capture_operational_error(
+                exc,
+                operation="prompt_coach.finalize",
+            )
             return _error(str(exc), 503)
 
     @app.post("/api/providers/<provider_id>/probe")
@@ -760,34 +879,37 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         try:
             return jsonify({"models": model_catalog()})
         except Exception as exc:
+            capture_operational_error(
+                exc,
+                operation="providers.model_catalog",
+            )
             return _error(f"could not load model catalog: {exc}", 500)
 
     @app.get("/api/jobs")
-    def jobs():
+    @require_profile
+    def jobs(profile: dict[str, Any]):
         limit = min(max(request.args.get("limit", 50, type=int), 1), 200)
-        profile_id = request.args.get("profile_id")
         return jsonify(
             {
                 "jobs": [
                     _job_view(job)
                     for job in store.list_jobs(
-                        limit=limit, profile_id=profile_id
+                        limit=limit, profile_id=profile["id"]
                     )
                 ]
             }
         )
 
     @app.post("/api/jobs")
-    def create_job():
+    @require_profile
+    def create_job(profile: dict[str, Any]):
         body = request.get_json(silent=True) or {}
         goal = str(body.get("goal") or "").strip()
         if not goal:
             return _error("goal is required")
         if len(goal) > 100_000:
             return _error("goal is too large")
-        profile_id = str(body.get("profile_id") or "").strip() or None
-        if profile_id and not re.fullmatch(r"[A-Za-z0-9_-]{6,80}", profile_id):
-            return _error("invalid profile id")
+        profile_id = profile["id"]
 
         job_id = (
             datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -818,6 +940,12 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                     owner_allowlist=app.config["GITHUB_OWNER"],
                 )
             except (ValueError, GitHubWorkspaceError) as exc:
+                if isinstance(exc, GitHubWorkspaceError):
+                    capture_operational_error(
+                        exc,
+                        operation="github.clone_for_job",
+                        context={"owner": app.config["GITHUB_OWNER"]},
+                    )
                 return _error(
                     str(exc), 400 if isinstance(exc, ValueError) else 502
                 )
@@ -851,7 +979,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         selected_uploads = []
         for upload_id in upload_ids:
             upload = store.get_upload(upload_id)
-            if not upload:
+            if not upload or upload.get("profile_id") != profile_id:
                 return _error(f"upload not found: {upload_id}")
             source = Path(upload["stored_path"]).resolve()
             if not source.is_file() or upload_dir not in source.parents:
@@ -944,23 +1072,26 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         return jsonify(_job_view(job)), 201
 
     @app.get("/api/jobs/<job_id>")
-    def get_job(job_id: str):
-        job = store.get_job(job_id)
+    @require_profile
+    def get_job(profile: dict[str, Any], job_id: str):
+        job = owned_job(profile, job_id)
         if not job:
             return _error("job not found", 404)
         return jsonify(_job_view(job))
 
     @app.post("/api/jobs/<job_id>/cancel")
-    def cancel_job(job_id: str):
-        if not store.get_job(job_id):
+    @require_profile
+    def cancel_job(profile: dict[str, Any], job_id: str):
+        if not owned_job(profile, job_id):
             return _error("job not found", 404)
         if not worker.cancel(job_id):
             return _error("job is no longer cancellable", 409)
         return jsonify(_job_view(store.get_job(job_id) or {})), 202
 
     @app.post("/api/jobs/<job_id>/redispatch")
-    def redispatch(job_id: str):
-        source = store.get_job(job_id)
+    @require_profile
+    def redispatch(profile: dict[str, Any], job_id: str):
+        source = owned_job(profile, job_id)
         if not source:
             return _error("job not found", 404)
         body = request.get_json(silent=True) or {}
@@ -1018,8 +1149,9 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         return jsonify(_job_view(job)), 201
 
     @app.get("/api/jobs/<job_id>/logs")
-    def logs(job_id: str):
-        job = store.get_job(job_id)
+    @require_profile
+    def logs(profile: dict[str, Any], job_id: str):
+        job = owned_job(profile, job_id)
         if not job:
             return _error("job not found", 404)
         tail = min(max(request.args.get("tail", 250, type=int), 1), 5000)
@@ -1032,8 +1164,9 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         return jsonify({"job_id": job_id, "lines": lines})
 
     @app.get("/api/jobs/<job_id>/events")
-    def events(job_id: str):
-        if not store.get_job(job_id):
+    @require_profile
+    def events(profile: dict[str, Any], job_id: str):
+        if not owned_job(profile, job_id):
             return _error("job not found", 404)
         after = request.args.get(
             "after", request.headers.get("Last-Event-ID", "0"), type=int
@@ -1075,8 +1208,11 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         )
 
     @app.get("/api/jobs/<job_id>/artifacts/<path:filename>")
-    def artifact(job_id: str, filename: str):
-        job = store.get_job(job_id)
+    @require_profile
+    def artifact(
+        profile: dict[str, Any], job_id: str, filename: str
+    ):
+        job = owned_job(profile, job_id)
         if not job:
             return _error("job not found", 404)
         if filename not in {
@@ -1093,7 +1229,8 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         return send_file(path)
 
     @app.post("/api/history/import")
-    def history_import():
+    @require_profile
+    def history_import(profile: dict[str, Any]):
         body = request.get_json(silent=True) or {}
         try:
             workspace = _safe_workspace(
@@ -1102,7 +1239,9 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             )
         except ValueError as exc:
             return _error(str(exc))
-        imported = _import_history(store, workspace)
+        imported = _import_history(
+            store, workspace, profile_id=profile["id"]
+        )
         return jsonify({"imported": imported, "count": len(imported)})
 
     return app
@@ -1119,7 +1258,9 @@ def _string_list(value: Any) -> list[str]:
     ]
 
 
-def _import_history(store: Store, workspace: Path) -> list[str]:
+def _import_history(
+    store: Store, workspace: Path, *, profile_id: str | None = None
+) -> list[str]:
     root = workspace / ".moa"
     if not root.is_dir():
         return []
@@ -1130,6 +1271,12 @@ def _import_history(store: Store, workspace: Path) -> list[str]:
             continue
         existing = store.get_job(session.name)
         if existing:
+            if (
+                profile_id
+                and existing.get("profile_id") is None
+                and store.claim_job_profile(session.name, profile_id)
+            ):
+                imported.append(session.name)
             continue
         try:
             scout = json.loads(scout_path.read_text(encoding="utf-8"))
@@ -1156,6 +1303,7 @@ def _import_history(store: Store, workspace: Path) -> list[str]:
         store.insert_job(
             {
                 "id": session.name,
+                "profile_id": profile_id,
                 "title": str(
                     scout.get("frozen_spec") or session.name
                 ).splitlines()[0][:140],

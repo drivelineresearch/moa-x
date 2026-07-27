@@ -12,6 +12,8 @@ from unittest.mock import patch
 from harness.scripts import run_moa
 from harness.webui.app import create_app
 from harness.webui.github import _run_gh, parse_repo_pointer
+from harness.webui.monitoring import ProviderHealthMonitor
+from harness.webui import providers as web_providers
 from harness.webui import prompt_coach
 from harness.webui.worker import JobWorker
 
@@ -77,6 +79,96 @@ class WebUITest(unittest.TestCase):
             }
         )
         self.client = self.app.test_client()
+        claimed = self.client.post(
+            "/api/profiles",
+            json={"id": "browser_123", "display_name": "Test operator"},
+        )
+        self.assertEqual(claimed.status_code, 200)
+
+    def test_provider_monitor_alerts_once_and_realerts_after_recovery(self):
+        state = {
+            "status": "needs_auth",
+            "authenticated": False,
+            "detail": "Please sign in",
+        }
+        captured = []
+        monitor = ProviderHealthMonitor(
+            lambda: [
+                {
+                    "id": "agy",
+                    "label": "Antigravity",
+                    **state,
+                }
+            ],
+            interval_seconds=3600,
+            capture=lambda provider: captured.append(dict(provider)) or True,
+        )
+
+        monitor.run_once()
+        monitor.run_once()
+        self.assertEqual(len(captured), 1)
+        self.assertEqual(captured[0]["id"], "agy")
+
+        state.update(status="ready", authenticated=True, detail="ok")
+        monitor.run_once()
+        state.update(
+            status="needs_auth",
+            authenticated=False,
+            detail="Please sign in",
+        )
+        monitor.run_once()
+        self.assertEqual(len(captured), 2)
+
+    def test_provider_monitor_retries_when_alert_delivery_is_unavailable(self):
+        attempts = []
+        monitor = ProviderHealthMonitor(
+            lambda: [
+                {
+                    "id": "agy",
+                    "label": "Antigravity",
+                    "status": "needs_auth",
+                    "authenticated": False,
+                    "detail": "Please sign in",
+                }
+            ],
+            capture=lambda provider: attempts.append(provider["id"]) or False,
+        )
+
+        monitor.run_once()
+        monitor.run_once()
+        self.assertEqual(attempts, ["agy", "agy"])
+
+    def test_agy_routes_are_gated_by_the_live_account_catalog(self):
+        with (
+            patch.dict(
+                web_providers.PROVIDER_META["agy"],
+                {
+                    "binary": lambda: "agy",
+                    "probe": lambda: (True, "account ready"),
+                },
+            ),
+            patch.object(web_providers.shutil, "which", return_value="/usr/bin/agy"),
+            patch.object(
+                web_providers,
+                "_run",
+                return_value=(True, "agy 1.1.7"),
+            ),
+            patch.object(
+                web_providers.agy,
+                "list_models",
+                return_value=(
+                    True,
+                    ["gemini-3.1-pro-high", "gemini-3.1-pro-low"],
+                    "2 models available",
+                ),
+            ),
+        ):
+            result = web_providers.probe_provider("agy")
+
+        routes = {route["id"]: route for route in result["routes"]}
+        self.assertTrue(result["authenticated"])
+        self.assertTrue(routes["agy-gemini-pro"]["available"])
+        self.assertFalse(routes["agy-gemini-flash"]["available"])
 
     def tearDown(self):
         self.temp.cleanup()
@@ -286,6 +378,80 @@ class WebUITest(unittest.TestCase):
         cancelled = self.client.post(f"/api/jobs/{job['id']}/cancel")
         self.assertEqual(cancelled.status_code, 202)
         self.assertEqual(cancelled.get_json()["status"], "cancelled")
+
+    def test_runs_are_private_to_the_browser_that_submitted_them(self):
+        created = self.client.post(
+            "/api/jobs",
+            json={
+                "source_mode": "brief",
+                "goal": "Keep this run private to its submitting browser.",
+                "profile_id": "spoofed_owner",
+                "proposers": ["codex"],
+                "refiners": ["qwen"],
+                "aggregator": "opus",
+            },
+        )
+        self.assertEqual(created.status_code, 201)
+        owner_job = created.get_json()
+        self.assertEqual(owner_job["profile_id"], "browser_123")
+        session_dir = Path(owner_job["session_dir"])
+        (session_dir / "webui.log").write_text(
+            "private worker output", encoding="utf-8"
+        )
+        (session_dir / "report.html").write_text(
+            "<h1>Private report</h1>", encoding="utf-8"
+        )
+
+        anonymous = self.app.test_client()
+        self.assertEqual(anonymous.get("/api/jobs").status_code, 401)
+
+        other = self.app.test_client()
+        claimed = other.post(
+            "/api/profiles",
+            json={"id": "browser_456", "display_name": "Other operator"},
+        )
+        self.assertEqual(claimed.status_code, 200)
+        cookie = claimed.headers["Set-Cookie"]
+        self.assertIn("HttpOnly", cookie)
+        self.assertIn("SameSite=Strict", cookie)
+
+        # A caller cannot use query or body profile IDs to impersonate an owner.
+        other_jobs = other.get(
+            "/api/jobs?profile_id=browser_123"
+        ).get_json()["jobs"]
+        self.assertEqual(other_jobs, [])
+        spoofed = other.post(
+            "/api/jobs",
+            json={
+                "source_mode": "brief",
+                "goal": "This belongs to the second browser.",
+                "profile_id": "browser_123",
+                "proposers": ["codex"],
+                "refiners": ["qwen"],
+                "aggregator": "opus",
+            },
+        )
+        self.assertEqual(spoofed.status_code, 201)
+        self.assertEqual(spoofed.get_json()["profile_id"], "browser_456")
+
+        private_paths = (
+            f"/api/jobs/{owner_job['id']}",
+            f"/api/jobs/{owner_job['id']}/logs",
+            f"/api/jobs/{owner_job['id']}/events",
+            f"/api/jobs/{owner_job['id']}/artifacts/report.html",
+            "/api/profiles/browser_123",
+        )
+        for path in private_paths:
+            with self.subTest(path=path):
+                self.assertEqual(other.get(path).status_code, 404)
+        self.assertEqual(
+            other.post(f"/api/jobs/{owner_job['id']}/cancel").status_code,
+            404,
+        )
+        self.assertEqual(
+            other.post(f"/api/jobs/{owner_job['id']}/redispatch").status_code,
+            404,
+        )
 
     def test_brief_only_job_uses_an_isolated_managed_workspace(self):
         created = self.client.post(
@@ -706,6 +872,7 @@ class WebUITest(unittest.TestCase):
         store.insert_job(
             {
                 "id": "manifest-truth",
+                "profile_id": "browser_123",
                 "title": "Manifest truth",
                 "workspace": str(self.root),
                 "session_dir": str(session),
@@ -751,6 +918,7 @@ class WebUITest(unittest.TestCase):
         store.insert_job(
             {
                 "id": "completed-cards",
+                "profile_id": "browser_123",
                 "title": "Completed cards",
                 "workspace": str(self.root),
                 "session_dir": str(session),
@@ -779,6 +947,7 @@ class WebUITest(unittest.TestCase):
         store.insert_job(
             {
                 "id": "sse-error",
+                "profile_id": "browser_123",
                 "title": "SSE error",
                 "workspace": str(self.root),
                 "session_dir": str(session),
@@ -821,6 +990,7 @@ class WebUITest(unittest.TestCase):
         store.insert_job(
             {
                 "id": "targeted-retry",
+                "profile_id": "browser_123",
                 "title": "Targeted retry",
                 "workspace": str(self.root),
                 "session_dir": str(session),

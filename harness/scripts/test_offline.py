@@ -1712,6 +1712,7 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
         "composer": ("cursor", "composer-2.5"),
         "cursor-grok": ("cursor", "cursor-grok-4.5-high"),
         "agy-gemini-flash": ("agy", "gemini-3.6-flash-medium"),
+        "agy-gemini-pro": ("agy", "gemini-3.1-pro-high"),
     }
     routes_ok = all(
         name in by_id
@@ -1726,6 +1727,7 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
         and by_id["codex"]["supports_effort"]
         and by_id["agy-gemini-flash"]["effort_options"]
         == ["low", "medium", "high"]
+        and by_id["agy-gemini-pro"]["effort_options"] == ["low", "high"]
     )
     grouped_ok = (
         groups["claude"]["lab"] == "Anthropic"
@@ -1788,6 +1790,7 @@ def test_google_provider_builtins_are_opt_in_and_resolve() -> bool:
     import config as harness_config
     from config import resolve_provider
     agy = resolve_provider("agy-gemini-high", user_providers={})
+    agy_pro = resolve_provider("agy-gemini-pro", user_providers={})
     defaults = harness_config.load_resolved_config(config_path=Path("/nonexistent"))
     default_names = {p.name for p in defaults.proposers + defaults.refiners}
     try:
@@ -1799,12 +1802,16 @@ def test_google_provider_builtins_are_opt_in_and_resolve() -> bool:
     ok = (
         agy.harness == "agy"
         and agy.model == "gemini-3.6-flash-high"
+        and agy_pro.harness == "agy"
+        and agy_pro.model == "gemini-3.1-pro-high"
         and "agy-gemini-high" not in default_names
+        and "agy-gemini-pro" not in default_names
         and gemini_removed
     )
     return _ok(
         ok,
-        f"agy={agy}, gemini_removed={gemini_removed}, defaults={sorted(default_names)}",
+        f"agy={agy}, pro={agy_pro}, gemini_removed={gemini_removed}, "
+        f"defaults={sorted(default_names)}",
     )
 
 

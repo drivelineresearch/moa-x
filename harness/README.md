@@ -258,15 +258,15 @@ the local CLI:
 
 ```yaml
 layers:
-  proposers: [codex, agy-gemini-flash, sonnet]
+  proposers: [codex, agy-gemini-pro, sonnet]
   refiners: [codex-sol, qwen]
 ```
 
-`agy-gemini-flash` exposes the verified Gemini 3.6 Flash family. Gemini 3.1
-Pro is intentionally not offered because AGY 1.1.7 resolves that advertised
-slug to Flash on the authenticated local account. The Flash route is opt-in,
-supports proposer/refiner roles, and is guarded by plan mode, sandboxing,
-schema validation, and the workspace snapshot check.
+`agy-gemini-pro` is the preferred AGY route for deep planning and review;
+`agy-gemini-flash` remains available when latency matters more than depth.
+Both routes are opt-in, support proposer/refiner roles, and are guarded by
+plan mode, sandboxing, schema validation, and the workspace snapshot check.
+The live account catalog must expose the selected stable model slug.
 
 ## Limits and caveats
 

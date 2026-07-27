@@ -2163,7 +2163,7 @@ def main() -> int:
                         help="Comma-separated provider names (built-ins "
                              "codex/glm/sonnet/kimi/qwen/deepseek/deepseek-flash/"
                              "composer/grok/cursor-grok/"
-                             "agy-gemini-flash plus user-named "
+                             "agy-gemini-pro/agy-gemini-flash plus user-named "
                              "providers). Default: the configured proposer layer.")
     parser.add_argument("--refiners",
                         default=os.environ.get("MOA_REFINERS"),

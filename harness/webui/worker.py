@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from .monitoring import OperationalError, capture_operational_error
 from .store import Store
 
 
@@ -439,6 +440,17 @@ class JobWorker:
                     finished_at=time.time(),
                 )
                 self._event(job_id, "error", f"Job failed with exit code {code}")
+                capture_operational_error(
+                    OperationalError(
+                        f"MoA run {job_id} failed in {phase} with exit code {code}"
+                    ),
+                    operation="worker.run_failed",
+                    context={
+                        "exit_code": code,
+                        "job_id": job_id,
+                        "phase": phase,
+                    },
+                )
         except InterruptedError:
             self.store.update_job(
                 job_id,
@@ -458,6 +470,14 @@ class JobWorker:
                 finished_at=time.time(),
             )
             self._event(job_id, "error", f"Worker error: {exc}")
+            capture_operational_error(
+                exc,
+                operation="worker.unexpected_exception",
+                context={
+                    "job_id": job_id,
+                    "phase": (self.store.get_job(job_id) or {}).get("phase"),
+                },
+            )
 
 
 def _artifact_summary(session_dir: Path) -> str:

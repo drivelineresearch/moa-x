@@ -125,7 +125,7 @@ the `agent_id` in payloads. Compatibility names remain stable even when their
 resolved model advances; the Web UI presents the canonical model label. The
 curated surface ships `codex`, `codex-sol`, `codex-luna`, `sonnet`, `opus`,
 `glm`, `kimi`, `qwen`, `qwen-opencode`, `composer`, `grok`, `cursor-grok`,
-`deepseek`, `deepseek-flash`, and `agy-gemini-flash`. The two DeepSeek
+`deepseek`, `deepseek-flash`, `agy-gemini-flash`, and `agy-gemini-pro`. The two DeepSeek
 routes resolve to OpenCode Go's current V4 Pro and V4 Flash model ids and can
 participate as proposers or refiners. Legacy `codex-reviewer`,
 `codex-aggregator`, and `agy-gemini-high` names remain resolvable for existing

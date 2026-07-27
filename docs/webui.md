@@ -36,6 +36,38 @@ The worker inherits the server process's `HOME`, `PATH`, environment, CLI
 keychains, and authenticated accounts. It never copies API keys or OAuth
 tokens into the browser or SQLite.
 
+## Provider health alerts
+
+When the Web UI worker starts, it probes every configured CLI account
+immediately and repeats the checks hourly. A healthy-to-unhealthy transition
+creates a Sentry error grouped by provider, including the CLI version, status,
+and probe detail. Repeated hourly failures remain one Sentry issue; after a
+provider recovers, a later regression raises a new event.
+
+Install the Web UI requirements and set the project DSN without committing it:
+
+```bash
+.venv/bin/pip install -r requirements-web.txt
+printf '%s\n' 'MOA_SENTRY_DSN=https://public-key@org.ingest.sentry.io/project' \
+  >> .env
+```
+
+The monitor uses the Web UI service's OS account so it sees the same `HOME`,
+`PATH`, keychain, and CLI sessions as real runs. Override the one-hour interval
+with `MOA_PROVIDER_MONITOR_INTERVAL_SECONDS`; set
+`MOA_SENTRY_ENVIRONMENT` to distinguish machines. Sentry notifications are
+controlled by the project's issue-alert rules; enable an alert for new issues
+where the `component` tag equals `provider-health`.
+
+The same SDK also captures unhandled Flask exceptions plus handled
+infrastructure failures that would otherwise only become a 5xx response or
+local log entry: worker crashes and nonzero run exits, runs interrupted by a
+server restart, provider/model catalog failures, prompt-coach outages, GitHub
+listing and clone failures, and failures in the provider-monitor loop. Expected
+4xx input validation, cancellations, unreadable user attachments, and missing
+files are deliberately excluded. Request bodies, local variables, and default
+PII are disabled in Sentry.
+
 ## Storage and profiles
 
 The default data root is `$XDG_DATA_HOME/moa-x`, or
@@ -53,8 +85,19 @@ moa-x/
 
 Each browser creates a local profile ID in `localStorage`. Its display name
 and preferences are also persisted server-side so they survive page reloads.
-Profiles organize “mine” versus all-local activity; without authentication
-they are not a privacy or authorization boundary.
+The server binds that profile to a high-entropy browser capability stored in
+an HttpOnly, SameSite cookie; only that capability may list, open, stream,
+download, cancel, or redispatch the profile's runs and uploads. Job ownership
+is always derived from the cookie rather than browser-supplied profile IDs or
+query parameters. A pre-upgrade profile is claimed by the first browser that
+returns with its matching local profile ID. Clearing both browser storage and
+cookies intentionally loses access to that private profile.
+
+This protects one browser profile from other browsers using the same Web UI,
+but it is not OS-level or internet-grade multi-tenant isolation. The server
+process and operating-system account can still read SQLite, workspaces,
+uploads, and `.moa` artifacts directly. Use separate OS accounts or machines
+when operators must not trust the host administrator.
 
 Run payloads, logs, manifests, and final artifacts remain in
 `.moa/<session>/` under the managed task or GitHub workspace. A **Task only**
@@ -191,10 +234,9 @@ Linux/macOS). Paths are resolved before use, so symlinks cannot escape the
 configured roots. The new-run UI exposes only managed GitHub and Task-only
 roots; it never accepts an arbitrary browser-supplied local path.
 
-The app exposes job goals, logs, reports, uploaded context, and controls to
-any browser that can reach it. Binding to `0.0.0.0` is an explicit opt-in for
-a trusted LAN and is not suitable for direct internet exposure. If remote
-access is required, put an authenticated, TLS-terminating reverse proxy or
-private overlay network in front of the loopback-bound service; the
-application itself does not provide accounts, authorization, or tenant
-isolation.
+The app requires a private browser capability before exposing job goals,
+logs, reports, uploaded context, and controls. Binding to `0.0.0.0` remains an
+explicit opt-in for a trusted LAN: plain HTTP can expose cookies to network
+observers and the application does not provide passwords, account recovery,
+administrator roles, or OS-level tenant isolation. For remote access, use
+TLS plus an authenticated reverse proxy or private overlay network.
