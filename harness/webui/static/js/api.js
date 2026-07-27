@@ -252,6 +252,20 @@ export async function cancelJob(id) {
   return request(`/api/jobs/${encodeURIComponent(id)}/cancel`, { method: "POST", body: "{}" });
 }
 
+export async function createReportShare(id) {
+  return request(`/api/jobs/${encodeURIComponent(id)}/share`, {
+    method: "POST",
+    body: "{}",
+  });
+}
+
+export async function revokeReportShare(id) {
+  return request(`/api/jobs/${encodeURIComponent(id)}/share`, {
+    method: "DELETE",
+    body: "{}",
+  });
+}
+
 export async function redispatchJob(id, payload) {
   return request(`/api/jobs/${encodeURIComponent(id)}/redispatch`, {
     method: "POST",
@@ -315,7 +329,7 @@ export function subscribeToJob(id, { onEvent, onState, onError } = {}) {
       }
     };
     source.onmessage = consume;
-    ["job", "phase", "agent", "progress", "artifact", "warning", "worker-error", "complete", "log", "heartbeat"].forEach((type) => {
+    ["job", "phase", "agent", "progress", "attachment", "attachment-progress", "artifact", "warning", "worker-error", "complete", "log", "heartbeat"].forEach((type) => {
       source.addEventListener(type, consume);
     });
     source.onopen = () => onState?.({ connection: "live" });

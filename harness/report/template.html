@@ -306,7 +306,10 @@ table.dl th { font-family: var(--font-head); text-transform: uppercase; font-siz
 
 /* ---- Compact stage timeline ---- */
 .timeline-shell { border: 1px solid var(--track); border-radius: 12px; overflow: hidden; background: var(--white); }
-.timeline-stage { padding: 18px 20px 20px; border-top: 1px solid var(--track); }
+.timeline-stage { --timeline-color: var(--gold); padding: 18px 20px 20px; border-top: 1px solid var(--track); }
+.timeline-stage.stage-1 { --timeline-color: #f59e0b; }
+.timeline-stage.stage-2 { --timeline-color: #14b8a6; }
+.timeline-stage.stage-3 { --timeline-color: #6366f1; }
 .timeline-stage:first-child { border-top: 0; }
 .timeline-stage-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 14px; }
 .timeline-stage-title { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 12px; min-width: 0; }
@@ -320,9 +323,15 @@ table.dl th { font-family: var(--font-head); text-transform: uppercase; font-siz
 .timeline-who .name { overflow-wrap: anywhere; font-weight: 800; font-size: .78rem; }
 .timeline-who .role { color: var(--secondary); font-size: .68rem; text-transform: capitalize; }
 .timeline-track { position: relative; height: 22px; overflow: hidden; border-radius: 999px; background: var(--panel); }
-.timeline-bar { position: absolute; top: 0; bottom: 0; min-width: 5px; border-radius: 999px; background: var(--gold); }
-.timeline-bar.failed { background: var(--red); opacity: .72; }
-.timeline-bar.transient { background: var(--gold); opacity: .55; }
+.timeline-bar { position: absolute; top: 0; bottom: 0; min-width: 5px; border-radius: 999px; background-color: var(--timeline-color); background-image: repeating-linear-gradient(135deg, rgba(255,255,255,.28) 0 7px, transparent 7px 14px); background-size: 20px 20px; animation: timeline-stripes 900ms linear infinite; }
+.timeline-bar.failed { background-color: var(--red); opacity: .72; }
+.timeline-bar.transient { background-color: var(--gold); opacity: .55; }
+.timeline-bar.previous { background-color: var(--secondary); opacity: .6; }
+.timeline-bar.retry { box-shadow: inset 0 0 0 2px rgba(0,0,0,.18); }
+.timeline-retry-wait { position: absolute; top: 3px; bottom: 3px; border-radius: 999px; background: repeating-linear-gradient(135deg, #fff2d8 0 6px, #f4c676 6px 12px); border: 1px dashed var(--burnt); opacity: .9; }
+.timeline-retry-summary { margin: -5px 0 11px; color: var(--burnt); font-size: .7rem; font-weight: 700; }
+.timeline-row.is-retry .timeline-who .role { color: var(--burnt); font-weight: 700; }
+@keyframes timeline-stripes { to { background-position: 20px 0; } }
 .timeline-duration { color: var(--secondary); font-size: .72rem; white-space: nowrap; }
 .timeline-legend { margin: 12px 0 0; color: var(--secondary); font-size: .72rem; line-height: 1.5; }
 
@@ -349,11 +358,18 @@ table.dl th { font-family: var(--font-head); text-transform: uppercase; font-siz
 .lineage-legend i { display: inline-block; width: 24px; height: 0; border-top: 2px solid var(--green); }
 .lineage-legend i.adapted { border-color: var(--gold); border-top-style: dashed; }
 .lineage-legend i.review { border-color: var(--ink); border-top-style: dotted; }
+.lineage-legend .hint { margin-left: auto; color: var(--muted); font-style: italic; }
 .lineage-viewport { width: 100%; max-width: 100%; min-width: 0; overflow-x: auto; overscroll-behavior-inline: contain; -webkit-overflow-scrolling: touch; padding: 2px 10px 0; }
 .lineage-viewport svg { display: block; min-width: 760px; }
-.lineage-node { cursor: pointer; }
+.lineage-node { cursor: pointer; filter: url(#lineage-card-shadow); transition: opacity 160ms ease; }
+.lineage-node rect { transition: stroke-width 160ms ease, fill 160ms ease; }
 .lineage-node:focus { outline: 3px solid var(--gold); outline-offset: 3px; }
-.lineage-node:focus rect, .lineage-node:hover rect { stroke: var(--gold); stroke-width: 3; }
+.lineage-node:focus rect, .lineage-node:hover rect, .lineage-node.is-highlighted rect { stroke: var(--gold); stroke-width: 3; fill: #fffdf7; }
+.lineage-node.is-muted { opacity: .32; }
+.lineage-edge { transition: opacity 160ms ease, stroke-width 160ms ease; stroke-linecap: round; }
+.lineage-edge.is-muted { opacity: .12 !important; }
+.lineage-edge.is-highlighted { opacity: 1 !important; stroke-width: 3.5 !important; }
+.lineage-edge-halo { fill: none; stroke-linecap: round; pointer-events: none; }
 .lineage-detail { border-top: 1px solid var(--track); padding: 14px 18px 18px; min-height: 112px; }
 .lineage-detail .kind { color: var(--burnt); font-family: var(--font-head); font-size: 0.64rem; text-transform: uppercase; font-weight: 800; letter-spacing: 0.07em; }
 .lineage-detail .detail-title { font-weight: 800; margin: 3px 0 5px; }
@@ -400,6 +416,7 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
   .timeline-row { grid-template-columns: 1fr 56px; gap: 6px 10px; }
   .timeline-who { grid-column: 1 / -1; }
 }
+@media (prefers-reduced-motion: reduce) { .timeline-bar { animation: none; } }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
 }
@@ -867,7 +884,8 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
     var legend = el("div", { class: "lineage-legend" }, [
       el("span", {}, [el("i"), document.createTextNode("used as written")]),
       el("span", {}, [el("i", { class: "adapted" }), document.createTextNode("revised")]),
-      el("span", {}, [el("i", { class: "review" }), document.createTextNode("reviewer influence")])
+      el("span", {}, [el("i", { class: "review" }), document.createTextNode("reviewer influence")]),
+      el("span", { class: "hint", text: "Hover a card to trace its influence" })
     ]);
     var viewport = el("div", { class: "lineage-viewport", role: "tabpanel", id: "lineage-panel" });
     var detail = el("div", { class: "lineage-detail", "aria-live": "polite" });
@@ -952,7 +970,12 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
     var H = Math.max(300, 92 + maxNodes * 82), W = 900, finalY = H / 2;
     var svg = svgEl("svg", { viewBox: "0 0 " + W + " " + H, width: "100%", height: H, role: "img", "aria-label": "Decision lineage for " + step.title });
     var defs = svgEl("defs", {}), marker = svgEl("marker", { id: "lineage-arrow-" + step.id, viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 6, markerHeight: 6, orient: "auto-start-reverse" });
-    marker.appendChild(svgEl("path", { d: "M 0 0 L 10 5 L 0 10 z", fill: C.muted })); defs.appendChild(marker); svg.appendChild(defs);
+    marker.appendChild(svgEl("path", { d: "M 0 0 L 10 5 L 0 10 z", fill: C.muted })); defs.appendChild(marker);
+    var shadow = svgEl("filter", { id: "lineage-card-shadow", x: "-10%", y: "-10%", width: "130%", height: "140%" });
+    shadow.appendChild(svgEl("feDropShadow", { dx: "0", dy: "3", "stdDeviation": "2.5", "flood-color": "#1f2937", "flood-opacity": ".16" })); defs.appendChild(shadow); svg.appendChild(defs);
+    [[18, 32, 250, H - 50, "#fffaf0"], [328, 32, 245, H - 50, "#f5fbf8"], [638, 32, 244, H - 50, "#f7f8ff"]].forEach(function (lane) {
+      svg.appendChild(svgEl("rect", { x: lane[0], y: lane[1], width: lane[2], height: lane[3], rx: 18, fill: lane[4], stroke: "#e5e7eb", "stroke-width": 1 }));
+    });
     svg.appendChild(svgText(32, 24, "SOURCE RECOMMENDATIONS", { fill: C.muted, "font-size": 10, "font-weight": 800, "letter-spacing": "0.08em" }));
     svg.appendChild(svgText(338, 24, "REVIEW FINDINGS", { fill: C.muted, "font-size": 10, "font-weight": 800, "letter-spacing": "0.08em" }));
     svg.appendChild(svgText(650, 24, "FINAL DECISION", { fill: C.muted, "font-size": 10, "font-weight": 800, "letter-spacing": "0.08em" }));
@@ -964,45 +987,67 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
       return Array.apply(null, Array(count)).map(function (_, i) { return first + i * gap; });
     }
     var propY = ys(proposerRefs.length), refY = ys(refinerRefs.length);
-    function edge(x1, y1, x2, y2, color, dash) {
-      var p = svgEl("path", { d: "M " + x1 + " " + y1 + " C " + (x1 + 75) + " " + y1 + ", " + (x2 - 75) + " " + y2 + ", " + x2 + " " + y2, fill: "none", stroke: color, "stroke-width": 2, "marker-end": "url(#lineage-arrow-" + step.id + ")", opacity: 0.78 });
+    function edge(x1, y1, x2, y2, color, dash, key) {
+      var d = "M " + x1 + " " + y1 + " C " + (x1 + 75) + " " + y1 + ", " + (x2 - 75) + " " + y2 + ", " + x2 + " " + y2;
+      svg.appendChild(svgEl("path", { d: d, class: "lineage-edge-halo", stroke: color, "stroke-width": 7, opacity: .10 }));
+      var p = svgEl("path", { d: d, class: "lineage-edge edge-" + key, fill: "none", stroke: color, "stroke-width": 2.25, "marker-end": "url(#lineage-arrow-" + step.id + ")", opacity: 0.82 });
       if (dash) p.setAttribute("stroke-dasharray", dash);
       svg.appendChild(p);
     }
-    proposerRefs.forEach(function (r, i) { edge(250, propY[i], 650, finalY, r.relationship === "adopted" ? C.green : C.gold, r.relationship === "adapted" ? "8 6" : ""); });
+    proposerRefs.forEach(function (r, i) { edge(250, propY[i], 650, finalY, r.relationship === "adopted" ? C.green : C.gold, r.relationship === "adapted" ? "8 6" : "", "p" + i); });
     refinerRefs.forEach(function (r, i) {
       var resolved = resolveRefinerLineage(r), color = resolved.status === "contradicted" ? C.red : (resolved.status === "unverified" ? C.muted : C.ink);
-      edge(560, refY[i], 650, finalY, color, "2 6");
+      edge(560, refY[i], 650, finalY, color, "2 6", "r" + i);
     });
 
     proposerRefs.forEach(function (r, i) {
       var source = resolveProposerLineage(r), label = r.agent_id + " · step " + (r.step_index + 1);
-      addLineageNode(svg, 30, propY[i] - 31, 220, 62, label, source.title || r.note, r.relationship, function () {
+      addLineageNode(svg, 30, propY[i] - 31, 220, 62, label, source.title || r.note, r.relationship, ["p" + i], function () {
         showLineageDetail(detail, source.title || label, source.body, r.note, source.files, "Proposer · " + r.relationship);
       });
     });
     refinerRefs.forEach(function (r, i) {
       var source = resolveRefinerLineage(r), label = r.agent_id + " · " + r.kind.replace(/_/g, " ");
-      addLineageNode(svg, 340, refY[i] - 31, 220, 62, label, source.title || r.note, source.status || "review", function () {
+      addLineageNode(svg, 340, refY[i] - 31, 220, 62, label, source.title || r.note, source.status || "review", ["r" + i], function () {
         showLineageDetail(detail, source.title || label, source.body, r.note, source.files, "Refiner · " + (source.status || r.kind));
       });
     });
-    addLineageNode(svg, 650, finalY - 43, 220, 86, "FINAL · " + step.decision, step.title, "final-" + step.decision, function () {
+    addLineageNode(svg, 650, finalY - 43, 220, 86, "FINAL · " + step.decision, step.title, "final-" + step.decision, proposerRefs.map(function (_, i) { return "p" + i; }).concat(refinerRefs.map(function (_, i) { return "r" + i; })), function () {
       showLineageDetail(detail, step.title, step.description, step.adjudication, step.files_touched, "Final step · " + step.decision);
     });
     return svg;
   }
 
-  function addLineageNode(svg, x, y, w, h, eyebrow, title, state, onActivate) {
+  function addLineageNode(svg, x, y, w, h, eyebrow, title, state, edgeKeys, onActivate) {
     var colors = { adopted: C.green, adapted: C.gold, verified: C.green, contradicted: C.red, unverified: C.muted, "final-accepted": C.green, "final-revised": C.gold, "final-new": C.ink };
     var g = svgEl("g", { class: "lineage-node", role: "button", tabindex: "0", "aria-label": eyebrow + ": " + title });
+    var tooltip = svgEl("title", {});
+    tooltip.textContent = eyebrow + ": " + title + ". Hover or focus to trace this influence.";
+    g.appendChild(tooltip);
     g.appendChild(svgEl("rect", { x: x, y: y, width: w, height: h, rx: 10, fill: "#fff", stroke: colors[state] || C.track, "stroke-width": 2 }));
     g.appendChild(svgText(x + 13, y + 20, eyebrow.toUpperCase(), { fill: colors[state] || C.muted, "font-size": 9, "font-weight": 800, "letter-spacing": "0.05em" }));
     var lines = wrapLineageText(title, 31, 2);
     lines.forEach(function (line, i) { g.appendChild(svgText(x + 13, y + 40 + i * 15, line, { fill: C.ink, "font-size": 12, "font-weight": 700 })); });
     g.addEventListener("click", onActivate);
+    g.addEventListener("pointerenter", function () { setLineageFocus(svg, g, edgeKeys, onActivate); });
+    g.addEventListener("pointerleave", function () { clearLineageFocus(svg); });
+    g.addEventListener("focus", function () { setLineageFocus(svg, g, edgeKeys, onActivate); });
+    g.addEventListener("blur", function () { clearLineageFocus(svg); });
     g.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onActivate(); } });
     svg.appendChild(g);
+  }
+
+  function setLineageFocus(svg, node, edgeKeys, onActivate) {
+    Array.prototype.forEach.call(svg.querySelectorAll(".lineage-node"), function (item) { item.classList.toggle("is-muted", item !== node); });
+    Array.prototype.forEach.call(svg.querySelectorAll(".lineage-edge"), function (edge) {
+      var hit = edgeKeys.some(function (key) { return edge.classList.contains("edge-" + key); });
+      edge.classList.toggle("is-highlighted", hit); edge.classList.toggle("is-muted", !hit);
+    });
+    node.classList.add("is-highlighted"); onActivate();
+  }
+
+  function clearLineageFocus(svg) {
+    Array.prototype.forEach.call(svg.querySelectorAll(".lineage-node, .lineage-edge"), function (item) { item.classList.remove("is-muted", "is-highlighted"); });
   }
 
   function wrapLineageText(value, width, maxLines) {
@@ -1227,21 +1272,24 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
     var shell = el("div", { class: "timeline-shell", role: "group", "aria-label": "Contributor timing by stage" });
     var derivedStart = 0, previousEnd = 0;
     definitions.forEach(function (definition) {
-      var spans = definition.rows.map(function (r) {
+      var spans = [];
+      definition.rows.forEach(function (r) {
+        if (r.previous_attempt) {
+          var prior = r.previous_attempt;
+          var priorRecorded = typeof prior.started_at === "number" && t0 ? prior.started_at - t0 : null;
+          spans.push({ r: r, attempt: prior, previous: true, start: Math.max(0, priorRecorded == null ? derivedStart : priorRecorded), dur: Math.max(0, Number(prior.duration_seconds) || 0) });
+        }
         var recorded = typeof r.started_at === "number" && t0 ? r.started_at - t0 : null;
-        return {
-          r: r,
-          start: Math.max(0, recorded == null ? derivedStart : recorded),
-          dur: Math.max(0, Number(r.duration_seconds) || 0)
-        };
+        spans.push({ r: r, attempt: r, previous: false, start: Math.max(0, recorded == null ? derivedStart : recorded), dur: Math.max(0, Number(r.duration_seconds) || 0) });
       });
       var stageStart = spans.reduce(function (value, span) { return Math.min(value, span.start); }, Infinity);
       if (!isFinite(stageStart)) stageStart = derivedStart;
       var stageEnd = spans.reduce(function (value, span) { return Math.max(value, span.start + span.dur); }, stageStart);
       var activeWindow = Math.max(1, stageEnd - stageStart);
       var handoffDelay = Math.max(0, stageStart - previousEnd);
+      var retryCount = definition.rows.filter(function (r) { return Boolean(r.previous_attempt); }).length;
 
-      var stage = el("section", { class: "timeline-stage", "aria-label": "Stage " + definition.number + ": " + definition.title });
+      var stage = el("section", { class: "timeline-stage stage-" + definition.number, "aria-label": "Stage " + definition.number + ": " + definition.title });
       stage.appendChild(el("div", { class: "timeline-stage-head" }, [
         el("div", { class: "timeline-stage-title" }, [
           el("span", { class: "number", text: "Stage " + definition.number }),
@@ -1255,23 +1303,46 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
           text: fmtDur(handoffDelay) + " between stages for handoff, waiting, or retries."
         }));
       }
+      if (retryCount) {
+        stage.appendChild(el("div", {
+          class: "timeline-retry-summary",
+          text: retryCount + " lane" + (retryCount === 1 ? " was" : "s were") + " rerun after incomplete output; the hatched interval is the wait before that retry began."
+        }));
+      }
 
       var rows = el("div", { class: "timeline-rows" });
       spans.forEach(function (span) {
         var left = Math.max(0, Math.min(100, (span.start - stageStart) / activeWindow * 100));
         var width = Math.max(.8, Math.min(100 - left, span.dur / activeWindow * 100));
-        var state = span.r.success ? "completed" : (span.r.transient_empty ? "returned no usable response" : "did not complete");
-        var barClass = "timeline-bar" + (span.r.success ? "" : (span.r.transient_empty ? " transient" : " failed"));
+        var state = span.attempt.success ? "completed" : (span.attempt.transient_empty ? "returned no usable response" : "did not complete");
+        var retry = !span.previous && Number(span.r.attempt || 1) > 1;
+        var retryWait = null;
+        if (retry && span.r.previous_attempt) {
+          var priorStart = typeof span.r.previous_attempt.started_at === "number" && t0 ? span.r.previous_attempt.started_at - t0 : stageStart;
+          var priorEnd = Math.max(stageStart, priorStart + (Number(span.r.previous_attempt.duration_seconds) || 0));
+          if (span.start - priorEnd > 5) {
+            retryWait = {
+              left: Math.max(0, Math.min(100, (priorEnd - stageStart) / activeWindow * 100)),
+              width: Math.max(.8, Math.min(100, (span.start - priorEnd) / activeWindow * 100)),
+              duration: span.start - priorEnd
+            };
+          }
+        }
+        var barClass = "timeline-bar" + (span.attempt.success ? "" : (span.attempt.transient_empty ? " transient" : " failed")) + (span.previous ? " previous" : "") + (retry ? " retry" : "");
+        var rowStatus = span.previous
+          ? (span.attempt.transient_empty ? "initial attempt — incomplete response" : "initial attempt failed")
+          : (retry ? "rerun completed" : state);
         var track = el("div", {
           class: "timeline-track",
           role: "img",
-          "aria-label": span.r.agent_id + " " + state + " in " + fmtDur(span.dur)
+          "aria-label": span.r.agent_id + " attempt " + (span.attempt.attempt || 1) + " " + state + " in " + fmtDur(span.dur) + (retryWait ? "; retry queued for " + fmtDur(retryWait.duration) + " after incomplete output" : "")
         });
+        if (retryWait) track.appendChild(el("span", { class: "timeline-retry-wait", title: "Retry queued after incomplete output: " + fmtDur(retryWait.duration), style: "left:" + retryWait.left.toFixed(2) + "%;width:" + retryWait.width.toFixed(2) + "%" }));
         track.appendChild(el("span", { class: barClass, style: "left:" + left.toFixed(2) + "%;width:" + width.toFixed(2) + "%" }));
-        rows.appendChild(el("div", { class: "timeline-row" }, [
+        rows.appendChild(el("div", { class: "timeline-row" + (retry || span.previous ? " is-retry" : "") }, [
           el("div", { class: "timeline-who" }, [
-            el("div", { class: "name", text: span.r.agent_id }),
-            el("div", { class: "role", text: String(span.r.role || "contributor").replace(/-/g, " ") + " · " + state })
+            el("div", { class: "name", text: span.r.agent_id + ((span.attempt.attempt || 1) > 1 || span.previous ? " · attempt " + (span.attempt.attempt || 1) : "") }),
+            el("div", { class: "role", text: String(span.r.role || "contributor").replace(/-/g, " ") + " · " + rowStatus })
           ]),
           track,
           el("div", { class: "timeline-duration", text: fmtDur(span.dur) })
@@ -1285,7 +1356,7 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
     shell.appendChild(el("p", {
       class: "timeline-legend",
       style: "padding:0 20px 16px",
-      text: "Each stage uses its own readable scale. Delays between stages are called out in text instead of appearing as large empty gaps."
+      text: "Stage 1, 2, and 3 use distinct striped colors. A gray retry row is the replaced attempt; the amber hatch marks time queued before the rerun started. Each stage uses its own readable scale."
     }));
     return shell;
   }

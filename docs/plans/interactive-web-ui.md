@@ -168,6 +168,27 @@ use deterministic status summaries so monitoring does not create hidden cost.
 - The reviewed server may run on `0.0.0.0`; public installs default to
   loopback.
 
+## Follow-up TODO (2026-07-27)
+
+- [x] Run scanned-PDF OCR in the background and show file/page progress in the
+  launch modal, including the existing prompt-coach illustration.
+- [x] Preserve OCR metadata so an operator can confirm how many PDF pages were
+  converted before dispatch.
+- [x] Add revocable, high-entropy bearer links for completed final reports.
+  Shared links expose only the rendered report and are marked `noindex`.
+- [x] Distinguish timeline stages by color, animate the bar texture while a
+  browser permits motion, and retain retry-attempt timing for newly dispatched
+  runs.
+- [ ] Backfill retry provenance for historical sessions whose manifests were
+  written before attempt history was recorded. The current UI must describe
+  those late bars as inferred retries rather than fabricate a per-attempt row.
+- [ ] Improve evidence validation for PDF-derived evidence: accept an explicit
+  PDF page/location reference where a source cannot provide a code line, while
+  keeping code evidence line numbers mandatory.
+- [ ] For counsel-preparation runs, attach the complete application
+  specification and drawings when the requested analysis depends on written
+  description. A claims-only attachment is not a substitute for those records.
+
 ## Primary references
 
 - [Flask application factories](https://flask.palletsprojects.com/en/stable/patterns/appfactories/)

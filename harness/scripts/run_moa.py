@@ -144,6 +144,10 @@ class LayerResult:
     # failure mode like quota, auth, timeout, or schema invalidation.
     # The orchestrator uses this to drive the redispatch user prompt.
     transient_empty: bool = False
+    # A redispatch replaces a transient first attempt in the active result set.
+    # Preserve a compact timing/status record so reports can show both attempts.
+    attempt: int = 1
+    previous_attempt: Optional[dict] = None
     # Original model-reported identity when it differs from the runner-owned
     # agent id. Persist provenance without letting a hallucinated id corrupt
     # attribution in downstream lineage.
@@ -1941,6 +1945,8 @@ def load_layer_results_from_manifest(
             log_path=entry.get("log_path"),
             json_path=entry.get("json_path"),
             transient_empty=entry.get("transient_empty", False),
+            attempt=entry.get("attempt", 1),
+            previous_attempt=entry.get("previous_attempt"),
             reported_agent_id=entry.get("reported_agent_id"),
             workspace_mutations=entry.get("workspace_mutations"),
         )
@@ -2017,6 +2023,26 @@ def parse_redispatch_arg(
         )
         sys.exit(2)
     return names
+
+
+def mark_redispatch_attempts(
+    replacements: list[LayerResult], existing: list[LayerResult]
+) -> None:
+    """Carry forward the replaced transient attempt for report provenance."""
+    prior_by_agent = {result.agent_id: result for result in existing}
+    for result in replacements:
+        prior = prior_by_agent.get(result.agent_id)
+        if not prior:
+            continue
+        result.attempt = max(1, prior.attempt) + 1
+        result.previous_attempt = {
+            "attempt": prior.attempt,
+            "success": prior.success,
+            "transient_empty": prior.transient_empty,
+            "started_at": prior.started_at,
+            "duration_seconds": prior.duration_seconds,
+            "error": prior.error,
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -2783,6 +2809,7 @@ def main() -> int:
                 )
 
             if redispatch_refiner_names:
+                mark_redispatch_attempts(layer2, existing_layer2)
                 kept = [r for r in existing_layer2 if r.agent_id not in redispatch_refiner_names]
                 layer2 = kept + layer2
 
@@ -2875,6 +2902,7 @@ def main() -> int:
         # future resolves, so we don't repeat them here.
 
         if redispatch_proposer_names:
+            mark_redispatch_attempts(layer1_new, existing_layer1)
             kept = [r for r in existing_layer1 if r.agent_id not in redispatch_proposer_names]
             layer1 = kept + layer1_new
         else:

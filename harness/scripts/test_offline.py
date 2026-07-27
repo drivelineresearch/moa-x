@@ -724,6 +724,35 @@ def test_layer1_manifest_round_trip_via_load() -> bool:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_redispatch_attempt_keeps_timing_provenance() -> bool:
+    print("\n[N] redispatch records the replaced attempt for the timeline")
+    prior = run_moa.LayerResult(
+        agent_id="cursor-grok",
+        layer=1,
+        role="proposer",
+        started_at=100.0,
+        duration_seconds=12.0,
+        transient_empty=True,
+        error="incomplete output",
+    )
+    retry = run_moa.LayerResult(
+        agent_id="cursor-grok",
+        layer=1,
+        role="proposer",
+        started_at=140.0,
+        duration_seconds=22.0,
+        success=True,
+    )
+    run_moa.mark_redispatch_attempts([retry], [prior])
+    ok = (
+        retry.attempt == 2
+        and retry.previous_attempt is not None
+        and retry.previous_attempt["started_at"] == 100.0
+        and retry.previous_attempt["transient_empty"] is True
+    )
+    return _ok(ok, f"attempt={retry.attempt} previous={retry.previous_attempt}")
+
+
 def test_session_started_at_survives_phase_split_and_redispatch() -> bool:
     print("\n[N] resumed sessions preserve the earliest retained Layer 1 start")
     retained = [
@@ -1745,15 +1774,24 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
         and by_id["deepseek"]["roles"] == ["proposer", "refiner"]
         and by_id["deepseek-flash"]["roles"] == ["proposer", "refiner"]
     )
+    route_labels_ok = all(
+        suffix not in item["name"]
+        for provider_id, suffix in (
+            ("opencode", "OpenCode Go"),
+            ("cursor", "Cursor"),
+        )
+        for item in groups[provider_id]["routes"]
+    )
     hidden_ok = (
         {"codex-reviewer", "codex-aggregator", "agy-gemini-high", "gemini-cli-pro",
          "cursor-sol", "cursor-gemini"}.isdisjoint(by_id)
         and "gemini" not in groups
     )
     return _ok(
-        routes_ok and effort_ok and grouped_ok and role_ok and hidden_ok,
+        routes_ok and effort_ok and grouped_ok and role_ok
+        and route_labels_ok and hidden_ok,
         f"routes={len(models)} grouped={grouped_ok} effort={effort_ok} "
-        f"roles={role_ok} hidden={hidden_ok}",
+        f"roles={role_ok} labels={route_labels_ok} hidden={hidden_ok}",
     )
 
 
@@ -2119,6 +2157,38 @@ def test_report_renders_failed_and_transient_agents() -> bool:
         _shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_report_backfills_legacy_retry_from_webui_log() -> bool:
+    print("\n[N] report labels a legacy retry from the immutable Web UI transcript")
+    tmp = Path(_tempfile.mkdtemp())
+    try:
+        session = _write_fixture_session(tmp)
+        manifest_path = session / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        retry = next(row for row in manifest["layer1"] if row["agent_id"] == "cursor-grok")
+        retry.update({"success": True, "schema_valid": True, "transient_empty": False,
+                      "duration_seconds": 22.0, "started_at": 140.0, "error": None})
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        (session / "webui.log").write_text(
+            "[orchestrator] Layer 1: spawning ['cursor-grok'] in parallel...\n"
+            "[orchestrator]   cursor-grok proposer: FAIL (4.0s) — cursor-agent returned non-JSON/incomplete result text under a success envelope. Likely transient — one re-dispatch may recover.\n"
+            "[orchestrator] Layer 1: spawning ['cursor-grok'] in parallel... (redispatch)\n",
+            encoding="utf-8",
+        )
+        data = _extract_embedded_data(
+            report_module.generate(session, session / "report.html").read_text(encoding="utf-8")
+        )
+        row = next(item for item in data["layer1"] if item["agent_id"] == "cursor-grok")
+        ok = (
+            row["attempt"] == 2
+            and row["previous_attempt"]["started_at"] == 100.0
+            and row["previous_attempt"]["duration_seconds"] == 4.0
+            and row["previous_attempt"]["backfilled_from"] == "webui.log"
+        )
+        return _ok(ok, f"attempt={row.get('attempt')} previous={row.get('previous_attempt')}")
+    finally:
+        _shutil.rmtree(tmp, ignore_errors=True)
+
+
 def test_report_escapes_script_close_in_logs() -> bool:
     print("\n[N] a </script> inside a log survives embedding (JSON still slices+parses)")
     tmp = Path(_tempfile.mkdtemp())
@@ -2376,7 +2446,12 @@ def test_report_template_accessibility_contracts() -> bool:
         and "document.execCommand" not in template
         and "The Markdown is selected below" in template
         and 'class: "timeline-shell"' in template
-        and "Each stage uses its own readable scale." in template
+        and "Stage 1, 2, and 3 use distinct striped colors." in template
+        and "previous_attempt" in template
+        and "timeline-retry-wait" in template
+        and "Hover a card to trace its influence" in template
+        and "setLineageFocus" in template
+        and "lineage-card-shadow" in template
     )
     return _ok(ok)
 
@@ -2557,12 +2632,14 @@ def main() -> int:
         test_manifest_summary_includes_transient_empty_arrays,
         test_layer1_manifest_round_trip_via_load,
         test_session_started_at_survives_phase_split_and_redispatch,
+        test_redispatch_attempt_keeps_timing_provenance,
         test_parse_redispatch_arg_validates_names,
         test_report_generates_single_self_contained_file,
         test_report_embedded_json_round_trips,
         test_report_normalizes_legacy_phase_local_timing,
         test_report_lineage_reference_warning_is_nonfatal,
         test_report_renders_failed_and_transient_agents,
+        test_report_backfills_legacy_retry_from_webui_log,
         test_report_escapes_script_close_in_logs,
         test_report_phase_split_partial_session,
         test_report_missing_manifest_exits_2,

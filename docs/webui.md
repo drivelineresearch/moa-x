@@ -105,6 +105,16 @@ run uses a private per-job workspace under `workspaces/brief/`, so a repository
 is never required. Existing repository sessions can still be imported into
 the SQLite index without moving their artifacts.
 
+## Sharing a final report
+
+Completed runs can create a **Share report** link from the result controls. It
+is a high-entropy, revocable bearer link that exposes only the self-contained
+`report.html`—not the run page, logs, source uploads, manifests, or other
+artifacts. Creating a new link revokes the prior one; the owner can also revoke
+the active link immediately. Shared reports are served with no-store and
+no-index headers, but anyone who receives the link can read it, so do not share
+reports containing material that the recipient is not permitted to process.
+
 ## Context sources
 
 The new-run flow offers two explicit choices:
@@ -128,8 +138,17 @@ image formats are copied into `.moa/<session>/inputs/` and converted locally int
 embedded in the scout brief, so every proposer, broadcast refiner, and
 aggregator receives identical contents without depending on its CLI sandbox
 being able to open `.moa/`. PDF page headings are preserved for citations.
-Scanned PDFs with no text layer are rejected with an OCR instruction rather
-than silently becoming unavailable.
+Scanned PDFs with no text layer are rendered page-by-page with Poppler and
+OCRed locally with Tesseract; the recovered text is shared across providers.
+Install both tools with `sudo apt install poppler-utils tesseract-ocr` on
+Ubuntu/Debian or `brew install poppler tesseract` on macOS. PDF OCR uses a
+bounded 200-DPI render (maximum 2,200 pixels on the long edge) and preserves
+page headings for citations.
+
+Reference preparation runs in the local worker rather than holding the launch
+request open. The launch dialog shows the active file plus the current PDF page
+as it is checked, rendered, and OCRed; after preparation, it transitions to
+the normal live run trace.
 
 Images are not base64-dumped into model prompts. Base64 would consume large
 amounts of context and text-only CLI transports would not interpret it as

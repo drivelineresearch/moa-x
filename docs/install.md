@@ -85,9 +85,9 @@ and live probes determine availability.
 # From a clean clone of this repository:
 python3 -m venv .venv
 .venv/bin/pip install -r requirements-web.txt
-# Optional but recommended for PNG/JPEG/WebP/TIFF/BMP attachment OCR:
-sudo apt install tesseract-ocr       # Ubuntu/Debian
-# brew install tesseract             # macOS
+# Optional but recommended for image and scanned-PDF attachment OCR:
+sudo apt install poppler-utils tesseract-ocr  # Ubuntu/Debian
+# brew install poppler tesseract               # macOS
 MOA_WEBUI_GITHUB_OWNER=your-github-user-or-org \
   .venv/bin/python -m harness.webui
 ```

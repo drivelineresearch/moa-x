@@ -74,6 +74,15 @@ CREATE TABLE IF NOT EXISTS github_workspaces (
 );
 CREATE INDEX IF NOT EXISTS github_workspaces_checked_idx
 ON github_workspaces(last_checked_at DESC);
+CREATE TABLE IF NOT EXISTS report_shares (
+    token_hash TEXT PRIMARY KEY,
+    job_id TEXT NOT NULL,
+    profile_id TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    revoked_at REAL
+);
+CREATE INDEX IF NOT EXISTS report_shares_job_idx
+ON report_shares(job_id, revoked_at);
 """
 
 
@@ -305,6 +314,54 @@ class Store:
                 self._decode(row) or {}
                 for row in conn.execute(query, params)
             ]
+
+    def create_report_share(
+        self, *, job_id: str, profile_id: str, token_hash: str
+    ) -> dict[str, Any]:
+        """Replace an existing share so a new link also revokes an old one."""
+        now = time.time()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                UPDATE report_shares SET revoked_at=?
+                WHERE job_id=? AND profile_id=? AND revoked_at IS NULL
+                """,
+                (now, job_id, profile_id),
+            )
+            conn.execute(
+                """
+                INSERT INTO report_shares(token_hash, job_id, profile_id, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (token_hash, job_id, profile_id, now),
+            )
+            row = conn.execute(
+                "SELECT * FROM report_shares WHERE token_hash=?", (token_hash,)
+            ).fetchone()
+        return self._decode(row) or {}
+
+    def revoke_report_shares(self, *, job_id: str, profile_id: str) -> int:
+        with self.connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE report_shares SET revoked_at=?
+                WHERE job_id=? AND profile_id=? AND revoked_at IS NULL
+                """,
+                (time.time(), job_id, profile_id),
+            )
+        return cursor.rowcount
+
+    def get_active_report_share(self, token_hash: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            return self._decode(
+                conn.execute(
+                    """
+                    SELECT * FROM report_shares
+                    WHERE token_hash=? AND revoked_at IS NULL
+                    """,
+                    (token_hash,),
+                ).fetchone()
+            )
 
     def insert_job(self, job: dict[str, Any]) -> dict[str, Any]:
         with self.connect() as conn:

@@ -1,6 +1,7 @@
 import {
   analyzePrompt,
   cancelJob,
+  createReportShare,
   createJob,
   getJob,
   getJobs,
@@ -13,6 +14,7 @@ import {
   probeAllProviders,
   probeProvider,
   redispatchJob,
+  revokeReportShare,
   saveProfile,
   subscribeToJob,
   uploadFiles,
@@ -1251,13 +1253,91 @@ async function launchRun(event) {
     state.pendingFiles = [];
     state.uploadedFiles = [];
     renderAttachments();
-    showToast("Run queued. The local worker has it.");
-    await navigate("run-detail", job.id);
+    if (payload.upload_ids?.length) {
+      trackAttachmentPreparation(job);
+    } else {
+      showToast("Run queued. The local worker has it.");
+      await navigate("run-detail", job.id);
+    }
   } catch (error) {
     showToast(error.message, "error");
   } finally {
     setButtonLoading(button, false, "Dispatching…", "Start run");
   }
+}
+
+function attachmentProgressPercent(update) {
+  const files = Math.max(Number(update.file_count) || 1, 1);
+  const file = Math.max(Math.min(Number(update.file_index) || 1, files), 1);
+  const pages = Number(update.page_count) || 0;
+  const page = Math.max(Math.min(Number(update.page_number) || 1, pages || 1), 1);
+  const stage = String(update.stage || "");
+  const inFile = pages
+    ? ((page - 1) + (stage === "complete" ? 1 : stage === "recognizing" ? .72 : .2)) / pages
+    : (stage === "complete" ? 1 : .08);
+  return Math.max(2, Math.min(100, ((file - 1 + inFile) / files) * 100));
+}
+
+function trackAttachmentPreparation(job) {
+  const dialog = $("#attachment-progress-dialog");
+  const message = $("#attachment-progress-message");
+  const pages = $("#attachment-progress-pages");
+  const fill = $("#attachment-progress-fill");
+  const track = $(".attachment-progress-track");
+  let handedOff = false;
+  let stop = () => {};
+  const show = (update = {}) => {
+    const stage = String(update.stage || "queued");
+    const name = update.file_name || "reference files";
+    const page = Number(update.page_number) || 0;
+    const total = Number(update.page_count) || 0;
+    if (total) {
+      const action = {
+        extracting: "Checking for text",
+        rendering: "Rendering for OCR",
+        recognizing: "Reading with OCR",
+        complete: "Prepared",
+      }[stage] || "Preparing";
+      message.textContent = `${action}: ${name}`;
+      pages.textContent = `Page ${page} of ${total}`;
+    } else if (stage === "complete") {
+      message.textContent = `Prepared ${name}`;
+      pages.textContent = `File ${update.file_index || 1} of ${update.file_count || 1}`;
+    } else if (stage === "queued") {
+      message.textContent = "Waiting for the local worker to begin reference preparation…";
+      pages.textContent = `${update.file_count || "Your"} reference file${Number(update.file_count) === 1 ? "" : "s"} queued`;
+    } else {
+      message.textContent = `Preparing ${name}`;
+      pages.textContent = `File ${update.file_index || 1} of ${update.file_count || 1}`;
+    }
+    const percent = attachmentProgressPercent(update);
+    fill.style.width = `${percent}%`;
+    track.setAttribute("aria-valuenow", String(Math.round(percent)));
+  };
+  const handOff = async () => {
+    if (handedOff) return;
+    handedOff = true;
+    stop();
+    if (dialog.open) dialog.close();
+    showToast("References are ready. The ensemble is starting.");
+    await navigate("run-detail", job.id);
+  };
+  stop = subscribeToJob(job.id, {
+    onEvent: (update) => {
+      if (update.type === "attachment-progress") show(update);
+      if (update.type === "attachment") handOff();
+      if (update.type === "worker-error") {
+        message.textContent = update.message || "Reference preparation failed.";
+        pages.textContent = "Open the run details to review the error.";
+      }
+    },
+    onState: (update) => {
+      if (update.phase === "attachments") show(update);
+      if (["failed", "cancelled"].includes(update.status)) handOff();
+    },
+  });
+  show({ file_count: job.config?.upload_ids?.length || 1, stage: "queued" });
+  dialog.showModal();
 }
 
 function phaseIndex(phase) {
@@ -1650,8 +1730,62 @@ function renderResultShortcuts(job) {
   shortcuts.hidden = false;
   shortcuts.innerHTML = `
     <span>Final results</span>
-    <div class="run-result-links">${artifactLinks(artifacts, true)}</div>
+    <div class="run-result-links">
+      ${job.status === "completed" && job.artifacts?.report
+        ? `<button class="report-share-button" type="button" data-share-report aria-label="Create a shareable link for the final report"><span aria-hidden="true">↗</span> Share final report</button>`
+        : ""}
+      ${artifactLinks(artifacts, true)}
+    </div>
   `;
+  shortcuts.querySelector("[data-share-report]")?.addEventListener("click", () => openReportShare(job));
+}
+
+async function openReportShare(job) {
+  const dialog = $("#report-share-dialog");
+  const field = $("#report-share-url");
+  const status = $("#report-share-status");
+  const revoke = $("#report-share-revoke");
+  try {
+    status.textContent = "Creating a new revocable report link…";
+    revoke.hidden = true;
+    if (!dialog.open) dialog.showModal();
+    const shared = await createReportShare(job.id);
+    field.value = new URL(shared.url, window.location.origin).href;
+    status.textContent = "Anyone with this link can view this report. Creating another link or revoking it disables this one.";
+    revoke.hidden = false;
+    try {
+      await navigator.clipboard.writeText(field.value);
+      status.textContent = "Link copied. Anyone with it can view this report; revoke it here at any time.";
+    } catch {
+      field.select();
+    }
+  } catch (error) {
+    status.textContent = error.message;
+    showToast(error.message, "error");
+  }
+}
+
+async function copyReportShare() {
+  const field = $("#report-share-url");
+  try {
+    await navigator.clipboard.writeText(field.value);
+    $("#report-share-status").textContent = "Link copied.";
+  } catch {
+    field.select();
+  }
+}
+
+async function revokeCurrentReportShare() {
+  const jobId = state.detailJob?.id;
+  if (!jobId) return;
+  try {
+    await revokeReportShare(jobId);
+    $("#report-share-url").value = "";
+    $("#report-share-status").textContent = "The report link was revoked.";
+    $("#report-share-revoke").hidden = true;
+  } catch (error) {
+    showToast(error.message, "error");
+  }
 }
 
 function renderResult(job) {
@@ -1943,6 +2077,8 @@ function bindEvents() {
   });
   $("#prompt-coach-button").addEventListener("click", openPromptCoach);
   $("#prompt-coach-close").addEventListener("click", () => $("#prompt-coach-dialog").close());
+  $("#report-share-copy").addEventListener("click", copyReportShare);
+  $("#report-share-revoke").addEventListener("click", revokeCurrentReportShare);
   $("#prompt-undo-button").addEventListener("click", () => {
     if (!state.promptCoach.undo) return;
     $("#run-goal").value = state.promptCoach.undo;

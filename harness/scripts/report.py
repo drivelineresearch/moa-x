@@ -46,6 +46,11 @@ REPORT_ASSETS = {
 }
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
+WEBUI_FAILURE_RE = re.compile(
+    r"^\[orchestrator\]\s+(?P<agent>[a-z0-9-]+)\s+"
+    r"(?P<role>proposer|refiner-broadcast|aggregator): FAIL "
+    r"\((?P<duration>[0-9.]+)s\)\s+—\s+(?P<error>.+)$"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -89,6 +94,64 @@ def _load_agent(entry: dict, session_dir: Path) -> dict:
             log = _split_log(log_file.read_text(encoding="utf-8", errors="replace"))
     out["log"] = log
     return out
+
+
+def _backfill_retry_history(session_dir: Path, layers: list[list[dict]]) -> None:
+    """Recover old retry attempts from the Web UI transcript when possible.
+
+    Older manifests replaced a failed result with the successful redispatch,
+    which made the later bar look like an unexplained delay. The Web UI keeps
+    the failed attempt in ``webui.log``; use that immutable transcript only to
+    enrich the rendered report. Never rewrite a session manifest.
+    """
+    log_path = session_dir / "webui.log"
+    if not log_path.exists():
+        return
+
+    phase = 0
+    failures: dict[tuple[int, str], dict] = {}
+    for line in log_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        layer_match = re.search(r"\[orchestrator\] Layer ([123]):", line)
+        if layer_match:
+            phase = int(layer_match.group(1))
+            continue
+        match = WEBUI_FAILURE_RE.match(line)
+        if not match or not phase:
+            continue
+        error = match.group("error")
+        # Only recover retryable failures. A terminal failure must remain an
+        # ordinary failed result, not be represented as a retry.
+        if not any(word in error.lower() for word in ("transient", "incomplete", "empty")):
+            continue
+        failures[(phase, match.group("agent"))] = {
+            "attempt": 1,
+            "success": False,
+            "transient_empty": True,
+            "duration_seconds": float(match.group("duration")),
+            "error": error,
+            "backfilled_from": "webui.log",
+        }
+
+    for phase, rows in enumerate(layers, start=1):
+        starts = [row.get("started_at") for row in rows if isinstance(row.get("started_at"), (int, float))]
+        if not starts:
+            continue
+        phase_start = min(starts)
+        for row in rows:
+            prior = failures.get((phase, str(row.get("agent_id") or "")))
+            started_at = row.get("started_at")
+            if (
+                not prior
+                or row.get("previous_attempt")
+                or not row.get("success")
+                or not isinstance(started_at, (int, float))
+                or started_at <= phase_start + 1
+            ):
+                continue
+            prior = dict(prior)
+            prior["started_at"] = phase_start
+            row["attempt"] = max(2, int(row.get("attempt") or 1))
+            row["previous_attempt"] = prior
 
 
 def _normalized_timing(manifest: dict, agents: list[dict]) -> dict:
@@ -258,6 +321,7 @@ def load_session(session_dir: Path) -> dict:
     layer1 = [_load_agent(e, session_dir) for e in manifest.get("layer1", [])]
     layer2 = [_load_agent(e, session_dir) for e in manifest.get("layer2", [])]
     layer3 = [_load_agent(e, session_dir) for e in manifest.get("layer3", [])]
+    _backfill_retry_history(session_dir, [layer1, layer2, layer3])
     timing = _normalized_timing(manifest, layer1 + layer2 + layer3)
 
     frozen_spec = scout.get("frozen_spec", "")

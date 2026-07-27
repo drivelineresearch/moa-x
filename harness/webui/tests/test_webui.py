@@ -85,6 +85,12 @@ class WebUITest(unittest.TestCase):
         )
         self.assertEqual(claimed.status_code, 200)
 
+    def _prepare_job_attachments(self, created) -> None:
+        job_id = created.get_json()["id"]
+        store = self.app.extensions["moa_store"]
+        worker = self.app.extensions["moa_worker"]
+        worker._prepare_attachments(store.get_job(job_id))
+
     def test_provider_monitor_alerts_once_and_realerts_after_recovery(self):
         state = {
             "status": "needs_auth",
@@ -453,6 +459,43 @@ class WebUITest(unittest.TestCase):
             404,
         )
 
+    def test_completed_report_share_link_is_public_and_revocable(self):
+        created = self.client.post(
+            "/api/jobs",
+            json={
+                "source_mode": "brief",
+                "goal": "Share this completed report.",
+                "proposers": ["codex"],
+            },
+        )
+        self.assertEqual(created.status_code, 201)
+        job = created.get_json()
+        session = Path(job["session_dir"])
+        (session / "report.html").write_text(
+            "<h1>Shared report</h1>", encoding="utf-8"
+        )
+        self.app.extensions["moa_store"].update_job(
+            job["id"], status="completed", phase="complete", progress=1
+        )
+
+        shared = self.client.post(f"/api/jobs/{job['id']}/share")
+        self.assertEqual(shared.status_code, 201)
+        link = shared.get_json()["url"]
+        self.assertRegex(link, r"^/shared/reports/[A-Za-z0-9_-]{32,160}$")
+
+        anonymous = self.app.test_client()
+        report = anonymous.get(link)
+        self.assertEqual(report.status_code, 200)
+        self.assertIn(b"Shared report", report.data)
+        self.assertEqual(report.headers["Cache-Control"], "private, no-store")
+        self.assertEqual(report.headers["X-Robots-Tag"], "noindex, nofollow")
+        report.close()
+
+        revoked = self.client.delete(f"/api/jobs/{job['id']}/share")
+        self.assertEqual(revoked.status_code, 200)
+        self.assertEqual(revoked.get_json()["revoked"], 1)
+        self.assertEqual(anonymous.get(link).status_code, 404)
+
     def test_brief_only_job_uses_an_isolated_managed_workspace(self):
         created = self.client.post(
             "/api/jobs",
@@ -518,6 +561,7 @@ class WebUITest(unittest.TestCase):
             },
         )
         self.assertEqual(created.status_code, 201)
+        self._prepare_job_attachments(created)
         session = Path(created.get_json()["session_dir"])
         snapshot = session / "inputs" / "01-notes.md"
         self.assertEqual(snapshot.read_bytes(), b"# Research notes\nA durable input.")
@@ -560,6 +604,7 @@ class WebUITest(unittest.TestCase):
             },
         )
         self.assertEqual(created.status_code, 201, created.get_data(as_text=True))
+        self._prepare_job_attachments(created)
         session = Path(created.get_json()["session_dir"])
         scout = json.loads((session / "scout-brief.json").read_text())
         context = scout["attachment_context"]
@@ -567,6 +612,17 @@ class WebUITest(unittest.TestCase):
         self.assertIn("### Page 1", context["markdown"])
         self.assertIn("fifty percent from the first dollar", context["markdown"])
         self.assertIn("do not assume filesystem access", context["markdown"])
+        progress_events = self.app.extensions["moa_store"].events_after(
+            created.get_json()["id"]
+        )
+        page_events = [
+            event
+            for event in progress_events
+            if event["kind"] == "attachment-progress"
+            and event["data"].get("stage") == "extracting"
+        ]
+        self.assertEqual(page_events[0]["data"]["page_number"], 1)
+        self.assertEqual(page_events[0]["data"]["page_count"], 1)
         proposer_prompt = run_moa._build_proposer_prompt(
             scout, {"type": "object"}, "codex"
         )
@@ -584,6 +640,47 @@ class WebUITest(unittest.TestCase):
         ).read_text()
         for payload in (proposer_prompt, refiner_prompt, synthesis):
             self.assertIn("fifty percent from the first dollar", payload)
+
+    @patch(
+        "harness.scripts.attachments._ocr_pdf_page",
+        return_value="The scanned patent describes multi-target tracking.",
+    )
+    def test_scanned_pdf_upload_is_ocr_and_inlined(self, ocr_pdf_page):
+        uploaded = self.client.post(
+            "/api/uploads",
+            data={
+                "file": (
+                    io.BytesIO(_minimal_text_pdf("")),
+                    "scanned-patent.pdf",
+                ),
+            },
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(uploaded.status_code, 201)
+        upload_id = uploaded.get_json()["uploads"][0]["id"]
+        created = self.client.post(
+            "/api/jobs",
+            json={
+                "source_mode": "brief",
+                "goal": "Review the attached patent.",
+                "proposers": ["codex"],
+                "attachments": [upload_id],
+            },
+        )
+        self.assertEqual(created.status_code, 201, created.get_data(as_text=True))
+        self._prepare_job_attachments(created)
+        session = Path(created.get_json()["session_dir"])
+        scout = json.loads((session / "scout-brief.json").read_text())
+        source = scout["attachment_context"]["sources"][0]
+        self.assertEqual(source["kind"], "pdf-ocr")
+        self.assertEqual(source["pages"], 1)
+        self.assertEqual(source["ocr_pages"], 1)
+        self.assertEqual(source["ocr_language"], "eng")
+        self.assertIn(
+            "The scanned patent describes multi-target tracking.",
+            scout["attachment_context"]["markdown"],
+        )
+        ocr_pdf_page.assert_called_once()
 
     @patch(
         "harness.scripts.attachments._extract_image",
@@ -606,6 +703,7 @@ class WebUITest(unittest.TestCase):
             },
         )
         self.assertEqual(created.status_code, 201, created.get_data(as_text=True))
+        self._prepare_job_attachments(created)
         session = Path(created.get_json()["session_dir"])
         scout = json.loads((session / "scout-brief.json").read_text())
         context = scout["attachment_context"]

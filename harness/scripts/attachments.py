@@ -11,8 +11,9 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 
 DEFAULT_MAX_FILE_CHARS = 180_000
@@ -43,6 +44,7 @@ IMAGE_EXTENSIONS = {
     ".webp",
 }
 SUPPORTED_EXTENSIONS = TEXT_EXTENSIONS | IMAGE_EXTENSIONS | {".pdf"}
+AttachmentProgress = Callable[[dict[str, Any]], None]
 
 
 class AttachmentError(ValueError):
@@ -72,7 +74,117 @@ def _decode_text(path: Path) -> str:
     return raw.decode("cp1252")
 
 
-def _extract_pdf(path: Path) -> tuple[str, int]:
+def _ocr_language() -> str:
+    language = os.environ.get("MOA_ATTACHMENT_OCR_LANG", "eng").strip() or "eng"
+    if not re.fullmatch(r"[A-Za-z0-9_+.-]{1,80}", language):
+        raise AttachmentError("MOA_ATTACHMENT_OCR_LANG is invalid")
+    return language
+
+
+def _ocr_image(path: Path, *, source_name: str) -> str:
+    """Extract text from a raster image without treating it as trusted input."""
+    binary = shutil.which("tesseract")
+    if not binary:
+        raise AttachmentError(
+            f"{source_name} requires local OCR. Install Tesseract "
+            "(Ubuntu/Debian: sudo apt install tesseract-ocr; "
+            "macOS: brew install tesseract) and launch again"
+        )
+    try:
+        result = subprocess.run(
+            [binary, str(path), "stdout", "-l", _ocr_language()],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise AttachmentError(f"OCR failed for {source_name}: {exc}") from exc
+    if result.returncode != 0:
+        detail = (result.stderr or "unknown Tesseract error").strip()
+        raise AttachmentError(f"OCR failed for {source_name}: {detail[:500]}")
+    return result.stdout.strip()
+
+
+def _ocr_pdf_page(
+    path: Path,
+    page_number: int,
+    page_count: int,
+    progress: AttachmentProgress | None = None,
+) -> str:
+    """Render one PDF page at a bounded resolution and OCR the resulting image."""
+    renderer = shutil.which("pdftoppm")
+    if not renderer:
+        raise AttachmentError(
+            f"{path.name} requires PDF OCR. Install Poppler and Tesseract "
+            "(Ubuntu/Debian: sudo apt install poppler-utils tesseract-ocr; "
+            "macOS: brew install poppler tesseract) and launch again"
+        )
+    try:
+        with tempfile.TemporaryDirectory(prefix="moa-pdf-ocr-") as temporary:
+            image_base = Path(temporary) / "page"
+            if progress:
+                progress(
+                    {
+                        "stage": "rendering",
+                        "page_number": page_number,
+                        "page_count": page_count,
+                    }
+                )
+            rendered = subprocess.run(
+                [
+                    renderer,
+                    "-f",
+                    str(page_number),
+                    "-l",
+                    str(page_number),
+                    "-r",
+                    "200",
+                    "-scale-to",
+                    "2200",
+                    "-png",
+                    "-singlefile",
+                    str(path),
+                    str(image_base),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=120,
+                check=False,
+            )
+            if rendered.returncode != 0:
+                detail = (rendered.stderr or "unknown PDF renderer error").strip()
+                raise AttachmentError(
+                    f"OCR failed rendering page {page_number} of {path.name}: "
+                    f"{detail[:500]}"
+                )
+            image_path = image_base.with_suffix(".png")
+            if not image_path.is_file():
+                raise AttachmentError(
+                    f"OCR failed rendering page {page_number} of {path.name}: "
+                    "the PDF renderer produced no image"
+                )
+            if progress:
+                progress(
+                    {
+                        "stage": "recognizing",
+                        "page_number": page_number,
+                        "page_count": page_count,
+                    }
+                )
+            return _ocr_image(image_path, source_name=f"page {page_number} of {path.name}")
+    except AttachmentError:
+        raise
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise AttachmentError(
+            f"OCR failed rendering page {page_number} of {path.name}: {exc}"
+        ) from exc
+
+
+def _extract_pdf(
+    path: Path,
+    progress: AttachmentProgress | None = None,
+) -> tuple[str, int, int]:
     try:
         from pypdf import PdfReader
     except ImportError as exc:
@@ -87,9 +199,23 @@ def _extract_pdf(path: Path) -> tuple[str, int]:
                 f"{path.name} is password-protected and cannot be converted"
             )
         pages: list[str] = []
+        ocr_pages = 0
+        page_count = len(reader.pages)
         for index, page in enumerate(reader.pages, start=1):
+            if progress:
+                progress(
+                    {
+                        "stage": "extracting",
+                        "page_number": index,
+                        "page_count": page_count,
+                    }
+                )
             text = page.extract_text() or ""
             text = text.replace("\x00", "").strip()
+            if not text:
+                text = _ocr_pdf_page(path, index, page_count, progress)
+                if text:
+                    ocr_pages += 1
             if text:
                 pages.append(f"### Page {index}\n\n{text}")
     except AttachmentError:
@@ -99,37 +225,14 @@ def _extract_pdf(path: Path) -> tuple[str, int]:
 
     if not pages:
         raise AttachmentError(
-            f"{path.name} contains no extractable text; run OCR and upload the "
-            "searchable PDF or exported text"
+            f"{path.name} contains no extractable or OCR-readable text. Add a "
+            "text description or upload an exported text file"
         )
-    return "\n\n".join(pages), len(reader.pages)
+    return "\n\n".join(pages), len(reader.pages), ocr_pages
 
 
 def _extract_image(path: Path) -> str:
-    binary = shutil.which("tesseract")
-    if not binary:
-        raise AttachmentError(
-            f"{path.name} requires local OCR. Install Tesseract "
-            "(Ubuntu/Debian: sudo apt install tesseract-ocr; "
-            "macOS: brew install tesseract) and launch again"
-        )
-    language = os.environ.get("MOA_ATTACHMENT_OCR_LANG", "eng").strip() or "eng"
-    if not re.fullmatch(r"[A-Za-z0-9_+.-]{1,80}", language):
-        raise AttachmentError("MOA_ATTACHMENT_OCR_LANG is invalid")
-    try:
-        result = subprocess.run(
-            [binary, str(path), "stdout", "-l", language],
-            capture_output=True,
-            text=True,
-            timeout=120,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        raise AttachmentError(f"OCR failed for {path.name}: {exc}") from exc
-    if result.returncode != 0:
-        detail = (result.stderr or "unknown Tesseract error").strip()
-        raise AttachmentError(f"OCR failed for {path.name}: {detail[:500]}")
-    text = result.stdout.strip()
+    text = _ocr_image(path, source_name=path.name)
     if not text:
         raise AttachmentError(
             f"{path.name} contains no OCR-readable text. Add a text description "
@@ -148,6 +251,7 @@ def _clean_markdown(value: str) -> str:
 def prepare_attachment_context(
     scout_brief: dict[str, Any],
     session_dir: Path,
+    progress: AttachmentProgress | None = None,
 ) -> dict[str, Any]:
     """Return a scout brief with every uploaded reference inlined as Markdown.
 
@@ -204,9 +308,24 @@ def prepare_attachment_context(
                 f"{name} cannot be converted to shared context; supported "
                 f"extensions: {supported}"
             )
+        progress_base = {
+            "file_index": index,
+            "file_count": len(uploads),
+            "file_name": name,
+        }
+        if progress:
+            progress({**progress_base, "stage": "starting"})
         if extension == ".pdf":
-            extracted, pages = _extract_pdf(source_path)
-            kind = "pdf"
+            pdf_progress = (
+                lambda update: progress({**progress_base, **update})
+                if progress
+                else None
+            )
+            extracted, pages, ocr_pages = _extract_pdf(
+                source_path,
+                progress=pdf_progress if progress else None,
+            )
+            kind = "pdf-ocr" if ocr_pages else "pdf"
         elif extension in IMAGE_EXTENSIONS:
             extracted = _extract_image(source_path)
             pages = None
@@ -255,11 +374,16 @@ def prepare_attachment_context(
         }
         if pages is not None:
             source_meta["pages"] = pages
+        if extension == ".pdf" and ocr_pages:
+            source_meta["ocr_pages"] = ocr_pages
+            source_meta["ocr_language"] = _ocr_language()
         if kind == "image-ocr":
             source_meta["ocr_language"] = os.environ.get(
                 "MOA_ATTACHMENT_OCR_LANG", "eng"
             )
         sources.append(source_meta)
+        if progress:
+            progress({**progress_base, "stage": "complete"})
 
     markdown = "\n".join(sections).strip() + "\n"
     context_path = session_dir / "attachment-context.md"
