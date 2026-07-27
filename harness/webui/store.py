@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS profiles (
     id TEXT PRIMARY KEY,
     display_name TEXT NOT NULL,
     settings_json TEXT NOT NULL DEFAULT '{}',
+    access_token_hash TEXT,
     created_at REAL NOT NULL,
     updated_at REAL NOT NULL
 );
@@ -98,6 +99,18 @@ class Store:
     def initialize(self) -> None:
         with self.connect() as conn:
             conn.executescript(SCHEMA)
+            columns = {
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(profiles)").fetchall()
+            }
+            if "access_token_hash" not in columns:
+                conn.execute(
+                    "ALTER TABLE profiles ADD COLUMN access_token_hash TEXT"
+                )
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS profiles_token_idx "
+                "ON profiles(access_token_hash)"
+            )
 
     def reconcile_interrupted_jobs(self) -> list[str]:
         """Mark jobs orphaned by a prior server exit as failed and recoverable."""
@@ -137,6 +150,7 @@ class Store:
             item["settings"] = json.loads(item.pop("settings_json") or "{}")
         if "data_json" in item:
             item["data"] = json.loads(item.pop("data_json") or "{}")
+        item.pop("access_token_hash", None)
         item.pop("cancel_requested", None)
         return item
 
@@ -162,6 +176,37 @@ class Store:
         with self.connect() as conn:
             return self._decode(
                 conn.execute("SELECT * FROM profiles WHERE id=?", (profile_id,)).fetchone()
+            )
+
+    def profile_token_claimed(self, profile_id: str) -> bool:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT access_token_hash FROM profiles WHERE id=?",
+                (profile_id,),
+            ).fetchone()
+        return bool(row and row["access_token_hash"])
+
+    def claim_profile_token(self, profile_id: str, token_hash: str) -> bool:
+        """Bind an unclaimed profile to one browser capability token."""
+        with self.connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE profiles SET access_token_hash=?, updated_at=?
+                WHERE id=? AND access_token_hash IS NULL
+                """,
+                (token_hash, time.time(), profile_id),
+            )
+        return cursor.rowcount == 1
+
+    def get_profile_by_token_hash(
+        self, token_hash: str
+    ) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            return self._decode(
+                conn.execute(
+                    "SELECT * FROM profiles WHERE access_token_hash=?",
+                    (token_hash,),
+                ).fetchone()
             )
 
     def insert_upload(self, upload: dict[str, Any]) -> dict[str, Any]:
@@ -246,13 +291,19 @@ class Store:
             ).fetchone()
         return self._decode(row) or {}
 
-    def list_github_workspaces(self) -> list[dict[str, Any]]:
+    def list_github_workspaces(
+        self, *, profile_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        query = "SELECT * FROM github_workspaces"
+        params: list[Any] = []
+        if profile_id:
+            query += " WHERE profile_id=?"
+            params.append(profile_id)
+        query += " ORDER BY last_checked_at DESC"
         with self.connect() as conn:
             return [
                 self._decode(row) or {}
-                for row in conn.execute(
-                    "SELECT * FROM github_workspaces ORDER BY last_checked_at DESC"
-                )
+                for row in conn.execute(query, params)
             ]
 
     def insert_job(self, job: dict[str, Any]) -> dict[str, Any]:
@@ -287,6 +338,15 @@ class Store:
             return self._decode(
                 conn.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
             )
+
+    def claim_job_profile(self, job_id: str, profile_id: str) -> bool:
+        """Assign an unowned imported job without overriding another owner."""
+        with self.connect() as conn:
+            cursor = conn.execute(
+                "UPDATE jobs SET profile_id=? WHERE id=? AND profile_id IS NULL",
+                (profile_id, job_id),
+            )
+        return cursor.rowcount == 1
 
     def list_jobs(
         self, *, limit: int = 50, profile_id: str | None = None

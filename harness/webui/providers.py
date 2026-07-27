@@ -106,6 +106,8 @@ ROUTE_META: dict[str, dict[str, Any]] = {
                     "roles": ["proposer", "refiner"]},
     "agy-gemini-flash": {"label": "Gemini 3.6 Flash", "lab": "Google",
                          "roles": ["proposer", "refiner"]},
+    "agy-gemini-pro": {"label": "Gemini 3.1 Pro", "lab": "Google",
+                       "roles": ["proposer", "refiner"]},
 }
 
 HIDDEN_ROUTES = {"codex-reviewer", "codex-aggregator", "agy-gemini-high"}
@@ -129,6 +131,7 @@ EFFORT_OPTIONS = {
 }
 ROUTE_EFFORT_OPTIONS = {
     "agy-gemini-flash": ["low", "medium", "high"],
+    "agy-gemini-pro": ["low", "high"],
 }
 
 _CACHE_LOCK = threading.Lock()
@@ -194,6 +197,7 @@ def probe_provider(provider_id: str) -> dict[str, Any]:
     detail = "not installed"
     authenticated = False
     version = None
+    discovered_models: set[str] = set()
 
     if installed:
         version_ok, version_output = _run([binary, "--version"], timeout=5)
@@ -217,16 +221,30 @@ def probe_provider(provider_id: str) -> dict[str, Any]:
         authenticated = ready_count > 0
         detail = f"{ready_count}/{len(routes)} configured routes ready"
     if installed and provider_id == "agy":
-        models_ok, _discovered, model_detail = agy.list_models()
+        models_ok, discovered, model_detail = agy.list_models()
         if not models_ok:
             authenticated = False
             detail = model_detail
         else:
+            discovered_models = set(discovered)
             detail = (
                 f"{version or 'agy'}; persisted account ready; "
-                f"{len(routes)} curated Gemini families"
+                f"{len(discovered_models)} model variants available"
             )
-    if provider_id != "opencode":
+    if provider_id == "agy":
+        routes = [
+            {
+                **route,
+                "available": authenticated and route["model"] in discovered_models,
+                "availability_detail": (
+                    detail
+                    if route["model"] in discovered_models
+                    else f"{route['model']} is not available to this AGY account"
+                ),
+            }
+            for route in routes
+        ]
+    elif provider_id != "opencode":
         routes = [
             {
                 **route,

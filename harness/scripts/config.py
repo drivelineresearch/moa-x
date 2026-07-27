@@ -114,11 +114,12 @@ BUILTIN_PROVIDERS: dict[str, ResolvedProvider] = {
     # Google providers are opt-in and intentionally absent from the shipped
     # proposer/refiner defaults. AGY reuses the account signed into the local
     # Antigravity CLI.
-    # The Web UI presents the two Gemini families and keeps reasoning effort
-    # separate from the family name. The high-suffixed route remains a hidden
-    # compatibility alias for saved configs.
+    # The Web UI presents Gemini Pro and Flash as separate families and keeps
+    # reasoning effort separate from the family name. The high-suffixed Flash
+    # route remains a hidden compatibility alias for saved configs.
     "agy-gemini-high": ResolvedProvider(name="agy-gemini-high", harness="agy",    model="gemini-3.6-flash-high", effort="high"),
     "agy-gemini-flash": ResolvedProvider(name="agy-gemini-flash", harness="agy",  model="gemini-3.6-flash-medium", effort="medium"),
+    "agy-gemini-pro": ResolvedProvider(name="agy-gemini-pro", harness="agy",      model="gemini-3.1-pro-high", effort="high"),
 }
 
 

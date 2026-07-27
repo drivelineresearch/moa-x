@@ -58,6 +58,7 @@ the curated Web UI.
 | `grok` | `opencode` CLI | `opencode-go/grok-4.5` | provider default |
 | `cursor-grok` | `cursor` CLI | `cursor-grok-4.5-high` | encoded in model id |
 | `agy-gemini-flash` | `agy` CLI | `gemini-3.6-flash-medium` | medium |
+| `agy-gemini-pro` | `agy` CLI | `gemini-3.1-pro-high` | high |
 
 Every curated route can be a proposer or refiner. Only `codex-sol` and
 `opus` are offered as aggregators. DeepSeek uses the authenticated OpenCode
@@ -261,18 +262,24 @@ Google models are available through the opt-in AGY harness. It reuses the
 account already signed in locally; MoA-X does not ask for, copy, or store
 credentials.
 
-- `agy-gemini-flash` uses Antigravity CLI, the supported consumer
-  Google-account path. AGY 1.1.5+ is required for stable model slugs. The Web
-  UI keeps reasoning effort separate from the family name. Gemini 3.1 Pro is
-  not offered because AGY 1.1.7 resolves that advertised slug to Flash on this
-  machine.
+- `agy-gemini-flash` selects Gemini 3.6 Flash for faster calls.
+- `agy-gemini-pro` selects Gemini 3.1 Pro for deeper proposer or refiner work.
+  Live AGY 1.1.7 validation on July 26, 2026 passed a 380,311-character
+  schema-shaped proposer prompt with exact end-marker retention and no schema
+  or evidence cross-field errors. Pro remains opt-in rather than part of the
+  default roster.
+
+Both routes use Antigravity CLI's consumer Google-account path. AGY 1.1.5+ is
+required for stable model slugs. The Web UI keeps reasoning effort separate
+from the family name and only enables routes present in the signed-in
+account's live `agy models` catalog.
 The adapter requires plan mode plus sandboxing and supports proposer and
 broadcast-refiner roles. AGY routes are deliberately absent from the default
 roster. Select one explicitly:
 
 ```yaml
 layers:
-  proposers: [codex, agy-gemini-flash, sonnet]
+  proposers: [codex, agy-gemini-pro, sonnet]
   refiners:  [codex-sol, qwen]
 ```
 
