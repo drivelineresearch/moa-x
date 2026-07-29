@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from harness.scripts.attachments import AttachmentError, prepare_attachment_context
+from harness.scripts import config as harness_config
 
 from .monitoring import OperationalError, capture_operational_error
 from .store import Store
@@ -159,6 +160,7 @@ class JobWorker:
         config = job["config"]
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"
+        provider_catalog = harness_config.load_provider_catalog()
         for provider_name, model in (
             config.get("options", {}).get("model_overrides") or {}
         ).items():
@@ -168,6 +170,11 @@ class JobWorker:
         for provider_name, effort in (
             config.get("options", {}).get("effort_overrides") or {}
         ).items():
+            provider = provider_catalog.get(str(provider_name))
+            # AGY depth is selected by the model suffix, not --effort. Never
+            # let an old browser payload create a conflicting CLI invocation.
+            if provider and provider.harness == "agy":
+                continue
             if (
                 re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,79}", str(provider_name))
                 and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,39}", str(effort))

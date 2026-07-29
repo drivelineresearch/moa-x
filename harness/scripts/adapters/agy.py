@@ -142,8 +142,10 @@ def _build_cmd(
         "--print-timeout", f"{timeout_seconds}s",
         "--log-file", str(internal_log),
     ]
-    if reasoning_effort:
-        cmd.extend(["--effort", reasoning_effort])
+    # AGY's currently available model ids encode depth (``-low``, ``-medium``,
+    # or ``-high``). Supplying --effort as well makes the CLI reject a model
+    # selection when the two disagree, so never forward a separate flag.
+    # Keep the parameter for the common adapter interface and old callers.
     return cmd
 
 

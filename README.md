@@ -9,23 +9,26 @@
   <img src="https://img.shields.io/badge/providers-codex%20%7C%20claude%20%7C%20opencode%20%7C%20cursor%20%7C%20agy-informational" alt="supported CLIs">
 </p>
 
-<p align="center">
-  <img src="docs/moa-x-workflow.png" alt="MoA-X workflow: Scout → GPT-5.6 Terra, GLM-5.2, and Claude Sonnet 5 proposers → GPT-5.6 Sol and Qwen 3.8 Max Preview broadcast refiners → Claude Opus 5 aggregator → final plan, decision lineage, and self-contained interactive report" width="820">
-</p>
+```mermaid
+flowchart LR
+  S["Scout brief"] --> P["Proposers: Gemini Pro + GPT-5.6 Terra + Claude Sonnet 5"]
+  P --> R["Broadcast refiners: Qwen 3.8 Max + Claude Opus 5"]
+  R --> A["Aggregator: GPT-5.6 Sol xhigh"]
+  A --> O["Final plan + decision lineage + report"]
+```
 
 A small, CLI-native take on the 2024
 [Mixture-of-Agents paper](https://arxiv.org/abs/2406.04692), pointed at
 a different job: producing **repo-grounded implementation plans** for
 coding agents instead of chat answers. The default roster puts proposers
-from three different labs to work — OpenAI `codex` (`gpt-5.6-terra`), Zhipu
-`glm` (GLM-5.2 via the `opencode` CLI), and Anthropic `sonnet`
-(`claude-sonnet-5` via Claude Code) — reading the repo in
+from three different labs to work — Google `agy-gemini-pro`
+(`gemini-3.1-pro-high`), OpenAI `codex` (`gpt-5.6-terra`), and Anthropic
+`sonnet` (`claude-sonnet-5` via Claude Code) — reading the repo in
 parallel, doing their own web research, and each writing an independent
-plan. Two refiners (`codex-sol` on `gpt-5.6-sol` at high reasoning and
-Alibaba Qwen `qwen3.8-max-preview`) then refine in broadcast mode (every
-refiner sees every plan). Finally, Layer 3 aggregates with the parent Claude
-Code session on `claude-opus-5` by default, or with a recorded Codex
-subprocess (`gpt-5.6-sol` at high reasoning) when requested.
+plan. Two refiners—Alibaba Qwen `qwen3.8-max-preview` and Anthropic
+`claude-opus-5`—then refine in broadcast mode (every refiner sees every
+plan). The shipped defaults and all recommended Web UI modes run Layer 3
+through the recorded Codex path with `gpt-5.6-sol` at `xhigh` reasoning.
 
 Built to run **inside Claude Code** as a skill, or from the local Web UI.
 Standalone Python works too. The harness ships curated providers across five
@@ -46,6 +49,7 @@ npm i -g @openai/codex               && codex login
 curl -fsSL https://opencode.ai/install | bash   # then: opencode auth login,
                                                  # or export ZHIPU_API_KEY / MOONSHOT_API_KEY
 # claude CLI: https://docs.claude.com/en/docs/claude-code/quickstart
+# AGY/Antigravity: install/update Antigravity, run `agy install`, then sign in
 
 # 2. Install as a Claude Code skill
 cp -r harness ~/.claude/skills/mixture-of-agents
@@ -99,13 +103,13 @@ AGY is the curated Google route and reuses the account already signed into
 
 ```
 Layer 0 — Scout brief           (parent Claude, in-place)
-Layer 1 — Proposers (parallel)    default: codex + glm + sonnet subprocesses
-Layer 2 — Broadcast refiners      default: codex-sol + qwen, each sees ALL proposals
-Layer 3 — Aggregator              default: parent Claude Opus 5; optional recorded Codex phase
+Layer 1 — Proposers (parallel)    default: Gemini Pro + Terra + Sonnet
+Layer 2 — Broadcast refiners      default: Qwen + Opus, each sees ALL proposals
+Layer 3 — Aggregator              default: recorded GPT-5.6 Sol at xhigh
 ```
 
-The roster is config-driven; the defaults above span four labs (OpenAI,
-Zhipu, Anthropic, Alibaba) and keep the refiners independent of the Anthropic
+The roster is config-driven; the defaults above span Google, OpenAI,
+Anthropic, and Alibaba and keep both refiners independent of the OpenAI
 aggregator's lab.
 
 Every run also writes a self-contained `.moa/<session>/report.html` — a

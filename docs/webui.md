@@ -32,6 +32,37 @@ may also expose locally licensed Gotham Office Regular and Bold files from
 Waitress is installed from `requirements-web.txt` and selected automatically;
 Flask's development server is only the fallback when Waitress is unavailable.
 
+### Model depth and effort
+
+The route chooser only exposes an adjustable control when the underlying CLI
+can honor it safely. Codex and Claude use their native reasoning-effort flags.
+AGY Gemini Pro selects depth by changing the model suffix (for example,
+`gemini-3.1-pro-low` to `gemini-3.1-pro-high`), so the UI sends a model
+variant and never sends a conflicting AGY `--effort` flag. OpenCode variants
+remain configured by their named route/model id, and Cursor has no separate
+effort flag.
+
+The three recommended depth modes deliberately keep Google search coverage
+and the strongest synthesis route in every run:
+
+| Mode | Proposers | Broadcast refiners | Aggregator |
+|---|---|---|---|
+| Quick | Gemini Pro `low`; Sonnet `medium` | Qwen | GPT-5.6 Sol `xhigh` |
+| Balanced | Gemini Pro `high`; Terra `high`; Sonnet `high` | Qwen; Opus `high` | GPT-5.6 Sol `xhigh` |
+| Thorough | Gemini Pro `high`; Terra `xhigh`; Sonnet `max`; GLM | Qwen; Opus `max`; DeepSeek V4 Pro | GPT-5.6 Sol `xhigh` |
+
+Gemini Pro stays in the proposal layer because it contributes a
+Google-native research lane before the ensemble converges. Sonnet supplies an
+Anthropic proposal; Opus becomes the higher-cost adversarial reviewer in
+Balanced and Thorough. Qwen keeps the default reviewer set independent from
+the OpenAI aggregator, and Thorough adds GLM plus DeepSeek to widen the
+non-OpenAI evidence and review paths. The aggregator is intentionally fixed
+to GPT-5.6 Sol at `xhigh` in every recommended mode.
+
+Whenever a route is selected—by initial defaults, a depth-mode change, or a
+manual click—the corresponding provider accordion opens automatically so the
+checked model and its effort control remain visible.
+
 The worker inherits the server process's `HOME`, `PATH`, environment, CLI
 keychains, and authenticated accounts. It never copies API keys or OAuth
 tokens into the browser or SQLite.
@@ -107,8 +138,9 @@ the SQLite index without moving their artifacts.
 
 ## Sharing a final report
 
-Completed runs can create a **Share report** link from the result controls. It
-is a high-entropy, revocable bearer link that exposes only the self-contained
+Completed runs can create a **Share report** link from the result controls or
+the header of the private report artifact itself. It is a high-entropy,
+revocable bearer link that exposes only the self-contained
 `report.html`—not the run page, logs, source uploads, manifests, or other
 artifacts. Creating a new link revokes the prior one; the owner can also revoke
 the active link immediately. Shared reports are served with no-store and

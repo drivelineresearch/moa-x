@@ -1015,7 +1015,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         config = {
             "proposers": _string_list(body.get("proposers")),
             "refiners": _string_list(body.get("refiners")),
-            "aggregator": str(body.get("aggregator") or "opus"),
+            "aggregator": str(body.get("aggregator") or "codex-sol"),
             "options": (
                 body.get("options")
                 if isinstance(body.get("options"), dict)

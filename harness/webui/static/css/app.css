@@ -1606,11 +1606,14 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); outline
 .route-choice:checked + .model-row-main .model-row-state { opacity: 1; }
 .model-row-state.unavailable { color: var(--bad); opacity: 1; }
 .effort-slider {
+  display: none;
   margin: 0;
   padding: 13px 16px 16px 50px;
   background: var(--paper);
   border: 0;
 }
+.route-choice:checked ~ .effort-slider { display: block; }
+.route-choice:disabled ~ .effort-slider { display: none !important; }
 .effort-slider legend {
   float: left;
   width: 118px;

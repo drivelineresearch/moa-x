@@ -174,7 +174,7 @@ class WebUITest(unittest.TestCase):
         routes = {route["id"]: route for route in result["routes"]}
         self.assertTrue(result["authenticated"])
         self.assertTrue(routes["agy-gemini-pro"]["available"])
-        self.assertFalse(routes["agy-gemini-flash"]["available"])
+        self.assertNotIn("agy-gemini-flash", routes)
 
     def tearDown(self):
         self.temp.cleanup()
@@ -384,6 +384,22 @@ class WebUITest(unittest.TestCase):
         cancelled = self.client.post(f"/api/jobs/{job['id']}/cancel")
         self.assertEqual(cancelled.status_code, 202)
         self.assertEqual(cancelled.get_json()["status"], "cancelled")
+
+    def test_job_without_aggregator_uses_codex_sol(self):
+        created = self.client.post(
+            "/api/jobs",
+            json={
+                "workspace": str(self.root),
+                "goal": "Verify the curated aggregation default.",
+                "proposers": ["agy-gemini-pro", "sonnet"],
+                "refiners": ["qwen"],
+            },
+        )
+        self.assertEqual(created.status_code, 201)
+        detail = self.client.get(
+            f"/api/jobs/{created.get_json()['id']}"
+        ).get_json()
+        self.assertEqual(detail["config"]["aggregator"], "codex-sol")
 
     def test_runs_are_private_to_the_browser_that_submitted_them(self):
         created = self.client.post(
@@ -812,13 +828,13 @@ class WebUITest(unittest.TestCase):
             "workspace": str(self.root),
             "session_dir": str(self.root / ".moa" / "fixture"),
             "config": {
-                "proposers": ["codex", "agy-gemini-high"],
+                "proposers": ["codex", "agy-gemini-pro"],
                 "refiners": ["qwen"],
                 "aggregator": "opus",
                 "options": {
-                    "model_overrides": {"agy-gemini-high": "gemini-3.6-flash-high"},
+                    "model_overrides": {"agy-gemini-pro": "gemini-3.1-pro-low"},
                     "effort_overrides": {
-                        "agy-gemini-high": "low",
+                        "agy-gemini-pro": "high",
                         "unsafe": "high; touch /tmp/nope",
                     },
                 },
@@ -826,12 +842,12 @@ class WebUITest(unittest.TestCase):
         }
         command = worker._command(job, "layer1")
         self.assertIn("--proposers", command)
-        self.assertNotIn("gemini-3.6-flash-high", command)
+        self.assertNotIn("gemini-3.1-pro-low", command)
         env = JobWorker._environment(job)
         self.assertEqual(
-            env["MOA_AGY_GEMINI_HIGH_MODEL"], "gemini-3.6-flash-high"
+            env["MOA_AGY_GEMINI_PRO_MODEL"], "gemini-3.1-pro-low"
         )
-        self.assertEqual(env["MOA_AGY_GEMINI_HIGH_EFFORT"], "low")
+        self.assertNotIn("MOA_AGY_GEMINI_PRO_EFFORT", env)
         self.assertNotIn("MOA_UNSAFE_EFFORT", env)
 
     def test_worker_explains_zero_success_layer1_before_review(self):

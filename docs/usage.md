@@ -26,9 +26,9 @@ What happens:
    Estimated wall-clock: roughly 12–25 minutes for research-heavy runs.
    Nothing spawns until you say yes.
 3. **Proposers (Layer 1, parallel).** Three headless subprocesses
-   fire in parallel by default: `codex` (codex harness), `glm`
-   (opencode harness), and `sonnet` (claude harness) — OpenAI,
-   Zhipu, and Anthropic. Additional lanes (a `cursor` provider,
+   fire in parallel by default: `agy-gemini-pro` (AGY harness), `codex`
+   (codex harness), and `sonnet` (claude harness) — Google, OpenAI, and
+   Anthropic. Additional lanes (a `cursor` provider,
    Kimi, DeepSeek V4 Pro/Flash through OpenCode Go, or any user provider) are available — see
    [`docs/install.md`](install.md#optional-cursor-cli-extra-provider)
    and [`docs/config.md`](config.md). Each
@@ -37,18 +37,16 @@ What happens:
    permission-deny policy for OpenCode), does web research, and writes an independent plan to
    `.moa/<session>/layer1/`.
 4. **Broadcast refiners (Layer 2, parallel).** Two more subprocesses,
-   `codex-sol` (`gpt-5.6-sol`, high) and `qwen`
-   (`qwen3.8-max-preview` — independent of the Anthropic aggregator), each
+   `qwen` (`qwen3.8-max-preview`) and `opus` (`claude-opus-5`, high), each
    receive every valid proposal and
    produce verification output in `.moa/<session>/layer2/`.
    "Broadcast" means every refiner sees every proposal, per the MoA
    paper.
-5. **Aggregator (Layer 3).** By default Claude Code on `claude-opus-5` in
-   the parent session reads
-   `.moa/<session>/synthesis-input.md`, synthesizes, honors refiner
-   contradictions, and writes `.moa/<session>/final-plan.md` plus the
-   structured `final-plan.json` decision lineage. You can instead run the
-   recorded Codex phase shown below.
+5. **Aggregator (Layer 3).** By default GPT-5.6 Sol at `xhigh` reads the
+   retained `.moa/<session>/synthesis-input.md` through the recorded Codex
+   phase, synthesizes, honors refiner contradictions, and writes
+   `.moa/<session>/final-plan.md` plus the structured `final-plan.json`
+   decision lineage.
 6. **Plan presented.** Claude shows you the plan and asks if you want
    to start executing.
 
@@ -77,7 +75,7 @@ for every model layer. See [`webui.md`](webui.md).
 ## Running standalone
 
 The Python orchestrator handles Layers 1 and 2. Layer 0 (scout brief) remains
-the caller's responsibility; Layer 3 can be interactive or automated:
+the caller's responsibility; Layer 3 runs as a recorded Codex phase:
 
 ```bash
 python3 harness/scripts/run_moa.py \
@@ -91,15 +89,14 @@ You'll need to:
 2. After the script exits, read `.moa/<session>/synthesis-input.md` —
    this file has the frozen spec, scout brief, and all proposer and
    refiner outputs concatenated.
-3. Aggregate manually following `harness/prompts/aggregator.md`, or run only
-   the retained session's Codex-backed Layer 3:
+3. Run the retained session's Codex-backed Layer 3:
 
    ```bash
    python3 harness/scripts/run_moa.py \
      --scout-brief .moa/<session>/scout-brief.json \
      --phase layer3 \
      --aggregator-provider codex-sol \
-     --aggregator-effort high
+     --aggregator-effort xhigh
    ```
 
    The phase validates the combined Markdown/lineage response, rejects stale

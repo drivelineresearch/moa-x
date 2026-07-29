@@ -519,7 +519,7 @@ function modelsForRole(role) {
     if (harness === "cursor" && !["composer", "cursor-grok"].includes(id)) return false;
     if (harness === "codex" && !["codex", "codex-sol", "codex-luna"].includes(id)) return false;
     if (["codex-reviewer", "codex-aggregator"].includes(id)) return false;
-    if (role === "aggregator") return ["opus", "codex-sol"].includes(id);
+    if (role === "aggregator") return id === "codex-sol";
     return true;
   }).map((model) => {
     const harness = model.harness || model.provider_id || model.provider || "cli";
@@ -539,8 +539,25 @@ function modelsForRole(role) {
     };
   });
   if (endpointModels.length) return endpointModels;
+  if (role === "aggregator") {
+    const provider = state.providers.find((item) => item.id === "codex");
+    const route = provider?.routes?.find((item) => item.id === "codex-sol");
+    if (!provider || !route) return [];
+    return [{
+      id: "codex-sol",
+      name: route.name || "GPT-5.6 Sol",
+      model: route.model || "gpt-5.6-sol",
+      effort: route.effort || "high",
+      effortOptions: route.effort_options || ["low", "medium", "high", "xhigh"],
+      effortControl: route.effort_control || "flag",
+      lab: route.lab || "OpenAI",
+      harness: "codex",
+      available: providerReady(provider),
+      default: true,
+    }];
+  }
   return state.providers
-    .filter((provider) => provider.id !== "gemini" && (role !== "aggregator" || ["claude", "codex"].includes(provider.harness)))
+    .filter((provider) => provider.id !== "gemini")
     .flatMap((provider) => {
       const models = provider.models.length ? provider.models : [{ id: provider.id, name: provider.name }];
       return models.slice(0, 1).map((model) => ({
@@ -564,9 +581,9 @@ function defaultSelected(option, role, index) {
   if (typeof configured === "string") return configured === option.id;
   if (option.default) return true;
   const standard = {
-    proposer: ["codex", "glm", "sonnet"],
-    refiner: ["codex-sol", "qwen"],
-    aggregator: ["opus"],
+    proposer: ["agy-gemini-pro", "codex", "sonnet"],
+    refiner: ["qwen", "opus"],
+    aggregator: ["codex-sol"],
   };
   if (standard[role].includes(option.id)) return true;
   if (role === "aggregator" && !modelsForRole(role).some((item) => standard.aggregator.includes(item.id))) return index === 0;
@@ -615,7 +632,7 @@ function renderModelOptions(role, targetId, inputType) {
             const index = optionIndex++;
             const displayModel = displayModelName(option);
             const canChooseEffort = option.effortOptions.length > 0
-              && option.effortControl === "flag"
+              && ["flag", "model_variant"].includes(option.effortControl)
               && !["cursor", "gemini", "opencode"].includes(option.harness);
             const rowSearch = `${option.name} ${option.model} ${option.lab} ${option.harness}`.toLowerCase();
             return `
@@ -630,6 +647,7 @@ function renderModelOptions(role, targetId, inputType) {
                   data-model="${escapeHtml(option.model)}"
                   data-effort="${escapeHtml(option.effort)}"
                   data-default-effort="${escapeHtml(option.effort)}"
+                  data-effort-control="${escapeHtml(option.effortControl)}"
                   ${defaultSelected(option, role, index) ? "checked" : ""}
                   ${option.available ? "" : "disabled"}
                 >
@@ -637,13 +655,13 @@ function renderModelOptions(role, targetId, inputType) {
                   <span class="selection-box" aria-hidden="true"></span>
                   <span class="model-row-copy">
                     <strong>${escapeHtml(option.name)}</strong>
-                    <small>${escapeHtml(displayModel)} · ${canChooseEffort ? "Adjustable effort" : `${escapeHtml(titleCase(option.effort))} effort`}${option.available || !option.availabilityDetail ? "" : ` · ${escapeHtml(option.availabilityDetail)}`}</small>
+                    <small>${escapeHtml(displayModel)} · ${canChooseEffort ? (option.effortControl === "model_variant" ? "Adjust model depth" : "Adjustable effort") : `${escapeHtml(titleCase(option.effort))} effort`}${option.available || !option.availabilityDetail ? "" : ` · ${escapeHtml(option.availabilityDetail)}`}</small>
                   </span>
                   <span class="model-row-state ${option.available ? "" : "unavailable"}">${option.available ? "Selected" : "Unavailable"}</span>
                 </label>
                 ${canChooseEffort ? `
                   <fieldset class="effort-slider" data-effort-control hidden>
-                    <legend>Reasoning effort</legend>
+                    <legend>${option.effortControl === "model_variant" ? "Model depth" : "Reasoning effort"}</legend>
                     <div class="effort-slider-control">
                       <input
                         type="range"
@@ -679,7 +697,13 @@ function selectedValues(name) {
 function selectedModelOverrides() {
   const overrides = {};
   $$('input[name="proposer"]:checked, input[name="refiner"]:checked, input[name="aggregator"]:checked', $("#launch-form"))
-    .forEach((input) => { if (input.dataset.model) overrides[input.value] = input.dataset.model; });
+    .forEach((input) => {
+      if (!input.dataset.model) return;
+      const effort = selectedEffortValue(input.closest(".model-option"));
+      overrides[input.value] = input.dataset.effortControl === "model_variant" && effort
+        ? input.dataset.model.replace(/-(?:low|medium|high)$/i, `-${effort}`)
+        : input.dataset.model;
+    });
   return overrides;
 }
 
@@ -687,6 +711,7 @@ function selectedEffortOverrides() {
   const overrides = {};
   $$('input[name="proposer"]:checked, input[name="refiner"]:checked, input[name="aggregator"]:checked', $("#launch-form"))
     .forEach((input) => {
+      if (input.dataset.effortControl === "model_variant") return;
       const selected = selectedEffortValue(input.closest(".model-option"));
       if (selected) overrides[input.value] = selected;
     });
@@ -730,6 +755,14 @@ function syncEffortControls() {
   });
 }
 
+function syncSelectedProviderGroups() {
+  $$("[data-model-group]").forEach((group) => {
+    if (!group.hasAttribute("data-unavailable") && group.querySelector(".route-choice:checked")) {
+      group.open = true;
+    }
+  });
+}
+
 function selectRoutes(role, preferred, limit) {
   const inputs = $$(`.route-choice[name="${role}"]`);
   const available = inputs.filter((input) => !input.disabled);
@@ -744,15 +777,16 @@ function selectRoutes(role, preferred, limit) {
   inputs.forEach((input) => { input.checked = chosen.includes(input); });
 }
 
-function setSelectedEffort(mode, role = "") {
+function setSelectedEffort(mode, role = "", effortByRoute = {}) {
   const selector = role ? `.route-choice[name="${role}"]:checked` : ".route-choice:checked";
   $$(selector).forEach((route) => {
     const range = $("[data-effort-range]", route.closest(".model-option"));
     if (range) {
       const values = (range.dataset.effortValues || "").split(",").filter(Boolean);
-      const desired = mode === "quick" ? "medium"
+      const desired = effortByRoute[route.value]
+        || (mode === "quick" ? "medium"
         : mode === "thorough" ? "high"
-        : route.dataset.defaultEffort;
+        : route.dataset.defaultEffort);
       const index = Math.max(0, values.includes(desired) ? values.indexOf(desired) : values.indexOf("high"));
       range.value = String(index);
       updateEffortSlider(range);
@@ -760,9 +794,10 @@ function setSelectedEffort(mode, role = "") {
     }
     const choices = $$("[data-effort-choice]", route.closest(".model-option"));
     if (!choices.length) return;
-    const desired = mode === "quick" ? "medium"
+    const desired = effortByRoute[route.value]
+      || (mode === "quick" ? "medium"
       : mode === "thorough" ? "high"
-      : route.dataset.defaultEffort;
+      : route.dataset.defaultEffort);
     const selected = choices.find((choice) => choice.value === desired)
       || choices.find((choice) => choice.value === "high")
       || choices[0];
@@ -784,19 +819,51 @@ function syncDepthPresentation(preset) {
 function optimizedProfile(preset) {
   const profiles = {
     quick: {
-      proposer: { preferred: ["codex", "sonnet"], limit: 2 },
+      proposer: {
+        preferred: ["agy-gemini-pro", "sonnet"],
+        limit: 2,
+        efforts: { "agy-gemini-pro": "low", sonnet: "medium" },
+      },
       refiner: { preferred: ["qwen"], limit: 1 },
-      aggregator: { preferred: ["opus"], limit: 1 },
+      aggregator: {
+        preferred: ["codex-sol"],
+        limit: 1,
+        efforts: { "codex-sol": "xhigh" },
+      },
     },
     balanced: {
-      proposer: { preferred: ["codex", "glm", "sonnet"], limit: 3 },
-      refiner: { preferred: ["codex-sol", "qwen"], limit: 2 },
-      aggregator: { preferred: ["opus"], limit: 1 },
+      proposer: {
+        preferred: ["agy-gemini-pro", "codex", "sonnet"],
+        limit: 3,
+        efforts: { "agy-gemini-pro": "high", codex: "high", sonnet: "high" },
+      },
+      refiner: {
+        preferred: ["qwen", "opus"],
+        limit: 2,
+        efforts: { opus: "high" },
+      },
+      aggregator: {
+        preferred: ["codex-sol"],
+        limit: 1,
+        efforts: { "codex-sol": "xhigh" },
+      },
     },
     thorough: {
-      proposer: { preferred: ["codex", "glm", "sonnet", "agy-gemini-pro"], limit: 4 },
-      refiner: { preferred: ["codex-sol", "qwen", "agy-gemini-pro"], limit: 3 },
-      aggregator: { preferred: ["opus"], limit: 1 },
+      proposer: {
+        preferred: ["agy-gemini-pro", "codex", "sonnet", "glm"],
+        limit: 4,
+        efforts: { "agy-gemini-pro": "high", codex: "xhigh", sonnet: "max" },
+      },
+      refiner: {
+        preferred: ["qwen", "opus", "deepseek"],
+        limit: 3,
+        efforts: { opus: "max" },
+      },
+      aggregator: {
+        preferred: ["codex-sol"],
+        limit: 1,
+        efforts: { "codex-sol": "xhigh" },
+      },
     },
   };
   return profiles[preset] || profiles.balanced;
@@ -807,7 +874,8 @@ function applyOptimizedRole(role, announce = true) {
   if (!config) return;
   selectRoutes(role, config.preferred, config.limit);
   syncEffortControls();
-  setSelectedEffort(state.depthPreset, role);
+  setSelectedEffort(state.depthPreset, role, config.efforts || {});
+  syncSelectedProviderGroups();
   updateRosterChecks();
   if (announce) showToast(`Optimized ${role} loadout restored for ${titleCase(state.depthPreset)} depth.`);
 }
@@ -825,6 +893,12 @@ function renderRoster() {
   renderModelOptions("refiner", "#refiner-options", "checkbox");
   renderModelOptions("aggregator", "#aggregator-options", "radio");
   applyDepthPreset(state.depthPreset, false);
+  // Persisted/initially checked routes do not always emit a change event.
+  // Run again after layout so their depth controls are never left hidden.
+  requestAnimationFrame(() => {
+    syncEffortControls();
+    syncSelectedProviderGroups();
+  });
 }
 
 function updateRosterChecks() {
@@ -1408,7 +1482,9 @@ function fallbackAgent(job, routeId, role, status) {
   const modelOverrides = runOptions.model_overrides || job.model_overrides || {};
   const effortOverrides = runOptions.effort_overrides || job.effort_overrides || {};
   const model = modelOverrides[routeId] || route?.model || routeId;
-  const effort = effortOverrides[routeId] || route?.effort;
+  const embeddedDepth = String(model).match(/-(low|medium|high)$/i)?.[1]?.toLowerCase();
+  const effort = effortOverrides[routeId]
+    || (route?.effortControl === "model_variant" ? embeddedDepth : route?.effort);
   return {
     id: routeId,
     name: `${route?.name || titleCase(routeId)} · ${role}`,
@@ -2063,6 +2139,7 @@ function bindEvents() {
       }
       updateRosterChecks();
       syncEffortControls();
+      syncSelectedProviderGroups();
     }
   });
   $("#launch-form").addEventListener("input", (event) => {

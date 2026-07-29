@@ -85,7 +85,7 @@ ROUTE_META: dict[str, dict[str, Any]] = {
     "sonnet": {"label": "Claude Sonnet 5", "lab": "Anthropic",
                "roles": ["proposer", "refiner"]},
     "opus": {"label": "Claude Opus 5", "lab": "Anthropic",
-             "roles": ["proposer", "refiner", "aggregator"]},
+             "roles": ["proposer", "refiner"]},
     "glm": {"label": "GLM-5.2", "lab": "Zhipu",
             "roles": ["proposer", "refiner"]},
     "kimi": {"label": "Kimi K3", "lab": "Moonshot",
@@ -104,13 +104,11 @@ ROUTE_META: dict[str, dict[str, Any]] = {
                  "roles": ["proposer", "refiner"]},
     "cursor-grok": {"label": "Grok 4.5 High", "lab": "xAI",
                     "roles": ["proposer", "refiner"]},
-    "agy-gemini-flash": {"label": "Gemini 3.6 Flash", "lab": "Google",
-                         "roles": ["proposer", "refiner"]},
     "agy-gemini-pro": {"label": "Gemini 3.1 Pro", "lab": "Google",
                        "roles": ["proposer", "refiner"]},
 }
 
-HIDDEN_ROUTES = {"codex-reviewer", "codex-aggregator", "agy-gemini-high"}
+HIDDEN_ROUTES = {"codex-reviewer", "codex-aggregator"}
 
 # Routes that authenticated successfully but failed repeated full-schema live
 # validation. Keep them visible for provenance, but prevent paid launches until
@@ -125,14 +123,24 @@ LIVE_BLOCKED_ROUTES = {
 EFFORT_OPTIONS = {
     "codex": ["low", "medium", "high", "xhigh"],
     "claude": ["low", "medium", "high", "xhigh", "max"],
-    # AGY exposes --effort low|medium|high. Current built-ins pin an effort in
-    # their stable model slug, so no separate effort is set unless configured.
+    # AGY model slugs encode depth, so the UI changes the slug instead of
+    # sending a separate effort flag.
     "agy": ["low", "medium", "high"],
 }
 ROUTE_EFFORT_OPTIONS = {
-    "agy-gemini-flash": ["low", "medium", "high"],
     "agy-gemini-pro": ["low", "high"],
 }
+
+
+def _effort_control(harness: str) -> str:
+    """Describe whether depth is a CLI flag or part of a model id."""
+    if harness == "agy":
+        return "model_variant"
+    if harness == "opencode":
+        return "configured_variant"
+    if harness in EFFORT_OPTIONS:
+        return "flag"
+    return "model_id"
 
 _CACHE_LOCK = threading.Lock()
 _CATALOG_CACHE: tuple[float, list[dict[str, Any]]] = (0, [])
@@ -161,11 +169,7 @@ def _route_records(harness: str) -> list[dict[str, Any]]:
                 "effort_options": ROUTE_EFFORT_OPTIONS.get(
                     item.name, EFFORT_OPTIONS.get(harness, [])
                 ),
-                "effort_control": (
-                    "configured_variant" if harness == "opencode"
-                    else "flag" if harness in EFFORT_OPTIONS
-                    else "model_id"
-                ),
+                "effort_control": _effort_control(harness),
             }
         )
     return records
@@ -392,11 +396,7 @@ def model_catalog(*, probe: bool = True) -> list[dict[str, Any]]:
                 "effort_options": ROUTE_EFFORT_OPTIONS.get(
                     item.name, EFFORT_OPTIONS.get(item.harness, [])
                 ),
-                "effort_control": (
-                    "configured_variant" if item.harness == "opencode"
-                    else "flag" if item.harness in EFFORT_OPTIONS
-                    else "model_id"
-                ),
+                "effort_control": _effort_control(item.harness),
                 "roles": roles,
                 "default_roles": default_roles,
                 "available": bool(

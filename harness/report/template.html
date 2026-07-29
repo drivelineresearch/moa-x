@@ -85,6 +85,10 @@ header.report-head { padding: 40px 0 30px; }
 }
 .final-jump:hover, .final-jump:focus-visible { border-color: var(--gold); background: var(--gold); color: var(--ink); }
 .final-jump:focus-visible { outline: 3px solid rgba(255,163,0,.35); outline-offset: 3px; }
+.report-share-action { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 10px 16px; border: 1px solid var(--gold); border-radius: 8px; background: var(--white); color: var(--burnt); font-family: var(--font-head); font-size: .76rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; cursor: pointer; }
+.report-share-action:hover, .report-share-action:focus-visible { background: #fff5dd; border-color: var(--burnt); color: var(--ink); }
+.report-share-action:focus-visible { outline: 3px solid rgba(255,163,0,.35); outline-offset: 3px; }
+.report-share-status { color: var(--secondary); font-size: .78rem; }
 .head-actions .action-note { color: var(--secondary); font-size: .78rem; }
 .meta-row { display: flex; flex-wrap: wrap; gap: 8px 26px; align-items: center; color: var(--secondary); font-size: 0.85rem; margin-bottom: 20px; }
 .meta-row b { color: var(--ink); font-weight: 700; }
@@ -222,6 +226,14 @@ table.dl th { font-family: var(--font-head); text-transform: uppercase; font-siz
 .mcell.v-accept_with_changes { background: rgba(255,163,0,0.18); color: #9a6300; }
 .mcell.v-reject { background: rgba(239,68,68,0.15); color: #b3271e; }
 .mcell.v-none { background: var(--panel); color: var(--muted); }
+.grade-note { margin: 0 0 12px; color: var(--secondary); font-size: .78rem; }
+.grade-board { display: grid; grid-template-columns: repeat(auto-fit, minmax(185px, 1fr)); gap: 10px; margin: 0 0 18px; }
+.grade-card { min-width: 0; padding: 13px 14px; border: 1px solid var(--track); border-radius: 9px; background: var(--white); }
+.grade-card .grade-label { color: var(--muted); font-family: var(--font-head); font-size: .6rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+.grade-card .grade-main { display: flex; align-items: baseline; gap: 9px; margin-top: 3px; }
+.grade-card .grade-letter { color: var(--burnt); font-family: var(--font-head); font-size: 1.55rem; font-weight: 800; line-height: 1; }
+.grade-card .grade-name { min-width: 0; overflow-wrap: anywhere; font-weight: 800; }
+.grade-card .grade-detail { margin-top: 6px; color: var(--secondary); font-size: .7rem; line-height: 1.45; }
 
 /* ---- Verification dots ---- */
 .verif-row { margin: 14px 0; }
@@ -482,6 +494,41 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
     return el("div", { class: "table-scroll", tabindex: "0", role: "region", "aria-label": "Scrollable table" }, table);
   }
 
+  // Only the authenticated Web UI artifact route has a job identity. Reports
+  // opened from disk or through a public link remain portable and network-free.
+  function currentArtifactJobId() {
+    var match = window.location.pathname.match(/^\/api\/jobs\/([^/]+)\/artifacts\/report\.html$/);
+    return match ? decodeURIComponent(match[1]) : null;
+  }
+  function summarizeLineageFinding(value, maxLength) {
+    var text = String(value || "").replace(/\s+/g, " ").trim();
+    if (text.length <= maxLength) return text;
+    return text.slice(0, Math.max(1, maxLength - 1)).replace(/[\s,;:.-]+$/, "") + "…";
+  }
+  async function shareCurrentWebReport(jobId, button, status) {
+    button.disabled = true;
+    status.textContent = "Creating a revocable link…";
+    try {
+      var response = await fetch("/api/jobs/" + encodeURIComponent(jobId) + "/share", { method: "POST", credentials: "same-origin" });
+      var payload = await response.json().catch(function () { return {}; });
+      if (!response.ok || !payload.url) throw new Error(payload.error || "Could not create a share link.");
+      var url = new URL(payload.url, window.location.origin).href;
+      try {
+        await navigator.clipboard.writeText(url);
+        status.textContent = "Share link copied. Creating another link or revoking it in the run view disables this one.";
+        button.textContent = "Link copied";
+      } catch (_) {
+        status.textContent = "Share link ready: " + url;
+        button.textContent = "Link ready";
+      }
+    } catch (error) {
+      status.textContent = error.message || "Could not create a share link.";
+      button.textContent = "Share report";
+    } finally {
+      button.disabled = false;
+    }
+  }
+
   // ---------------------------------------------------------------- Header
   (function () {
     var head = el("header", { class: "report-head" });
@@ -490,10 +537,19 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
       el("div", { class: "badge " + (DATA.partial ? "warn" : "neutral"), text: DATA.partial ? "Partial (recommendations only)" : "Full session" })
     ]));
     head.appendChild(el("h1", { text: DATA.title || DATA.session_id }));
-    head.appendChild(el("div", { class: "head-actions" }, [
-      el("a", { class: "final-jump", href: "#plan", text: DATA.final_plan_html ? "Jump to final recommendation →" : "Check recommendation status →" }),
-      el("span", { class: "action-note", text: DATA.final_plan_html ? "Skip the process details and start with the answer." : "This run may still need its final synthesis." })
-    ]));
+    var actions = el("div", { class: "head-actions" }, [
+      el("a", { class: "final-jump", href: "#plan", text: DATA.final_plan_html ? "Jump to final recommendation →" : "Check recommendation status →" })
+    ]);
+    var jobId = currentArtifactJobId();
+    if (jobId) {
+      var shareStatus = el("span", { class: "report-share-status", "aria-live": "polite" });
+      var shareButton = el("button", { class: "report-share-action", type: "button", text: "Share report" });
+      shareButton.addEventListener("click", function () { shareCurrentWebReport(jobId, shareButton, shareStatus); });
+      actions.appendChild(shareButton);
+      actions.appendChild(shareStatus);
+    }
+    actions.appendChild(el("span", { class: "action-note", text: DATA.final_plan_html ? "Skip the process details and start with the answer." : "This run may still need its final synthesis." }));
+    head.appendChild(actions);
     head.appendChild(reportArt(
       "hero",
       "Independent researchers sending evidence toward one coherent architectural blueprint",
@@ -748,12 +804,54 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
       addSection("refiners", "Review", sec); return;
     }
     sec.appendChild(el("div", { class: "subhead", text: "How each reviewer assessed each recommendation" }));
+    sec.appendChild(el("p", { class: "grade-note", text: "Consensus grades summarize structured reviewer verdicts (accept as-is = 4, accept with changes = 3, reject = 0); they are a transparent review signal, not a model-generated score." }));
+    sec.appendChild(proposerReviewGrades(l2));
     sec.appendChild(verdictMatrix(l2));
     sec.appendChild(el("div", { class: "subhead", text: "Evidence verification" }));
     l2.forEach(function (r) { sec.appendChild(verificationRow(r)); });
     l2.forEach(function (r) { sec.appendChild(refinerDetail(r)); });
     addSection("refiners", "Review", sec);
   })();
+  function lineageInfluenceCounts() {
+    var proposerSteps = {}, refinerSteps = {};
+    ((DATA.final_plan_lineage || {}).steps || []).forEach(function (step) {
+      (step.proposer_refs || []).forEach(function (ref) {
+        if (!proposerSteps[ref.agent_id]) proposerSteps[ref.agent_id] = {};
+        proposerSteps[ref.agent_id][step.id] = true;
+      });
+      (step.refiner_refs || []).forEach(function (ref) {
+        if (!refinerSteps[ref.agent_id]) refinerSteps[ref.agent_id] = {};
+        refinerSteps[ref.agent_id][step.id] = true;
+      });
+    });
+    function count(items) { return Object.keys(items || {}).length; }
+    return { proposer: Object.keys(proposerSteps).reduce(function (out, id) { out[id] = count(proposerSteps[id]); return out; }, {}), refiner: Object.keys(refinerSteps).reduce(function (out, id) { out[id] = count(refinerSteps[id]); return out; }, {}) };
+  }
+  function proposerReviewGrades(l2) {
+    var byProposer = {}, values = { accept_as_is: 4, accept_with_changes: 3, reject: 0 };
+    l2.forEach(function (reviewer) {
+      (reviewer.payload.per_proposer_verdicts || []).forEach(function (verdict) {
+        if (!byProposer[verdict.proposer]) byProposer[verdict.proposer] = [];
+        byProposer[verdict.proposer].push(verdict.verdict);
+      });
+    });
+    var influence = lineageInfluenceCounts().proposer;
+    var board = el("div", { class: "grade-board", "aria-label": "Reviewer consensus grades" });
+    Object.keys(byProposer).sort().forEach(function (proposer) {
+      var verdicts = byProposer[proposer], total = verdicts.reduce(function (sum, verdict) { return sum + (values[verdict] || 0); }, 0), average = total / verdicts.length;
+      var grade = average >= 3.6 ? "A" : (average >= 2.6 ? "B" : (average >= 1.6 ? "C" : "D"));
+      var accepted = verdicts.filter(function (verdict) { return verdict === "accept_as_is"; }).length;
+      var changed = verdicts.filter(function (verdict) { return verdict === "accept_with_changes"; }).length;
+      var rejected = verdicts.filter(function (verdict) { return verdict === "reject"; }).length;
+      var finalUse = influence[proposer] || 0;
+      board.appendChild(el("div", { class: "grade-card", "data-tip": "Derived from the verdicts in the matrix below; final-decision use is counted from the recorded lineage.", "data-tiph": proposer + " review consensus" }, [
+        el("div", { class: "grade-label", text: "Review consensus" }),
+        el("div", { class: "grade-main" }, [el("span", { class: "grade-letter", text: grade }), el("span", { class: "grade-name", text: proposer })]),
+        el("div", { class: "grade-detail", text: accepted + " accepted · " + changed + " with changes · " + rejected + " rejected · cited in " + finalUse + " final decision" + (finalUse === 1 ? "" : "s") })
+      ]));
+    });
+    return board;
+  }
   function verdictMatrix(l2) {
     var proposers = {};
     l2.forEach(function (r) { (r.payload.per_proposer_verdicts || []).forEach(function (v) { proposers[v.proposer] = 1; }); });
@@ -837,7 +935,8 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
       body.appendChild(scrollTable(t));
     }
     var reviewed = (r.reviewing || []).join(", ");
-    return collapsible(r.agent_id + " review — full findings", statusPip(r), [["reviewed", reviewed || "—"], ["dur", fmtDur(r.duration_seconds)]], body, false);
+    var finalUses = lineageInfluenceCounts().refiner[r.agent_id] || 0;
+    return collapsible(r.agent_id + " review — full findings", statusPip(r), [["reviewed", reviewed || "—"], ["final", finalUses + " cited"], ["dur", fmtDur(r.duration_seconds)]], body, false);
   }
 
   // Decision lineage — why each step survived (legacy report label).
@@ -1076,12 +1175,12 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
     var p = agent && agent.payload;
     if (!p) return { title: ref.kind, body: "Source payload is unavailable.", status: "review", files: [] };
     var keyByKind = { verification: "verifications", missing_step: "missing_steps", incorrect_step: "incorrect_steps", disagreement: "disagreements" };
-    if (ref.kind === "synthesis_recommendation") return { title: "Synthesis recommendation", body: p.synthesis_recommendation || "", status: "review", files: [] };
+    if (ref.kind === "synthesis_recommendation") return { title: "Recommendation: " + summarizeLineageFinding(p.synthesis_recommendation, 66), body: p.synthesis_recommendation || "", status: "review", files: [] };
     var item = (p[keyByKind[ref.kind]] || [])[ref.index];
-    if (ref.kind === "verification" && item) return { title: item.proposer + " · " + item.claim_index_path, body: item.actual_finding || "", status: item.status, files: item.source_url ? [item.source_url] : [] };
-    if (ref.kind === "incorrect_step" && item) return { title: item.proposer + " step " + (item.step_index + 1), body: item.what_is_wrong || "", status: "contradicted", files: [] };
-    if (ref.kind === "disagreement" && item) return { title: "Disagreement with " + item.proposer, body: (item.point || "") + " — " + (item.why || "") + " Instead: " + (item.what_to_do_instead || ""), status: "review", files: [] };
-    if (ref.kind === "missing_step" && item != null) return { title: "Missing step", body: String(item), status: "review", files: [] };
+    if (ref.kind === "verification" && item) return { title: "Verified: " + summarizeLineageFinding(item.actual_finding || (item.proposer + " " + item.claim_index_path), 66), body: item.actual_finding || "", status: item.status, files: item.source_url ? [item.source_url] : [] };
+    if (ref.kind === "incorrect_step" && item) return { title: "Issue: " + summarizeLineageFinding(item.what_is_wrong || (item.proposer + " step " + (item.step_index + 1)), 66), body: item.what_is_wrong || "", status: "contradicted", files: [] };
+    if (ref.kind === "disagreement" && item) return { title: "Disagreement: " + summarizeLineageFinding(item.point || item.what_to_do_instead || item.proposer, 66), body: (item.point || "") + " — " + (item.why || "") + " Instead: " + (item.what_to_do_instead || ""), status: "review", files: [] };
+    if (ref.kind === "missing_step" && item != null) return { title: "Missing: " + summarizeLineageFinding(item, 66), body: String(item), status: "review", files: [] };
     return { title: ref.kind.replace(/_/g, " "), body: "Referenced finding is unavailable.", status: "review", files: [] };
   }
 
@@ -1092,7 +1191,7 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
     sec.appendChild(el("h2", { class: "section-title", text: "Final recommendation" }));
     sec.appendChild(reportArt("synthesis", "Lead architect combining proposal fragments into one coherent master plan", "The aggregator reconciles alternatives into one implementable plan."));
     var aggregator = DATA.config && DATA.config.aggregator, layer3 = DATA.layer3 || [];
-    var aggregatorLabel = aggregator ? esc(aggregator.name) + " / " + esc(aggregator.model) : "Claude Code / opus";
+    var aggregatorLabel = aggregator ? esc(aggregator.name) + " / " + esc(aggregator.model) : "Codex / gpt-5.6-sol (xhigh)";
     if (layer3.length) sec.appendChild(el("p", { class: "section-note", html: "The final recommendation was produced by <b>" + aggregatorLabel + "</b>. Its runtime appears in the timeline and its captured output is available in Technical logs." }));
     else sec.appendChild(el("p", { class: "section-note", html: "The final recommendation is produced in the configured parent session (" + aggregatorLabel + ")." }));
     if (DATA.final_plan_html) {

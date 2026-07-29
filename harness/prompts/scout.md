@@ -92,7 +92,8 @@ Render the brief in markdown for human review. Then ask via `AskUserQuestion`,
 `codex + glm + sonnet`. Read the active proposer/refiner sets from
 (highest precedence first) `MOA_PROPOSERS` / `MOA_REFINERS` env vars,
 then `harness/config.yaml`'s `layers.proposers` / `layers.refiners`, then
-the defaults `[codex, glm, sonnet]` and `[codex-sol, qwen]`. User-defined
+the defaults `[agy-gemini-pro, codex, sonnet]` and `[qwen, opus]`.
+User-defined
 names from the `providers:` block (e.g. `cursor-grok`) are valid and must
 be shown verbatim. Honor `MOA_SKIP_LAYER2` / `layers.skip_refinement` by
 omitting the refiner clause. In `--self-moa` mode use the self-MoA instance

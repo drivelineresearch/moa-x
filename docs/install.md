@@ -1,12 +1,12 @@
 # Install
 
 MoA-X runs inside **Claude Code** as a skill. You can also invoke the
-orchestrator directly from a shell. Either way, you need three vendor
+orchestrator directly from a shell. Either way, you need four vendor
 CLIs on your PATH, each authenticated. Any auth path the CLI itself
 supports is fine. Subscription (OAuth / keychain) is what I run;
 API-key auth works too.
 
-## 1. Install the three CLIs
+## 1. Install the four CLIs
 
 ```bash
 # OpenAI codex
@@ -19,7 +19,12 @@ codex login
 # See https://docs.claude.com/en/docs/claude-code/quickstart
 # API-billed alternative: export ANTHROPIC_API_KEY=...
 
-# opencode (drives the GLM proposer and Qwen Token Plan refiner)
+# Google AGY / Antigravity
+# Install or update Antigravity, then:
+agy install
+agy models
+
+# opencode (drives the default Qwen Token Plan refiner)
 curl -fsSL https://opencode.ai/install | bash
 # or: npm i -g opencode-ai
 opencode auth login    # interactive login
@@ -30,11 +35,10 @@ opencode auth login    # interactive login
 #   export QWEN_TOKEN_PLAN_API_KEY=sk-sp-...  # default Qwen refiner
 ```
 
-The default roster is `codex` (`gpt-5.6-terra` proposer and
-`gpt-5.6-sol` high reviewer), pinned `claude-sonnet-5`/`claude-opus-5`
-routes via Claude Code, `glm` (`opencode-go/glm-5.2`), and Qwen through
-`opencode` — four labs:
-OpenAI, Anthropic, Zhipu, and Alibaba.
+The default roster is Gemini 3.1 Pro and GPT-5.6 Terra plus
+`claude-sonnet-5` as proposers; Qwen and `claude-opus-5` as refiners; and
+GPT-5.6 Sol at `xhigh` as the aggregator—four labs: Google, OpenAI,
+Anthropic, and Alibaba.
 
 The built-in `qwen` refiner uses the Qwen Cloud Token Plan endpoint and
 defaults to `qwen-token-plan/qwen3.8-max-preview`, with a 600-second cap.
@@ -71,13 +75,13 @@ Then add a `providers:` block to `harness/config.yaml`. See
 provider (harness `cursor`, model `composer-2.5`) is available once
 the CLI is installed.
 
-### Optional: AGY
+### AGY model readiness
 
 Google providers reuse existing local AGY authentication; MoA-X never prompts
 for a key. Install AGY 1.1.5+, sign in interactively once, and verify
-`agy models`. Select `agy-gemini-pro` for deeper planning or
-`agy-gemini-flash` for lower latency; the default roster does not require AGY,
-and live probes determine availability.
+`agy models`. `agy-gemini-pro` is the only curated Gemini route and is part
+of the default proposer roster. Live probes determine availability and fail
+closed if the signed-in account does not expose it.
 
 ### Optional: Local Web UI and GitHub picker
 
@@ -156,7 +160,7 @@ python3 harness/scripts/run_moa.py \
   --scout-brief path/to/your-scout-brief.json \
   --phase layer3 \
   --aggregator-provider codex-sol \
-  --aggregator-effort high
+  --aggregator-effort xhigh
 ```
 
 See [`docs/usage.md`](usage.md#running-standalone) for the scout format,

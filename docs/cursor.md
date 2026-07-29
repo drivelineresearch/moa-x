@@ -198,8 +198,9 @@ Add the Grok lane on top of the default ensemble. `cursor-grok`
 
 ```yaml
 layers:
-  proposers: [codex, glm, sonnet, cursor-grok]
-  refiners:  [codex-sol, qwen]
+  proposers: [agy-gemini-pro, codex, sonnet, cursor-grok]
+  refiners:  [qwen, opus]
+  aggregator: codex-sol
 ```
 
 To pin a different Cursor Grok tier, override the built-in's model:
@@ -208,20 +209,21 @@ To pin a different Cursor Grok tier, override the built-in's model:
 providers:
   cursor-grok: {harness: cursor, model: cursor-grok-4.5-medium}
 layers:
-  proposers: [codex, glm, sonnet, cursor-grok]
-  refiners:  [codex-sol, qwen]
+  proposers: [agy-gemini-pro, codex, sonnet, cursor-grok]
+  refiners:  [qwen, opus]
+  aggregator: codex-sol
 ```
 
 Google models use the separate AGY surface:
 
 ```yaml
 layers:
-  proposers: [codex, agy-gemini-pro, sonnet]
-  refiners:  [codex-sol, qwen]
+  proposers: [agy-gemini-pro, codex, sonnet]
+  refiners:  [qwen, opus]
+  aggregator: codex-sol
 ```
 
-AGY routes are opt-in and do not change the default roster. Prefer Pro for
-planning depth; use Flash for latency-sensitive runs.
+Gemini Pro is the default Google proposer and the only curated AGY route.
 
 Override a model at runtime:
 
@@ -271,8 +273,9 @@ checks only what your config actually needs:
   sessions surface here, before a real run wastes wall-clock.
 
 If `harness/config.yaml` doesn't exist, preflight falls back to the
-built-in default ensemble (`proposers: [codex, glm, sonnet]`,
-`refiners: [codex-sol, qwen]`), which preserves the "is the moa-x shipped
+built-in default ensemble (`proposers: [agy-gemini-pro, codex, sonnet]`,
+`refiners: [qwen, opus]`, aggregator `codex-sol`), which preserves the
+"is the moa-x shipped
 baseline ready?" diagnostic.
 
 ## What this integration does NOT cover

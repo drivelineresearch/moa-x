@@ -83,8 +83,9 @@ and actionable failures.
 - Keep the existing before/after workspace guard. A local smoke test confirmed
   the target repository stayed unchanged, although AGY wrote a managed scratch
   artifact and overstated what it had done.
-- Add Google providers as opt-in lanes first. Do not change the
-  lab-independent default roster until they have real canary history.
+- Gemini Pro was introduced as an opt-in lane first, then promoted into the
+  default proposer roster after long-context and live canary validation.
+  Retired Gemini Flash aliases must not return to the curated catalog.
 
 ## UI direction
 
@@ -160,7 +161,7 @@ use deterministic status summaries so monitoring does not create hidden cost.
 - Existing offline tests pass.
 - Web UI starts from one documented command.
 - Current Codex, Claude, OpenCode, and AGY accounts show usable.
-- AGY Pro and Flash availability reflects live account probes.
+- AGY Gemini Pro availability reflects live account probes.
 - A user can create, queue, watch, cancel, and reopen a run.
 - Old `.moa` runs are visible.
 - No credentials are stored in browser storage or SQLite.

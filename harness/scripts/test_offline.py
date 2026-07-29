@@ -1032,15 +1032,18 @@ def test_self_moa_argparse_smoke() -> bool:
 
 def test_install_deps_default_config_only_needs_default_harnesses() -> bool:
     """install_deps.py without harness/config.yaml resolves to the default
-    proposers/refiners and only needs codex/opencode/claude — not cursor."""
-    print("\n[14b] install_deps: default config → needed harnesses {codex, opencode, claude}")
+    proposers/refiners and needs agy/codex/opencode/claude — not cursor."""
+    print("\n[14b] install_deps: default config → needed harnesses {agy, codex, opencode, claude}")
     from config import load_resolved_config
     import tempfile
     from pathlib import Path as _Path
     # Force "no config.yaml" by passing a nonexistent path
     loaded = load_resolved_config(config_path=_Path("/tmp/install_deps_no_yaml_xx_DOES_NOT_EXIST.yaml"))
     needed = {p.harness for p in loaded.proposers + loaded.refiners}
-    return _ok(needed == {"codex", "opencode", "claude"}, f"got {sorted(needed)}")
+    return _ok(
+        needed == {"agy", "codex", "opencode", "claude"},
+        f"got {sorted(needed)}",
+    )
 
 
 def test_install_deps_cursor_only_config_skips_other_harnesses() -> bool:
@@ -1659,13 +1662,13 @@ def test_provider_catalog_includes_optional_builtins() -> bool:
 
 
 def test_dispatch_propagates_native_provider_effort() -> bool:
-    print("\n[N] orchestrator propagates provider effort to Claude/OpenCode/AGY")
+    print("\n[N] orchestrator only forwards effort to harnesses with native effort flags")
     from unittest import mock
 
     cases = [
         ("claude", "_run_sonnet", "claude-sonnet-5", "max"),
         ("opencode", "_run_opencode", "opencode-go/glm-5.2", "high"),
-        ("agy", "_run_agy", "gemini-3.6-flash-medium", "low"),
+        ("agy", "_run_agy", "gemini-3.1-pro-low", "low"),
     ]
     observed = {}
 
@@ -1696,7 +1699,11 @@ def test_dispatch_propagates_native_provider_effort() -> bool:
                 timeout_for_harness={harness: 30},
                 codex_effort="high",
             )
-    ok = all(observed[f"{h}-fixture"] == effort for h, _, _, effort in cases)
+    ok = (
+        observed["claude-fixture"] == "max"
+        and observed["opencode-fixture"] == "high"
+        and observed["agy-fixture"] is None
+    )
     return _ok(ok, f"observed={observed}")
 
 
@@ -1740,7 +1747,6 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
         "deepseek-flash": ("opencode", "opencode-go/deepseek-v4-flash"),
         "composer": ("cursor", "composer-2.5"),
         "cursor-grok": ("cursor", "cursor-grok-4.5-high"),
-        "agy-gemini-flash": ("agy", "gemini-3.6-flash-medium"),
         "agy-gemini-pro": ("agy", "gemini-3.1-pro-high"),
     }
     routes_ok = all(
@@ -1754,9 +1760,8 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
         and by_id["sonnet"]["effort_options"]
         == ["low", "medium", "high", "xhigh", "max"]
         and by_id["codex"]["supports_effort"]
-        and by_id["agy-gemini-flash"]["effort_options"]
-        == ["low", "medium", "high"]
         and by_id["agy-gemini-pro"]["effort_options"] == ["low", "high"]
+        and by_id["agy-gemini-pro"]["effort_control"] == "model_variant"
     )
     grouped_ok = (
         groups["claude"]["lab"] == "Anthropic"
@@ -1769,10 +1774,41 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
     )
     role_ok = (
         {item["id"] for item in models if "aggregator" in item["roles"]}
-        == {"codex-sol", "opus"}
-        and by_id["opus"]["roles"] == ["proposer", "refiner", "aggregator"]
+        == {"codex-sol"}
+        and by_id["opus"]["roles"] == ["proposer", "refiner"]
         and by_id["deepseek"]["roles"] == ["proposer", "refiner"]
         and by_id["deepseek-flash"]["roles"] == ["proposer", "refiner"]
+    )
+    defaults_ok = (
+        by_id["agy-gemini-pro"]["default_roles"] == ["proposer"]
+        and by_id["codex"]["default_roles"] == ["proposer"]
+        and by_id["sonnet"]["default_roles"] == ["proposer"]
+        and by_id["qwen"]["default_roles"] == ["refiner"]
+        and by_id["opus"]["default_roles"] == ["refiner"]
+        and by_id["codex-sol"]["default_roles"] == ["aggregator"]
+    )
+    app_js = (
+        repo_root / "harness" / "webui" / "static" / "js" / "app.js"
+        if repo_provider.exists()
+        else SCRIPT_DIR.parent / "webui" / "static" / "js" / "app.js"
+    ).read_text(encoding="utf-8")
+    preset_ok = all(
+        snippet in app_js
+        for snippet in (
+            'preferred: ["agy-gemini-pro", "sonnet"]',
+            'efforts: { "agy-gemini-pro": "low", sonnet: "medium" }',
+            'preferred: ["agy-gemini-pro", "codex", "sonnet"]',
+            'efforts: { "agy-gemini-pro": "high", codex: "high", sonnet: "high" }',
+            'preferred: ["agy-gemini-pro", "codex", "sonnet", "glm"]',
+            'efforts: { "agy-gemini-pro": "high", codex: "xhigh", sonnet: "max" }',
+            'preferred: ["qwen", "opus", "deepseek"]',
+            'efforts: { opus: "max" }',
+            'preferred: ["codex-sol"]',
+            'efforts: { "codex-sol": "xhigh" }',
+            'if (role === "aggregator") return id === "codex-sol";',
+            'const route = provider?.routes?.find((item) => item.id === "codex-sol");',
+            "syncSelectedProviderGroups();",
+        )
     )
     route_labels_ok = all(
         suffix not in item["name"]
@@ -1783,15 +1819,16 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
         for item in groups[provider_id]["routes"]
     )
     hidden_ok = (
-        {"codex-reviewer", "codex-aggregator", "agy-gemini-high", "gemini-cli-pro",
+        {"codex-reviewer", "codex-aggregator", "gemini-cli-pro",
          "cursor-sol", "cursor-gemini"}.isdisjoint(by_id)
         and "gemini" not in groups
     )
     return _ok(
-        routes_ok and effort_ok and grouped_ok and role_ok
-        and route_labels_ok and hidden_ok,
+        routes_ok and effort_ok and grouped_ok and role_ok and defaults_ok
+        and preset_ok and route_labels_ok and hidden_ok,
         f"routes={len(models)} grouped={grouped_ok} effort={effort_ok} "
-        f"roles={role_ok} labels={route_labels_ok} hidden={hidden_ok}",
+        f"roles={role_ok} defaults={defaults_ok} presets={preset_ok} "
+        f"labels={route_labels_ok} hidden={hidden_ok}",
     )
 
 
@@ -1823,33 +1860,57 @@ def test_finalize_moves_misplaced_refiner_verification() -> bool:
     return _ok(ok, f"success={result.success} schema_valid={result.schema_valid}")
 
 
-def test_google_provider_builtins_are_opt_in_and_resolve() -> bool:
-    print("\n[N] config: AGY builtins resolve without changing default roster")
+def test_google_provider_builtins_are_default_and_resolve() -> bool:
+    print("\n[N] config: AGY Gemini Pro is default and retired Gemini routes stay removed")
+    import os as _os
     import config as harness_config
     from config import resolve_provider
-    agy = resolve_provider("agy-gemini-high", user_providers={})
     agy_pro = resolve_provider("agy-gemini-pro", user_providers={})
+    effort_key = "MOA_AGY_GEMINI_PRO_EFFORT"
+    old_effort = _os.environ.get(effort_key)
+    _os.environ[effort_key] = "low"
+    try:
+        agy_effort_override = resolve_provider("agy-gemini-pro", user_providers={})
+    finally:
+        if old_effort is None:
+            _os.environ.pop(effort_key, None)
+        else:
+            _os.environ[effort_key] = old_effort
     defaults = harness_config.load_resolved_config(config_path=Path("/nonexistent"))
-    default_names = {p.name for p in defaults.proposers + defaults.refiners}
+    proposer_names = [p.name for p in defaults.proposers]
+    refiner_names = [p.name for p in defaults.refiners]
     try:
         resolve_provider("gemini-cli-pro", user_providers={})
     except ValueError:
         gemini_removed = True
     else:
         gemini_removed = False
+    flash_removed = True
+    for removed_name in ("agy-gemini-flash", "agy-gemini-high"):
+        try:
+            resolve_provider(removed_name, user_providers={})
+            flash_removed = False
+        except ValueError:
+            pass
     ok = (
-        agy.harness == "agy"
-        and agy.model == "gemini-3.6-flash-high"
-        and agy_pro.harness == "agy"
+        agy_pro.harness == "agy"
         and agy_pro.model == "gemini-3.1-pro-high"
-        and "agy-gemini-high" not in default_names
-        and "agy-gemini-pro" not in default_names
+        and agy_pro.effort == "high"
+        and agy_effort_override.model == "gemini-3.1-pro-high"
+        and agy_effort_override.effort == "high"
+        and proposer_names == ["agy-gemini-pro", "codex", "sonnet"]
+        and refiner_names == ["qwen", "opus"]
+        and defaults.aggregator is not None
+        and defaults.aggregator.name == "codex-sol"
         and gemini_removed
+        and flash_removed
     )
     return _ok(
         ok,
-        f"agy={agy}, pro={agy_pro}, gemini_removed={gemini_removed}, "
-        f"defaults={sorted(default_names)}",
+        f"pro={agy_pro}, effort_override={agy_effort_override}, "
+        f"gemini_removed={gemini_removed}, flash_removed={flash_removed}, "
+        f"proposers={proposer_names}, refiners={refiner_names}, "
+        f"aggregator={defaults.aggregator}",
     )
 
 
@@ -1859,14 +1920,16 @@ def test_agy_cmd_is_fail_closed() -> bool:
     cmd = agy_adapter._build_cmd(
         "agy",
         instruction="read prompt",
-        model="gemini-3.6-flash-high",
+        model="gemini-3.1-pro-high",
         timeout_seconds=60,
         internal_log=Path("/tmp/agy.log"),
+        reasoning_effort="low",
     )
     ok = (
         cmd[cmd.index("--mode") + 1] == "plan"
         and "--sandbox" in cmd
         and "--dangerously-skip-permissions" in cmd
+        and "--effort" not in cmd
     )
     return _ok(ok, f"cmd={cmd}")
 
@@ -2452,6 +2515,16 @@ def test_report_template_accessibility_contracts() -> bool:
         and "Hover a card to trace its influence" in template
         and "setLineageFocus" in template
         and "lineage-card-shadow" in template
+        and "shareCurrentWebReport" in template
+        and "currentArtifactJobId" in template
+        and 'title: "Missing: " + summarizeLineageFinding' in template
+        and 'title: "Verified: " + summarizeLineageFinding' in template
+        and 'title: "Recommendation: " + summarizeLineageFinding' in template
+        and "proposerReviewGrades" in template
+        and "lineageInfluenceCounts" in template
+        and 'data-effort-control' in (SCRIPT_DIR.parent / "webui" / "static" / "js" / "app.js").read_text(encoding="utf-8")
+        and "syncSelectedProviderGroups" in (SCRIPT_DIR.parent / "webui" / "static" / "js" / "app.js").read_text(encoding="utf-8")
+        and 'group.querySelector(".route-choice:checked")' in (SCRIPT_DIR.parent / "webui" / "static" / "js" / "app.js").read_text(encoding="utf-8")
     )
     return _ok(ok)
 
@@ -2620,7 +2693,7 @@ def main() -> int:
         test_dispatch_propagates_native_provider_effort,
         test_webui_model_catalog_is_provider_grouped_and_current,
         test_finalize_moves_misplaced_refiner_verification,
-        test_google_provider_builtins_are_opt_in_and_resolve,
+        test_google_provider_builtins_are_default_and_resolve,
         test_agy_cmd_is_fail_closed,
         test_gemini_cmd_is_fail_closed,
         test_gemini_stream_json_extracts_payload,

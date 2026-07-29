@@ -38,6 +38,7 @@ The config.yaml schema is documented in harness/config.example.yaml.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
@@ -53,6 +54,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 HARNESS_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG_PATH = HARNESS_DIR / "config.yaml"
 DEFAULT_DOTENV_PATH = REPO_ROOT / ".env"
+_AGY_MODEL_DEPTH_RE = re.compile(r"-(low|medium|high)$", re.IGNORECASE)
 
 
 # --- binary names ----------------------------------------------------------
@@ -111,14 +113,12 @@ BUILTIN_PROVIDERS: dict[str, ResolvedProvider] = {
     "composer":       ResolvedProvider(name="composer",       harness="cursor",   model="composer-2.5"),
     "grok":           ResolvedProvider(name="grok",           harness="opencode", model="opencode-go/grok-4.5"),
     "cursor-grok":    ResolvedProvider(name="cursor-grok",    harness="cursor",   model="cursor-grok-4.5-high"),
-    # Google providers are opt-in and intentionally absent from the shipped
-    # proposer/refiner defaults. AGY reuses the account signed into the local
-    # Antigravity CLI.
-    # The Web UI presents Gemini Pro and Flash as separate families and keeps
-    # reasoning effort separate from the family name. The high-suffixed Flash
-    # route remains a hidden compatibility alias for saved configs.
-    "agy-gemini-high": ResolvedProvider(name="agy-gemini-high", harness="agy",    model="gemini-3.6-flash-high", effort="high"),
-    "agy-gemini-flash": ResolvedProvider(name="agy-gemini-flash", harness="agy",  model="gemini-3.6-flash-medium", effort="medium"),
+    # Google runs through AGY, which reuses the account signed into the local
+    # Antigravity CLI. Gemini Pro is part of the shipped proposer defaults.
+    # AGY selects depth in the model slug itself (for example
+    # ``gemini-3.1-pro-high``), rather than with a separate --effort flag.
+    # Gemini Flash routes are intentionally not curated: Pro is the sole
+    # Google route exposed by MoA-X.
     "agy-gemini-pro": ResolvedProvider(name="agy-gemini-pro", harness="agy",      model="gemini-3.1-pro-high", effort="high"),
 }
 
@@ -128,7 +128,7 @@ def resolve_provider(name: str, *, user_providers: dict[str, dict]) -> ResolvedP
 
     Lookup order:
       1. user_providers (from harness/config.yaml `providers:` block)
-      2. BUILTIN_PROVIDERS (including opt-in AGY providers)
+      2. BUILTIN_PROVIDERS (including the default AGY Gemini Pro route)
 
     Then env-var overrides apply per-field:
       - MOA_<NAME>_MODEL overrides .model
@@ -204,6 +204,19 @@ def resolve_provider(name: str, *, user_providers: dict[str, dict]) -> ResolvedP
         rp = ResolvedProvider(
             name=rp.name, harness=rp.harness, model=rp.model,
             timeout=rp.timeout, effort=override_effort,
+        )
+
+    # Antigravity CLI model ids already encode the allowed depth. Passing an
+    # additional --effort produces an invalid model/effort pair (and can fail
+    # before the model sees the prompt), so model depth is always authoritative.
+    if rp.harness == "agy":
+        match = _AGY_MODEL_DEPTH_RE.search(rp.model)
+        rp = ResolvedProvider(
+            name=rp.name,
+            harness=rp.harness,
+            model=rp.model,
+            timeout=rp.timeout,
+            effort=match.group(1).lower() if match else None,
         )
 
     return rp
@@ -402,9 +415,9 @@ class LoadedConfig:
 
 
 # Default layer assignments when no YAML / env override is set.
-_DEFAULT_PROPOSERS = ["codex", "glm", "sonnet"]
-_DEFAULT_REFINERS = ["codex-sol", "qwen"]
-_DEFAULT_AGGREGATOR = "opus"
+_DEFAULT_PROPOSERS = ["agy-gemini-pro", "codex", "sonnet"]
+_DEFAULT_REFINERS = ["qwen", "opus"]
+_DEFAULT_AGGREGATOR = "codex-sol"
 
 
 def _env_truthy(key: str) -> bool:
