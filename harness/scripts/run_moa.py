@@ -546,6 +546,12 @@ def _finalize_result(
     if not (layer_result.success and adapter_payload is not None):
         return
 
+    json_file = (
+        session_dir
+        / f"layer{layer_result.layer}"
+        / f"{layer_result.agent_id}-{layer_result.role}.json"
+    )
+
     # Schema-unenforced refiners occasionally append a verification record to
     # `additional_research` after correctly producing the same record shape in
     # `verifications`. The fields are unambiguous, so restore the record to the
@@ -590,6 +596,7 @@ def _finalize_result(
     validation_errors = _validate_against_schema(adapter_payload, schema)
     layer_result.schema_valid = len(validation_errors) == 0
     if validation_errors:
+        json_file.unlink(missing_ok=True)
         layer_result.error = (
             "schema validation failed: " + "; ".join(validation_errors[:5])
         )
@@ -611,10 +618,12 @@ def _finalize_result(
         )
         print(f"[orchestrator WARNING] {mismatch_msg}", file=sys.stderr, flush=True)
 
-    # Task 5: proposer-only evidence cross-field sanity check. Schema can't
-    # express "when type=code then file/line non-null" with our stdlib
-    # validator, so enforce it here. A single bad evidence item shouldn't
-    # fail the whole run, so record a warning and keep success=True.
+    # Proposer-only evidence cross-field validation. Schema can't express
+    # "when type=code then file/line non-null" with our stdlib validator, so
+    # enforce it here. Evidence that cannot support its declared source type
+    # must fail closed: refiners and the aggregator must never receive a
+    # proposal that passed structural validation while carrying unusable
+    # citations.
     if layer_result.role == "proposer":
         evidence_errors = _validate_evidence_cross_fields(adapter_payload)
         if evidence_errors:
@@ -628,9 +637,12 @@ def _finalize_result(
                 layer_result.error = f"{layer_result.error}; {evidence_msg}"
             else:
                 layer_result.error = evidence_msg
+            json_file.unlink(missing_ok=True)
+            layer_result.schema_valid = False
+            layer_result.success = False
+            return
 
     # Persist validated payload to its own file
-    json_file = session_dir / f"layer{layer_result.layer}" / f"{layer_result.agent_id}-{layer_result.role}.json"
     json_file.parent.mkdir(parents=True, exist_ok=True)
     json_file.write_text(json.dumps(adapter_payload, indent=2), encoding="utf-8")
     layer_result.json_path = str(json_file.relative_to(session_dir))

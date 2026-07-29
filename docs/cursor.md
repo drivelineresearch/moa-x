@@ -184,10 +184,11 @@ Cursor routes. Cursor's broader catalog changes independently; advanced users
 can still declare a custom provider in `harness/config.yaml`. Cursor billing
 does not provide a bring-your-own-provider-key path.
 
-The Web UI currently shows Composer as unavailable: two full-schema live
-attempts completed with progress narration but no final JSON, including the
-single bounded retry. Cursor Grok remains enabled. The Composer name is kept
-for compatible configs and can be re-enabled when its headless structured
+The Web UI currently shows Composer and Cursor Grok as unavailable: repeated
+full-schema live attempts completed with progress narration but no final JSON,
+including the single bounded retry. Use the curated OpenCode `grok` route
+(`opencode-go/grok-4.5`) for Grok proposer work. Both Cursor names are kept
+for compatible configs and can be re-enabled when their headless structured
 output becomes reliable.
 
 ## Configuration examples

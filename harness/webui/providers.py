@@ -120,6 +120,10 @@ LIVE_BLOCKED_ROUTES = {
         "Disabled after two live attempts returned progress text without "
         "the required final JSON"
     ),
+    "cursor-grok": (
+        "Disabled after repeated live attempts returned research-progress "
+        "text without the required final JSON; use Grok 4.5 through OpenCode"
+    ),
 }
 
 EFFORT_OPTIONS = {

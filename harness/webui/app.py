@@ -36,7 +36,7 @@ from .monitoring import (
 from .providers import ROUTE_META, model_catalog, probe_provider, provider_catalog
 from .prompt_coach import PromptCoachError, analyze as analyze_prompt
 from .prompt_coach import finalize as finalize_prompt
-from .store import Store
+from .store import Store, redact_event_text
 from .worker import JobWorker
 
 
@@ -319,6 +319,7 @@ def _job_view(job: dict[str, Any]) -> dict[str, Any]:
 
 
 def _event_view(event: dict[str, Any]) -> dict[str, Any]:
+    event["message"] = redact_event_text(event.get("message"))
     event["type"] = event.get("kind", "message")
     if isinstance(event.get("created_at"), (int, float)):
         event["created_at"] = datetime.fromtimestamp(
@@ -1150,6 +1151,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             if path.exists()
             else []
         )
+        lines = [redact_event_text(line) for line in lines]
         return jsonify({"job_id": job_id, "lines": lines})
 
     @app.get("/api/jobs/<job_id>/events")

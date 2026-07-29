@@ -1748,7 +1748,7 @@ function traceAgentFromMessage(message) {
   return match ? match[1] : "";
 }
 
-function tracePresentation(source) {
+export function tracePresentation(source) {
   const event = unwrapTraceEvent(source);
   const type = String(event.type || event.kind || event.event || "update").toLowerCase();
   const message = String(event.summary || event.message || event.detail || event.status_message || "").trim();
@@ -1789,10 +1789,15 @@ function tracePresentation(source) {
     }
     if (/layer 1: spawning/i.test(message)) {
       const count = (message.match(/'/g) || []).length / 2;
+      const retry = /\bredispatch\b/i.test(message);
       return {
         ...base,
-        title: "Proposal lanes started",
-        message: `${count || "The configured"} independent models began working in parallel.`,
+        title: retry ? "Proposal retry started" : "Proposal lanes started",
+        message: retry
+          ? `${count === 1 ? "One proposer lane is" : `${count} proposer lanes are`} retrying.`
+          : count === 1
+            ? "One proposer model began working."
+            : `${count || "The configured"} independent models began working in parallel.`,
         tone: "active",
         keep: true,
       };

@@ -19,6 +19,7 @@ from harness.webui.github import _run_gh, parse_repo_pointer
 from harness.webui.monitoring import ProviderHealthMonitor
 from harness.webui import providers as web_providers
 from harness.webui import prompt_coach
+from harness.webui.store import redact_event_text
 from harness.webui.worker import JobWorker
 
 
@@ -191,6 +192,70 @@ class WebUITest(unittest.TestCase):
         self.assertTrue(result["authenticated"])
         self.assertTrue(routes["agy-gemini-pro"]["available"])
         self.assertNotIn("agy-gemini-flash", routes)
+
+    def test_cursor_grok_is_blocked_after_repeated_incomplete_live_outputs(self):
+        with (
+            patch.object(
+                web_providers.shutil,
+                "which",
+                return_value="/usr/bin/cursor-agent",
+            ),
+            patch.object(
+                web_providers,
+                "_run",
+                return_value=(True, "cursor-agent 1.0"),
+            ),
+            patch.dict(
+                web_providers.PROVIDER_META["cursor"],
+                {"probe": lambda: (True, "account ready")},
+            ),
+        ):
+            result = web_providers.probe_provider("cursor")
+
+        routes = {route["id"]: route for route in result["routes"]}
+        self.assertFalse(routes["cursor-grok"]["available"])
+        self.assertIn(
+            "use Grok 4.5 through OpenCode",
+            routes["cursor-grok"]["availability_detail"],
+        )
+
+    def test_browser_event_text_redacts_operator_identity_and_home_path(self):
+        redacted = redact_event_text(
+            "Logged in as operator@example.com; "
+            "session /home/operator/.local/share/moa-x"
+        )
+        self.assertEqual(
+            redacted,
+            "Logged in as [redacted email]; session ~/.local/share/moa-x",
+        )
+
+    def test_log_endpoint_redacts_existing_operator_details(self):
+        session = self.root / ".moa" / "redacted-log"
+        session.mkdir(parents=True)
+        (session / "webui.log").write_text(
+            "Logged in as operator@example.com\n"
+            "repo: /home/operator/project\n",
+            encoding="utf-8",
+        )
+        self.app.extensions["moa_store"].insert_job(
+            {
+                "id": "redacted-log",
+                "profile_id": "browser_123",
+                "title": "Redacted log",
+                "workspace": str(self.root),
+                "session_dir": str(session),
+                "goal": "Keep operator details private.",
+                "status": "failed",
+                "phase": "failed",
+                "config": {},
+                "created_at": 1,
+            }
+        )
+        lines = self.client.get("/api/jobs/redacted-log/logs").get_json()["lines"]
+        self.assertEqual(
+            lines,
+            ["Logged in as [redacted email]", "repo: ~/project"],
+        )
 
     def tearDown(self):
         self.temp.cleanup()

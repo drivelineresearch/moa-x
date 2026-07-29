@@ -893,8 +893,45 @@ def test_evidence_cross_field_accepts_valid_payload() -> bool:
     return _check("no errors on valid proposer payload", len(errors) == 0, f"errors={errors[:3]}")
 
 
+def test_finalize_result_fails_closed_on_cross_field_evidence() -> bool:
+    print("\n[12d] _finalize_result rejects cross-field evidence violations")
+    import tempfile
+
+    payload = json.loads(json.dumps(VALID_PROPOSER_GLM))
+    payload["plan"][0]["evidence"][1]["snippet"] = None
+    result = run_moa.LayerResult(
+        agent_id="glm",
+        layer=1,
+        role="proposer",
+        success=True,
+        payload=payload,
+    )
+    with tempfile.TemporaryDirectory() as tdir:
+        session = Path(tdir)
+        persisted = session / "layer1" / "glm-proposer.json"
+        persisted.parent.mkdir(parents=True)
+        persisted.write_text('{"stale": true}', encoding="utf-8")
+        run_moa._finalize_result(
+            result,
+            payload,
+            run_moa.PROPOSER_SCHEMA_PATH,
+            session,
+        )
+        ok = (
+            not result.success
+            and not result.schema_valid
+            and "evidence cross-field violations" in str(result.error)
+            and not persisted.exists()
+        )
+    return _check(
+        "invalid evidence is rejected before persistence",
+        ok,
+        f"success={result.success} schema_valid={result.schema_valid} error={result.error}",
+    )
+
+
 def test_unsupported_keyword_warning() -> bool:
-    print("\n[12d] _validate_against_schema warns on unsupported keywords (anyOf, if, oneOf)")
+    print("\n[12e] _validate_against_schema warns on unsupported keywords (anyOf, if, oneOf)")
     import warnings
     # Reset dedup cache so this test is reproducible
     run_moa._warned_keywords.clear()
@@ -2733,6 +2770,7 @@ def main() -> int:
         test_evidence_cross_field_rejects_code_with_null_file,
         test_evidence_cross_field_rejects_external_with_null_url,
         test_evidence_cross_field_accepts_valid_payload,
+        test_finalize_result_fails_closed_on_cross_field_evidence,
         test_unsupported_keyword_warning,
         test_manifest_config_section_present,
         test_config_precedence_env_over_dotenv_over_yaml,
