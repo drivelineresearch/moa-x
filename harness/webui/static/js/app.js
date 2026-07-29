@@ -602,6 +602,42 @@ function displayModelName(option) {
   return option?.harness === "agy" ? model.replace(/-(?:low|medium|high)$/i, "") : model;
 }
 
+function effortPresentation(option) {
+  const options = Array.isArray(option?.effortOptions)
+    ? option.effortOptions.filter(Boolean)
+    : [];
+  const mode = option?.effortControl || "model_id";
+  const adjustable = options.length > 1
+    && ["flag", "model_variant"].includes(mode)
+    && !["cursor", "gemini", "opencode"].includes(option?.harness);
+  const configuredEffort = String(option?.effort || "").toLowerCase();
+  const initialEffort = options.includes(configuredEffort)
+    ? configuredEffort
+    : options[0];
+
+  if (adjustable) {
+    return {
+      adjustable: true,
+      initialEffort,
+      label: mode === "model_variant" ? "Adjust model depth" : "Adjust reasoning effort",
+      legend: mode === "model_variant" ? "Model depth" : "Reasoning effort",
+      mode,
+      options,
+    };
+  }
+
+  return {
+    adjustable: false,
+    initialEffort: configuredEffort || "default",
+    label: configuredEffort && configuredEffort !== "default"
+      ? `Fixed ${titleCase(configuredEffort)} effort`
+      : "Provider-managed effort",
+    legend: "",
+    mode,
+    options: [],
+  };
+}
+
 function renderModelOptions(role, targetId, inputType) {
   const options = modelsForRole(role);
   const target = $(targetId);
@@ -638,9 +674,7 @@ function renderModelOptions(role, targetId, inputType) {
           ${items.map((option) => {
             const index = optionIndex++;
             const displayModel = displayModelName(option);
-            const canChooseEffort = option.effortOptions.length > 0
-              && ["flag", "model_variant"].includes(option.effortControl)
-              && !["cursor", "gemini", "opencode"].includes(option.harness);
+            const effort = effortPresentation(option);
             const rowSearch = `${option.name} ${option.model} ${option.lab} ${option.harness}`.toLowerCase();
             return `
               <div class="model-option" data-model-row data-search="${escapeHtml(rowSearch)}">
@@ -654,7 +688,8 @@ function renderModelOptions(role, targetId, inputType) {
                   data-model="${escapeHtml(option.model)}"
                   data-effort="${escapeHtml(option.effort)}"
                   data-default-effort="${escapeHtml(option.effort)}"
-                  data-effort-control="${escapeHtml(option.effortControl)}"
+                  data-effort-mode="${escapeHtml(effort.mode)}"
+                  data-effort-adjustable="${String(effort.adjustable)}"
                   ${defaultSelected(option, role, index) ? "checked" : ""}
                   ${option.available ? "" : "disabled"}
                 >
@@ -662,29 +697,29 @@ function renderModelOptions(role, targetId, inputType) {
                   <span class="selection-box" aria-hidden="true"></span>
                   <span class="model-row-copy">
                     <strong>${escapeHtml(option.name)}</strong>
-                    <small>${escapeHtml(displayModel)} · ${canChooseEffort ? (option.effortControl === "model_variant" ? "Adjust model depth" : "Adjustable effort") : `${escapeHtml(titleCase(option.effort))} effort`}${option.available || !option.availabilityDetail ? "" : ` · ${escapeHtml(option.availabilityDetail)}`}</small>
+                    <small>${escapeHtml(displayModel)} · ${escapeHtml(effort.label)}${option.available || !option.availabilityDetail ? "" : ` · ${escapeHtml(option.availabilityDetail)}`}</small>
                   </span>
                   <span class="model-row-state ${option.available ? "" : "unavailable"}">${option.available ? "Selected" : "Unavailable"}</span>
                 </label>
-                ${canChooseEffort ? `
-                  <fieldset class="effort-slider" data-effort-control hidden>
-                    <legend>${option.effortControl === "model_variant" ? "Model depth" : "Reasoning effort"}</legend>
+                ${effort.adjustable ? `
+                  <fieldset class="effort-slider" data-effort-control="${escapeHtml(effort.mode)}" hidden>
+                    <legend>${escapeHtml(effort.legend)}</legend>
                     <div class="effort-slider-control">
                       <input
                         type="range"
                         min="0"
-                        max="${option.effortOptions.length - 1}"
+                        max="${effort.options.length - 1}"
                         step="1"
-                        value="${Math.max(0, option.effortOptions.indexOf(option.effort))}"
+                        value="${effort.options.indexOf(effort.initialEffort)}"
                         data-effort-range
-                        data-effort-values="${escapeHtml(option.effortOptions.join(","))}"
-                        aria-label="Reasoning effort for ${escapeHtml(option.name)}"
-                        aria-valuetext="${escapeHtml(titleCase(option.effort))}"
+                        data-effort-values="${escapeHtml(effort.options.join(","))}"
+                        aria-label="${escapeHtml(effort.legend)} for ${escapeHtml(option.name)}"
+                        aria-valuetext="${escapeHtml(titleCase(effort.initialEffort))}"
                       >
-                      <output data-effort-output>${escapeHtml(titleCase(option.effort))}</output>
+                      <output data-effort-output>${escapeHtml(titleCase(effort.initialEffort))}</output>
                     </div>
                     <div class="effort-slider-stops" aria-hidden="true">
-                      ${option.effortOptions.map((effort) => `<span>${escapeHtml(titleCase(effort))}</span>`).join("")}
+                      ${effort.options.map((value) => `<span>${escapeHtml(titleCase(value))}</span>`).join("")}
                     </div>
                   </fieldset>
                 ` : ""}
@@ -707,7 +742,7 @@ function selectedModelOverrides() {
     .forEach((input) => {
       if (!input.dataset.model) return;
       const effort = selectedEffortValue(input.closest(".model-option"));
-      overrides[input.value] = input.dataset.effortControl === "model_variant" && effort
+      overrides[input.value] = input.dataset.effortMode === "model_variant" && effort
         ? input.dataset.model.replace(/-(?:low|medium|high)$/i, `-${effort}`)
         : input.dataset.model;
     });
@@ -718,7 +753,7 @@ function selectedEffortOverrides() {
   const overrides = {};
   $$('input[name="proposer"]:checked, input[name="refiner"]:checked, input[name="aggregator"]:checked', $("#launch-form"))
     .forEach((input) => {
-      if (input.dataset.effortControl === "model_variant") return;
+      if (input.dataset.effortMode === "model_variant") return;
       const selected = selectedEffortValue(input.closest(".model-option"));
       if (selected) overrides[input.value] = selected;
     });
@@ -738,7 +773,7 @@ function updateEffortSlider(range) {
   const values = (range.dataset.effortValues || "").split(",").filter(Boolean);
   const value = values[Number(range.value)] || values[0] || "default";
   range.setAttribute("aria-valuetext", titleCase(value));
-  const output = range.closest("[data-effort-control]")?.querySelector("[data-effort-output]");
+  const output = range.closest("fieldset[data-effort-control]")?.querySelector("[data-effort-output]");
   if (output) output.textContent = titleCase(value);
 }
 
@@ -755,8 +790,22 @@ function selectedRouteDescriptions(name) {
 function syncEffortControls() {
   $$(".model-option").forEach((card) => {
     const route = $(".route-choice", card);
-    const control = $("[data-effort-control]", card);
-    if (!control || !route) return;
+    const control = $("fieldset[data-effort-control]", card);
+    if (!route) return;
+    const adjustable = route.dataset.effortAdjustable === "true";
+    if (adjustable !== Boolean(control)) {
+      console.error(`Effort control contract violated for route ${route.value}`);
+      route.checked = false;
+      route.disabled = true;
+      card.dataset.effortContractError = "true";
+      const stateLabel = $(".model-row-state", card);
+      if (stateLabel) {
+        stateLabel.textContent = "Unavailable";
+        stateLabel.classList.add("unavailable");
+      }
+      return;
+    }
+    if (!control) return;
     control.hidden = !route.checked || route.disabled;
     $$("[data-effort-choice], [data-effort-range]", control).forEach((choice) => { choice.disabled = control.hidden; });
   });

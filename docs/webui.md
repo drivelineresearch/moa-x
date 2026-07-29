@@ -42,6 +42,19 @@ variant and never sends a conflicting AGY `--effort` flag. OpenCode variants
 remain configured by their named route/model id, and Cursor has no separate
 effort flag.
 
+The roster has a strict presentation contract: any row that says **Adjust**
+must render an enabled slider whenever that route is selected, in the
+proposer, refiner, and aggregator steps alike. The same capability decision
+drives both the row copy and control rendering. Routes without a safe runtime
+control never imply adjustability: an explicit configured value is labeled
+**Fixed _level_ effort**, while routes whose provider owns the setting are
+labeled **Provider-managed effort**. Route metadata and the slider container
+use separate DOM attributes so a visibility sync cannot accidentally target
+the route input instead of its control. A runtime contract check disables only
+the malformed route and logs an error, and the browser-level CI test exercises
+the selected, unselected, fixed, and provider-managed cases in all three
+roster layers.
+
 The three recommended depth modes deliberately keep Google search coverage
 and the strongest synthesis route in every run:
 
@@ -264,6 +277,11 @@ python3 harness/scripts/test_offline.py
 
 # Flask API, persistence, upload, GitHub allowlist, and worker tests
 .venv/bin/python -m unittest harness.webui.tests.test_webui
+
+# Browser-level roster effort contract (one-time: playwright install chromium)
+.venv/bin/pip install -r requirements-web-dev.txt
+.venv/bin/playwright install chromium
+.venv/bin/python -m unittest harness.webui.tests.test_effort_controls_browser
 
 # Start with local source changes
 MOA_WEBUI_GITHUB_OWNER=your-github-user-or-org \

@@ -2512,6 +2512,9 @@ def test_workspace_guard_detects_git_mutation() -> bool:
 def test_report_template_accessibility_contracts() -> bool:
     print("\n[N] report template has accessible disclosures, copy status, and compact stages")
     template = report_module.TEMPLATE_PATH.read_text(encoding="utf-8")
+    webui_app = (SCRIPT_DIR.parent / "webui" / "static" / "js" / "app.js").read_text(
+        encoding="utf-8"
+    )
     ok = (
         'el("button", { class: "c-head"' in template
         and '"aria-expanded"' in template
@@ -2537,9 +2540,40 @@ def test_report_template_accessibility_contracts() -> bool:
         and 'title: "Recommendation: " + summarizeLineageFinding' in template
         and "proposerReviewGrades" in template
         and "lineageInfluenceCounts" in template
-        and 'data-effort-control' in (SCRIPT_DIR.parent / "webui" / "static" / "js" / "app.js").read_text(encoding="utf-8")
-        and "syncSelectedProviderGroups" in (SCRIPT_DIR.parent / "webui" / "static" / "js" / "app.js").read_text(encoding="utf-8")
-        and 'group.querySelector(".route-choice:checked")' in (SCRIPT_DIR.parent / "webui" / "static" / "js" / "app.js").read_text(encoding="utf-8")
+        and "syncSelectedProviderGroups" in webui_app
+        and 'group.querySelector(".route-choice:checked")' in webui_app
+    )
+    return _ok(ok)
+
+
+def test_webui_effort_copy_and_control_contract() -> bool:
+    print("\n[N] Web UI effort copy and controls share one fail-closed contract")
+    app_source = (
+        SCRIPT_DIR.parent / "webui" / "static" / "js" / "app.js"
+    ).read_text(encoding="utf-8")
+    css_source = (
+        SCRIPT_DIR.parent / "webui" / "static" / "css" / "app.css"
+    ).read_text(encoding="utf-8")
+    ok = (
+        "function effortPresentation(option)" in app_source
+        and "const effort = effortPresentation(option);" in app_source
+        and 'data-effort-mode="${escapeHtml(effort.mode)}"' in app_source
+        and 'data-effort-adjustable="${String(effort.adjustable)}"' in app_source
+        and 'fieldset class="effort-slider" data-effort-control=' in app_source
+        and 'const control = $("fieldset[data-effort-control]", card);' in app_source
+        and 'range.closest("fieldset[data-effort-control]")' in app_source
+        and 'route.dataset.effortAdjustable === "true"' in app_source
+        and "Effort control contract violated for route" in app_source
+        and 'card.dataset.effortContractError = "true"' in app_source
+        and 'label: mode === "model_variant" ? "Adjust model depth" : "Adjust reasoning effort"' in app_source
+        and 'aria-label="${escapeHtml(effort.legend)} for ${escapeHtml(option.name)}"' in app_source
+        and '`Fixed ${titleCase(configuredEffort)} effort`' in app_source
+        and '"Provider-managed effort"' in app_source
+        and "input.dataset.effortMode" in app_source
+        and "input.dataset.effortControl" not in app_source
+        and 'data-effort-control="${escapeHtml(option.effortControl)}"' not in app_source
+        and ".route-choice:checked ~ .effort-slider { display: block; }" in css_source
+        and "[hidden] { display: none !important; }" in css_source
     )
     return _ok(ok)
 
@@ -2792,6 +2826,7 @@ def main() -> int:
         test_finalizer_normalizes_identity_and_deduplicates_recovery,
         test_workspace_guard_detects_git_mutation,
         test_report_template_accessibility_contracts,
+        test_webui_effort_copy_and_control_contract,
         test_layer3_aggregation_schema_and_prompt_contract,
         test_layer3_codex_phase_writes_plan_and_lineage,
         test_layer3_fable_phase_uses_claude_and_writes_artifacts,

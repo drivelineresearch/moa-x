@@ -111,6 +111,12 @@ then `harness/config.yaml`, then built-in defaults. Loader lives at
 
 ## Discovered patterns
 
+- **Effort copy and controls are one UI contract.** If a roster row says
+  “Adjust,” selecting it must reveal an enabled control; fixed routes must say
+  “Fixed _level_ effort” or “Provider-managed effort.” Drive both from
+  `effortPresentation()` and never reuse the route's `data-effort-mode` marker
+  for the `fieldset[data-effort-control]` container; keep the Playwright
+  contract test green. → `docs/webui.md`.
 - **Don't guess opencode `run` flags — they contradict the published docs.** No
   `-q`/`--auto`; auto-approve is `--dangerously-skip-permissions`; no stdin
   (prompt via `-f`, big prompts overflow argv); `-f` is a greedy array so the
