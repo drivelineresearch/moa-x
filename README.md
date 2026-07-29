@@ -9,13 +9,9 @@
   <img src="https://img.shields.io/badge/providers-codex%20%7C%20claude%20%7C%20opencode%20%7C%20cursor%20%7C%20agy-informational" alt="supported CLIs">
 </p>
 
-```mermaid
-flowchart LR
-  S["Scout brief"] --> P["Proposers: Gemini Pro + Grok 4.5 + GLM-5.2"]
-  P --> R["Broadcast refiners: Qwen 3.8 + Kimi K3 + Claude Opus 5"]
-  R --> A["Aggregator: GPT-5.6 Sol xhigh default; Opus or gated Fable alternatives"]
-  A --> O["Final plan + decision lineage + report"]
-```
+<p align="center">
+  <img src="docs/moa-x-workflow.png" alt="MoA-X four-stage workflow: Scout and control room, Gemini Pro/Grok/GLM proposers, Qwen/Kimi/Opus broadcast refiners, and GPT-5.6 Sol aggregation with a warning-gated Fable alternative" width="100%">
+</p>
 
 A small, CLI-native take on the 2024
 [Mixture-of-Agents paper](https://arxiv.org/abs/2406.04692), pointed at
