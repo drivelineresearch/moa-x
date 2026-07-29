@@ -2,7 +2,7 @@
 
 Layered planning ensemble for Claude Code. The configured proposers — by
 default three models from three different labs (Google Gemini 3.1 Pro via
-AGY, xAI Grok 4.5, and Zhipu GLM-5.2 via OpenCode) — read
+AGY, xAI Grok 4.5 via OpenCode, and OpenAI GPT-5.6 Luna via Codex) — read
 the repo, do heavy web research, and write independent plans. The refiners
 (Qwen qwen3.8-max-preview + Kimi K3 + Claude Opus 5 high) then
 **broadcast-refine** by
@@ -27,7 +27,7 @@ The skill will:
 1. Ask 1-3 clarifying questions.
 2. Generate a "scout brief" with focus files, in-scope items, out-of-scope items.
 3. Show you the brief and ask "ready to run? ~12-25 minutes".
-4. On yes, spawn Gemini Pro, Grok 4.5, and GLM-5.2 in parallel.
+4. On yes, spawn Gemini Pro, Grok 4.5, and GPT-5.6 Luna in parallel.
 5. Spawn the broadcast refiners in parallel (Qwen, Kimi K3, and Claude Opus);
    each sees all proposals.
 6. Synthesize the proposals + refinements into `final-plan.md` and the
@@ -39,7 +39,7 @@ The skill will:
 
 ```
 Layer 0 — Scout brief                (parent Claude Code, in-place)
-Layer 1 — Proposers (parallel)       (default Gemini Pro + Grok + GLM)
+Layer 1 — Proposers (parallel)       (default Gemini Pro + Grok + GPT-5.6 Luna)
 Layer 2 — Broadcast refiners         (default Qwen + Kimi + Opus, each sees all proposals)
 Layer 3 — Aggregator                 (recorded GPT-5.6 Sol at xhigh)
 ```
@@ -61,12 +61,11 @@ that a one-input view can't reveal.
 
 ### Why model families do not repeat across the default stages
 
-The Balanced lane assigns Google, xAI, and Zhipu to proposal; Alibaba,
+The Balanced lane assigns Google, xAI, and OpenAI to proposal; Alibaba,
 Moonshot, and Anthropic to broadcast refinement; and OpenAI to aggregation.
-That makes each family responsible for one stage, preserving the independent
-failure modes that make a heterogeneous ensemble useful. Quick trims the
-lane to Gemini + Grok → Kimi → Sol. Thorough adds DeepSeek V4 Pro upstream
-and raises Opus to `max`.
+The refiners remain independent of the aggregator, preserving the
+cross-check that matters most. Quick trims the lane to Gemini + Grok → Kimi →
+Sol. Thorough adds GPT-5.6 Terra upstream and raises Opus to `max`.
 
 ## Why this skill exists
 
@@ -88,7 +87,7 @@ aggregator) is adapted from the paper but tuned for:
 - **Repo-grounded planning, not chat answers.** All CLIs read the
   actual code. Codex runs with a filesystem-enforced read-only
   sandbox; Claude gets a hard read-only tool allowlist; OpenCode denies edit
-  and shell tools through config; Cursor runs in plan mode; AGY requires plan
+  and shell tools through config; AGY requires plan
   mode plus sandboxing. Prompts repeat the read-only contract for
   every harness.
 - **Heavy web research.** Every proposer and refiner is told to run
@@ -106,14 +105,11 @@ into `~/.claude/skills/mixture-of-agents/`. The default roster needs:
 - **codex** — `npm i -g @openai/codex && codex login`
 - **agy / Antigravity** — install or update Antigravity, run `agy install`,
   sign in, and verify `agy models`
-- **opencode** (runs default Grok/GLM proposers and Qwen/Kimi refiners) — `curl -fsSL https://opencode.ai/install | bash`
+- **opencode** (runs Grok and Qwen/Kimi routes) — `curl -fsSL https://opencode.ai/install | bash`
   (or `npm i -g opencode-ai`), then `opencode auth login`, or export provider
-  API keys (`ZHIPU_API_KEY` / `MOONSHOT_API_KEY` / `FIREWORKS_API_KEY` /
+  API keys (`MOONSHOT_API_KEY` /
   `QWEN_TOKEN_PLAN_API_KEY`)
 - **claude** — the Claude Code CLI (runs the Balanced/Thorough Opus refiner)
-- **cursor** (only if you configure a cursor-routed provider like `composer`)
-  — `curl https://cursor.com/install -fsS | bash`, then `cursor-agent login`
-  (the binary is `cursor-agent`, or just `agent` on newer installs)
 
 ```bash
 cp -r harness ~/.claude/skills/mixture-of-agents
@@ -135,8 +131,8 @@ working directory by default):
 ├── layer1/
 │   ├── codex-proposer.json
 │   ├── codex-proposer.log
-│   ├── glm-proposer.json
-│   ├── glm-proposer.log
+│   ├── codex-luna-proposer.json
+│   ├── codex-luna-proposer.log
 │   ├── sonnet-proposer.json
 │   └── sonnet-proposer.log
 ├── layer2/
@@ -180,7 +176,7 @@ The orchestrator keeps going under partial failure:
 
 External agents do not mutate the project working tree. Codex has filesystem
 sandboxing, Claude has a read-only tool allowlist, OpenCode denies edit and
-shell tools, Cursor uses plan mode, and AGY requires plan mode plus sandboxing.
+shell tools, and AGY requires plan mode plus sandboxing.
 The orchestrator writes only its
 gitignored `.moa/` session artifacts; the parent session edits project files
 only after you approve the final plan.
@@ -197,7 +193,7 @@ python3 ~/.claude/skills/mixture-of-agents/scripts/run_moa.py \
   --sonnet-model claude-sonnet-5 \
   --codex-timeout 1500 \
   --sonnet-timeout 1200 \
-  --proposers agy-gemini-pro,grok,glm \
+  --proposers agy-gemini-pro,grok,codex-luna \
   --refiners qwen,kimi,opus \
   --skip-layer2          # debug only; skips refiners
 ```
@@ -221,26 +217,22 @@ Defaults:
 - `--sonnet-model claude-sonnet-5`; stable Anthropic provider names remain
   `sonnet` and `opus`
 - `--aggregator-provider codex-sol --aggregator-effort xhigh`
-- `--proposers agy-gemini-pro,grok,glm` and `--refiners qwen,kimi,opus`
+- `--proposers agy-gemini-pro,grok,codex-luna` and `--refiners qwen,kimi,opus`
 
 The default Qwen refiner routes `qwen-token-plan/qwen3.8-max-preview` through
 OpenCode with a 600-second cap. Set `QWEN_TOKEN_PLAN_API_KEY=sk-sp-...` in
 `.env`; Qwen can also be included in the proposer set.
 
-The codex and sonnet harnesses have dedicated flags. Every other harness
-(opencode for GLM + Qwen/Kimi, cursor, AGY) takes its
+The Codex and Claude harnesses have dedicated flags. Every other harness
+(OpenCode for Grok + Qwen/Kimi, and AGY) takes its
 model/timeout/effort from the
 `providers:` block in `harness/config.yaml` or from `MOA_<NAME>_MODEL` /
 `MOA_<NAME>_TIMEOUT` / `MOA_<NAME>_EFFORT` env vars. You can also define a provider entirely from
-the environment with `MOA_PROVIDER_<NAME>=<harness>:<model>`, e.g.
-`MOA_PROVIDER_GLM=opencode:opencode-go/glm-5.2`. Opencode model ids are
-`provider/model` strings. Current built-ins use `opencode-go/glm-5.2`,
-`opencode-go/kimi-k3`, DeepSeek V4 Pro
-`opencode-go/deepseek-v4-pro`, DeepSeek V4 Flash
-`opencode-go/deepseek-v4-flash`, Qwen Token Plan
+the environment with `MOA_PROVIDER_<NAME>=<harness>:<model>`. OpenCode model
+ids are `provider/model` strings. Current built-ins use
+`opencode-go/grok-4.5`, `opencode-go/kimi-k3`, Qwen Token Plan
 `qwen-token-plan/qwen3.8-max-preview`, and OpenCode Go
-`opencode-go/qwen3.7-max`; Fireworks-hosted
-`fireworks-ai/accounts/fireworks/models/glm-5p2` is an alternate GLM route.
+`opencode-go/qwen3.7-max`.
 
 Per-agent timeout defaults:
 - `--codex-timeout` scales with `--codex-effort`: xhigh=1500s, high=1200s, medium/low=900s
@@ -256,7 +248,7 @@ authenticated in the local CLI:
 
 ```yaml
 layers:
-  proposers: [agy-gemini-pro, grok, glm]
+  proposers: [agy-gemini-pro, grok, codex-luna]
   refiners: [qwen, kimi, opus]
   aggregator: codex-sol
 ```

@@ -33,7 +33,14 @@ from .monitoring import (
     capture_operational_error,
     configure_sentry,
 )
-from .providers import ROUTE_META, model_catalog, probe_provider, provider_catalog
+from .providers import (
+    ROUTE_META,
+    model_catalog,
+    model_lab,
+    probe_provider,
+    provider_catalog,
+    route_lab_id,
+)
 from .prompt_coach import PromptCoachError, analyze as analyze_prompt
 from .prompt_coach import finalize as finalize_prompt
 from .store import Store, redact_event_text
@@ -213,6 +220,8 @@ def _agent_views(job: dict[str, Any], session: Path) -> tuple[list[dict[str, Any
             or route_config.get("reasoning_effort")
         )
         display = ROUTE_META.get(agent_id, {}).get("label", agent_id)
+        lab_id = route_lab_id(agent_id, str(model))
+        lab = model_lab(lab_id)
         card: dict[str, Any] = {
             "id": agent_id,
             "name": f"{display} · {role}",
@@ -222,6 +231,12 @@ def _agent_views(job: dict[str, Any], session: Path) -> tuple[list[dict[str, Any
                 else str(model)
             ),
             "role": role,
+            "lab_id": lab_id,
+            "lab": lab["label"],
+            "lab_avatar": f"/static/images/{lab['avatar']}",
+            "lab_pixel": f"/static/images/{lab['pixel']}",
+            "lab_accent": lab["accent"],
+            "harness": route_config.get("harness"),
         }
         if result is not None:
             card["status"] = "completed" if result.get("success") else "failed"
@@ -822,6 +837,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                     body.get("brief"),
                     context_mode=body.get("context_mode"),
                     attachment_count=body.get("attachment_count"),
+                    planning_depth=body.get("planning_depth"),
                 )
             )
         except ValueError as exc:
@@ -845,6 +861,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                     answers=body.get("answers"),
                     context_mode=body.get("context_mode"),
                     attachment_count=body.get("attachment_count"),
+                    planning_depth=body.get("planning_depth"),
                 )
             )
         except ValueError as exc:
@@ -904,10 +921,28 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             return _error("goal is too large")
         requested_proposers = _string_list(body.get("proposers"))
         requested_refiners = _string_list(body.get("refiners"))
-        if "fable" in requested_proposers:
-            return _error("Fable is aggregator-only and cannot be a proposer")
-        if "fable" in requested_refiners:
-            return _error("Fable is aggregator-only and cannot be a refiner")
+        requested_aggregator = str(body.get("aggregator") or "codex-sol")
+        route_roles = {
+            str(item["id"]): set(item.get("roles") or [])
+            for item in model_catalog(probe=False)
+        }
+        for role, route_ids in (
+            ("proposer", requested_proposers),
+            ("refiner", requested_refiners),
+            ("aggregator", [requested_aggregator]),
+        ):
+            disallowed = [
+                route_id
+                for route_id in route_ids
+                if route_id in route_roles and role not in route_roles[route_id]
+            ]
+            if disallowed:
+                names = ", ".join(disallowed)
+                return _error(
+                    f"{names} {'is' if len(disallowed) == 1 else 'are'} "
+                    f"not allowed in the {role} layer; Fable models are "
+                    "aggregator-only"
+                )
         profile_id = profile["id"]
 
         job_id = (
@@ -1022,7 +1057,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         config = {
             "proposers": requested_proposers,
             "refiners": requested_refiners,
-            "aggregator": str(body.get("aggregator") or "codex-sol"),
+            "aggregator": requested_aggregator,
             "options": (
                 body.get("options")
                 if isinstance(body.get("options"), dict)

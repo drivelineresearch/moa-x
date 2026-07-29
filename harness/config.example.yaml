@@ -1,105 +1,48 @@
 # MoA-X harness config — copy to harness/config.yaml to activate.
 #
-# Two top-level sections:
-#   providers:  optional user-defined named providers (extends the built-ins)
-#   layers:     which providers run at which layer
+# Curated routes:
+#   codex          -> Codex CLI / gpt-5.6-terra (high)
+#   codex-luna     -> Codex CLI / gpt-5.6-luna (medium)
+#   codex-sol      -> Codex CLI / gpt-5.6-sol (xhigh default aggregator)
+#   sonnet         -> Claude Code / claude-sonnet-5 (high)
+#   opus           -> Claude Code / claude-opus-5 (high; aggregator-capable)
+#   fable          -> Claude Code / claude-fable-5 (xhigh; aggregator only)
+#   agy-gemini-pro -> AGY / gemini-3.1-pro-high
+#   grok           -> OpenCode Go / grok-4.5
+#   kimi           -> OpenCode Go / kimi-k3
+#   qwen           -> Qwen Token Plan / qwen3.8-max-preview
+#   qwen-opencode  -> OpenCode Go / qwen3.7-max
 #
-# Built-in named providers (no need to declare):
-#   codex          → {harness: codex,    model: gpt-5.6-terra}          # OpenAI proposer
-#   codex-sol      → {harness: codex,    model: gpt-5.6-sol}            # high; proposer/refiner/aggregator
-#   codex-luna     → {harness: codex,    model: gpt-5.6-luna}           # medium; proposer/refiner
-# Legacy compatibility names `codex-reviewer` and `codex-aggregator` still
-# resolve, but new configs should use `codex-sol`.
-#   sonnet         → {harness: claude,   model: claude-sonnet-5}        # pinned current Sonnet
-#   opus           → {harness: claude,   model: claude-opus-5}          # pinned current Layer-3 model
-#   glm       → {harness: opencode, model: opencode-go/glm-5.2}             # GLM via opencode-go gateway
-#   kimi      → {harness: opencode, model: opencode-go/kimi-k3}              # Kimi via opencode-go gateway
-#   qwen      → {harness: opencode, model: qwen-token-plan/qwen3.8-max-preview} # Token Plan, 600s cap
-#   qwen-opencode → {harness: opencode, model: opencode-go/qwen3.7-max}       # bundled OpenCode route
-#   deepseek  → {harness: opencode, model: opencode-go/deepseek-v4-pro}       # preferred DeepSeek V4 route
-#   deepseek-flash → {harness: opencode, model: opencode-go/deepseek-v4-flash} # faster DeepSeek V4 route
-#   composer  → {harness: cursor,   model: composer-2.5}                # Cursor Composer via cursor-agent
-#   grok      → {harness: opencode, model: opencode-go/grok-4.5}         # xAI Grok via OpenCode Go
-#   cursor-grok → {harness: cursor, model: cursor-grok-4.5-high}         # xAI Grok via Cursor; needs cursor-agent login / CURSOR_API_KEY
-#   agy-gemini-pro → {harness: agy, model: gemini-3.1-pro-high}           # sole curated Gemini route; depth is the model suffix (do not add AGY effort)
-#   fable          → {harness: claude, model: claude-fable-5}            # xhigh; aggregator only; quota-heavy
+# Cursor routes are unsupported. GLM and DeepSeek were removed from the
+# curated catalog after repeated incomplete or schema-invalid live outputs.
+# Archived manifests retain their original lab attribution.
 #
-# Override a built-in's model via:
-#   --codex-model / --sonnet-model CLI flags, or
-#   MOA_<NAME>_MODEL env vars (e.g. MOA_GLM_MODEL, MOA_KIMI_MODEL, MOA_CODEX_MODEL).
-#   e.g. run glm through Fireworks instead of Zhipu direct:
-#     MOA_GLM_MODEL=fireworks-ai/accounts/fireworks/models/glm-5p2
-#   Reasoning effort/variant can be set with providers.<name>.effort or
-#   MOA_<NAME>_EFFORT where the underlying CLI supports it.
-#
-# AGY reuses the account already authenticated locally and supplies the
-# default Gemini Pro proposer.
-#
-# Layer assignments: subset of (built-in names ∪ user-named providers).
+# Built-in balanced ensemble. Refiners are lab-independent from the OpenAI
+# aggregator; Gemini Pro and Grok enter the evidence pipeline immediately.
 layers:
-  proposers: [agy-gemini-pro, grok, glm]
-  refiners:  [qwen, kimi, opus]
+  proposers: [agy-gemini-pro, grok, codex-luna]
+  refiners: [qwen, kimi, opus]
   aggregator: codex-sol
-  # Set true to skip the refinement layer entirely.
   skip_refinement: false
 
-# User-named providers extend the built-ins. Define them here, or as a
-# shell/.env shorthand: MOA_PROVIDER_<NAME>=<harness>:<model> (see .env.example).
-# YAML wins over the env shorthand on a name conflict.
-#
-# Example: the shipped Grok proposer is a built-in (harness: opencode, model
-# opencode-go/grok-4.5), so no `providers:` block is needed. It reuses the
-# authenticated OpenCode Go account. Override the model with MOA_GROK_MODEL;
-# a direct `xai/...` route requires XAI_API_KEY.
-#
-# layers:
-#   proposers: [agy-gemini-pro, grok, glm]
-#   refiners:  [qwen, kimi, opus]
-#   aggregator: codex-sol
-#
-# Example: 4-lane proposer mix adding the Cursor Grok lane. `cursor-grok` is a
-# built-in (harness: cursor, model cursor-grok-4.5-high) — no providers: block
-# needed. Needs cursor-agent login or CURSOR_API_KEY. Override the exact Cursor
-# model id with MOA_CURSOR_GROK_MODEL as Cursor's catalog advances.
-#
-# layers:
-#   proposers: [agy-gemini-pro, grok, glm, cursor-grok]
-#   refiners:  [qwen, kimi, opus]
-#   aggregator: codex-sol
-#
-# Example: also use Qwen Token Plan as a fourth proposer. Put the dedicated
-# `sk-sp-...` key in .env as QWEN_TOKEN_PLAN_API_KEY; never put it here.
-#
-# layers:
-#   proposers: [agy-gemini-pro, grok, glm, qwen]
-#   refiners:  [kimi, opus]
-#   aggregator: codex-sol
-#
-# DeepSeek V4 through the authenticated OpenCode Go account. Both curated
-# routes can be proposers or refiners; the curated Web UI aggregator remains
-# GPT-5.6 Sol.
-#
-# layers:
-#   proposers: [agy-gemini-pro, grok, glm, deepseek]
-#   refiners:  [qwen, kimi, opus]
-#   aggregator: codex-sol
-#
-# Example: run GLM-5.2 through Fireworks serverless instead of opencode-go
+# User-defined providers may use only supported harnesses:
+# codex, claude, opencode, agy, or gemini.
 #
 # providers:
-#   glm-fw:  {harness: opencode, model: fireworks-ai/accounts/fireworks/models/glm-5p2}
-# layers:
-#   proposers: [agy-gemini-pro, grok, glm-fw]
-#   refiners:  [qwen, kimi, opus]
-#   aggregator: codex-sol
-#
-# Google consumer account via AGY (requires agy 1.1.5+ and local sign-in)
+#   custom-reviewer:
+#     harness: opencode
+#     model: provider/model-id
+#     timeout: 600
+#     effort: high
 #
 # layers:
-#   proposers: [agy-gemini-pro, grok, glm]
-#   refiners:  [qwen, kimi, opus]
+#   proposers: [agy-gemini-pro, grok, codex-luna]
+#   refiners: [qwen, kimi, opus, custom-reviewer]
 #   aggregator: codex-sol
 #
-# `fable` may replace `codex-sol` only in `layers.aggregator`. The loader
-# rejects it in proposer/refiner lists. The Web UI adds a warning/password
-# speed bump because this route can consume very large quota.
+# Secrets belong in .env or the shell, never in this file. Qwen Token Plan
+# requires QWEN_TOKEN_PLAN_API_KEY. Per-route overrides use:
+#   MOA_<NAME>_MODEL, MOA_<NAME>_TIMEOUT, MOA_<NAME>_EFFORT
+#
+# Fable can replace codex-sol only as the aggregator. The Web UI adds a
+# password warning because its 1M-thinking route can consume extreme quota.

@@ -46,8 +46,7 @@ can honor it safely. Codex and Claude use their native reasoning-effort flags.
 AGY Gemini Pro selects depth by changing the model suffix (for example,
 `gemini-3.1-pro-low` to `gemini-3.1-pro-high`), so the UI sends a model
 variant and never sends a conflicting AGY `--effort` flag. OpenCode variants
-remain configured by their named route/model id, and Cursor has no separate
-effort flag.
+remain configured by their named route/model id.
 
 The roster has a strict presentation contract: any row that says **Adjust**
 must render an enabled slider whenever that route is selected, in the
@@ -68,16 +67,17 @@ and the strongest synthesis route in every run:
 | Mode | Proposers | Broadcast refiners | Aggregator |
 |---|---|---|---|
 | Quick | Gemini Pro `low`; Grok 4.5 | Kimi K3 | GPT-5.6 Sol `xhigh` |
-| Balanced | Gemini Pro `high`; Grok 4.5; GLM-5.2 | Qwen 3.8; Kimi K3; Opus `high` | GPT-5.6 Sol `xhigh` |
-| Thorough | Gemini Pro `high`; Grok 4.5; GLM-5.2; DeepSeek V4 Pro | Qwen 3.8; Kimi K3; Opus `max` | GPT-5.6 Sol `xhigh` |
+| Balanced | Gemini Pro `high`; Grok 4.5; GPT-5.6 Luna `medium` | Qwen 3.8; Kimi K3; Opus `high` | GPT-5.6 Sol `xhigh` |
+| Thorough | Gemini Pro `high`; Grok 4.5; GPT-5.6 Luna `medium`; GPT-5.6 Terra `high` | Qwen 3.8; Kimi K3; Opus `max` | GPT-5.6 Sol `xhigh` |
 
 Gemini Pro stays in the proposal layer because it contributes a
 Google-native research lane before the ensemble converges. Grok contributes
-the xAI proposal lane, GLM joins at Balanced, and DeepSeek joins at Thorough.
+the xAI proposal lane, Luna joins at Balanced, and Terra joins at Thorough.
 Kimi K3 is the Quick reviewer and remains in the full broadcast-review set
 alongside Qwen and Opus at higher depths. Every named default lane comes from
-a different lab. GPT-5.6 Sol remains the selected `xhigh` aggregator in every
-recommended mode.
+a distinct lab within its own layer, and all recommended refiners are
+lab-independent from the OpenAI aggregator. GPT-5.6 Sol remains the selected
+`xhigh` aggregator in every recommended mode.
 
 Claude Opus 5 is available as a normal aggregator alternative. Fable 5 is
 available as an aggregator-only alternative. Selecting Fable opens a
@@ -87,8 +87,28 @@ present in browser JavaScript and is not an authentication or authorization
 boundary. Fable never appears in proposer or refiner lists.
 
 Whenever a route is selected—by initial defaults, a depth-mode change, or a
-manual click—the corresponding provider accordion opens automatically so the
+manual click—the corresponding model-lab accordion opens automatically so the
 checked model and its effort control remain visible.
+
+Every roster group, review node, live lane, health-card portrait, and archived
+run resolves the same `lab_id` and lab-specific art. The CLI transport is
+shown as execution metadata but never determines the character identity.
+
+### Prompt coach
+
+The optional **Strengthen with AI** flow remains deliberately small rather
+than starting a second ensemble. GPT-5.6 Luna is the fast primary editor;
+Gemini 3.1 Pro is the bounded fallback. The coach sees only the user's draft,
+source type, attachment count, and selected planning depth—not repository or
+attachment contents. It asks at most three material questions, then returns a
+preview that the user may apply or discard.
+
+Both primary and fallback responses are locally schema-validated before the UI
+uses them. The selected Quick/Balanced/Thorough mode is included in analysis
+and finalization so a Quick brief does not accidentally grow into a
+Thorough-scale mission. A future improvement should be evaluated with saved,
+de-identified before/after briefs rather than adding more models by default;
+the current latency and predictability are strengths worth preserving.
 
 The worker inherits the server process's `HOME`, `PATH`, environment, CLI
 keychains, and authenticated accounts. It never copies API keys or OAuth

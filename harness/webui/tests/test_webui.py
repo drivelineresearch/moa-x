@@ -193,32 +193,6 @@ class WebUITest(unittest.TestCase):
         self.assertTrue(routes["agy-gemini-pro"]["available"])
         self.assertNotIn("agy-gemini-flash", routes)
 
-    def test_cursor_grok_is_blocked_after_repeated_incomplete_live_outputs(self):
-        with (
-            patch.object(
-                web_providers.shutil,
-                "which",
-                return_value="/usr/bin/cursor-agent",
-            ),
-            patch.object(
-                web_providers,
-                "_run",
-                return_value=(True, "cursor-agent 1.0"),
-            ),
-            patch.dict(
-                web_providers.PROVIDER_META["cursor"],
-                {"probe": lambda: (True, "account ready")},
-            ),
-        ):
-            result = web_providers.probe_provider("cursor")
-
-        routes = {route["id"]: route for route in result["routes"]}
-        self.assertFalse(routes["cursor-grok"]["available"])
-        self.assertIn(
-            "use Grok 4.5 through OpenCode",
-            routes["cursor-grok"]["availability_detail"],
-        )
-
     def test_browser_event_text_redacts_operator_identity_and_home_path(self):
         redacted = redact_event_text(
             "Logged in as operator@example.com; "
@@ -328,7 +302,7 @@ class WebUITest(unittest.TestCase):
         ):
             self.assertIn(message, page.data)
         self.assertGreaterEqual(page.data.count(b'aria-busy="true"'), 8)
-        self.assertIn(b"pixel-opencode-work-animated.webp", page.data)
+        self.assertIn(b"lab-independent-pixel.webp", page.data)
         self.assertIn(b"prefers-reduced-motion: reduce", page.data)
         self.assertIn(b'class="task-compose-layout"', page.data)
         self.assertIn(b'data-step-target="5"', page.data)
@@ -390,6 +364,7 @@ class WebUITest(unittest.TestCase):
                 "brief": "Improve billing reliability.",
                 "context_mode": "github",
                 "attachment_count": 2,
+                "planning_depth": "thorough",
             },
         )
         self.assertEqual(response.status_code, 200)
@@ -399,6 +374,7 @@ class WebUITest(unittest.TestCase):
             "Improve billing reliability.",
             context_mode="github",
             attachment_count=2,
+            planning_depth="thorough",
         )
 
     @patch("harness.webui.app.finalize_prompt")
@@ -411,8 +387,8 @@ class WebUITest(unittest.TestCase):
             "assumptions": [],
             "remaining_risks": [],
             "model": {
-                "provider": "opencode",
-                "model": "opencode-go/deepseek-v4-flash",
+                "provider": "agy",
+                "model": "gemini-3.1-pro-high",
                 "fallback": True,
             },
         }
@@ -422,12 +398,21 @@ class WebUITest(unittest.TestCase):
                 "brief": "Improve billing.",
                 "questions": [{"id": "priority"}],
                 "answers": [{"question_id": "priority", "answer": "Reliability"}],
+                "planning_depth": "quick",
             },
         )
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
         self.assertIn("Review billing reliability", payload["optimized_prompt"])
         self.assertTrue(payload["model"]["fallback"])
+        finalize_prompt.assert_called_once_with(
+            "Improve billing.",
+            questions=[{"id": "priority"}],
+            answers=[{"question_id": "priority", "answer": "Reliability"}],
+            context_mode=None,
+            attachment_count=None,
+            planning_depth="quick",
+        )
 
     def test_prompt_helper_rejects_an_empty_brief(self):
         response = self.client.post(
@@ -1512,34 +1497,44 @@ class WebUITest(unittest.TestCase):
 
 
 class PromptCoachTest(unittest.TestCase):
-    @patch("harness.webui.prompt_coach.opencode.run")
+    @patch("harness.webui.prompt_coach.agy.run")
     @patch("harness.webui.prompt_coach.codex.run")
-    def test_deepseek_flash_is_used_only_after_luna_fails(
-        self, codex_run, opencode_run
+    def test_gemini_pro_is_used_only_after_luna_fails(
+        self, codex_run, agy_run
     ):
         codex_run.return_value = SimpleNamespace(
             success=False, payload=None, error_message="temporary failure"
         )
-        opencode_run.return_value = SimpleNamespace(
+        agy_run.return_value = SimpleNamespace(
             success=True,
-            payload={"optimized_prompt": "A stronger brief."},
+            payload={
+                "optimized_prompt": "A stronger brief.",
+                "changes": [],
+                "assumptions": [],
+                "remaining_risks": [],
+            },
             error_message=None,
         )
         payload, model = prompt_coach._run(
             "Return the structured result.", prompt_coach.FINALIZE_SCHEMA
         )
         self.assertEqual(payload["optimized_prompt"], "A stronger brief.")
-        self.assertEqual(model["model"], "opencode-go/deepseek-v4-flash")
+        self.assertEqual(model["model"], "gemini-3.1-pro-high")
         self.assertTrue(model["fallback"])
         self.assertEqual(codex_run.call_args.kwargs["model"], "gpt-5.6-luna")
-        opencode_run.assert_called_once()
+        agy_run.assert_called_once()
 
-    @patch("harness.webui.prompt_coach.opencode.run")
+    @patch("harness.webui.prompt_coach.agy.run")
     @patch("harness.webui.prompt_coach.codex.run")
-    def test_luna_success_does_not_call_fallback(self, codex_run, opencode_run):
+    def test_luna_success_does_not_call_fallback(self, codex_run, agy_run):
         codex_run.return_value = SimpleNamespace(
             success=True,
-            payload={"optimized_prompt": "A stronger brief."},
+            payload={
+                "optimized_prompt": "A stronger brief.",
+                "changes": [],
+                "assumptions": [],
+                "remaining_risks": [],
+            },
             error_message=None,
         )
         _, model = prompt_coach._run(
@@ -1547,7 +1542,34 @@ class PromptCoachTest(unittest.TestCase):
         )
         self.assertEqual(model["model"], "gpt-5.6-luna")
         self.assertFalse(model["fallback"])
-        opencode_run.assert_not_called()
+        agy_run.assert_not_called()
+
+    @patch("harness.webui.prompt_coach.agy.run")
+    @patch("harness.webui.prompt_coach.codex.run")
+    def test_schema_invalid_luna_response_uses_validated_fallback(
+        self, codex_run, agy_run
+    ):
+        codex_run.return_value = SimpleNamespace(
+            success=True,
+            payload={"optimized_prompt": "Missing required arrays."},
+            error_message=None,
+        )
+        agy_run.return_value = SimpleNamespace(
+            success=True,
+            payload={
+                "optimized_prompt": "A complete stronger brief.",
+                "changes": [],
+                "assumptions": [],
+                "remaining_risks": [],
+            },
+            error_message=None,
+        )
+        payload, model = prompt_coach._run(
+            "Return the structured result.", prompt_coach.FINALIZE_SCHEMA
+        )
+        self.assertEqual(payload["optimized_prompt"], "A complete stronger brief.")
+        self.assertTrue(model["fallback"])
+        agy_run.assert_called_once()
 
 
 if __name__ == "__main__":

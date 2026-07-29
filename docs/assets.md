@@ -26,14 +26,18 @@ option.
 
 The WebP/PNG illustrations under `harness/webui/static/images/` and
 `harness/report/assets/` were generated specifically for this project and are
-distributed with the repository under its MIT license. They are generic
-provider- and workflow-themed characters and scenes, not official vendor
+distributed with the repository under its MIT license. They are original
+model-lab and workflow-themed characters and scenes, not official vendor
 logos, licensed characters, or claims of endorsement by a model provider.
 
-The animated provider files contain eight authored frames and are packaged as
-looping animated WebP files. Their larger `*-work.webp` and
-`*-victory.webp` companions are source sprite sheets retained so contributors
-can resize or re-encode the animations without regenerating the art.
+The model-lab asset contract is centralized in
+`harness/scripts/model_labs.py`. Each known lab has one 320px editorial avatar
+and one 480px pixel-art character under the `lab-<id>-*` naming scheme. The
+same `lab_id` must drive launch-roster groups, provider-health route portraits,
+review-network nodes, live lanes, and archived-run fallbacks. Execution
+harnesses such as OpenCode or AGY must never determine character identity.
+Unknown custom routes use the `independent` lab set. Do not reintroduce
+`provider-*` or harness-keyed `pixel-*` assets.
 
 When contributing new assets:
 

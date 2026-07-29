@@ -10,10 +10,6 @@ the same path run_moa.py uses) and verifies coherence:
     regex pattern in proposer/refiner schemas. Catches the kind of
     runtime mismatch that surfaced when user-named providers ran
     against schemas hardcoded to a fixed provider set.
-  - Cursor-only model-availability: cross-checks each cursor provider's
-    `model:` against `cursor-agent --list-models`. Cursor uses machine
-    ids (gpt-5.6-sol-high, cursor-grok-4.5-high) that differ from friendly names —
-    this catches typos before a real run wastes wall-clock.
   - Skill assets and schema strict-mode lint.
 
 Harnesses NOT referenced by any provider in the resolved layers are
@@ -47,7 +43,7 @@ if TYPE_CHECKING:
     from config import LoadedConfig, ResolvedProvider
 
 
-ALL_HARNESSES = ("codex", "claude", "cursor", "opencode", "agy", "gemini")
+ALL_HARNESSES = ("codex", "claude", "opencode", "agy", "gemini")
 
 
 def _check(label: str, cmd: list[str]) -> tuple[bool, str]:
@@ -129,7 +125,6 @@ def _check_needed_harnesses(loaded_cfg: "LoadedConfig", failures: list[str]) -> 
     # Lazy-import adapters so missing optional deps don't crash the whole script
     from adapters import codex as codex_adapter
     from adapters import claude as claude_adapter
-    from adapters import cursor as cursor_adapter
     from adapters import opencode as opencode_adapter
     from adapters import agy as agy_adapter
     from adapters import gemini as gemini_adapter
@@ -137,7 +132,6 @@ def _check_needed_harnesses(loaded_cfg: "LoadedConfig", failures: list[str]) -> 
     adapter_for = {
         "codex": codex_adapter,
         "claude": claude_adapter,
-        "cursor": cursor_adapter,
         "opencode": opencode_adapter,
         "agy": agy_adapter,
         "gemini": gemini_adapter,
@@ -145,7 +139,6 @@ def _check_needed_harnesses(loaded_cfg: "LoadedConfig", failures: list[str]) -> 
     install_hint = {
         "codex":  "npm i -g @openai/codex && codex login",
         "claude": "see https://docs.claude.com/en/docs/claude-code/quickstart",
-        "cursor": "curl https://cursor.com/install -fsS | bash  (then: cursor-agent login)",
         "opencode": "curl -fsSL https://opencode.ai/install | bash  (then: opencode auth login, "
                     "or export ZHIPU_API_KEY / MOONSHOT_API_KEY / FIREWORKS_API_KEY / "
                     "QWEN_TOKEN_PLAN_API_KEY)",
@@ -238,76 +231,6 @@ def _check_schema_coherence(loaded_cfg: "LoadedConfig", failures: list[str]) -> 
         print(f"    refiner agent/proposer pattern {refiner_pattern!r}: OK ({n} names)")
 
 
-def _check_cursor_models(loaded_cfg: "LoadedConfig", needed: set[str], failures: list[str]) -> None:
-    """For each cursor-routed provider, verify its model is in `cursor-agent --list-models`.
-
-    Cursor uses machine ids that diverge from the friendly names on
-    cursor.com/docs/models — this catches the most common typo class
-    (GPT-5.6 Sol vs gpt-5.6-sol-high, Grok 4.5 vs cursor-grok-4.5-high)."""
-    if "cursor" not in needed:
-        return
-    cursor_providers = [
-        p
-        for p in loaded_cfg.proposers + loaded_cfg.refiners
-        + ([loaded_cfg.aggregator] if loaded_cfg.aggregator is not None else [])
-        if p.harness == "cursor"
-    ]
-    if not cursor_providers:
-        return
-
-    print("")
-    print("  cursor model availability (probe via --list-models):")
-
-    # Resolve the binary exactly as the adapter does (honors MOA_CURSOR_BIN,
-    # else probes cursor-agent → agent).
-    from adapters import cursor as cursor_adapter
-    bin_name = cursor_adapter._cursor_bin()
-
-    try:
-        proc = subprocess.run(
-            [bin_name, "--list-models"],
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
-        print(f"    FAIL — could not probe cursor models: {e}")
-        failures.append("cursor --list-models")
-        return
-
-    if proc.returncode != 0:
-        print(f"    FAIL — cursor-agent --list-models exited {proc.returncode}: {(proc.stderr or proc.stdout).strip()[:200]}")
-        failures.append("cursor --list-models exit")
-        return
-
-    # Output format: one model per line as "<machine-id> - <Friendly Name>"
-    # Some lines are headers (e.g. "Available models") or blank.
-    available_ids: set[str] = set()
-    for line in proc.stdout.splitlines():
-        line = line.strip()
-        if not line or " - " not in line:
-            continue
-        machine_id = line.split(" - ", 1)[0].strip()
-        if machine_id:
-            available_ids.add(machine_id)
-
-    if not available_ids:
-        print("    WARN — cursor-agent --list-models returned no parseable rows; skipping model check")
-        return
-
-    seen_models: set[str] = set()
-    for p in cursor_providers:
-        if p.model in seen_models:
-            continue
-        seen_models.add(p.model)
-        if p.model in available_ids:
-            print(f"    {p.name} → {p.model}: OK")
-        else:
-            print(f"    {p.name} → {p.model}: FAIL — not in --list-models output")
-            print(f"      fix: run 'cursor-agent --list-models' to see the {len(available_ids)} ids your account can use")
-            failures.append(f"cursor model {p.model}")
-
-
 def _check_agy_models(loaded_cfg: "LoadedConfig", needed: set[str], failures: list[str]) -> None:
     """Fail early when an AGY provider names a model the signed-in account lacks."""
     if "agy" not in needed:
@@ -348,7 +271,6 @@ def _check_assets(failures: list[str]) -> None:
         skill_dir / "scripts" / "adapters" / "codex.py",
         skill_dir / "scripts" / "adapters" / "opencode.py",
         skill_dir / "scripts" / "adapters" / "claude.py",
-        skill_dir / "scripts" / "adapters" / "cursor.py",
         skill_dir / "scripts" / "adapters" / "agy.py",
         skill_dir / "scripts" / "adapters" / "gemini.py",
         skill_dir / "scripts" / "schemas" / "proposer.schema.json",
@@ -425,7 +347,6 @@ def main() -> int:
     _check_provider_credentials(loaded_cfg, failures)
     needed = _check_needed_harnesses(loaded_cfg, failures)
     _check_schema_coherence(loaded_cfg, failures)
-    _check_cursor_models(loaded_cfg, needed, failures)
     _check_agy_models(loaded_cfg, needed, failures)
     _check_assets(failures)
     _check_strict_lint(failures)

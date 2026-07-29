@@ -33,7 +33,7 @@ Local worker
   ↕ subprocess phases
 run_moa.py
   ↕ existing adapters and authenticated CLI state
-Codex · Claude · OpenCode · Cursor · AGY
+Codex · Claude · OpenCode · AGY
   ↕
 repo/.moa/<session> artifacts and report
 ```
@@ -68,7 +68,6 @@ The UI will probe and use the machine's existing state:
 | Codex | current `codex login` state / configured API login |
 | Claude | current Claude Code login or existing `ANTHROPIC_API_KEY` |
 | OpenCode | `opencode auth` state and existing provider-key environment |
-| Cursor | current Cursor CLI login or existing `CURSOR_API_KEY` |
 | AGY | current Antigravity account and available model catalog |
 
 Health checks report installed, version, authenticated, model availability,

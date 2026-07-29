@@ -2,7 +2,7 @@
 
 The coach deliberately runs outside the selected repository. It sees the
 user's draft plus coarse context metadata, never repository or attachment
-contents. Codex Luna is primary; OpenCode's DeepSeek Flash route is fallback.
+contents. Codex Luna is primary; Gemini Pro through AGY is the fallback.
 """
 
 from __future__ import annotations
@@ -19,11 +19,12 @@ SCRIPTS_DIR = WEBUI_DIR.parent / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-from adapters import codex, opencode  # noqa: E402
+from adapters import agy, codex  # noqa: E402
+from run_moa import _validate_against_schema  # noqa: E402
 
 
 PRIMARY_MODEL = "gpt-5.6-luna"
-FALLBACK_MODEL = "opencode-go/deepseek-v4-flash"
+FALLBACK_MODEL = "gemini-3.1-pro-high"
 MAX_BRIEF_CHARS = 20_000
 MAX_QUESTIONS = 3
 
@@ -92,6 +93,11 @@ class PromptCoachError(RuntimeError):
     """Raised when neither configured local CLI can complete the coach call."""
 
 
+def _planning_depth(value: Any) -> str:
+    depth = str(value or "").strip().lower()
+    return depth if depth in {"quick", "balanced", "thorough"} else "balanced"
+
+
 def _bounded_brief(value: Any) -> str:
     brief = str(value or "").strip()
     if not brief:
@@ -117,14 +123,18 @@ def _run(prompt: str, schema: dict[str, Any]) -> tuple[dict[str, Any], dict[str,
             timeout_seconds=75,
         )
         if primary.success and isinstance(primary.payload, dict):
-            return primary.payload, {
-                "provider": "codex",
-                "model": PRIMARY_MODEL,
-                "fallback": False,
-            }
-        errors.append(f"Luna: {primary.error_message or 'invalid response'}")
+            validation = _validate_against_schema(primary.payload, schema)
+            if not validation:
+                return primary.payload, {
+                    "provider": "codex",
+                    "model": PRIMARY_MODEL,
+                    "fallback": False,
+                }
+            errors.append(f"Luna: invalid response ({validation[0]})")
+        else:
+            errors.append(f"Luna: {primary.error_message or 'invalid response'}")
 
-        fallback = opencode.run(
+        fallback = agy.run(
             prompt=prompt,
             schema_path=schema_path,
             repo_path=temp_root,
@@ -133,19 +143,27 @@ def _run(prompt: str, schema: dict[str, Any]) -> tuple[dict[str, Any], dict[str,
             timeout_seconds=75,
         )
         if fallback.success and isinstance(fallback.payload, dict):
-            return fallback.payload, {
-                "provider": "opencode",
-                "model": FALLBACK_MODEL,
-                "fallback": True,
-            }
-        errors.append(
-            f"DeepSeek Flash: {fallback.error_message or 'invalid response'}"
-        )
+            validation = _validate_against_schema(fallback.payload, schema)
+            if not validation:
+                return fallback.payload, {
+                    "provider": "agy",
+                    "model": FALLBACK_MODEL,
+                    "fallback": True,
+                }
+            errors.append(f"Gemini Pro: invalid response ({validation[0]})")
+        else:
+            errors.append(
+                f"Gemini Pro: {fallback.error_message or 'invalid response'}"
+            )
     raise PromptCoachError("Prompt coach unavailable. " + " · ".join(errors))
 
 
 def analyze(
-    brief: Any, *, context_mode: Any = "brief", attachment_count: Any = 0
+    brief: Any,
+    *,
+    context_mode: Any = "brief",
+    attachment_count: Any = 0,
+    planning_depth: Any = "balanced",
 ) -> dict[str, Any]:
     clean_brief = _bounded_brief(brief)
     count = max(0, min(10, int(attachment_count or 0)))
@@ -164,6 +182,7 @@ gently in summary and ask questions that reshape it if possible.
 Context metadata:
 - source mode: {str(context_mode)[:40]}
 - reference attachment count: {count}
+- selected planning depth: {_planning_depth(planning_depth)}
 
 User's draft:
 ---BEGIN DRAFT---
@@ -187,6 +206,7 @@ def finalize(
     answers: Any,
     context_mode: Any = "brief",
     attachment_count: Any = 0,
+    planning_depth: Any = "balanced",
 ) -> dict[str, Any]:
     clean_brief = _bounded_brief(brief)
     clean_questions = questions if isinstance(questions, list) else []
@@ -203,6 +223,7 @@ how to write one.
 Context metadata:
 - source mode: {str(context_mode)[:40]}
 - reference attachment count: {max(0, min(10, int(attachment_count or 0)))}
+- selected planning depth: {_planning_depth(planning_depth)}
 
 Original draft:
 ---BEGIN DRAFT---

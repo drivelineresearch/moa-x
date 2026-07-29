@@ -1,20 +1,17 @@
 """OpenCode CLI adapter (multi-lab via `opencode run`).
 
-Invokes `opencode run` headlessly. OpenCode is the harness we route
-Chinese-lab frontier models through — GLM (Zhipu), Kimi (Moonshot), and
-Qwen (Alibaba Cloud Token Plan) — plus Fireworks-hosted variants. Model ids
-are `provider/model` strings, e.g.
-`opencode-go/glm-5.2`, `opencode-go/kimi-k3`,
-`opencode-go/qwen3.7-max`, direct-provider routes, or
-`fireworks-ai/accounts/fireworks/models/glm-5p2`, or
-`qwen-token-plan/qwen3.8-max-preview`.
+Invokes `opencode run` headlessly. OpenCode is transport for several unrelated
+model labs; the curated roster currently uses Kimi (Moonshot), Qwen (Alibaba),
+and Grok (xAI). User-defined routes may target other OpenCode providers.
+Model ids are `provider/model` strings, e.g. `opencode-go/kimi-k3`,
+`opencode-go/grok-4.5`, or `qwen-token-plan/qwen3.8-max-preview`.
 
 OpenCode has no JSON envelope in default text mode — the model's final
 text goes straight to stdout, so we pull the inner JSON payload with the
 shared `extract_json_from_text` helper (fenced or bare top-level object,
 longest-first) and validate it orchestrator-side. There is no
 `--output-schema` equivalent, so this adapter is schema-unenforced like
-the cursor adapter.
+the other schema-unenforced adapters used by older MoA-X releases.
 
 Prompt delivery: OpenCode does NOT read stdin (the feature request was
 declined upstream) and a single argv entry is capped at MAX_ARG_STRLEN
@@ -82,7 +79,7 @@ _QWEN_TOKEN_PLAN_BASE_URL = (
 )
 
 
-def _config_for_model(model: str) -> dict:
+def _config_for_model(model: str, *, allow_webfetch: bool = True) -> dict:
     """Build the isolated OpenCode config, adding known custom providers.
 
     Qwen Token Plan is not an OpenCode built-in. The official Qwen/OpenCode
@@ -90,6 +87,8 @@ def _config_for_model(model: str) -> dict:
     out of this generated file by using OpenCode's env substitution syntax.
     """
     config = json.loads(json.dumps(_READONLY_CONFIG))
+    if not allow_webfetch:
+        config["permission"]["webfetch"] = "deny"
     prefix = f"{_QWEN_TOKEN_PLAN_PROVIDER_ID}/"
     if model.startswith(prefix):
         model_id = model[len(prefix):]
@@ -129,9 +128,8 @@ class OpenCodeResult:
     error_message: Optional[str] = None
     # True when the run exited cleanly but produced no parseable payload and
     # stderr showed no quota/auth signal — the transient empty-output flake a
-    # single re-dispatch usually recovers. Mirrors the cursor field so
-    # the orchestrator's redispatch path treats all schema-unenforced harnesses
-    # uniformly.
+    # single re-dispatch usually recovers. The orchestrator uses this field to
+    # distinguish incomplete transport output from schema-invalid JSON.
     transient_empty: bool = False
 
 
@@ -267,6 +265,7 @@ def run(
     timeout_seconds: int = 1200,
     log_file: Optional[Path] = None,
     reasoning_effort: Optional[str] = None,
+    allow_webfetch: bool = True,
 ) -> OpenCodeResult:
     """Invoke `opencode run` with the given prompt.
 
@@ -285,6 +284,9 @@ def run(
             When provided, the prompt file is written alongside it (inside the
             session's .moa/ dir, so opencode reads it without an
             external-directory prompt).
+        allow_webfetch: Whether the isolated OpenCode policy permits webfetch.
+            Repair-only calls disable it so a schema correction cannot repeat
+            research or consume additional external context.
 
     Returns:
         OpenCodeResult with the parsed payload (or None on failure).
@@ -303,7 +305,10 @@ def run(
 
         # Read-only permission policy via a temp config file.
         config_path = Path(tmpdir) / "opencode.json"
-        config_path.write_text(json.dumps(_config_for_model(model)), encoding="utf-8")
+        config_path.write_text(
+            json.dumps(_config_for_model(model, allow_webfetch=allow_webfetch)),
+            encoding="utf-8",
+        )
         env["OPENCODE_CONFIG"] = str(config_path)
 
         # Prompt goes in a file (see module docstring). Keep it inside the

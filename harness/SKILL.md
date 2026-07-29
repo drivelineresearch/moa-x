@@ -2,7 +2,7 @@
 name: mixture-of-agents
 description: |
   Run a non-trivial planning task through a layered ensemble of frontier models
-  from distinct labs (proposers Gemini 3.1 Pro high + Grok 4.5 + GLM-5.2;
+  from distinct labs (proposers Gemini 3.1 Pro high + Grok 4.5 + GPT-5.6 Luna;
   refiners qwen3.8-max-preview + Kimi K3 + Claude Opus 5 high) before producing a final implementation
   plan. The configured proposers run in parallel, broadcast refiners (each
   sees all proposals) verify and cross-check, then GPT-5.6 Sol at `xhigh`
@@ -32,7 +32,8 @@ allowed-tools:
 
 Layered ensemble planning. The configured proposers — by default three
 frontier models from three different labs (Google's Gemini 3.1 Pro through
-AGY, xAI's Grok 4.5, and Zhipu's GLM-5.2 through OpenCode) — each produce an independent plan grounded in real repo
+AGY, xAI's Grok 4.5 through OpenCode, and OpenAI's GPT-5.6 Luna through
+Codex) — each produce an independent plan grounded in real repo
 code AND aggressive web research, then the refiners (default
 `qwen`/qwen3.8-max-preview + `kimi`/kimi-k3 + `opus`/claude-opus-5 high)
 broadcast-refine by reading all the proposals and producing cross-verifications,
@@ -74,8 +75,8 @@ Layer 1 — Proposers                        (3 parallel, headless, read-only)
    ├─ opencode run --model opencode-go/grok-4.5
    │     └→ .moa/<session>/layer1/grok-proposer.json
    │
-   └─ opencode run --model opencode-go/glm-5.2
-         └→ .moa/<session>/layer1/glm-proposer.json
+   └─ codex --model gpt-5.6-luna --sandbox read-only
+         └→ .moa/<session>/layer1/codex-luna-proposer.json
                    ↓
 Layer 2 — Broadcast refiners               (3 parallel; each sees ALL valid proposals)
    │
@@ -114,11 +115,11 @@ subprocess phase.
 
 ### Why every default stage uses different labs
 
-Gemini, Grok, and GLM propose; Qwen, Kimi, and Opus review; GPT-5.6 Sol
-aggregates at `xhigh`. No model family repeats across those stages, so each
-layer adds a genuinely independent failure mode instead of a second sample
-from the same lab. Fable is an optional quota-heavy Claude aggregator only and
-is never a proposer or refiner.
+Gemini, Grok, and GPT-5.6 Luna propose; Qwen, Kimi, and Opus review; GPT-5.6
+Sol aggregates at `xhigh`. The proposer and aggregator stages intentionally
+share OpenAI, but every recommended refiner remains independent of the
+aggregator. Fable is an optional quota-heavy Claude aggregator only and is
+never a proposer or refiner.
 
 ### Why broadcast, not cross-pair
 
@@ -141,8 +142,7 @@ First time only or if you suspect drift, run:
 python3 ~/.claude/skills/mixture-of-agents/scripts/install_deps.py
 ```
 This is config-aware: it checks that every harness your resolved roster needs
-(for the default roster: AGY, Codex, Claude, and OpenCode; plus
-Cursor when one of its routes is configured) is installed and
+(for the default roster: AGY, Codex, Claude, and OpenCode) is installed and
 authenticated. If anything fails, stop and surface the install/auth fix to
 the user. Do NOT
 try to authenticate them yourself. The user must run the login
@@ -184,21 +184,20 @@ The brief MUST contain these top-level fields:
 Show the brief to the user (rendered as markdown for readability) and ask
 via `AskUserQuestion` whether to dispatch the run.
 
-**Render the question from the user's resolved roster** — do not hardcode
-`codex + glm + sonnet`. Since PR #2 (named providers), the active
+**Render the question from the user's resolved roster** — do not hardcode a
+roster. The active
 proposer/refiner sets come from `harness/scripts/config.py`'s
-`load_resolved_config()` and may include user-defined names like
-`composer` or `cursor-grok`, or curated OpenCode Go routes such as
-`deepseek` and `deepseek-flash`. Resolve them in this precedence
+`load_resolved_config()` and may include supported user-defined names. Resolve
+them in this precedence
 (highest first):
 
 1. `MOA_PROPOSERS` / `MOA_REFINERS` env vars (comma-separated names)
 2. `harness/config.yaml` → `layers.proposers` / `layers.refiners`
-3. Defaults: `[agy-gemini-pro, grok, glm]`, `[qwen, kimi, opus]`,
+3. Defaults: `[agy-gemini-pro, grok, codex-luna]`, `[qwen, kimi, opus]`,
    aggregator `codex-sol` at `xhigh`
 
 User-defined provider names declared under `providers:` in
-`harness/config.yaml` (e.g. `c-grok: {harness: cursor, model: cursor-grok-4.5-high}`)
+`harness/config.yaml` (e.g. `custom-reviewer: {harness: opencode, model: provider/model}`)
 are valid roster entries and must be shown verbatim. If
 `MOA_SKIP_LAYER2=1` or `layers.skip_refinement: true`, omit the refiner
 clause entirely. If `--self-moa` is in play, use the self-MoA instance IDs
@@ -214,13 +213,13 @@ Do not run the orchestrator until the user says yes.
 
 ### Step 1+2 — Run the orchestrator (phase-split for redispatch)
 The orchestrator splits Layers 1 and 2 into separate invocations so the
-parent session can intercept transient-empty failures (cursor / opencode
-returning a success envelope but no model output — empirically recoverable
+parent session can intercept transient-empty OpenCode failures (a clean
+process return but no model output — empirically recoverable
 on a single retry) and ask the user whether to redispatch or proceed.
 
 Provider models come from the resolved config. Define or override a provider
-without editing `harness/config.yaml` via the `MOA_PROVIDER_<NAME>=<harness>:<model>`
-env shorthand (e.g. `MOA_PROVIDER_GLM=opencode:zhipuai/glm-5.2`).
+without editing `harness/config.yaml` via the
+`MOA_PROVIDER_<NAME>=<harness>:<model>` env shorthand.
 
 #### Step 1 — Run Layer 1 (proposers)
 ```bash
@@ -359,7 +358,7 @@ the whole point of the planning phase was deliberation.
    write, edit, create, or delete files. Codex has hard filesystem
    enforcement via `--sandbox read-only`; Claude gets a hard read-only tool
    allowlist; OpenCode denies edit and shell tools through `OPENCODE_CONFIG`;
-   Cursor runs in `--mode plan`; and AGY requires plan mode plus sandboxing.
+   and AGY requires plan mode plus sandboxing.
    The prompt repeats the rule for every
    harness. A Git-visible before/after digest independently verifies the
    contract and marks any mutating agent as failed.
@@ -376,8 +375,7 @@ the whole point of the planning phase was deliberation.
 - `scripts/install_deps.py` — dependency check / bootstrap
 - `scripts/test_offline.py` — offline smoke test for parsing + schema layers
 - `scripts/adapters/codex.py` — codex CLI subprocess wrapper
-- `scripts/adapters/opencode.py` — opencode CLI subprocess wrapper (GLM, Qwen, Kimi)
-- `scripts/adapters/cursor.py` — cursor CLI subprocess wrapper (composer, user-named models)
+- `scripts/adapters/opencode.py` — OpenCode CLI subprocess wrapper (Grok, Qwen, Kimi)
 - `scripts/adapters/claude.py` — claude CLI subprocess wrapper (sonnet proposer)
 - `scripts/adapters/agy.py` — Antigravity wrapper for consumer Google accounts
 - `scripts/schemas/proposer.schema.json` — JSON Schema for Layer 1 outputs
@@ -396,9 +394,10 @@ planning rather than chat-answer ensembling. Differences from the paper:
   (more copies of the same model); we pick 3 labs.
 - **Heterogeneous, not homogeneous.** The paper showed cross-lab beats
   same-model temperature sampling; we keep that result. The default roster
-  spans Google (Gemini Pro) + xAI (Grok) + Zhipu (GLM) across the
+  spans Google (Gemini Pro) + xAI (Grok) + OpenAI (Luna) across the
   proposers, with Alibaba (Qwen), Moonshot (Kimi), and Anthropic (Opus)
-  joining at the refiner layer and OpenAI (Sol) aggregating.
+  joining at the refiner layer and OpenAI (Sol) aggregating. Refiner
+  independence from the aggregator is the protected boundary.
 - **Broadcast refinement, paper-faithful.** Every refiner sees every
   proposal, per the paper. v0.1 of this skill used cross-pair (each refiner
   saw only one other proposer), which was NOT paper-faithful; v0.2 corrected
@@ -415,5 +414,5 @@ planning rather than chat-answer ensembling. Differences from the paper:
   sources each. The cited sources are passed through to the aggregator.
 - **Repo grounded.** All CLIs run with read-only discipline (filesystem
   sandbox for Codex, tool allowlist for Claude, permission-deny policy for
-  OpenCode, plan mode for Cursor, and plan+sandbox for AGY/Gemini), and the scout brief tells them which
+  OpenCode, and plan+sandbox for AGY/Gemini), and the scout brief tells them which
   files to focus on, bounding exploration cost.

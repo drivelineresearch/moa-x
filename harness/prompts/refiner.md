@@ -2,7 +2,7 @@
 
 You are reviewing plans written by peer models from different labs (the
 default roster is agy-gemini-pro (Google Gemini 3.1 Pro), grok (xAI Grok
-4.5), and glm (Zhipu GLM-5.2), but the orchestrator tells you the actual
+4.5), and codex-luna (OpenAI GPT-5.6 Luna), but the orchestrator tells you the actual
 proposers in the prompt body). Your job is **not**
 to write a new plan. Your job is to be the smartest, most honest critic the
 proposers will ever see. Verify claims. Find what is wrong. Find what
@@ -67,10 +67,10 @@ or likely-wrong).
 
 ## Cross-proposer analysis: the unique value of broadcast refinement
 
-This is the part a single-proposer refiner cannot do. With three proposals
+This is the part a single-proposer refiner cannot do. With multiple proposals
 in front of you, you can see patterns a single plan cannot reveal:
 
-- **Convergence signal**: if all three proposers independently arrived at the
+- **Convergence signal**: if all successful proposers independently arrived at the
   same approach, that is much stronger evidence than any one of them alone.
   Call this out in `cross_proposer_observations`.
 - **Divergence signal**: if the proposers split (e.g. 2 say "use library X",
@@ -129,7 +129,7 @@ A refiner JSON conforming to the refiner schema. Key fields:
   tells you which one you are).
 - **reviewing** — array of proposer agent_ids whose output you saw. Under
   broadcast refinement this should be all successful proposers (e.g.
-  `["codex","glm","sonnet"]`).
+  `["agy-gemini-pro","grok","codex-luna"]`).
 - **overall_verdict** — one of:
   - `converge_with_changes` — proposers largely agree and you endorse a
     merged plan

@@ -11,7 +11,7 @@ The roster is config-driven
   Layer 1 (Proposers, parallel):
     - agy-gemini-pro (gemini-3.1-pro-high, Google via AGY)
     - grok             (grok-4.5, xAI via OpenCode Go)
-    - glm              (glm-5.2, Zhipu via OpenCode Go)
+    - codex-luna       (gpt-5.6-luna, OpenAI via Codex)
 
   Layer 2 (Refiners, parallel, broadcast):
     - qwen (qwen3.8-max-preview, Alibaba via Qwen Token Plan; sees ALL outputs)
@@ -22,9 +22,9 @@ The roster is config-driven
     - codex-sol (gpt-5.6-sol @ xhigh, OpenAI via recorded Codex subprocess)
 
 Broadcast refinement (each refiner sees every proposer's output) is
-paper-faithful to Wang et al. 2024 (arXiv:2406.04692). The default uses a
-different lab for every named route across proposal, refinement, and
-aggregation, so verification and synthesis stay lab-independent.
+paper-faithful to Wang et al. 2024 (arXiv:2406.04692). The default keeps every
+refiner in a different model lab from the OpenAI aggregator, so verification
+and synthesis stay lab-independent even though OpenAI also supplies a proposer.
 This is a recommended default, not a runtime invariant — see CLAUDE.md.
 
 Flow:
@@ -45,8 +45,8 @@ Usage:
                [--proposers a,b,c] [--refiners a,b]
                [--skip-layer2]
 
-    Per-provider models/timeouts for non-codex/sonnet harnesses (opencode,
-    cursor) are set via MOA_<NAME>_MODEL / MOA_<NAME>_TIMEOUT env vars or the
+    Per-provider models/timeouts for non-codex/sonnet harnesses (opencode)
+    are set via MOA_<NAME>_MODEL / MOA_<NAME>_TIMEOUT env vars or the
     providers: block in harness/config.yaml.
 
 Timeout policy:
@@ -94,13 +94,13 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from adapters import codex as codex_adapter  # noqa: E402
 from adapters import claude as claude_adapter  # noqa: E402
-from adapters import cursor as cursor_adapter  # noqa: E402
 from adapters import opencode as opencode_adapter  # noqa: E402
 from adapters import agy as agy_adapter  # noqa: E402
 from adapters import gemini as gemini_adapter  # noqa: E402
 from adapters.claude import TEMPERATURE_DIVERSITY_SHIM  # noqa: E402
 from attachments import AttachmentError, prepare_attachment_context  # noqa: E402
 import config as harness_config  # noqa: E402
+from model_labs import route_lab_id  # noqa: E402
 
 VENV_PYTHON = SCRIPT_DIR.parent / ".venv" / "bin" / "python"
 
@@ -142,7 +142,7 @@ class LayerResult:
     error: Optional[str] = None
     log_path: Optional[str] = None
     json_path: Optional[str] = None
-    # True when the failure was an empty-envelope transient (cursor/opencode
+    # True when the failure was an empty-envelope transient (OpenCode
     # only). Stays False for codex/claude (their schema enforcement makes
     # empty-but-success-shaped envelopes impossible) and for any non-empty
     # failure mode like quota, auth, timeout, or schema invalidation.
@@ -692,7 +692,7 @@ def _run_codex(
 def _has_transient_empty(adapter_result: Any) -> bool:
     """Read the transient_empty flag off any adapter result, defaulting to False.
 
-    Only the schema-unenforced adapters (cursor/opencode) set this; codex/claude
+    Only schema-unenforced adapters such as OpenCode set this; Codex/Claude
     adapters don't have the field.
     """
     return bool(getattr(adapter_result, "transient_empty", False))
@@ -739,46 +739,6 @@ def _run_sonnet(
     return layer_result
 
 
-def _run_cursor(
-    *,
-    layer: int,
-    role: str,
-    prompt: str,
-    schema_path: Path,
-    repo_path: Path,
-    session_dir: Path,
-    timeout: int,
-    model: str,
-    agent_id: str,
-    reviewing: Optional[list[str]] = None,
-) -> LayerResult:
-    """Invoke the cursor adapter and lift its result into a LayerResult."""
-    log_file = session_dir / f"layer{layer}" / f"{agent_id}-{role}.log"
-    started_at = time.time()
-    result = cursor_adapter.run(
-        prompt=prompt,
-        repo_path=repo_path,
-        model=model,
-        timeout_seconds=timeout,
-        log_file=log_file,
-    )
-    layer_result = LayerResult(
-        agent_id=agent_id,
-        layer=layer,
-        role=role,
-        reviewing=reviewing,
-        success=result.success,
-        payload=result.payload,
-        duration_seconds=result.duration_seconds,
-        started_at=started_at,
-        error=result.error_message,
-        log_path=str(log_file.relative_to(session_dir)),
-        transient_empty=_has_transient_empty(result),
-    )
-    _finalize_result(layer_result, result.payload, schema_path, session_dir)
-    return layer_result
-
-
 def _run_opencode(
     *,
     layer: int,
@@ -819,6 +779,70 @@ def _run_opencode(
         transient_empty=_has_transient_empty(result),
     )
     _finalize_result(layer_result, result.payload, schema_path, session_dir)
+    repairable = (
+        isinstance(result.payload, dict)
+        and not layer_result.success
+        and (
+            str(layer_result.error or "").startswith("schema validation failed:")
+            or "evidence cross-field violations" in str(layer_result.error or "")
+        )
+    )
+    if repairable:
+        original_error = str(layer_result.error)
+        repair_log = session_dir / f"layer{layer}" / f"{agent_id}-{role}.repair.log"
+        try:
+            schema_text = schema_path.read_text(encoding="utf-8")
+        except OSError:
+            schema_text = "{}"
+        repair_prompt = (
+            "Repair the JSON object below so it passes the supplied schema and "
+            "validation error exactly. Do not research, browse, inspect files, "
+            "or add commentary. Preserve every valid claim and citation. Never "
+            "invent a file, line, URL, snippet, claim, or research source. Remove "
+            "an unsupported evidence item instead of filling its missing evidence; "
+            "if that makes the schema impossible, return the object unchanged so "
+            "it fails closed. Add only required non-evidentiary structure, correct "
+            "invalid field shapes, and "
+            f"set agent_id to {json.dumps(agent_id)}. Output one JSON object.\n\n"
+            f"VALIDATION ERROR\n{original_error}\n\n"
+            f"JSON SCHEMA\n{schema_text}\n\n"
+            "INVALID JSON\n"
+            + json.dumps(result.payload, ensure_ascii=False)
+        )
+        repair = opencode_adapter.run(
+            prompt=repair_prompt,
+            # Deliberately confine the repair pass to the session directory.
+            # It has the invalid payload already and must not repeat research.
+            repo_path=session_dir,
+            model=model,
+            schema_path=schema_path,
+            timeout_seconds=min(timeout, 240),
+            log_file=repair_log,
+            reasoning_effort=reasoning_effort,
+            allow_webfetch=False,
+        )
+        layer_result.duration_seconds += repair.duration_seconds
+        if repair.success and isinstance(repair.payload, dict):
+            layer_result.success = True
+            layer_result.payload = repair.payload
+            layer_result.error = None
+            layer_result.schema_valid = None
+            layer_result.transient_empty = False
+            _finalize_result(
+                layer_result, repair.payload, schema_path, session_dir
+            )
+            if layer_result.success:
+                print(
+                    f"[orchestrator] {agent_id}: repaired schema-invalid "
+                    "OpenCode output in one bounded pass",
+                    flush=True,
+                )
+        else:
+            repair_error = repair.error_message or "repair returned no payload"
+            layer_result.error = (
+                f"{original_error}; bounded schema repair failed: {repair_error}"
+            )
+            layer_result.transient_empty = False
     return layer_result
 
 
@@ -1064,16 +1088,6 @@ def _dispatch_provider(
             timeout=timeout,
             model=provider.model,
             reasoning_effort=provider.effort,
-            agent_id=provider.name,
-            reviewing=reviewing,
-        )
-    elif h == "cursor":
-        result = _run_cursor(
-            layer=layer, role=role, prompt=prompt,
-            schema_path=PROPOSER_SCHEMA_PATH if "proposer" in role else REFINER_SCHEMA_PATH,
-            repo_path=repo_path, session_dir=session_dir,
-            timeout=timeout,
-            model=provider.model,
             agent_id=provider.name,
             reviewing=reviewing,
         )
@@ -2205,8 +2219,8 @@ def main() -> int:
     parser.add_argument("--proposers",
                         default=os.environ.get("MOA_PROPOSERS"),
                         help="Comma-separated provider names (built-ins "
-                             "codex/glm/sonnet/kimi/qwen/deepseek/deepseek-flash/"
-                             "composer/grok/cursor-grok/"
+                             "codex/codex-luna/codex-sol/sonnet/opus/kimi/"
+                             "qwen/qwen-opencode/grok/"
                              "agy-gemini-pro plus user-named "
                              "providers). Default: the configured proposer layer.")
     parser.add_argument("--refiners",
@@ -2496,7 +2510,9 @@ def main() -> int:
             role = "proposer" if label == "proposers" else "refiner"
             invalid_role = [
                 name for name in requested
-                if not harness_config.provider_allows_role(name, role)
+                if not harness_config.provider_allows_role(
+                    name, role, provider_catalog[name].model
+                )
             ]
             if invalid_role:
                 print(
@@ -2519,7 +2535,9 @@ def main() -> int:
                 )
                 return 2
             if not harness_config.provider_allows_role(
-                args.aggregator_provider, "aggregator"
+                args.aggregator_provider,
+                "aggregator",
+                provider_catalog[args.aggregator_provider].model,
             ):
                 print(
                     f"ERROR: provider {args.aggregator_provider!r} is not "
@@ -2666,8 +2684,6 @@ def main() -> int:
                 ok, msg = codex_adapter.check_available()
             elif harness == "claude":
                 ok, msg = claude_adapter.check_available()
-            elif harness == "cursor":
-                ok, msg = cursor_adapter.check_available()
             elif harness == "opencode":
                 ok, msg = opencode_adapter.check_available()
             elif harness == "agy":
@@ -2687,7 +2703,6 @@ def main() -> int:
         timeout_for_harness = {
             "codex": codex_timeout,
             "claude": sonnet_timeout,
-            "cursor": _int_env("MOA_CURSOR_TIMEOUT") or sonnet_timeout,
             "opencode": _int_env("MOA_OPENCODE_TIMEOUT") or sonnet_timeout,
             "agy": _int_env("MOA_AGY_TIMEOUT") or sonnet_timeout,
             "gemini": _int_env("MOA_GEMINI_TIMEOUT") or sonnet_timeout,
@@ -2704,21 +2719,27 @@ def main() -> int:
             f"({final_aggregator.harness} @ {final_aggregator.model})",
             flush=True,
         )
-        # Refiners sharing the configured aggregator harness give up the
-        # cross-lab independence the design recommends. Warn but do not block.
+        # Refiners sharing the configured aggregator's producing model lab give
+        # up the independence the design recommends. Execution harness is only
+        # transport: OpenCode can carry several unrelated labs.
+        aggregator_lab = route_lab_id(
+            final_aggregator.name, final_aggregator.model
+        )
         same_lab_refiners = [
-            p.name for p in final_refiners if p.harness == final_aggregator.harness
+            p.name
+            for p in final_refiners
+            if route_lab_id(p.name, p.model) == aggregator_lab
         ]
         if same_lab_refiners:
             print(
                 f"[orchestrator] WARN: refiners {same_lab_refiners} share the aggregator's "
-                f"harness ({final_aggregator.harness}); cross-lab refinement is "
+                f"model lab ({aggregator_lab}); cross-lab refinement is "
                 "recommended (see CLAUDE.md)",
                 flush=True,
             )
         print(
             f"[orchestrator] timeouts: codex={codex_timeout}s "
-            f"sonnet={sonnet_timeout}s (opencode/cursor/agy default to sonnet's "
+            f"sonnet={sonnet_timeout}s (opencode/agy default to sonnet's "
             f"unless MOA_<NAME>_TIMEOUT is set)"
             + (" (master --timeout applied)" if args.timeout is not None else ""),
             flush=True,

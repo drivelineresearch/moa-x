@@ -31,11 +31,13 @@ from run_moa import (
     _load_schema,
     _validate_against_schema,
 )
+from model_labs import MODEL_LABS, ROUTE_META, model_lab, route_lab_id
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPORT_DIR = SCRIPT_DIR.parent / "report"
 TEMPLATE_PATH = REPORT_DIR / "template.html"
 REPORT_ASSET_DIR = REPORT_DIR / "assets"
+LAB_ASSET_DIR = SCRIPT_DIR.parent / "webui" / "static" / "images"
 REPORT_ASSETS = {
     "hero": "report-hero.webp",
     "scout": "report-scout.webp",
@@ -82,6 +84,10 @@ def _split_log(raw: str) -> dict:
 def _load_agent(entry: dict, session_dir: Path) -> dict:
     """Enrich a manifest layer entry with its on-disk payload and log."""
     out = dict(entry)
+    out["lab_id"] = route_lab_id(
+        str(entry.get("agent_id") or ""), str(entry.get("model") or "")
+    )
+    out["lab"] = model_lab(out["lab_id"])["label"]
     out.pop("payload", None)
     payload = None
     if entry.get("json_path"):
@@ -372,6 +378,20 @@ def load_session(session_dir: Path) -> dict:
         "final_plan_html": render_markdown(final_plan_md) if final_plan_md else None,
         "final_plan_lineage": final_plan_lineage,
         "lineage_warnings": lineage_warnings,
+        "model_labs": {
+            lab_id: {
+                "label": values["label"],
+                "accent": values["accent"],
+            }
+            for lab_id, values in MODEL_LABS.items()
+        },
+        "route_labs": {
+            route_id: {
+                "lab_id": values["lab_id"],
+                "label": values["label"],
+            }
+            for route_id, values in ROUTE_META.items()
+        },
     }
 
 
@@ -670,13 +690,19 @@ def render_html(data: dict) -> str:
     # Escaping "</" as "<\/" keeps any "</script>" in a log or plan from
     # terminating the script element; JSON.parse restores it in the browser.
     data_json = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
-    asset_json = json.dumps(
-        {
-            key: "data:image/webp;base64,"
-            + base64.b64encode((REPORT_ASSET_DIR / filename).read_bytes()).decode("ascii")
-            for key, filename in REPORT_ASSETS.items()
-        }
-    )
+    assets = {
+        key: "data:image/webp;base64,"
+        + base64.b64encode((REPORT_ASSET_DIR / filename).read_bytes()).decode("ascii")
+        for key, filename in REPORT_ASSETS.items()
+    }
+    for lab_id, values in MODEL_LABS.items():
+        for kind in ("avatar", "pixel"):
+            path = LAB_ASSET_DIR / values[kind]
+            assets[f"lab_{lab_id}_{kind}"] = (
+                "data:image/webp;base64,"
+                + base64.b64encode(path.read_bytes()).decode("ascii")
+            )
+    asset_json = json.dumps(assets)
 
     # str.replace (not re.sub) so "$" / "\1" in the data are never treated as
     # substitution backreferences. Inject the fixed assets and title

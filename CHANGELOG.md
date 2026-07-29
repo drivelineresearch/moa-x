@@ -11,11 +11,13 @@ versioning.
   browser-local profiles, task-only and managed GitHub launches, reference
   uploads, lifecycle events, provider health, and responsive run review.
 - Curated current routes for GPT-5.6 Terra/Sol/Luna, Claude Sonnet/Opus 5,
-  OpenCode Go, Qwen Token Plan, Cursor Grok, and AGY Gemini 3.1 Pro
-  High/Low. The Web UI offers GPT-5.6 Sol by default, Claude Opus 5 as an
-  alternative aggregator, and warning-gated Fable 5 1M at `xhigh`.
-- Generated provider portraits, workflow/state art, favicon, and responsive
-  control-room illustrations.
+  OpenCode Go Kimi/Grok, Qwen Token Plan, and AGY Gemini 3.1 Pro High/Low.
+  The Web UI offers GPT-5.6 Sol by default, Claude Opus 5 as an alternative
+  aggregator, and warning-gated Fable 5 1M at `xhigh`.
+- Nine model-lab portrait and pixel-art pairs for OpenAI, Google, Anthropic,
+  xAI, Moonshot, Alibaba, DeepSeek, Zhipu, and independent/custom routes.
+  Current and archived runs now retain the producing lab's visual identity
+  regardless of which CLI transported the request.
 - Interactive decision-lineage explorer in `report.html`, backed by a new
   schema-validated `final-plan.json` companion that links every aggregated
   step to exact proposer steps and refiner findings.
@@ -31,14 +33,20 @@ versioning.
 
 ### Changed
 
-- Default proposers use Gemini 3.1 Pro, Grok 4.5, and GLM-5.2. Default
+- Default proposers use Gemini 3.1 Pro, Grok 4.5, and GPT-5.6 Luna. Default
   broadcast refiners use Qwen `qwen3.8-max-preview`, Kimi K3, and Claude
   Opus 5; the default aggregator remains GPT-5.6 Sol at `xhigh`.
 - Quick, Balanced, and Thorough all include Gemini Pro and Grok as
   proposers and GPT-5.6 Sol at `xhigh` as the default aggregator. Quick
-  uses Kimi K3 as its compact refiner lane. Balanced adds GLM plus
-  Qwen/Kimi/Opus (`high`), while Thorough also adds DeepSeek V4 Pro and
-  raises Opus to `max`.
+  uses Kimi K3 as its compact refiner lane. Balanced adds GPT-5.6 Luna plus
+  Qwen/Kimi/Opus (`high`), while Thorough also adds GPT-5.6 Terra and raises
+  Opus to `max`.
+- Cursor execution support and its route catalog were removed. GLM and
+  DeepSeek were also removed from the curated launch roster after retained
+  runs showed repeated incomplete output and schema failures; their lab
+  identities remain available only for accurate archived-run rendering.
+- The prompt coach keeps GPT-5.6 Luna as primary and now uses Gemini 3.1 Pro
+  as its bounded fallback instead of an unreliable OpenCode route.
 - Qwen Token Plan is now part of the default refiner roster and has a bounded
   600-second timeout instead of inheriting the OpenCode harness timeout.
 - The report now includes recorded Layer 3 status, timing, logs, and run-health
@@ -55,19 +63,25 @@ versioning.
 - Structured-output extraction is shared, bounded, escape-tolerant, and strict
   about required root fields across adapters.
 - Claude receives large synthesis prompts over stdin instead of argv.
-  Cursor/OpenCode incomplete outputs receive exactly one bounded redispatch,
-  and OpenCode readiness is evaluated per configured route.
+  OpenCode incomplete outputs receive exactly one bounded redispatch, while
+  parseable schema-invalid output receives one session-confined repair pass
+  with repository reads and web access disabled. Readiness is evaluated per
+  configured route.
 - AGY headless runs explicitly approve read tools inside plan+sandbox mode.
   Gemini Flash routes were retired after Gemini 3.1 Pro passed long-context
   structured-output validation on the authenticated consumer account.
 - Proposer/refiner payloads are isolated as data, model identity is verified,
   and every harness is covered by a Git-visible before/after workspace guard.
+- Cross-lab warnings, roster grouping, provider health, live lanes, generated
+  reports, and all loading/failure states now use canonical model-lab metadata
+  instead of conflating a transport harness with a model provider.
 - Report disclosures and lineage tabs now expose consistent keyboard and ARIA
   behavior.
 
 ### Validation
 
-- Offline suite: 114/114 tests pass; focused Flask suite: 34/34.
+- Offline and focused Flask/browser suite counts are refreshed at release
+  time after the model-lab migration.
 - Five paid ensemble configurations exercised the pre-Pro route matrix. Terra,
   Luna, Sol, Sonnet, Opus, Cursor Grok, GLM, Grok, Kimi, Qwen Token Plan,
   Qwen OpenCode, and the then-surfaced AGY routes returned schema-valid

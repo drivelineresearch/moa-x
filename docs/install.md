@@ -24,22 +24,20 @@ codex login
 agy install
 agy models
 
-# opencode (drives the default Grok/GLM proposers and Qwen/Kimi refiners)
+# OpenCode (drives Grok plus the Qwen/Kimi routes)
 curl -fsSL https://opencode.ai/install | bash
 # or: npm i -g opencode-ai
 opencode auth login    # interactive login
 # or export a provider key (no login needed):
-#   export ZHIPU_API_KEY=...       # GLM
 #   export MOONSHOT_API_KEY=...    # Kimi
-#   export FIREWORKS_API_KEY=...   # alternate GLM route via Fireworks
 #   export QWEN_TOKEN_PLAN_API_KEY=sk-sp-...  # default Qwen refiner
 ```
 
-The Balanced default roster uses Gemini 3.1 Pro, Grok 4.5, and GLM-5.2 as
+The Balanced default roster uses Gemini 3.1 Pro, Grok 4.5, and GPT-5.6 Luna as
 proposers; Qwen 3.8, Kimi K3, and Claude Opus 5 at `high` as refiners; and
 GPT-5.6 Sol at `xhigh` as the aggregator. That keeps the default lane
-lab-distinct across Google, xAI, Zhipu, Alibaba, Moonshot, Anthropic, and
-OpenAI. Fable 5 1M at `xhigh` is an optional, quota-heavy Claude aggregator and
+lab-diverse across Google, xAI, OpenAI, Alibaba, Moonshot, and Anthropic.
+Fable 5 1M at `xhigh` is an optional, quota-heavy Claude aggregator and
 is never eligible as a proposer or refiner.
 
 The built-in `qwen` refiner uses the Qwen Cloud Token Plan endpoint and
@@ -57,25 +55,8 @@ open gap is normalized usage/cost telemetry and safe pre-dispatch budget
 controls across their different billing modes. See the contribution-priorities
 section of the top-level README.
 
-### Optional: Cursor CLI (extra provider)
-
-The Cursor CLI is optional. Its binary is `cursor-agent` (older
-installs) or `agent` (newer, renamed). It's a single binary that
-routes to OpenAI, Anthropic, Google, xAI, and Moonshot models, plus
-Cursor's own `composer-2.5` — useful if you want an extra lane in the
-ensemble or want to consolidate around one CLI for billing.
-
-```bash
-curl https://cursor.com/install -fsS | bash
-cursor-agent login    # subscription
-# or
-export CURSOR_API_KEY=...    # API-billed
-```
-
-Then add a `providers:` block to `harness/config.yaml`. See
-`harness/config.example.yaml` for examples. The built-in `composer`
-provider (harness `cursor`, model `composer-2.5`) is available once
-the CLI is installed.
+Cursor is not a supported MoA-X execution harness. Use the curated Grok route
+through OpenCode and OpenAI routes through Codex.
 
 ### AGY model readiness
 

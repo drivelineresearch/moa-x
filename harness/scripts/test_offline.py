@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """test_offline.py — offline smoke test for the orchestrator's parsing layers.
 
-Exercises the JSON Schema validator, the codex/claude/cursor/opencode JSON
+Exercises the JSON Schema validator, the Codex/Claude/OpenCode JSON
 extractors, and the broadcast-refiner payload shape without calling any CLI.
 Run before end-to-end to confirm parsing logic is sound.
 
@@ -208,76 +208,6 @@ SAMPLE_CLAUDE_STDOUT_FENCED = json.dumps(
     }
 )
 
-
-SAMPLE_CURSOR_STDOUT_SUCCESS = json.dumps({
-    "type": "result",
-    "subtype": "success",
-    "is_error": False,
-    "duration_ms": 8394,
-    "result": json.dumps(VALID_PROPOSER_CODEX),  # the model returned bare JSON
-    "session_id": "abc-123",
-    "request_id": "req-456",
-    "usage": {"inputTokens": 100, "outputTokens": 500,
-              "cacheReadTokens": 0, "cacheWriteTokens": 0},
-})
-
-# cursor-grok routes through the cursor harness (built-in cursor-grok ->
-# cursor-grok-4.5-high). Cursor wraps the model's bare-JSON output in its
-# standard result envelope; the adapter's _extract_payload pulls it out. This
-# fixture is the parser-recipe evidence; a live
-# `cursor-agent -p --model cursor-grok-4.5-high --output-format json` proposer
-# run matches this envelope shape exactly.
-SAMPLE_CURSOR_GROK_STDOUT = json.dumps({
-    "type": "result",
-    "subtype": "success",
-    "is_error": False,
-    "duration_ms": 9002,
-    "result": json.dumps(_make_valid_proposer("cursor-grok")),
-    "session_id": "cg-1",
-    "request_id": "req-cg-1",
-    "usage": {"inputTokens": 130, "outputTokens": 650},
-})
-
-SAMPLE_CURSOR_STDOUT_FENCED = json.dumps({
-    "type": "result",
-    "subtype": "success",
-    "is_error": False,
-    "duration_ms": 8394,
-    "result": "Here is the JSON:\n```json\n" + json.dumps(VALID_PROPOSER_CODEX) + "\n```",
-    "session_id": "abc-123",
-    "request_id": "req-456",
-    "usage": {"inputTokens": 100, "outputTokens": 500,
-              "cacheReadTokens": 0, "cacheWriteTokens": 0},
-})
-
-SAMPLE_CURSOR_STDOUT_ERROR = json.dumps({
-    "type": "result",
-    "subtype": "error",
-    "is_error": True,
-    "duration_ms": 100,
-    "result": "rate limit exceeded; please try again in 60 seconds",
-    "session_id": "abc-123",
-    "request_id": "req-456",
-})
-
-# Empirically observed: cursor-agent reports a success envelope but result is
-# empty. No quota / auth signal in stderr. The transient pattern that drives
-# the redispatch user prompt.
-SAMPLE_CURSOR_STDOUT_TRANSIENT_EMPTY = json.dumps({
-    "type": "result",
-    "subtype": "success",
-    "is_error": False,
-    "duration_ms": 4321,
-    "result": "",
-    "session_id": "abc-123",
-    "request_id": "req-456",
-    "usage": {"inputTokens": 100, "outputTokens": 0,
-              "cacheReadTokens": 0, "cacheWriteTokens": 0},
-})
-
-# Same envelope shape but with a quota signal in stderr — should NOT be
-# treated as transient since redispatch won't help.
-SAMPLE_CURSOR_STDERR_QUOTA = "rate limit exceeded for your plan; retry after 60s\n"
 
 # OpenCode emits the model's final text straight to stdout (no JSON envelope),
 # so the shared extractor runs directly on it. Payload may be bare or fenced;
@@ -569,84 +499,17 @@ def test_claude_schema_copy_omits_dialect_metadata() -> bool:
     )
 
 
-def test_cursor_extractor_finds_payload_in_bare_result() -> bool:
-    print("\n[N] cursor._extract_payload returns inner JSON from bare result text")
-    from adapters import cursor as cursor_adapter
-    payload = cursor_adapter._extract_payload(SAMPLE_CURSOR_STDOUT_SUCCESS)
-    ok = payload is not None and payload.get("agent_id") == "codex"
-    return _ok(ok, f"got {payload!r}")
-
-def test_cursor_extractor_handles_fenced_json() -> bool:
-    print("\n[N] cursor._extract_payload pulls JSON out of ```json fences in result text")
-    from adapters import cursor as cursor_adapter
-    payload = cursor_adapter._extract_payload(SAMPLE_CURSOR_STDOUT_FENCED)
-    ok = payload is not None and payload.get("agent_id") == "codex"
-    return _ok(ok, f"got {payload!r}")
-
-def test_cursor_extractor_returns_none_on_is_error() -> bool:
-    print("\n[N] cursor._extract_payload returns None when envelope is_error=true")
-    from adapters import cursor as cursor_adapter
-    payload = cursor_adapter._extract_payload(SAMPLE_CURSOR_STDOUT_ERROR)
-    return _ok(payload is None, f"got {payload!r}")
 
 
-def test_cursor_diagnose_failure_flags_transient_empty() -> bool:
-    print("\n[N] cursor._diagnose_failure flags empty result + clean stderr as transient_empty")
-    from adapters import cursor as cursor_adapter
-    msg, transient = cursor_adapter._diagnose_failure(
-        SAMPLE_CURSOR_STDOUT_TRANSIENT_EMPTY, ""
-    )
-    return _ok(transient is True and "transient" in msg.lower(),
-               f"transient={transient}, msg={msg!r}")
 
 
-def test_cursor_diagnose_progress_only_is_transient() -> bool:
-    print("\n[N] cursor progress-only success envelopes receive one bounded retry")
-    from adapters import cursor as cursor_adapter
-    envelope = json.dumps({
-        "type": "result",
-        "subtype": "success",
-        "is_error": False,
-        "result": "Researching the requested architecture before drafting.",
-    })
-    msg, transient = cursor_adapter._diagnose_failure(envelope, "")
-    return _ok(
-        transient is True and "incomplete" in msg.lower(),
-        f"transient={transient}, msg={msg!r}",
-    )
 
 
-def test_cursor_diagnose_failure_quota_is_not_transient() -> bool:
-    print("\n[N] cursor._diagnose_failure does NOT flag transient when quota signal in stderr")
-    from adapters import cursor as cursor_adapter
-    msg, transient = cursor_adapter._diagnose_failure(
-        SAMPLE_CURSOR_STDOUT_TRANSIENT_EMPTY, SAMPLE_CURSOR_STDERR_QUOTA
-    )
-    return _ok(transient is False and "rate-limit" in msg.lower(),
-               f"transient={transient}, msg={msg!r}")
-
-
-def test_cursor_diagnose_failure_empty_stdout_is_not_transient() -> bool:
-    print("\n[N] cursor._diagnose_failure does NOT flag transient when stdout is entirely empty")
-    from adapters import cursor as cursor_adapter
-    msg, transient = cursor_adapter._diagnose_failure("", "")
-    return _ok(transient is False and "empty stdout" in msg.lower(),
-               f"transient={transient}, msg={msg!r}")
-
-
-def test_cursor_result_carries_transient_empty_field() -> bool:
-    print("\n[N] CursorResult dataclass exposes transient_empty (default False)")
-    from adapters import cursor as cursor_adapter
-    r = cursor_adapter.CursorResult(
-        success=True, payload={}, raw_stdout="", raw_stderr="",
-        exit_code=0, duration_seconds=1.0,
-    )
-    return _ok(r.transient_empty is False, f"got {r.transient_empty!r}")
 
 
 def test_layer_result_carries_transient_empty_field() -> bool:
     print("\n[N] LayerResult dataclass exposes transient_empty (default False)")
-    r = run_moa.LayerResult(agent_id="cursor-grok", layer=1, role="proposer")
+    r = run_moa.LayerResult(agent_id="custom-grok", layer=1, role="proposer")
     return _ok(r.transient_empty is False, f"got {r.transient_empty!r}")
 
 
@@ -657,9 +520,9 @@ def test_manifest_summary_includes_transient_empty_arrays() -> bool:
     try:
         layer1 = [
             run_moa.LayerResult(agent_id="codex", layer=1, role="proposer", success=True),
-            run_moa.LayerResult(agent_id="cursor-grok", layer=1, role="proposer",
+            run_moa.LayerResult(agent_id="custom-grok", layer=1, role="proposer",
                                 success=False, transient_empty=True,
-                                error="cursor-agent returned empty result text"),
+                                error="opencode returned empty result text"),
         ]
         layer2 = [
             run_moa.LayerResult(agent_id="kimi", layer=2, role="refiner-broadcast",
@@ -674,7 +537,7 @@ def test_manifest_summary_includes_transient_empty_arrays() -> bool:
         )
         manifest = _json.loads((tmp / "manifest.json").read_text())
         summary = manifest["summary"]
-        ok = (summary["transient_empty_proposers"] == ["cursor-grok"]
+        ok = (summary["transient_empty_proposers"] == ["custom-grok"]
               and summary["transient_empty_refiners"] == ["kimi"])
         return _ok(ok, f"summary={summary!r}")
     finally:
@@ -686,7 +549,7 @@ def test_layer1_manifest_round_trip_via_load() -> bool:
     import tempfile, shutil
     tmp = Path(tempfile.mkdtemp())
     try:
-        # Pretend codex succeeded and wrote a payload file; cursor-grok went transient.
+        # Pretend codex succeeded and wrote a payload file; custom-grok went transient.
         (tmp / "layer1").mkdir(parents=True, exist_ok=True)
         payload_file = tmp / "layer1" / "codex-proposer.json"
         payload_file.write_text('{"agent_id": "codex", "summary": "ok"}', encoding="utf-8")
@@ -698,9 +561,9 @@ def test_layer1_manifest_round_trip_via_load() -> bool:
                 log_path="layer1/codex-proposer.log",
             ),
             run_moa.LayerResult(
-                agent_id="cursor-grok", layer=1, role="proposer", success=False,
+                agent_id="custom-grok", layer=1, role="proposer", success=False,
                 duration_seconds=4.5, transient_empty=True,
-                error="cursor-agent returned empty result text under a success envelope",
+                error="opencode returned empty result text under a success envelope",
             ),
         ]
         manifest_path = run_moa.write_layer1_manifest(
@@ -712,14 +575,14 @@ def test_layer1_manifest_round_trip_via_load() -> bool:
         )
         loaded = run_moa.load_layer_results_from_manifest(manifest_path, "layer1", tmp)
         codex = next(r for r in loaded if r.agent_id == "codex")
-        cursor_grok = next(r for r in loaded if r.agent_id == "cursor-grok")
+        custom_grok = next(r for r in loaded if r.agent_id == "custom-grok")
         ok = (
             codex.success and codex.payload is not None and codex.payload.get("agent_id") == "codex"
-            and cursor_grok.transient_empty is True
-            and cursor_grok.payload is None
+            and custom_grok.transient_empty is True
+            and custom_grok.payload is None
         )
         return _ok(ok, f"codex.payload={codex.payload!r}, "
-                       f"cursor_grok.transient_empty={cursor_grok.transient_empty}")
+                       f"custom_grok.transient_empty={custom_grok.transient_empty}")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -727,7 +590,7 @@ def test_layer1_manifest_round_trip_via_load() -> bool:
 def test_redispatch_attempt_keeps_timing_provenance() -> bool:
     print("\n[N] redispatch records the replaced attempt for the timeline")
     prior = run_moa.LayerResult(
-        agent_id="cursor-grok",
+        agent_id="custom-grok",
         layer=1,
         role="proposer",
         started_at=100.0,
@@ -736,7 +599,7 @@ def test_redispatch_attempt_keeps_timing_provenance() -> bool:
         error="incomplete output",
     )
     retry = run_moa.LayerResult(
-        agent_id="cursor-grok",
+        agent_id="custom-grok",
         layer=1,
         role="proposer",
         started_at=140.0,
@@ -769,10 +632,10 @@ def test_session_started_at_survives_phase_split_and_redispatch() -> bool:
 def test_parse_redispatch_arg_validates_names() -> bool:
     print("\n[N] parse_redispatch_arg rejects names not in the layer (sys.exit 2)")
     import contextlib, io
-    valid = ["codex", "glm", "cursor-grok"]
+    valid = ["codex", "glm", "custom-grok"]
     # Happy path
-    names = run_moa.parse_redispatch_arg("codex,cursor-grok", valid, "proposers")
-    if names != ["codex", "cursor-grok"]:
+    names = run_moa.parse_redispatch_arg("codex,custom-grok", valid, "proposers")
+    if names != ["codex", "custom-grok"]:
         return _ok(False, f"happy path returned {names!r}")
     # Empty / None → None
     if run_moa.parse_redispatch_arg(None, valid, "proposers") is not None:
@@ -1086,31 +949,6 @@ def test_install_deps_default_config_only_needs_default_harnesses() -> bool:
     )
 
 
-def test_install_deps_cursor_only_config_skips_other_harnesses() -> bool:
-    """A cursor-only config means the preflight only needs the cursor harness."""
-    print("\n[14c] install_deps: cursor-only config → needed harnesses == {cursor}")
-    import tempfile, textwrap
-    from pathlib import Path as _Path
-    from config import load_resolved_config
-    yaml_text = textwrap.dedent("""
-        providers:
-          c-gpt:    {harness: cursor, model: gpt-5.5-medium}
-          c-gemini: {harness: cursor, model: gemini-3.1-pro}
-        layers:
-          proposers: [c-gpt, c-gemini]
-          refiners:  [c-gpt]
-          aggregator: c-gpt
-    """)
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
-        f.write(yaml_text)
-        tmp_path = _Path(f.name)
-    try:
-        loaded = load_resolved_config(config_path=tmp_path)
-        needed = {p.harness for p in loaded.proposers + loaded.refiners}
-        return _ok(needed == {"cursor"}, f"got {sorted(needed)}")
-    finally:
-        tmp_path.unlink()
-
 
 def test_install_deps_schema_coherence_catches_bad_name() -> bool:
     """Schema coherence in install_deps must reject names that don't match the
@@ -1122,7 +960,7 @@ def test_install_deps_schema_coherence_catches_bad_name() -> bool:
     schema = _json.loads((SCRIPT_DIR / "schemas" / "proposer.schema.json").read_text())
     pattern = schema["properties"]["agent_id"]["pattern"]
     rx = _re.compile(pattern)
-    good_names = ["c-gpt", "cursor-grok", "codex", "sonnet-a"]
+    good_names = ["c-gpt", "custom-grok", "codex", "sonnet-a"]
     bad_names = ["Bad_Name", "C-GPT", "has space", "9-starts-with-digit", "way-too-long-name-that-exceeds-32-chars"]
     good_pass = all(rx.fullmatch(n) for n in good_names)
     bad_fail = not any(rx.fullmatch(n) for n in bad_names)
@@ -1174,7 +1012,6 @@ def test_skill_assets_present() -> bool:
         skill_dir / "scripts" / "adapters" / "codex.py",
         skill_dir / "scripts" / "adapters" / "opencode.py",
         skill_dir / "scripts" / "adapters" / "claude.py",
-        skill_dir / "scripts" / "adapters" / "cursor.py",
         skill_dir / "scripts" / "schemas" / "proposer.schema.json",
         skill_dir / "scripts" / "schemas" / "refiner.schema.json",
         skill_dir / "scripts" / "schemas" / "final-plan.schema.json",
@@ -1216,7 +1053,7 @@ def test_config_resolve_unknown_name_raises() -> bool:
 def test_config_resolve_user_provider_yaml_timeout() -> bool:
     print("\n[18b] config.resolve_provider picks up `timeout:` from YAML user_provider entry")
     from config import resolve_provider
-    user = {"slow-grok": {"harness": "cursor", "model": "grok-4-20", "timeout": 1800}}
+    user = {"slow-grok": {"harness": "opencode", "model": "grok-4-20", "timeout": 1800}}
     rp = resolve_provider("slow-grok", user_providers=user)
     return _ok(rp.timeout == 1800 and rp.model == "grok-4-20", f"got {rp}")
 
@@ -1229,7 +1066,7 @@ def test_config_resolve_env_timeout_override() -> bool:
     prior = _os.environ.get(key)
     _os.environ[key] = "2400"
     try:
-        user = {"slow-grok": {"harness": "cursor", "model": "grok-4-20", "timeout": 1800}}
+        user = {"slow-grok": {"harness": "opencode", "model": "grok-4-20", "timeout": 1800}}
         rp = resolve_provider("slow-grok", user_providers=user)
         return _ok(rp.timeout == 2400, f"env should win over YAML; got timeout={rp.timeout}")
     finally:
@@ -1247,7 +1084,7 @@ def test_config_resolve_env_timeout_malformed_raises() -> bool:
     prior = _os.environ.get(key)
     _os.environ[key] = "not-a-number"
     try:
-        user = {"slow-grok": {"harness": "cursor", "model": "grok-4-20"}}
+        user = {"slow-grok": {"harness": "opencode", "model": "grok-4-20"}}
         try:
             resolve_provider("slow-grok", user_providers=user)
         except ValueError as e:
@@ -1302,10 +1139,10 @@ def test_config_yaml_providers_block() -> bool:
     from config import _load_yaml, _user_providers_from_yaml
     yaml_text = textwrap.dedent("""
         providers:
-          cursor-grok: {harness: cursor, model: grok-4.20}
-          cursor-gpt:  {harness: cursor, model: gpt-5.5}
+          custom-grok: {harness: opencode, model: grok-4.20}
+          custom-gpt:  {harness: opencode, model: gpt-5.5}
         layers:
-          proposers: [codex, glm, cursor-grok]
+          proposers: [codex, codex-luna, custom-grok]
     """)
     with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
         f.write(yaml_text)
@@ -1314,10 +1151,10 @@ def test_config_yaml_providers_block() -> bool:
         cfg = _load_yaml(tmp_path)
         user_providers = _user_providers_from_yaml(cfg)
         ok = (
-            "cursor-grok" in user_providers
-            and user_providers["cursor-grok"]["harness"] == "cursor"
-            and user_providers["cursor-grok"]["model"] == "grok-4.20"
-            and "cursor-gpt" in user_providers
+            "custom-grok" in user_providers
+            and user_providers["custom-grok"]["harness"] == "opencode"
+            and user_providers["custom-grok"]["model"] == "grok-4.20"
+            and "custom-gpt" in user_providers
         )
         return _ok(ok, f"got: {user_providers}")
     finally:
@@ -1327,12 +1164,12 @@ def test_config_yaml_providers_block() -> bool:
 def test_config_resolve_layer_mixed() -> bool:
     print("\n[20] config.resolve_layer resolves mixed builtin + user-named names")
     from config import resolve_layer
-    user = {"cursor-grok": {"harness": "cursor", "model": "grok-4.20"}}
-    resolved = resolve_layer(["codex", "glm", "cursor-grok"], user_providers=user)
+    user = {"custom-grok": {"harness": "opencode", "model": "grok-4.20"}}
+    resolved = resolve_layer(["codex", "codex-luna", "custom-grok"], user_providers=user)
     names = [r.name for r in resolved]
     harnesses = [r.harness for r in resolved]
-    ok = (names == ["codex", "glm", "cursor-grok"]
-          and harnesses == ["codex", "opencode", "cursor"])
+    ok = (names == ["codex", "codex-luna", "custom-grok"]
+          and harnesses == ["codex", "codex", "opencode"])
     return _ok(ok, f"got names={names} harnesses={harnesses}")
 
 def test_config_resolve_layer_unknown_fails_loud() -> bool:
@@ -1352,9 +1189,9 @@ def test_config_load_resolved_end_to_end() -> bool:
     from config import load_resolved_config
     yaml_text = textwrap.dedent("""
         providers:
-          cursor-grok: {harness: cursor, model: grok-4.20}
+          custom-grok: {harness: opencode, model: grok-4.20}
         layers:
-          proposers: [codex, glm, cursor-grok]
+          proposers: [codex, codex-luna, custom-grok]
           refiners:  [codex, kimi]
     """)
     with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
@@ -1365,7 +1202,7 @@ def test_config_load_resolved_end_to_end() -> bool:
         prop_names = [p.name for p in loaded.proposers]
         ref_harnesses = [p.harness for p in loaded.refiners]
         ok = (
-            prop_names == ["codex", "glm", "cursor-grok"]
+            prop_names == ["codex", "codex-luna", "custom-grok"]
             and ref_harnesses == ["codex", "opencode"]
             and loaded.skip_refinement is False
         )
@@ -1373,14 +1210,6 @@ def test_config_load_resolved_end_to_end() -> bool:
     finally:
         tmp_path.unlink()
 
-
-def test_cursor_check_available_returns_tuple() -> bool:
-    print("\n[23] cursor.check_available returns (bool, str) tuple")
-    from adapters import cursor as cursor_adapter
-    result = cursor_adapter.check_available()
-    ok = (isinstance(result, tuple) and len(result) == 2
-          and isinstance(result[0], bool) and isinstance(result[1], str))
-    return _ok(ok, f"got {result}")
 
 
 def test_opencode_extractor_finds_bare_payload() -> bool:
@@ -1549,14 +1378,6 @@ def test_opencode_model_readiness_accepts_qwen_token_plan_key() -> bool:
     return _ok(result[0] is True, f"got {result}")
 
 
-def test_config_resolve_builtin_glm_uses_opencode() -> bool:
-    print("\n[N] config.resolve_provider: glm maps to opencode harness / opencode-go model")
-    from config import resolve_provider
-    rp = resolve_provider("glm", user_providers={})
-    ok = (rp.name == "glm" and rp.harness == "opencode" and rp.model == "opencode-go/glm-5.2")
-    return _ok(ok, f"got {rp}")
-
-
 def test_config_resolve_builtin_kimi_uses_opencode() -> bool:
     print("\n[N] config.resolve_provider: kimi maps to opencode harness / opencode-go model")
     from config import resolve_provider
@@ -1568,13 +1389,6 @@ def test_config_resolve_builtin_kimi_uses_opencode() -> bool:
     )
     return _ok(ok, f"got {rp}")
 
-
-def test_config_resolve_builtin_composer_uses_cursor() -> bool:
-    print("\n[N] config.resolve_provider: composer maps to cursor harness / composer-2.5")
-    from config import resolve_provider
-    rp = resolve_provider("composer", user_providers={})
-    ok = (rp.name == "composer" and rp.harness == "cursor" and rp.model == "composer-2.5")
-    return _ok(ok, f"got {rp}")
 
 
 def test_config_resolve_builtin_grok_uses_opencode() -> bool:
@@ -1606,65 +1420,8 @@ def test_opencode_grok_recipe_extracts_valid_grok_payload() -> bool:
     return _ok(len(errors) == 0, f"schema errors={errors[:3]}")
 
 
-def test_config_resolve_builtin_cursor_grok_uses_cursor() -> bool:
-    print("\n[N] config.resolve_provider: cursor-grok maps to cursor harness / cursor-grok-4.5-high")
-    from config import resolve_provider
-    rp = resolve_provider("cursor-grok", user_providers={})
-    ok = (rp.name == "cursor-grok" and rp.harness == "cursor" and rp.model == "cursor-grok-4.5-high")
-    return _ok(ok, f"got {rp}")
 
 
-def test_cursor_cmd_always_forces_plan_mode() -> bool:
-    print("\n[N] cursor _build_cursor_cmd: ALWAYS forces '--mode plan' (fail-closed read-only)")
-    from adapters import cursor as cur
-    cmd = cur._build_cursor_cmd("cursor-agent", "cursor-grok-4.5-high")
-    ok = (
-        "--mode" in cmd and cmd[cmd.index("--mode") + 1] == "plan"
-        and "-p" in cmd and "--trust" in cmd
-        and "--output-format" in cmd and cmd[cmd.index("--output-format") + 1] == "json"
-        and cmd[0] == "cursor-agent" and "cursor-grok-4.5-high" in cmd
-        # prompt is NEVER a positional argv entry (stdin only)
-        and not any(tok not in {
-            "cursor-agent", "-p", "--model", "cursor-grok-4.5-high",
-            "--mode", "plan", "--output-format", "json", "--trust",
-        } for tok in cmd)
-    )
-    return _ok(ok, f"cmd={cmd}")
-
-
-def test_cursor_plan_mode_unsupported_detection() -> bool:
-    print("\n[N] cursor _is_plan_mode_unsupported: detects '--mode' rejection, ignores unrelated errors")
-    from adapters import cursor as cur
-    rejects = [
-        ("error: unknown option '--mode'", ""),
-        ("", "unexpected argument '--mode' found"),
-        ("error: unrecognized option: --mode", ""),
-    ]
-    non_rejects = [
-        ("rate limit exceeded", ""),                       # unrelated failure
-        ("", "cursor-agent: authentication error"),        # unrelated failure
-        ("some unknown option --trust weirdness", ""),     # 'unknown option' but not about mode
-        ("error: unknown option '--model'", ""),           # --model must NOT match --mode
-        ("unrecognized model identifier", ""),             # 'mode' substring, no --mode token
-        ("error: unknown option '--trust'\n\nUsage: cursor-agent --mode plan ...", ""),  # --mode only in usage text (other line)
-        ("", ""),                                          # empty
-    ]
-    ok = (
-        all(cur._is_plan_mode_unsupported(e, o) for e, o in rejects)
-        and not any(cur._is_plan_mode_unsupported(e, o) for e, o in non_rejects)
-    )
-    return _ok(ok, "rejection detection did not match expectations")
-
-
-def test_cursor_grok_recipe_extracts_valid_payload() -> bool:
-    print("\n[N] cursor adapter extracts a schema-valid cursor-grok proposer payload (built-in recipe)")
-    from adapters import cursor as cursor_adapter
-    payload = cursor_adapter._extract_payload(SAMPLE_CURSOR_GROK_STDOUT)
-    if not (isinstance(payload, dict) and payload.get("agent_id") == "cursor-grok"):
-        return _ok(False, f"extractor did not return a cursor-grok payload; got {payload!r}")
-    schema = run_moa._load_schema(run_moa.PROPOSER_SCHEMA_PATH)
-    errors = run_moa._validate_against_schema(payload, schema)
-    return _ok(len(errors) == 0, f"schema errors={errors[:3]}")
 
 
 def test_config_resolve_builtin_qwen_uses_token_plan() -> bool:
@@ -1688,14 +1445,18 @@ def test_provider_catalog_includes_optional_builtins() -> bool:
         catalog.get("qwen") is not None
         and catalog["qwen"].model == "qwen-token-plan/qwen3.8-max-preview"
         and catalog["codex-sol"].model == "gpt-5.6-sol"
-        and catalog["codex-sol"].effort == "high"
+        and catalog["codex-sol"].effort == "xhigh"
         and catalog["codex-luna"].model == "gpt-5.6-luna"
         and catalog["codex-luna"].effort == "medium"
-        and catalog["deepseek"].model == "opencode-go/deepseek-v4-pro"
-        and catalog["deepseek-flash"].model == "opencode-go/deepseek-v4-flash"
+        and "glm" not in catalog
+        and "deepseek" not in catalog
+        and "deepseek-flash" not in catalog
+        and "composer" not in catalog
+        and "cursor-grok" not in catalog
         and catalog.get("codex-reviewer") is not None
         and catalog["codex-reviewer"].model == "gpt-5.6-sol"
         and catalog.get("codex-aggregator") is not None
+        and catalog["codex-aggregator"].effort == "xhigh"
         and catalog.get("opus") is not None
         and catalog["opus"].model == "claude-opus-5"
     )
@@ -1748,6 +1509,110 @@ def test_dispatch_propagates_native_provider_effort() -> bool:
     return _ok(ok, f"observed={observed}")
 
 
+def test_opencode_schema_repair_is_bounded_and_offline() -> bool:
+    print("\n[N] OpenCode schema repair is one bounded, web-disabled pass")
+    import tempfile
+    from unittest import mock
+    from adapters.opencode import OpenCodeResult
+
+    invalid = _make_valid_proposer("kimi")
+    invalid["plan"][0].pop("risks")
+    repaired = _make_valid_proposer("kimi")
+    first = OpenCodeResult(
+        success=True,
+        payload=invalid,
+        raw_stdout=json.dumps(invalid),
+        raw_stderr="",
+        exit_code=0,
+        duration_seconds=1.0,
+    )
+    second = OpenCodeResult(
+        success=True,
+        payload=repaired,
+        raw_stdout=json.dumps(repaired),
+        raw_stderr="",
+        exit_code=0,
+        duration_seconds=0.5,
+    )
+    with tempfile.TemporaryDirectory() as raw:
+        root = Path(raw)
+        session = root / ".moa" / "repair"
+        (session / "layer1").mkdir(parents=True)
+        with mock.patch.object(
+            run_moa.opencode_adapter, "run", side_effect=[first, second]
+        ) as adapter_run:
+            result = run_moa._run_opencode(
+                layer=1,
+                role="proposer",
+                prompt="fixture",
+                schema_path=run_moa.PROPOSER_SCHEMA_PATH,
+                repo_path=root,
+                session_dir=session,
+                timeout=900,
+                model="opencode-go/kimi-k3",
+                agent_id="kimi",
+                reasoning_effort="high",
+            )
+        repair_call = adapter_run.call_args_list[1].kwargs
+        ok = (
+            result.success
+            and result.schema_valid
+            and adapter_run.call_count == 2
+            and repair_call["repo_path"] == session
+            and repair_call["timeout_seconds"] == 240
+            and repair_call["allow_webfetch"] is False
+            and "Do not research, browse" in repair_call["prompt"]
+            and "Never invent a file, line, URL, snippet, claim" in repair_call["prompt"]
+        )
+        return _ok(ok, f"success={result.success} calls={adapter_run.call_count}")
+
+
+def test_model_lab_assets_and_catalog_contract() -> bool:
+    print("\n[N] every current/archived model lab has both visual assets")
+    import re
+    from model_labs import MODEL_LABS, ROUTE_META, route_lab_id
+
+    image_dir = SCRIPT_DIR.parent / "webui" / "static" / "images"
+    missing = []
+    for lab_id, values in MODEL_LABS.items():
+        for kind in ("avatar", "pixel"):
+            path = image_dir / values[kind]
+            if not path.is_file() or path.stat().st_size < 1000:
+                missing.append(f"{lab_id}:{kind}")
+    catalog = run_moa.harness_config.load_provider_catalog(
+        config_path=Path("/nonexistent")
+    )
+    unknown = [
+        name
+        for name, provider in catalog.items()
+        if route_lab_id(name, provider.model) not in MODEL_LABS
+    ]
+    old_assets = [
+        path.name
+        for path in image_dir.iterdir()
+        if path.name.startswith("provider-")
+        or re.match(r"pixel-(agy|claude|codex|cursor|opencode)", path.name)
+    ]
+    legacy_ok = all(
+        route_lab_id(name) == lab_id
+        for name, lab_id in (
+            ("glm", "zhipu"),
+            ("deepseek", "deepseek"),
+            ("cursor-grok", "xai"),
+            ("composer", "independent"),
+        )
+    )
+    route_meta_ok = all(
+        values.get("lab_id") in MODEL_LABS for values in ROUTE_META.values()
+    )
+    ok = not missing and not unknown and not old_assets and legacy_ok and route_meta_ok
+    return _ok(
+        ok,
+        f"missing={missing} unknown={unknown} old={old_assets} "
+        f"legacy={legacy_ok} route_meta={route_meta_ok}",
+    )
+
+
 def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
     print("\n[N] Web UI model catalog is provider-grouped with current curated routes")
     repo_root = SCRIPT_DIR.parent.parent
@@ -1780,14 +1645,10 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
         "codex-luna": ("codex", "gpt-5.6-luna"),
         "sonnet": ("claude", "claude-sonnet-5"),
         "opus": ("claude", "claude-opus-5"),
-        "glm": ("opencode", "opencode-go/glm-5.2"),
         "kimi": ("opencode", "opencode-go/kimi-k3"),
         "qwen": ("opencode", "qwen-token-plan/qwen3.8-max-preview"),
         "qwen-opencode": ("opencode", "opencode-go/qwen3.7-max"),
-        "deepseek": ("opencode", "opencode-go/deepseek-v4-pro"),
-        "deepseek-flash": ("opencode", "opencode-go/deepseek-v4-flash"),
-        "composer": ("cursor", "composer-2.5"),
-        "cursor-grok": ("cursor", "cursor-grok-4.5-high"),
+        "grok": ("opencode", "opencode-go/grok-4.5"),
         "agy-gemini-pro": ("agy", "gemini-3.1-pro-high"),
         "fable": ("claude", "claude-fable-5"),
     }
@@ -1812,23 +1673,19 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
         and any(route["id"] == "sonnet" for route in groups["claude"]["routes"])
         and any(route["id"] == "fable" for route in groups["claude"]["routes"])
         and any(route["id"] == "qwen-opencode" for route in groups["opencode"]["routes"])
-        and [route["id"] for route in groups["opencode"]["routes"] if route["id"].startswith("deepseek")]
-        == ["deepseek", "deepseek-flash"]
-        and {route["id"] for route in groups["cursor"]["routes"]}
-        == {"composer", "cursor-grok"}
+        and {route["lab_id"] for route in groups["opencode"]["routes"]}
+        == {"xai", "moonshot", "alibaba"}
     )
     role_ok = (
         {item["id"] for item in models if "aggregator" in item["roles"]}
         == {"codex-sol", "opus", "fable"}
         and by_id["fable"]["roles"] == ["aggregator"]
         and by_id["opus"]["roles"] == ["proposer", "refiner", "aggregator"]
-        and by_id["deepseek"]["roles"] == ["proposer", "refiner"]
-        and by_id["deepseek-flash"]["roles"] == ["proposer", "refiner"]
     )
     defaults_ok = (
         by_id["agy-gemini-pro"]["default_roles"] == ["proposer"]
         and by_id["grok"]["default_roles"] == ["proposer"]
-        and by_id["glm"]["default_roles"] == ["proposer"]
+        and by_id["codex-luna"]["default_roles"] == ["proposer"]
         and by_id["qwen"]["default_roles"] == ["refiner"]
         and by_id["kimi"]["default_roles"] == ["refiner"]
         and by_id["opus"]["default_roles"] == ["refiner"]
@@ -1845,8 +1702,8 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
         for snippet in (
             'preferred: ["agy-gemini-pro", "grok"]',
             'refiner: { preferred: ["kimi"], limit: 1 }',
-            'preferred: ["agy-gemini-pro", "grok", "glm"]',
-            'preferred: ["agy-gemini-pro", "grok", "glm", "deepseek"]',
+            'preferred: ["agy-gemini-pro", "grok", "codex-luna"]',
+            'preferred: ["agy-gemini-pro", "grok", "codex-luna", "codex"]',
             'preferred: ["qwen", "kimi", "opus"]',
             'efforts: { opus: "max" }',
             'preferred: ["codex-sol"]',
@@ -1858,16 +1715,14 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
     )
     route_labels_ok = all(
         suffix not in item["name"]
-        for provider_id, suffix in (
-            ("opencode", "OpenCode Go"),
-            ("cursor", "Cursor"),
-        )
+        for provider_id, suffix in (("opencode", "OpenCode Go"),)
         for item in groups[provider_id]["routes"]
     )
     hidden_ok = (
-        {"codex-reviewer", "codex-aggregator", "gemini-cli-pro",
-         "cursor-sol", "cursor-gemini"}.isdisjoint(by_id)
+        {"codex-reviewer", "codex-aggregator", "gemini-cli-pro", "glm",
+         "deepseek", "deepseek-flash", "composer", "custom-grok"}.isdisjoint(by_id)
         and "gemini" not in groups
+        and "cursor" not in groups
     )
     return _ok(
         routes_ok and effort_ok and grouped_ok and role_ok and defaults_ok
@@ -1945,7 +1800,7 @@ def test_google_provider_builtins_are_default_and_resolve() -> bool:
         and agy_pro.effort == "high"
         and agy_effort_override.model == "gemini-3.1-pro-high"
         and agy_effort_override.effort == "high"
-        and proposer_names == ["agy-gemini-pro", "grok", "glm"]
+        and proposer_names == ["agy-gemini-pro", "grok", "codex-luna"]
         and refiner_names == ["qwen", "kimi", "opus"]
         and defaults.aggregator is not None
         and defaults.aggregator.name == "codex-sol"
@@ -1954,6 +1809,15 @@ def test_google_provider_builtins_are_default_and_resolve() -> bool:
         and harness_config.provider_allows_role("fable", "aggregator")
         and not harness_config.provider_allows_role("fable", "proposer")
         and not harness_config.provider_allows_role("fable", "refiner")
+        and harness_config.provider_allows_role(
+            "custom-alias", "aggregator", "claude-fable-5"
+        )
+        and not harness_config.provider_allows_role(
+            "custom-alias", "proposer", "claude-fable-5"
+        )
+        and not harness_config.provider_allows_role(
+            "custom-alias", "refiner", "claude-fable-5"
+        )
         and gemini_removed
         and flash_removed
     )
@@ -2057,7 +1921,7 @@ def test_refiner_schema_accepts_five_proposer_roster() -> bool:
     print("\n[N] Refiner schema accepts a 5-proposer broadcast roster (maxItems bump)")
     schema = run_moa._load_schema(run_moa.REFINER_SCHEMA_PATH)
     payload = _make_valid_broadcast_refiner("codex")
-    names = ["codex", "glm", "sonnet", "composer", "cursor-grok"]
+    names = ["codex", "glm", "sonnet", "composer", "custom-grok"]
     payload["reviewing"] = names
     payload["per_proposer_verdicts"] = [
         {"proposer": n, "verdict": "accept_with_changes",
@@ -2129,7 +1993,7 @@ def _write_fixture_session(tmp: Path, partial: bool = False) -> Path:
          "success": False, "schema_valid": False, "duration_seconds": 5.0,
          "started_at": 100.0, "error": "hard failure: quota exhausted",
          "log_path": None, "json_path": None, "transient_empty": False},
-        {"agent_id": "cursor-grok", "layer": 1, "role": "proposer", "reviewing": None,
+        {"agent_id": "custom-grok", "layer": 1, "role": "proposer", "reviewing": None,
          "success": False, "schema_valid": False, "duration_seconds": 4.0,
          "started_at": 100.0, "error": "empty envelope",
          "log_path": None, "json_path": None, "transient_empty": True},
@@ -2140,7 +2004,7 @@ def _write_fixture_session(tmp: Path, partial: bool = False) -> Path:
         "config": {"arm": "cross-lab",
                    "proposers": [{"name": "codex", "harness": "codex", "model": "gpt-5.4"},
                                  {"name": "glm", "harness": "opencode", "model": "glm-5.2"},
-                                 {"name": "cursor-grok", "harness": "cursor", "model": "grok"}],
+                                 {"name": "custom-grok", "harness": "opencode", "model": "grok"}],
                    "refiners": [{"name": "kimi", "harness": "opencode", "model": "kimi-k2.7"}]},
         "layer2_mode": "degraded_non_broadcast" if partial else "broadcast",
         "started_at": 100.0, "finished_at": 400.0, "duration_seconds": 300.0,
@@ -2182,9 +2046,9 @@ def test_report_generates_single_self_contained_file() -> bool:
         html = out.read_text(encoding="utf-8")
         external = _re.findall(r'(?:src|href)="https?://[^"]*"', html)
         art_count = html.count("data:image/webp;base64,")
-        # The report script and all six editorial illustrations must be
-        # embedded directly in the portable HTML artifact.
-        inlined = "<script>" in html and art_count == 6
+        # Six editorial illustrations plus avatar/pixel pairs for all nine
+        # model labs must be embedded in the portable HTML artifact.
+        inlined = "<script>" in html and art_count == 24
         return _ok(not external and inlined and len(html) > 100_000,
                    f"external_refs={external[:2]}, art={art_count}, bytes={len(html)}")
     finally:
@@ -2199,7 +2063,14 @@ def test_report_embedded_json_round_trips() -> bool:
         html = report_module.generate(session, session / "report.html").read_text(encoding="utf-8")
         data = _extract_embedded_data(html)
         ids = [r["agent_id"] for r in data["layer1"]] + [r["agent_id"] for r in data["layer2"]]
-        ok = (set(ids) == {"codex", "glm", "cursor-grok", "kimi"}
+        ok = (set(ids) == {"codex", "glm", "custom-grok", "kimi"}
+              and {r["agent_id"]: r["lab_id"] for r in data["layer1"]} == {
+                  "codex": "openai",
+                  "glm": "zhipu",
+                  "custom-grok": "xai",
+              }
+              and data["layer2"][0]["lab_id"] == "moonshot"
+              and len(data["model_labs"]) == 9
               and data["title"].startswith("Add a widget")
               and data["final_plan_markdown"].startswith("# Final plan")
               and data["final_plan_html"] and "<strong>this</strong>" in data["final_plan_html"]
@@ -2257,14 +2128,14 @@ def test_report_lineage_reference_warning_is_nonfatal() -> bool:
 
 
 def test_report_renders_failed_and_transient_agents() -> bool:
-    print("\n[N] report carries the failed (glm) and transient-empty (cursor-grok) agents")
+    print("\n[N] report carries the failed (glm) and transient-empty (custom-grok) agents")
     tmp = Path(_tempfile.mkdtemp())
     try:
         session = _write_fixture_session(tmp)
         data = _extract_embedded_data(
             report_module.generate(session, session / "report.html").read_text(encoding="utf-8"))
         glm = next(r for r in data["layer1"] if r["agent_id"] == "glm")
-        grok = next(r for r in data["layer1"] if r["agent_id"] == "cursor-grok")
+        grok = next(r for r in data["layer1"] if r["agent_id"] == "custom-grok")
         ok = (glm["success"] is False and "quota" in (glm["error"] or "")
               and grok["transient_empty"] is True and grok["payload"] is None)
         return _ok(ok, f"glm.success={glm['success']}, grok.transient={grok['transient_empty']}")
@@ -2279,20 +2150,20 @@ def test_report_backfills_legacy_retry_from_webui_log() -> bool:
         session = _write_fixture_session(tmp)
         manifest_path = session / "manifest.json"
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        retry = next(row for row in manifest["layer1"] if row["agent_id"] == "cursor-grok")
+        retry = next(row for row in manifest["layer1"] if row["agent_id"] == "custom-grok")
         retry.update({"success": True, "schema_valid": True, "transient_empty": False,
                       "duration_seconds": 22.0, "started_at": 140.0, "error": None})
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
         (session / "webui.log").write_text(
-            "[orchestrator] Layer 1: spawning ['cursor-grok'] in parallel...\n"
-            "[orchestrator]   cursor-grok proposer: FAIL (4.0s) — cursor-agent returned non-JSON/incomplete result text under a success envelope. Likely transient — one re-dispatch may recover.\n"
-            "[orchestrator] Layer 1: spawning ['cursor-grok'] in parallel... (redispatch)\n",
+            "[orchestrator] Layer 1: spawning ['custom-grok'] in parallel...\n"
+            "[orchestrator]   custom-grok proposer: FAIL (4.0s) — opencode returned non-JSON/incomplete result text under a success envelope. Likely transient — one re-dispatch may recover.\n"
+            "[orchestrator] Layer 1: spawning ['custom-grok'] in parallel... (redispatch)\n",
             encoding="utf-8",
         )
         data = _extract_embedded_data(
             report_module.generate(session, session / "report.html").read_text(encoding="utf-8")
         )
-        row = next(item for item in data["layer1"] if item["agent_id"] == "cursor-grok")
+        row = next(item for item in data["layer1"] if item["agent_id"] == "custom-grok")
         ok = (
             row["attempt"] == 2
             and row["previous_attempt"]["started_at"] == 100.0
@@ -2776,7 +2647,6 @@ def main() -> int:
         test_config_precedence_env_over_dotenv_over_yaml,
         test_self_moa_argparse_smoke,
         test_install_deps_default_config_only_needs_default_harnesses,
-        test_install_deps_cursor_only_config_skips_other_harnesses,
         test_install_deps_schema_coherence_catches_bad_name,
         test_install_deps_qwen_requires_dedicated_key,
         test_skill_assets_present,
@@ -2792,15 +2662,6 @@ def main() -> int:
         test_config_resolve_layer_mixed,
         test_config_resolve_layer_unknown_fails_loud,
         test_config_load_resolved_end_to_end,
-        test_cursor_check_available_returns_tuple,
-        test_cursor_extractor_finds_payload_in_bare_result,
-        test_cursor_extractor_handles_fenced_json,
-        test_cursor_extractor_returns_none_on_is_error,
-        test_cursor_diagnose_failure_flags_transient_empty,
-        test_cursor_diagnose_progress_only_is_transient,
-        test_cursor_diagnose_failure_quota_is_not_transient,
-        test_cursor_diagnose_failure_empty_stdout_is_not_transient,
-        test_cursor_result_carries_transient_empty_field,
         test_opencode_extractor_finds_bare_payload,
         test_opencode_extractor_handles_fenced_and_prose,
         test_extractor_handles_bare_object_larger_than_scan_window,
@@ -2815,19 +2676,15 @@ def main() -> int:
         test_opencode_check_available_returns_tuple,
         test_opencode_model_readiness_is_route_specific,
         test_opencode_model_readiness_accepts_qwen_token_plan_key,
-        test_config_resolve_builtin_glm_uses_opencode,
         test_config_resolve_builtin_kimi_uses_opencode,
-        test_config_resolve_builtin_composer_uses_cursor,
         test_config_resolve_builtin_grok_uses_opencode,
         test_opencode_preflight_recognizes_xai_key,
         test_opencode_grok_recipe_extracts_valid_grok_payload,
-        test_config_resolve_builtin_cursor_grok_uses_cursor,
-        test_cursor_grok_recipe_extracts_valid_payload,
-        test_cursor_cmd_always_forces_plan_mode,
-        test_cursor_plan_mode_unsupported_detection,
         test_config_resolve_builtin_qwen_uses_token_plan,
         test_provider_catalog_includes_optional_builtins,
         test_dispatch_propagates_native_provider_effort,
+        test_opencode_schema_repair_is_bounded_and_offline,
+        test_model_lab_assets_and_catalog_contract,
         test_webui_model_catalog_is_provider_grouped_and_current,
         test_finalize_moves_misplaced_refiner_verification,
         test_google_provider_builtins_are_default_and_resolve,
