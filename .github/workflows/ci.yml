@@ -31,3 +31,22 @@ jobs:
 
       - name: Run harness offline tests
         run: python3 harness/scripts/test_offline.py
+
+  test-webui-browser:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Web UI test dependencies
+        run: |
+          pip install -r requirements-web-dev.txt
+          playwright install --with-deps chromium
+
+      - name: Run Web UI effort-control browser contract
+        run: python3 -m unittest harness.webui.tests.test_effort_controls_browser
