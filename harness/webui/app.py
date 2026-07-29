@@ -1356,16 +1356,28 @@ def _import_history(
     return imported
 
 
+def _server_thread_count() -> int:
+    default_threads = min(32, max(8, os.cpu_count() or 1))
+    try:
+        threads = int(os.environ.get("MOA_WEBUI_THREADS", default_threads))
+    except (TypeError, ValueError):
+        threads = default_threads
+    if threads <= 0:
+        threads = default_threads
+    return threads
+
+
 def main() -> None:
     app = create_app()
     host = os.environ.get("MOA_WEBUI_HOST", "127.0.0.1")
     port = int(os.environ.get("MOA_WEBUI_PORT", "7340"))
+    threads = _server_thread_count()
     try:
         from waitress import serve
     except ImportError:
         app.run(host=host, port=port, threaded=True, use_reloader=False)
     else:
-        serve(app, host=host, port=port, threads=8)
+        serve(app, host=host, port=port, threads=threads)
 
 
 if __name__ == "__main__":

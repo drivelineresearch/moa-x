@@ -1442,15 +1442,22 @@ async function launchRun(event) {
   }
 }
 
-function attachmentProgressPercent(update) {
+export function attachmentProgressPercent(update) {
   const files = Math.max(Number(update.file_count) || 1, 1);
   const file = Math.max(Math.min(Number(update.file_index) || 1, files), 1);
   const pages = Number(update.page_count) || 0;
   const page = Math.max(Math.min(Number(update.page_number) || 1, pages || 1), 1);
+  const ocrPages = Number(update.ocr_page_count) || 0;
+  const completedPages = Math.max(Math.min(Number(update.completed_pages) || 0, ocrPages || 0), 0);
   const stage = String(update.stage || "");
-  const inFile = pages
-    ? ((page - 1) + (stage === "complete" ? 1 : stage === "recognizing" ? .72 : .2)) / pages
-    : (stage === "complete" ? 1 : .08);
+  let inFile = stage === "complete" ? 1 : .08;
+  if (ocrPages) {
+    inFile = stage === "extracting"
+      ? .1 * page / Math.max(pages, 1)
+      : .1 + .9 * completedPages / ocrPages;
+  } else if (pages) {
+    inFile = .1 * page / pages;
+  }
   return Math.max(2, Math.min(100, ((file - 1 + inFile) / files) * 100));
 }
 
@@ -1467,11 +1474,26 @@ function trackAttachmentPreparation(job) {
     const name = update.file_name || "reference files";
     const page = Number(update.page_number) || 0;
     const total = Number(update.page_count) || 0;
-    if (total) {
+    const ocrTotal = Number(update.ocr_page_count) || 0;
+    const ocrComplete = Number(update.completed_pages) || 0;
+    const workers = Number(update.worker_count) || 1;
+    if (ocrTotal) {
+      const action = {
+        "ocr-starting": "Starting parallel OCR",
+        rendering: "Rendering pages in parallel",
+        recognizing: "Reading pages in parallel",
+        "ocr-complete": "Reading pages in parallel",
+      }[stage] || "Preparing OCR";
+      message.textContent = `${action}: ${name}`;
+      const activePage = ["rendering", "recognizing"].includes(stage) && page
+        ? ` · page ${page} active`
+        : "";
+      pages.textContent = stage === "ocr-starting"
+        ? `${ocrTotal} OCR pages · ${workers} workers`
+        : `${ocrComplete} of ${ocrTotal} OCR pages complete${activePage}`;
+    } else if (total) {
       const action = {
         extracting: "Checking for text",
-        rendering: "Rendering for OCR",
-        recognizing: "Reading with OCR",
         complete: "Prepared",
       }[stage] || "Preparing";
       message.textContent = `${action}: ${name}`;

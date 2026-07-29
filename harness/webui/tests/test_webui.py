@@ -2,15 +2,19 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import subprocess
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from harness.scripts import attachments as attachment_module
 from harness.scripts import run_moa
-from harness.webui.app import create_app
+from harness.webui.app import _server_thread_count, create_app
 from harness.webui.github import _run_gh, parse_repo_pointer
 from harness.webui.monitoring import ProviderHealthMonitor
 from harness.webui import providers as web_providers
@@ -90,6 +94,18 @@ class WebUITest(unittest.TestCase):
         store = self.app.extensions["moa_store"]
         worker = self.app.extensions["moa_worker"]
         worker._prepare_attachments(store.get_job(job_id))
+
+    def test_waitress_thread_pool_scales_with_host_cpu_count(self):
+        with (
+            patch("harness.webui.app.os.cpu_count", return_value=36),
+            patch.dict(os.environ, {}, clear=False),
+        ):
+            os.environ.pop("MOA_WEBUI_THREADS", None)
+            self.assertEqual(_server_thread_count(), 32)
+            os.environ["MOA_WEBUI_THREADS"] = "16"
+            self.assertEqual(_server_thread_count(), 16)
+            os.environ["MOA_WEBUI_THREADS"] = "invalid"
+            self.assertEqual(_server_thread_count(), 32)
 
     def test_provider_monitor_alerts_once_and_realerts_after_recovery(self):
         state = {
@@ -742,6 +758,193 @@ class WebUITest(unittest.TestCase):
             scout["attachment_context"]["markdown"],
         )
         ocr_pdf_page.assert_called_once()
+
+    def test_scanned_pdf_pages_ocr_in_parallel_and_reassemble_in_order(self):
+        active = 0
+        max_active = 0
+        active_lock = threading.Lock()
+        all_started = threading.Barrier(4, timeout=2)
+        updates = []
+
+        def fake_ocr(_path, page_number, page_count, progress, _cancelled):
+            nonlocal active, max_active
+            with active_lock:
+                active += 1
+                max_active = max(max_active, active)
+            progress(
+                {
+                    "stage": "rendering",
+                    "page_number": page_number,
+                    "page_count": page_count,
+                }
+            )
+            all_started.wait()
+            time.sleep((5 - page_number) * 0.01)
+            progress(
+                {
+                    "stage": "recognizing",
+                    "page_number": page_number,
+                    "page_count": page_count,
+                }
+            )
+            with active_lock:
+                active -= 1
+            return f"OCR text from page {page_number}"
+
+        reader = SimpleNamespace(
+            is_encrypted=False,
+            pages=[SimpleNamespace(extract_text=lambda: "") for _ in range(4)],
+        )
+        with (
+            patch("pypdf.PdfReader", return_value=reader),
+            patch.object(
+                attachment_module,
+                "_ocr_pdf_page",
+                side_effect=fake_ocr,
+            ),
+            patch.dict(
+                attachment_module.os.environ,
+                {
+                    "MOA_ATTACHMENT_OCR_WORKERS": "4",
+                    "MOA_ATTACHMENT_OCR_THREADS_PER_WORKER": "1",
+                },
+            ),
+        ):
+            text, page_count, ocr_pages = attachment_module._extract_pdf(
+                Path("parallel-fixture.pdf"),
+                progress=updates.append,
+            )
+
+        self.assertEqual(max_active, 4)
+        self.assertEqual(page_count, 4)
+        self.assertEqual(ocr_pages, 4)
+        self.assertEqual(
+            [text.index(f"### Page {page}") for page in range(1, 5)],
+            sorted(text.index(f"### Page {page}") for page in range(1, 5)),
+        )
+        starting = [
+            update for update in updates if update["stage"] == "ocr-starting"
+        ]
+        self.assertEqual(starting[0]["worker_count"], 4)
+        completed = [
+            update["completed_pages"]
+            for update in updates
+            if update["stage"] == "ocr-complete"
+        ]
+        self.assertEqual(completed, [1, 2, 3, 4])
+
+    def test_parallel_pdf_ocr_propagates_page_failure(self):
+        reader = SimpleNamespace(
+            is_encrypted=False,
+            pages=[SimpleNamespace(extract_text=lambda: "") for _ in range(3)],
+        )
+
+        def fake_ocr(
+            _path,
+            page_number,
+            _page_count,
+            _progress,
+            _cancelled,
+        ):
+            if page_number == 2:
+                raise attachment_module.AttachmentError("page 2 failed")
+            return f"page {page_number}"
+
+        with (
+            patch("pypdf.PdfReader", return_value=reader),
+            patch.object(
+                attachment_module,
+                "_ocr_pdf_page",
+                side_effect=fake_ocr,
+            ),
+            patch.dict(
+                attachment_module.os.environ,
+                {"MOA_ATTACHMENT_OCR_WORKERS": "3"},
+            ),
+        ):
+            with self.assertRaisesRegex(
+                attachment_module.AttachmentError,
+                "page 2 failed",
+            ):
+                attachment_module._extract_pdf(Path("failing-fixture.pdf"))
+
+    def test_parallel_pdf_ocr_stops_scheduling_after_cancellation(self):
+        calls = []
+        reader = SimpleNamespace(
+            is_encrypted=False,
+            pages=[SimpleNamespace(extract_text=lambda: "") for _ in range(20)],
+        )
+
+        def fake_ocr(
+            _path,
+            page_number,
+            _page_count,
+            _progress,
+            _cancelled,
+        ):
+            calls.append(page_number)
+            time.sleep(0.02)
+            return f"page {page_number}"
+
+        with (
+            patch("pypdf.PdfReader", return_value=reader),
+            patch.object(
+                attachment_module,
+                "_ocr_pdf_page",
+                side_effect=fake_ocr,
+            ),
+            patch.dict(
+                attachment_module.os.environ,
+                {"MOA_ATTACHMENT_OCR_WORKERS": "2"},
+            ),
+        ):
+            with self.assertRaises(InterruptedError):
+                attachment_module._extract_pdf(
+                    Path("cancelled-fixture.pdf"),
+                    cancelled=lambda: len(calls) >= 2,
+                )
+        self.assertEqual(sorted(calls), [1, 2])
+
+    def test_pdf_ocr_worker_default_uses_host_cpu_budget(self):
+        with (
+            patch.object(attachment_module.os, "cpu_count", return_value=36),
+            patch.dict(attachment_module.os.environ, {}, clear=False),
+        ):
+            attachment_module.os.environ.pop(
+                "MOA_ATTACHMENT_OCR_WORKERS",
+                None,
+            )
+            attachment_module.os.environ.pop(
+                "MOA_ATTACHMENT_OCR_THREADS_PER_WORKER",
+                None,
+            )
+            self.assertEqual(attachment_module._ocr_worker_count(319), 12)
+            self.assertEqual(attachment_module._ocr_worker_count(5), 5)
+
+    def test_tesseract_receives_per_worker_thread_ceiling(self):
+        completed = SimpleNamespace(returncode=0, stdout="recognized", stderr="")
+        with (
+            patch.object(
+                attachment_module.shutil,
+                "which",
+                return_value="/usr/bin/tesseract",
+            ),
+            patch.object(
+                attachment_module.subprocess,
+                "run",
+                return_value=completed,
+            ) as run,
+            patch.dict(
+                attachment_module.os.environ,
+                {"MOA_ATTACHMENT_OCR_THREADS_PER_WORKER": "2"},
+            ),
+        ):
+            text = attachment_module._ocr_image(
+                Path("fixture.png"),
+                source_name="fixture.png",
+            )
+        self.assertEqual(text, "recognized")
+        self.assertEqual(run.call_args.kwargs["env"]["OMP_THREAD_LIMIT"], "2")
 
     @patch(
         "harness.scripts.attachments._extract_image",

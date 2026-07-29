@@ -192,6 +192,12 @@ layers:
 | `MOA_PROPOSERS` | `agy-gemini-pro,grok,glm` | Comma-separated provider names to spawn as proposers. |
 | `MOA_REFINERS` | `qwen,kimi,opus` | Comma-separated provider names to spawn as refiners. |
 | `MOA_AGGREGATOR` | `codex-sol` | Named Layer-3 provider. The shipped path uses GPT-5.6 Sol at `xhigh`; `fable` is the quota-heavy aggregator-only alternative. |
+| `MOA_WEBUI_THREADS` | CPU-derived, `8`–`32` | Waitress request threads for Web UI API, asset, and SSE traffic. Separate from attachment OCR workers. |
+| `MOA_ATTACHMENT_OCR_WORKERS` | CPU-derived, max `12` | Concurrent scanned-PDF pages rendered and OCRed by the Web UI. Set `1` for serial OCR. |
+| `MOA_ATTACHMENT_OCR_THREADS_PER_WORKER` | `3` | OpenMP thread ceiling for each Tesseract process. Keep this value times OCR workers near the host's logical CPU count. |
+| `MOA_ATTACHMENT_OCR_LANG` | `eng` | Installed Tesseract language or `+`-joined languages used for image and scanned-PDF OCR. |
+| `MOA_ATTACHMENT_MAX_FILE_CHARS` | `180000` | Maximum extracted characters retained from one attachment. |
+| `MOA_ATTACHMENT_MAX_TOTAL_CHARS` | `400000` | Maximum extracted characters retained across one run's attachments. |
 | `MOA_SKIP_LAYER2` | unset | Set to `1` to skip the refinement layer entirely. |
 | `MOA_NO_REPORT` | unset | Set to `1` to skip generating `<session>/report.html` after a run (same as `--no-report`). See [`docs/report.md`](report.md). |
 

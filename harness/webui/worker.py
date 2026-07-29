@@ -257,11 +257,17 @@ class JobWorker:
             file_count = max(int(update.get("file_count") or len(uploads)), 1)
             page_number = int(update.get("page_number") or 0)
             page_count = int(update.get("page_count") or 0)
+            ocr_page_count = int(update.get("ocr_page_count") or 0)
+            completed_pages = int(update.get("completed_pages") or 0)
             stage = str(update.get("stage") or "preparing")
-            if page_count:
-                completed = (file_index - 1) + (page_number - 1) / page_count
-                if stage == "complete":
-                    completed = (file_index - 1) + page_number / page_count
+            if ocr_page_count:
+                if stage == "extracting":
+                    in_file = 0.1 * page_number / max(page_count, 1)
+                else:
+                    in_file = 0.1 + 0.9 * completed_pages / ocr_page_count
+                completed = (file_index - 1) + min(in_file, 1)
+            elif page_count:
+                completed = (file_index - 1) + 0.1 * page_number / page_count
             else:
                 completed = file_index - 1 + (1 if stage == "complete" else 0)
             self.store.update_job(
@@ -270,11 +276,27 @@ class JobWorker:
                 progress=0.03 + 0.05 * min(completed / file_count, 1),
             )
             name = str(update.get("file_name") or "reference file")
-            if page_count:
+            if ocr_page_count:
+                worker_count = int(update.get("worker_count") or 1)
+                if stage == "ocr-starting":
+                    message = (
+                        f"Starting parallel OCR for {name}: {ocr_page_count} pages "
+                        f"across {worker_count} workers"
+                    )
+                elif stage == "ocr-complete":
+                    message = (
+                        f"OCRed {name}: {completed_pages} of "
+                        f"{ocr_page_count} pages complete"
+                    )
+                else:
+                    verb = "Rendering" if stage == "rendering" else "OCRing"
+                    message = (
+                        f"{verb} {name}: page {page_number}; "
+                        f"{completed_pages} of {ocr_page_count} complete"
+                    )
+            elif page_count:
                 verb = {
                     "extracting": "Checking",
-                    "rendering": "Rendering",
-                    "recognizing": "OCRing",
                     "complete": "Completed",
                 }.get(stage, "Preparing")
                 message = f"{verb} {name}: page {page_number} of {page_count}"
@@ -287,7 +309,12 @@ class JobWorker:
             self._event(job_id, "attachment-progress", message, **update)
 
         try:
-            prepare_attachment_context(scout, session_dir, progress=report)
+            prepare_attachment_context(
+                scout,
+                session_dir,
+                progress=report,
+                cancelled=lambda: self.store.cancel_requested(job_id),
+            )
         except AttachmentError:
             raise
         scout_path.write_text(json.dumps(scout, indent=2), encoding="utf-8")

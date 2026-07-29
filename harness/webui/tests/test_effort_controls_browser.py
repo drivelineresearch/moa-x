@@ -173,6 +173,32 @@ class EffortControlsBrowserTest(unittest.TestCase):
                 "Fixed Xhigh effort",
                 fable.locator(".model-row-copy small").inner_text(),
             )
+            progress_values = page.evaluate(
+                """async () => {
+                  const { attachmentProgressPercent } = await import(
+                    "/static/js/app.js"
+                  );
+                  return [
+                    { stage: "extracting", page_number: 1, page_count: 319 },
+                    { stage: "extracting", page_number: 319, page_count: 319 },
+                    {
+                      stage: "ocr-starting", page_count: 319,
+                      ocr_page_count: 319, completed_pages: 0,
+                    },
+                    {
+                      stage: "ocr-complete", page_count: 319,
+                      ocr_page_count: 319, completed_pages: 1,
+                    },
+                    {
+                      stage: "ocr-complete", page_count: 319,
+                      ocr_page_count: 319, completed_pages: 160,
+                    },
+                    { stage: "complete" },
+                  ].map(attachmentProgressPercent);
+                }"""
+            )
+            self.assertEqual(progress_values, sorted(progress_values))
+            self.assertEqual(progress_values[-1], 100)
             self.assertEqual(console_errors, [])
             browser.close()
 
