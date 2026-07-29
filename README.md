@@ -13,7 +13,7 @@
 flowchart LR
   S["Scout brief"] --> P["Proposers: Gemini Pro + Grok 4.5 + GLM-5.2"]
   P --> R["Broadcast refiners: Qwen 3.8 + Kimi K3 + Claude Opus 5"]
-  R --> A["Aggregator: GPT-5.6 Sol xhigh; gated Fable option"]
+  R --> A["Aggregator: GPT-5.6 Sol xhigh default; Opus or gated Fable alternatives"]
   A --> O["Final plan + decision lineage + report"]
 ```
 
@@ -29,7 +29,8 @@ plan. Three refiners—Alibaba Qwen `qwen3.8-max-preview`, Moonshot Kimi K3,
 and Anthropic `claude-opus-5`—then refine in broadcast mode (every refiner
 sees every plan). The shipped defaults and all recommended Web UI modes run Layer 3
 through the recorded Codex path with `gpt-5.6-sol` at `xhigh` reasoning.
-Fable 5 is available only as a warning-gated, quota-heavy aggregator option.
+Claude Opus 5 is also available as an aggregator, while Fable 5 is available
+only as a warning-gated, quota-heavy aggregator option.
 
 Built to run **inside Claude Code** as a skill, or from the local Web UI.
 Standalone Python works too. The harness ships curated providers across five

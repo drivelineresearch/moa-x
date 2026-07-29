@@ -60,9 +60,10 @@ the curated Web UI.
 | `agy-gemini-pro` | `agy` CLI | `gemini-3.1-pro-high` | high |
 | `fable` | `claude` CLI | `claude-fable-5` | xhigh; aggregator only |
 
-Most curated routes can be proposers or refiners. `fable` is
-aggregator-only and is rejected from Layers 1 and 2. The Web UI defaults to
-`codex-sol` and exposes Fable only behind a conspicuous quota warning and
+Most curated routes can be proposers or refiners. Claude Opus 5 is also
+available for aggregation. `fable` is aggregator-only and is rejected from
+Layers 1 and 2. The Web UI defaults to `codex-sol` and exposes Fable only
+behind a conspicuous quota warning and
 acknowledgement phrase. Explicit custom or legacy CLI configurations can still
 dispatch Layer 3 through Claude. DeepSeek uses the authenticated
 OpenCode Go account; `deepseek` is listed before Flash as the preferred

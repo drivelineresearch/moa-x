@@ -9,7 +9,7 @@ plans for coding agents instead of chat answers.
 flowchart LR
   S["Scout brief"] --> P["Proposers: Gemini Pro + Grok 4.5 + GLM-5.2"]
   P --> R["Broadcast refiners: Qwen 3.8 + Kimi K3 + Claude Opus 5"]
-  R --> A["Aggregator: GPT-5.6 Sol xhigh; gated Fable option"]
+  R --> A["Aggregator: GPT-5.6 Sol xhigh default; Opus or gated Fable alternatives"]
   A --> O["Final plan + decision lineage + report"]
 ```
 

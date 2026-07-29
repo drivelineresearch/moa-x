@@ -226,6 +226,12 @@ class WebUITest(unittest.TestCase):
         self.assertIn(b'id="fable-warning-password"', page.data)
         self.assertIn(b"substantial hit to shared limits", page.data)
         self.assertNotIn(b"driveline11", page.data)
+        app_source = (
+            Path(__file__).parents[1] / "static" / "js" / "app.js"
+        ).read_text()
+        self.assertIn('input.dataset.fableAuthorized !== "true"', app_source)
+        self.assertIn('$("#launch-form").addEventListener("change"', app_source)
+        self.assertIn("openFableWarning(fableInput);", app_source)
 
     def test_initial_views_expose_visible_accessible_loading_states(self):
         page = self.client.get("/")

@@ -85,7 +85,7 @@ ROUTE_META: dict[str, dict[str, Any]] = {
     "sonnet": {"label": "Claude Sonnet 5", "lab": "Anthropic",
                "roles": ["proposer", "refiner"]},
     "opus": {"label": "Claude Opus 5", "lab": "Anthropic",
-             "roles": ["proposer", "refiner"]},
+             "roles": ["proposer", "refiner", "aggregator"]},
     "glm": {"label": "GLM-5.2", "lab": "Zhipu",
             "roles": ["proposer", "refiner"]},
     "kimi": {"label": "Kimi K3", "lab": "Moonshot",

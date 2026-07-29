@@ -1782,9 +1782,9 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
     )
     role_ok = (
         {item["id"] for item in models if "aggregator" in item["roles"]}
-        == {"codex-sol", "fable"}
+        == {"codex-sol", "opus", "fable"}
         and by_id["fable"]["roles"] == ["aggregator"]
-        and by_id["opus"]["roles"] == ["proposer", "refiner"]
+        and by_id["opus"]["roles"] == ["proposer", "refiner", "aggregator"]
         and by_id["deepseek"]["roles"] == ["proposer", "refiner"]
         and by_id["deepseek-flash"]["roles"] == ["proposer", "refiner"]
     )
@@ -1814,7 +1814,7 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
             'efforts: { opus: "max" }',
             'preferred: ["codex-sol"]',
             'efforts: { "codex-sol": "xhigh" }',
-            '["codex-sol", FABLE_ROUTE_ID].includes(id)',
+            '["codex-sol", "opus", FABLE_ROUTE_ID].includes(id)',
             'const FABLE_WARNING_PASSWORD = "driveline11";',
             "syncSelectedProviderGroups();",
         )

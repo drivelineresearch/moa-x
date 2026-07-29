@@ -12,8 +12,8 @@ versioning.
   uploads, lifecycle events, provider health, and responsive run review.
 - Curated current routes for GPT-5.6 Terra/Sol/Luna, Claude Sonnet/Opus 5,
   OpenCode Go, Qwen Token Plan, Cursor Grok, and AGY Gemini 3.1 Pro
-  High/Low. The Web UI offers GPT-5.6 Sol by default plus a warning-gated
-  Fable 5 1M `xhigh` aggregator.
+  High/Low. The Web UI offers GPT-5.6 Sol by default, Claude Opus 5 as an
+  alternative aggregator, and warning-gated Fable 5 1M at `xhigh`.
 - Generated provider portraits, workflow/state art, favicon, and responsive
   control-room illustrations.
 - Interactive decision-lineage explorer in `report.html`, backed by a new

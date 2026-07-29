@@ -524,7 +524,9 @@ function modelsForRole(role) {
     if (["codex-reviewer", "codex-aggregator"].includes(id)) return false;
     const roles = model.roles || model.supported_roles || [];
     if (Array.isArray(roles) && roles.length && !roles.includes(role)) return false;
-    if (role === "aggregator") return ["codex-sol", FABLE_ROUTE_ID].includes(id);
+    if (role === "aggregator") {
+      return ["codex-sol", "opus", FABLE_ROUTE_ID].includes(id);
+    }
     return id !== FABLE_ROUTE_ID;
   }).map((model) => {
     const harness = model.harness || model.provider_id || model.provider || "cli";
@@ -769,6 +771,15 @@ function syncSelectedProviderGroups() {
 }
 
 function openFableWarning(input) {
+  if (input.checked && input.dataset.fableAuthorized !== "true") {
+    input.checked = false;
+    const safeDefault = $(
+      'input[name="aggregator"][value="codex-sol"]:not(:disabled)'
+    );
+    if (safeDefault) safeDefault.checked = true;
+    updateRosterChecks();
+    syncSelectedProviderGroups();
+  }
   state.pendingFableInput = input;
   $("#fable-warning-password").value = "";
   $("#fable-warning-error").hidden = true;
@@ -1322,6 +1333,13 @@ async function openPromptCoach() {
 
 async function launchRun(event) {
   event.preventDefault();
+  const fableInput = $(
+    `input[name="aggregator"][value="${FABLE_ROUTE_ID}"]:checked`
+  );
+  if (fableInput && fableInput.dataset.fableAuthorized !== "true") {
+    openFableWarning(fableInput);
+    return;
+  }
   if (![1, 2, 3, 4].every(validateStep)) return;
   const button = $("#launch-button");
   setButtonLoading(button, true, "Dispatching…", "Start run");
@@ -2125,6 +2143,13 @@ function bindEvents() {
     );
     if (!input || input.dataset.fableAuthorized === "true") return;
     event.preventDefault();
+    openFableWarning(input);
+  });
+  $("#launch-form").addEventListener("change", (event) => {
+    const input = event.target.matches?.(
+      `input[name="aggregator"][value="${FABLE_ROUTE_ID}"]`
+    ) ? event.target : null;
+    if (!input?.checked || input.dataset.fableAuthorized === "true") return;
     openFableWarning(input);
   });
   $("#fable-warning-form").addEventListener("submit", authorizeFable);

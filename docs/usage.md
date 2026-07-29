@@ -47,10 +47,10 @@ What happens:
    phase, synthesizes, honors refiner contradictions, and writes
    `.moa/<session>/final-plan.md` plus the structured `final-plan.json`
    decision lineage.
-   The Web UI also exposes Fable 5 1M at `xhigh` as an opt-in AGY
-   aggregator. Its selection is guarded by a warning/password modal because
-   it can consume very large quotas; Fable is not available in either
-   upstream layer.
+   The Web UI also exposes Claude Opus 5 and Fable 5 1M at `xhigh` as
+   alternative Claude aggregators. Fable selection is guarded by a
+   warning/password modal because it can consume very large quotas; Fable is
+   not available in either upstream layer.
 6. **Plan presented.** Claude shows you the plan and asks if you want
    to start executing.
 

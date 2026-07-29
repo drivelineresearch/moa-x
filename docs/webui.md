@@ -59,7 +59,8 @@ alongside Qwen and Opus at higher depths. Every named default lane comes from
 a different lab. GPT-5.6 Sol remains the selected `xhigh` aggregator in every
 recommended mode.
 
-Fable 5 is available as an aggregator-only alternative. Selecting it opens a
+Claude Opus 5 is available as a normal aggregator alternative. Fable 5 is
+available as an aggregator-only alternative. Selecting Fable opens a
 quota warning and requires the shared acknowledgement phrase before the radio
 selection is applied. This is intentionally only a warning shot—the phrase is
 present in browser JavaScript and is not an authentication or authorization
