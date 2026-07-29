@@ -22,6 +22,13 @@ it with `MOA_WEBUI_HOST` and `MOA_WEBUI_PORT`. Set
 There is intentionally no login, so never expose the listener directly to the
 public internet.
 
+When Waitress is installed, the HTTP/SSE layer uses a CPU-derived thread pool
+with a minimum of 8 and maximum of 32 threads; override it with
+`MOA_WEBUI_THREADS`. This request pool remains separate from the background
+OCR executor, so long-lived browser streams do not consume the page workers.
+Flask's development fallback also runs threaded, but it is not the production
+server.
+
 No Node.js or frontend build tool is required. HTML, CSS, JavaScript, the
 operating-system font stack, and project-owned image assets are already
 versioned under `harness/webui/`. Gotham is preferred automatically when it
@@ -191,16 +198,21 @@ embedded in the scout brief, so every proposer, broadcast refiner, and
 aggregator receives identical contents without depending on its CLI sandbox
 being able to open `.moa/`. PDF page headings are preserved for citations.
 Scanned PDFs with no text layer are rendered page-by-page with Poppler and
-OCRed locally with Tesseract; the recovered text is shared across providers.
+OCRed locally with Tesseract; independent pages run concurrently and the
+recovered text is reassembled in original page order before it is shared
+across providers.
 Install both tools with `sudo apt install poppler-utils tesseract-ocr` on
 Ubuntu/Debian or `brew install poppler tesseract` on macOS. PDF OCR uses a
 bounded 200-DPI render (maximum 2,200 pixels on the long edge) and preserves
-page headings for citations.
+page headings for citations. By default the worker budgets approximately all
+logical CPUs, up to 12 concurrent pages and three OpenMP threads per Tesseract
+process. Each worker owns only one bounded render at a time, so memory scales
+with the worker count instead of the PDF's total page count.
 
 Reference preparation runs in the local worker rather than holding the launch
-request open. The launch dialog shows the active file plus the current PDF page
-as it is checked, rendered, and OCRed; after preparation, it transitions to
-the normal live run trace.
+request open. The launch dialog shows completed OCR pages, active pages, and
+the worker count while pages render and OCR in parallel; after preparation, it
+transitions to the normal live run trace.
 
 Images are not base64-dumped into model prompts. Base64 would consume large
 amounts of context and text-only CLI transports would not interpret it as
@@ -211,6 +223,12 @@ Tesseract and the extracted text is shared across providers. Install it with
 installed Tesseract language code (default `eng`). OCR preserves readable
 labels and screenshot copy but cannot reliably describe purely visual charts
 or diagrams; attach a short text description when visual relationships matter.
+
+`MOA_ATTACHMENT_OCR_WORKERS` overrides the concurrent-page count; set it to
+`1` to force serial OCR. `MOA_ATTACHMENT_OCR_THREADS_PER_WORKER` controls the
+OpenMP thread ceiling passed to each Tesseract process. As a practical CPU
+budget, keep `workers × threads-per-worker` near the logical CPU count. The
+defaults are derived from `os.cpu_count()` and bounded for shared hosts.
 
 The default prompt limits are 180,000 characters per file and 400,000 across
 one run. Trusted deployments can override them with

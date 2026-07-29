@@ -111,6 +111,10 @@ then `harness/config.yaml`, then built-in defaults. Loader lives at
 
 ## Discovered patterns
 
+- **Scanned-PDF OCR is page-parallel but output-ordered.** Keep the
+  CPU-derived `MOA_ATTACHMENT_OCR_WORKERS` × Tesseract thread budget bounded,
+  serialize progress updates, and always reassemble text by PDF page number.
+  → `docs/webui.md`.
 - **Effort copy and controls are one UI contract.** If a roster row says
   “Adjust,” selecting it must reveal an enabled control; fixed routes must say
   “Fixed _level_ effort” or “Provider-managed effort.” Drive both from

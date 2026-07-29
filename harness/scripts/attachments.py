@@ -7,17 +7,21 @@ same bounded Markdown packet in the scout brief seen by every MoA layer.
 
 from __future__ import annotations
 
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 import os
 import re
 import shutil
 import subprocess
 import tempfile
+import threading
 from pathlib import Path
 from typing import Any, Callable
 
 
 DEFAULT_MAX_FILE_CHARS = 180_000
 DEFAULT_MAX_TOTAL_CHARS = 400_000
+DEFAULT_OCR_THREADS_PER_WORKER = 3
+DEFAULT_MAX_OCR_WORKERS = 12
 TEXT_EXTENSIONS = {
     ".csv",
     ".html",
@@ -45,10 +49,16 @@ IMAGE_EXTENSIONS = {
 }
 SUPPORTED_EXTENSIONS = TEXT_EXTENSIONS | IMAGE_EXTENSIONS | {".pdf"}
 AttachmentProgress = Callable[[dict[str, Any]], None]
+AttachmentCancellation = Callable[[], bool]
 
 
 class AttachmentError(ValueError):
     """An uploaded reference cannot be safely converted to prompt context."""
+
+
+def _raise_if_cancelled(cancelled: AttachmentCancellation | None) -> None:
+    if cancelled and cancelled():
+        raise InterruptedError
 
 
 def _positive_limit(name: str, default: int) -> int:
@@ -81,6 +91,26 @@ def _ocr_language() -> str:
     return language
 
 
+def _ocr_threads_per_worker() -> int:
+    return _positive_limit(
+        "MOA_ATTACHMENT_OCR_THREADS_PER_WORKER",
+        DEFAULT_OCR_THREADS_PER_WORKER,
+    )
+
+
+def _ocr_worker_count(page_count: int) -> int:
+    if page_count <= 0:
+        return 0
+    threads_per_worker = _ocr_threads_per_worker()
+    cpu_count = os.cpu_count() or 1
+    default = min(
+        DEFAULT_MAX_OCR_WORKERS,
+        max(1, (cpu_count + threads_per_worker - 1) // threads_per_worker),
+    )
+    configured = _positive_limit("MOA_ATTACHMENT_OCR_WORKERS", default)
+    return min(page_count, configured)
+
+
 def _ocr_image(path: Path, *, source_name: str) -> str:
     """Extract text from a raster image without treating it as trusted input."""
     binary = shutil.which("tesseract")
@@ -91,12 +121,15 @@ def _ocr_image(path: Path, *, source_name: str) -> str:
             "macOS: brew install tesseract) and launch again"
         )
     try:
+        child_env = os.environ.copy()
+        child_env["OMP_THREAD_LIMIT"] = str(_ocr_threads_per_worker())
         result = subprocess.run(
             [binary, str(path), "stdout", "-l", _ocr_language()],
             capture_output=True,
             text=True,
             timeout=120,
             check=False,
+            env=child_env,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise AttachmentError(f"OCR failed for {source_name}: {exc}") from exc
@@ -111,6 +144,7 @@ def _ocr_pdf_page(
     page_number: int,
     page_count: int,
     progress: AttachmentProgress | None = None,
+    cancelled: AttachmentCancellation | None = None,
 ) -> str:
     """Render one PDF page at a bounded resolution and OCR the resulting image."""
     renderer = shutil.which("pdftoppm")
@@ -121,6 +155,7 @@ def _ocr_pdf_page(
             "macOS: brew install poppler tesseract) and launch again"
         )
     try:
+        _raise_if_cancelled(cancelled)
         with tempfile.TemporaryDirectory(prefix="moa-pdf-ocr-") as temporary:
             image_base = Path(temporary) / "page"
             if progress:
@@ -164,6 +199,7 @@ def _ocr_pdf_page(
                     f"OCR failed rendering page {page_number} of {path.name}: "
                     "the PDF renderer produced no image"
                 )
+            _raise_if_cancelled(cancelled)
             if progress:
                 progress(
                     {
@@ -175,6 +211,8 @@ def _ocr_pdf_page(
             return _ocr_image(image_path, source_name=f"page {page_number} of {path.name}")
     except AttachmentError:
         raise
+    except InterruptedError:
+        raise
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise AttachmentError(
             f"OCR failed rendering page {page_number} of {path.name}: {exc}"
@@ -184,6 +222,7 @@ def _ocr_pdf_page(
 def _extract_pdf(
     path: Path,
     progress: AttachmentProgress | None = None,
+    cancelled: AttachmentCancellation | None = None,
 ) -> tuple[str, int, int]:
     try:
         from pypdf import PdfReader
@@ -198,10 +237,11 @@ def _extract_pdf(
             raise AttachmentError(
                 f"{path.name} is password-protected and cannot be converted"
             )
-        pages: list[str] = []
-        ocr_pages = 0
         page_count = len(reader.pages)
+        page_text: list[str] = [""] * page_count
+        ocr_page_numbers: list[int] = []
         for index, page in enumerate(reader.pages, start=1):
+            _raise_if_cancelled(cancelled)
             if progress:
                 progress(
                     {
@@ -213,12 +253,102 @@ def _extract_pdf(
             text = page.extract_text() or ""
             text = text.replace("\x00", "").strip()
             if not text:
-                text = _ocr_pdf_page(path, index, page_count, progress)
-                if text:
-                    ocr_pages += 1
-            if text:
-                pages.append(f"### Page {index}\n\n{text}")
+                ocr_page_numbers.append(index)
+            else:
+                page_text[index - 1] = text
+
+        ocr_pages = 0
+        if ocr_page_numbers:
+            worker_count = _ocr_worker_count(len(ocr_page_numbers))
+            completed_pages = 0
+            progress_lock = threading.Lock()
+
+            def report_ocr(update: dict[str, Any]) -> None:
+                if not progress:
+                    return
+                with progress_lock:
+                    progress(
+                        {
+                            **update,
+                            "ocr_page_count": len(ocr_page_numbers),
+                            "completed_pages": completed_pages,
+                            "worker_count": worker_count,
+                        }
+                    )
+
+            report_ocr(
+                {
+                    "stage": "ocr-starting",
+                    "page_number": 0,
+                    "page_count": page_count,
+                }
+            )
+            with ThreadPoolExecutor(
+                max_workers=worker_count,
+                thread_name_prefix="moa-pdf-ocr",
+            ) as executor:
+                remaining_pages = iter(ocr_page_numbers)
+                future_pages = {}
+
+                def submit_next_page() -> bool:
+                    _raise_if_cancelled(cancelled)
+                    try:
+                        page_number = next(remaining_pages)
+                    except StopIteration:
+                        return False
+                    future = executor.submit(
+                        _ocr_pdf_page,
+                        path,
+                        page_number,
+                        page_count,
+                        report_ocr,
+                        cancelled,
+                    )
+                    future_pages[future] = page_number
+                    return True
+
+                for _ in range(worker_count):
+                    if not submit_next_page():
+                        break
+                try:
+                    while future_pages:
+                        finished, _ = wait(
+                            future_pages,
+                            return_when=FIRST_COMPLETED,
+                        )
+                        for future in finished:
+                            page_number = future_pages.pop(future)
+                            text = future.result()
+                            page_text[page_number - 1] = text
+                            if text:
+                                ocr_pages += 1
+                            with progress_lock:
+                                completed_pages += 1
+                                if progress:
+                                    progress(
+                                        {
+                                            "stage": "ocr-complete",
+                                            "page_number": page_number,
+                                            "page_count": page_count,
+                                            "ocr_page_count": len(ocr_page_numbers),
+                                            "completed_pages": completed_pages,
+                                            "worker_count": worker_count,
+                                        }
+                                    )
+                            submit_next_page()
+                except Exception:
+                    for future in future_pages:
+                        future.cancel()
+                    raise
+
+        pages = [
+            f"### Page {index}\n\n{text}"
+            for index, text in enumerate(page_text, start=1)
+            if text
+        ]
     except AttachmentError:
+        raise
+    except InterruptedError:
         raise
     except Exception as exc:
         raise AttachmentError(f"could not read PDF {path.name}: {exc}") from exc
@@ -252,6 +382,7 @@ def prepare_attachment_context(
     scout_brief: dict[str, Any],
     session_dir: Path,
     progress: AttachmentProgress | None = None,
+    cancelled: AttachmentCancellation | None = None,
 ) -> dict[str, Any]:
     """Return a scout brief with every uploaded reference inlined as Markdown.
 
@@ -289,6 +420,7 @@ def prepare_attachment_context(
     sources: list[dict[str, Any]] = []
 
     for index, upload in enumerate(uploads, start=1):
+        _raise_if_cancelled(cancelled)
         if not isinstance(upload, dict):
             raise AttachmentError(f"attachment {index} metadata is invalid")
         relative = str(upload.get("path") or "")
@@ -324,6 +456,7 @@ def prepare_attachment_context(
             extracted, pages, ocr_pages = _extract_pdf(
                 source_path,
                 progress=pdf_progress if progress else None,
+                cancelled=cancelled,
             )
             kind = "pdf-ocr" if ocr_pages else "pdf"
         elif extension in IMAGE_EXTENSIONS:
