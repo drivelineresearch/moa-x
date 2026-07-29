@@ -3,9 +3,8 @@
 The brand images are current and live:
 
 - `docs/moa-x-header.png` — the README hero banner (generated from Prompt 2).
-- `docs/moa-x-workflow.png` — the prior four-stage workflow illustration
-  (generated from Prompt 1). The docs now use Mermaid until this asset is
-  regenerated for the current roster.
+- `docs/moa-x-workflow.png` — the current four-stage workflow illustration
+  (generated from Prompt 1), embedded in the README.
 
 The banner reflects the cross-lab ensemble theme. The next workflow image should
 show the current default proposers (Gemini Pro, Grok 4.5, and GLM-5.2),
