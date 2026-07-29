@@ -3,11 +3,26 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import threading
 import time
 from pathlib import Path
 from typing import Any, Iterable
+
+
+EMAIL_RE = re.compile(
+    r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b",
+    re.IGNORECASE,
+)
+HOME_PATH_RE = re.compile(r"(?<![\w.-])/home/[^/\s]+")
+
+
+def redact_event_text(value: Any) -> str:
+    """Remove operator identity and home-directory details from UI logs."""
+    text = str(value or "")
+    text = EMAIL_RE.sub("[redacted email]", text)
+    return HOME_PATH_RE.sub("~", text)
 
 
 SCHEMA = """
@@ -492,6 +507,7 @@ class Store:
         data: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         now = time.time()
+        message = redact_event_text(message)
         with self.connect() as conn:
             cursor = conn.execute(
                 """

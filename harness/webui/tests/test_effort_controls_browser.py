@@ -199,6 +199,24 @@ class EffortControlsBrowserTest(unittest.TestCase):
             )
             self.assertEqual(progress_values, sorted(progress_values))
             self.assertEqual(progress_values[-1], 100)
+            retry_trace = page.evaluate(
+                """async () => {
+                  const { tracePresentation } = await import(
+                    "/static/js/app.js"
+                  );
+                  return tracePresentation({
+                    seq: 1,
+                    kind: "log",
+                    message: "[orchestrator] Layer 1: spawning ['cursor-grok'] in parallel... (redispatch)",
+                    data: { phase: "layer1" },
+                  });
+                }"""
+            )
+            self.assertEqual(retry_trace["title"], "Proposal retry started")
+            self.assertEqual(
+                retry_trace["message"],
+                "One proposer lane is retrying.",
+            )
             self.assertEqual(console_errors, [])
             browser.close()
 

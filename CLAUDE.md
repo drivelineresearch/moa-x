@@ -111,6 +111,10 @@ then `harness/config.yaml`, then built-in defaults. Loader lives at
 
 ## Discovered patterns
 
+- **Evidence validation fails closed.** Reject a proposer before persistence
+  when its evidence cross-fields are invalid, and redact operator email/home
+  details from browser-visible worker logs. → `harness/scripts/run_moa.py`,
+  `harness/webui/store.py`.
 - **Scanned-PDF OCR is page-parallel but output-ordered.** Keep the
   CPU-derived `MOA_ATTACHMENT_OCR_WORKERS` × Tesseract thread budget bounded,
   serialize progress updates, and always reassemble text by PDF page number.
