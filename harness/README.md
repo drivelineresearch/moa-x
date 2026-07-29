@@ -2,10 +2,10 @@
 
 Layered planning ensemble for Claude Code. The configured proposers — by
 default three models from three different labs (Google Gemini 3.1 Pro via
-AGY, OpenAI codex/gpt-5.6-terra, and Claude Sonnet 5 via the stable `sonnet`
-provider name) — read
+AGY, xAI Grok 4.5, and Zhipu GLM-5.2 via OpenCode) — read
 the repo, do heavy web research, and write independent plans. The refiners
-(Qwen qwen3.8-max-preview + Claude Opus 5 high) then **broadcast-refine** by
+(Qwen qwen3.8-max-preview + Kimi K3 + Claude Opus 5 high) then
+**broadcast-refine** by
 reading all the proposals and producing cross-verifications. Layer 3
 synthesizes one plan in a recorded Codex subprocess on `gpt-5.6-sol` at
 `xhigh` reasoning.
@@ -27,8 +27,8 @@ The skill will:
 1. Ask 1-3 clarifying questions.
 2. Generate a "scout brief" with focus files, in-scope items, out-of-scope items.
 3. Show you the brief and ask "ready to run? ~12-25 minutes".
-4. On yes, spawn Gemini Pro, GPT-5.6 Terra, and Claude Sonnet in parallel.
-5. Spawn the broadcast refiners in parallel (OpenCode/Qwen and Claude Opus);
+4. On yes, spawn Gemini Pro, Grok 4.5, and GLM-5.2 in parallel.
+5. Spawn the broadcast refiners in parallel (Qwen, Kimi K3, and Claude Opus);
    each sees all proposals.
 6. Synthesize the proposals + refinements into `final-plan.md` and the
    structured `final-plan.json` decision lineage.
@@ -39,14 +39,14 @@ The skill will:
 
 ```
 Layer 0 — Scout brief                (parent Claude Code, in-place)
-Layer 1 — Proposers (parallel)       (default Gemini Pro + Terra + Sonnet)
-Layer 2 — Broadcast refiners         (default Qwen + Opus, each sees all proposals)
+Layer 1 — Proposers (parallel)       (default Gemini Pro + Grok + GLM)
+Layer 2 — Broadcast refiners         (default Qwen + Kimi + Opus, each sees all proposals)
 Layer 3 — Aggregator                 (recorded GPT-5.6 Sol at xhigh)
 ```
 
 Layer 0 happens in the parent REPL. Layer 3 runs through Codex with `--phase
-layer3`. The Sonnet proposer and Opus refiner are separate `claude -p`
-headless invocations, not the parent session.
+layer3` by default. The Opus refiner is a separate `claude -p` headless
+invocation, not the parent session.
 
 ### Why broadcast refinement (not cross-pair)
 
@@ -59,13 +59,14 @@ because refiners run in parallel either way, and it gives each refiner
 the context to spot cross-proposer convergence and divergence signals
 that a one-input view can't reveal.
 
-### Why Anthropic spans proposal and review
+### Why model families do not repeat across the default stages
 
-Claude Sonnet 5 (stable provider name `sonnet`) contributes an independent
-proposal, while Claude Opus 5 (`opus`) joins Qwen in the broadcast-refiner
-layer for Balanced and Thorough runs. This uses Sonnet for breadth and Opus
-for adversarial review without sharing a lab with the GPT-5.6 Sol aggregator.
-Quick mode keeps Sonnet but omits Opus to control latency.
+The Balanced lane assigns Google, xAI, and Zhipu to proposal; Alibaba,
+Moonshot, and Anthropic to broadcast refinement; and OpenAI to aggregation.
+That makes each family responsible for one stage, preserving the independent
+failure modes that make a heterogeneous ensemble useful. Quick trims the
+lane to Gemini + Grok → Kimi → Sol. Thorough adds DeepSeek V4 Pro upstream
+and raises Opus to `max`.
 
 ## Why this skill exists
 
@@ -105,11 +106,11 @@ into `~/.claude/skills/mixture-of-agents/`. The default roster needs:
 - **codex** — `npm i -g @openai/codex && codex login`
 - **agy / Antigravity** — install or update Antigravity, run `agy install`,
   sign in, and verify `agy models`
-- **opencode** (runs default Qwen, with GLM and Kimi still available) — `curl -fsSL https://opencode.ai/install | bash`
+- **opencode** (runs default Grok/GLM proposers and Qwen/Kimi refiners) — `curl -fsSL https://opencode.ai/install | bash`
   (or `npm i -g opencode-ai`), then `opencode auth login`, or export provider
   API keys (`ZHIPU_API_KEY` / `MOONSHOT_API_KEY` / `FIREWORKS_API_KEY` /
   `QWEN_TOKEN_PLAN_API_KEY`)
-- **claude** — the Claude Code CLI (runs the Sonnet proposer and Opus refiner)
+- **claude** — the Claude Code CLI (runs the Balanced/Thorough Opus refiner)
 - **cursor** (only if you configure a cursor-routed provider like `composer`)
   — `curl https://cursor.com/install -fsS | bash`, then `cursor-agent login`
   (the binary is `cursor-agent`, or just `agent` on newer installs)
@@ -196,8 +197,8 @@ python3 ~/.claude/skills/mixture-of-agents/scripts/run_moa.py \
   --sonnet-model claude-sonnet-5 \
   --codex-timeout 1500 \
   --sonnet-timeout 1200 \
-  --proposers agy-gemini-pro,codex,sonnet \
-  --refiners qwen,opus \
+  --proposers agy-gemini-pro,grok,glm \
+  --refiners qwen,kimi,opus \
   --skip-layer2          # debug only; skips refiners
 ```
 
@@ -220,7 +221,7 @@ Defaults:
 - `--sonnet-model claude-sonnet-5`; stable Anthropic provider names remain
   `sonnet` and `opus`
 - `--aggregator-provider codex-sol --aggregator-effort xhigh`
-- `--proposers agy-gemini-pro,codex,sonnet` and `--refiners qwen,opus`
+- `--proposers agy-gemini-pro,grok,glm` and `--refiners qwen,kimi,opus`
 
 The default Qwen refiner routes `qwen-token-plan/qwen3.8-max-preview` through
 OpenCode with a 600-second cap. Set `QWEN_TOKEN_PLAN_API_KEY=sk-sp-...` in
@@ -255,8 +256,8 @@ authenticated in the local CLI:
 
 ```yaml
 layers:
-  proposers: [agy-gemini-pro, codex, sonnet]
-  refiners: [qwen, opus]
+  proposers: [agy-gemini-pro, grok, glm]
+  refiners: [qwen, kimi, opus]
   aggregator: codex-sol
 ```
 
@@ -279,8 +280,8 @@ The live account catalog must expose the selected stable model slug.
   it. If a CLI is rate-limited on its web search tool, the proposal
   or refinement will be weaker. Thin `research_sources` arrays in
   the manifest are a signal to retry later.
-- **Heterogeneity is the point.** The default roster spans four labs
-  (Google, OpenAI, Anthropic, Alibaba). If you override the defaults so
+- **Heterogeneity is the point.** The default roster spans seven labs
+  (Google, xAI, Zhipu, Alibaba, Moonshot, Anthropic, OpenAI). If you override the defaults so
   they converge on the same vendor, you've defeated the whole purpose of MoA.
 - **Claude `--bare` mode is not used for sonnet.** `--bare` requires
   `ANTHROPIC_API_KEY` and skips OAuth/keychain auth, which means

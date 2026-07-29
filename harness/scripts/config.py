@@ -54,7 +54,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 HARNESS_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG_PATH = HARNESS_DIR / "config.yaml"
 DEFAULT_DOTENV_PATH = REPO_ROOT / ".env"
-_AGY_MODEL_DEPTH_RE = re.compile(r"-(low|medium|high)$", re.IGNORECASE)
+_AGY_MODEL_DEPTH_RE = re.compile(
+    r"-(low|medium|high|xhigh|max)$", re.IGNORECASE
+)
 
 
 # --- binary names ----------------------------------------------------------
@@ -120,7 +122,21 @@ BUILTIN_PROVIDERS: dict[str, ResolvedProvider] = {
     # Gemini Flash routes are intentionally not curated: Pro is the sole
     # Google route exposed by MoA-X.
     "agy-gemini-pro": ResolvedProvider(name="agy-gemini-pro", harness="agy",      model="gemini-3.1-pro-high", effort="high"),
+    # Fable is a deliberately gated, quota-intensive synthesis route through
+    # Claude Code. It is aggregator-only and never participates upstream.
+    "fable":          ResolvedProvider(name="fable",          harness="claude",   model="claude-fable-5", effort="xhigh"),
 }
+
+PROVIDER_ALLOWED_ROLES: dict[str, frozenset[str]] = {
+    "fable": frozenset({"aggregator"}),
+}
+
+
+def provider_allows_role(name: str, role: str) -> bool:
+    """Return whether a named built-in route is allowed in a pipeline role."""
+    return role in PROVIDER_ALLOWED_ROLES.get(
+        name, frozenset({"proposer", "refiner", "aggregator"})
+    )
 
 
 def resolve_provider(name: str, *, user_providers: dict[str, dict]) -> ResolvedProvider:
@@ -415,8 +431,8 @@ class LoadedConfig:
 
 
 # Default layer assignments when no YAML / env override is set.
-_DEFAULT_PROPOSERS = ["agy-gemini-pro", "codex", "sonnet"]
-_DEFAULT_REFINERS = ["qwen", "opus"]
+_DEFAULT_PROPOSERS = ["agy-gemini-pro", "grok", "glm"]
+_DEFAULT_REFINERS = ["qwen", "kimi", "opus"]
 _DEFAULT_AGGREGATOR = "codex-sol"
 
 
@@ -463,6 +479,26 @@ def load_resolved_config(
     proposers = resolve_layer(proposer_names, user_providers=user_providers)
     refiners = resolve_layer(refiner_names, user_providers=user_providers)
     aggregator = resolve_provider(aggregator_name, user_providers=user_providers)
+    invalid_proposers = [
+        item.name for item in proposers
+        if not provider_allows_role(item.name, "proposer")
+    ]
+    invalid_refiners = [
+        item.name for item in refiners
+        if not provider_allows_role(item.name, "refiner")
+    ]
+    if invalid_proposers:
+        raise ValueError(
+            f"providers are not allowed as proposers: {invalid_proposers}"
+        )
+    if invalid_refiners:
+        raise ValueError(
+            f"providers are not allowed as refiners: {invalid_refiners}"
+        )
+    if not provider_allows_role(aggregator.name, "aggregator"):
+        raise ValueError(
+            f"provider is not allowed as aggregator: {aggregator.name}"
+        )
 
     skip_refinement = _env_truthy("MOA_SKIP_LAYER2") or bool(
         (cfg.get("layers") or {}).get("skip_refinement")

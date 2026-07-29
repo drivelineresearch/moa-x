@@ -10,20 +10,21 @@ The roster is config-driven
 
   Layer 1 (Proposers, parallel):
     - agy-gemini-pro (gemini-3.1-pro-high, Google via AGY)
-    - codex           (gpt-5.6-terra @ high, OpenAI via codex CLI)
-    - sonnet          (claude-sonnet-5 @ high, Anthropic via `claude -p`)
+    - grok             (grok-4.5, xAI via OpenCode Go)
+    - glm              (glm-5.2, Zhipu via OpenCode Go)
 
   Layer 2 (Refiners, parallel, broadcast):
     - qwen (qwen3.8-max-preview, Alibaba via Qwen Token Plan; sees ALL outputs)
+    - kimi (kimi-k3, Moonshot via OpenCode Go; sees ALL outputs)
     - opus (claude-opus-5 @ high, Anthropic; sees ALL proposer outputs)
 
   Layer 3 (Aggregator):
     - codex-sol (gpt-5.6-sol @ xhigh, OpenAI via recorded Codex subprocess)
 
 Broadcast refinement (each refiner sees every proposer's output) is
-paper-faithful to Wang et al. 2024 (arXiv:2406.04692). The default keeps
-both Layer 2 refiners off the OpenAI lab that supplies the `codex-sol`
-aggregator, so verification stays lab-independent.
+paper-faithful to Wang et al. 2024 (arXiv:2406.04692). The default uses a
+different lab for every named route across proposal, refinement, and
+aggregation, so verification and synthesis stay lab-independent.
 This is a recommended default, not a runtime invariant — see CLAUDE.md.
 
 Flow:
@@ -2480,6 +2481,18 @@ def main() -> int:
                     file=sys.stderr,
                 )
                 sys.exit(2)
+            role = "proposer" if label == "proposers" else "refiner"
+            invalid_role = [
+                name for name in requested
+                if not harness_config.provider_allows_role(name, role)
+            ]
+            if invalid_role:
+                print(
+                    f"ERROR: --{label} contains providers not allowed as "
+                    f"{role}s: {invalid_role}.",
+                    file=sys.stderr,
+                )
+                sys.exit(2)
             return [provider_catalog[name] for name in requested]
 
         final_proposers = _select_providers(list(loaded_cfg.proposers), args.proposers, "proposers")
@@ -2490,6 +2503,15 @@ def main() -> int:
                 print(
                     f"ERROR: unknown aggregator provider {args.aggregator_provider!r}. "
                     f"Valid providers: {sorted(provider_catalog)}.",
+                    file=sys.stderr,
+                )
+                return 2
+            if not harness_config.provider_allows_role(
+                args.aggregator_provider, "aggregator"
+            ):
+                print(
+                    f"ERROR: provider {args.aggregator_provider!r} is not "
+                    "allowed as an aggregator.",
                     file=sys.stderr,
                 )
                 return 2

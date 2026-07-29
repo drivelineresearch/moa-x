@@ -47,7 +47,7 @@ const DEPTH_PRESENTATION = Object.freeze({
   balanced: {
     value: 1,
     image: "/static/images/context-effort.webp",
-    caption: "Three proposers and two refiners with each route’s configured effort.",
+    caption: "Three proposers and three refiners with each route’s configured effort.",
   },
   thorough: {
     value: 2,
@@ -56,6 +56,8 @@ const DEPTH_PRESENTATION = Object.freeze({
   },
 });
 const DEPTH_KEYS = ["quick", "balanced", "thorough"];
+const FABLE_ROUTE_ID = "fable";
+const FABLE_WARNING_PASSWORD = "driveline11";
 
 const state = {
   providers: [],
@@ -72,6 +74,7 @@ const state = {
   events: [],
   eventStop: null,
   promptCoach: { original: "", analysis: null, answers: [], index: 0, result: null, undo: "" },
+  pendingFableInput: null,
   detailRefreshAt: 0,
   step: 1,
   profile: loadProfile(),
@@ -519,8 +522,10 @@ function modelsForRole(role) {
     if (harness === "cursor" && !["composer", "cursor-grok"].includes(id)) return false;
     if (harness === "codex" && !["codex", "codex-sol", "codex-luna"].includes(id)) return false;
     if (["codex-reviewer", "codex-aggregator"].includes(id)) return false;
-    if (role === "aggregator") return id === "codex-sol";
-    return true;
+    const roles = model.roles || model.supported_roles || [];
+    if (Array.isArray(roles) && roles.length && !roles.includes(role)) return false;
+    if (role === "aggregator") return ["codex-sol", FABLE_ROUTE_ID].includes(id);
+    return id !== FABLE_ROUTE_ID;
   }).map((model) => {
     const harness = model.harness || model.provider_id || model.provider || "cli";
     const provider = state.providers.find((item) => item.id === harness);
@@ -581,8 +586,8 @@ function defaultSelected(option, role, index) {
   if (typeof configured === "string") return configured === option.id;
   if (option.default) return true;
   const standard = {
-    proposer: ["agy-gemini-pro", "codex", "sonnet"],
-    refiner: ["qwen", "opus"],
+    proposer: ["agy-gemini-pro", "grok", "glm"],
+    refiner: ["qwen", "kimi", "opus"],
     aggregator: ["codex-sol"],
   };
   if (standard[role].includes(option.id)) return true;
@@ -763,6 +768,36 @@ function syncSelectedProviderGroups() {
   });
 }
 
+function openFableWarning(input) {
+  state.pendingFableInput = input;
+  $("#fable-warning-password").value = "";
+  $("#fable-warning-error").hidden = true;
+  $("#fable-warning-dialog").showModal();
+  requestAnimationFrame(() => $("#fable-warning-password").focus());
+}
+
+function closeFableWarning() {
+  state.pendingFableInput = null;
+  $("#fable-warning-dialog").close();
+}
+
+function authorizeFable(event) {
+  event.preventDefault();
+  const password = $("#fable-warning-password").value;
+  if (password !== FABLE_WARNING_PASSWORD) {
+    $("#fable-warning-error").hidden = false;
+    $("#fable-warning-password").select();
+    return;
+  }
+  const input = state.pendingFableInput;
+  state.pendingFableInput = null;
+  $("#fable-warning-dialog").close();
+  if (!input) return;
+  input.dataset.fableAuthorized = "true";
+  input.click();
+  showToast("Fable enabled for aggregation. Watch shared quota closely.");
+}
+
 function selectRoutes(role, preferred, limit) {
   const inputs = $$(`.route-choice[name="${role}"]`);
   const available = inputs.filter((input) => !input.disabled);
@@ -820,11 +855,11 @@ function optimizedProfile(preset) {
   const profiles = {
     quick: {
       proposer: {
-        preferred: ["agy-gemini-pro", "sonnet"],
+        preferred: ["agy-gemini-pro", "grok"],
         limit: 2,
-        efforts: { "agy-gemini-pro": "low", sonnet: "medium" },
+        efforts: { "agy-gemini-pro": "low" },
       },
-      refiner: { preferred: ["qwen"], limit: 1 },
+      refiner: { preferred: ["kimi"], limit: 1 },
       aggregator: {
         preferred: ["codex-sol"],
         limit: 1,
@@ -833,13 +868,13 @@ function optimizedProfile(preset) {
     },
     balanced: {
       proposer: {
-        preferred: ["agy-gemini-pro", "codex", "sonnet"],
+        preferred: ["agy-gemini-pro", "grok", "glm"],
         limit: 3,
-        efforts: { "agy-gemini-pro": "high", codex: "high", sonnet: "high" },
+        efforts: { "agy-gemini-pro": "high" },
       },
       refiner: {
-        preferred: ["qwen", "opus"],
-        limit: 2,
+        preferred: ["qwen", "kimi", "opus"],
+        limit: 3,
         efforts: { opus: "high" },
       },
       aggregator: {
@@ -850,12 +885,12 @@ function optimizedProfile(preset) {
     },
     thorough: {
       proposer: {
-        preferred: ["agy-gemini-pro", "codex", "sonnet", "glm"],
+        preferred: ["agy-gemini-pro", "grok", "glm", "deepseek"],
         limit: 4,
-        efforts: { "agy-gemini-pro": "high", codex: "xhigh", sonnet: "max" },
+        efforts: { "agy-gemini-pro": "high" },
       },
       refiner: {
-        preferred: ["qwen", "opus", "deepseek"],
+        preferred: ["qwen", "kimi", "opus"],
         limit: 3,
         efforts: { opus: "max" },
       },
@@ -1482,7 +1517,7 @@ function fallbackAgent(job, routeId, role, status) {
   const modelOverrides = runOptions.model_overrides || job.model_overrides || {};
   const effortOverrides = runOptions.effort_overrides || job.effort_overrides || {};
   const model = modelOverrides[routeId] || route?.model || routeId;
-  const embeddedDepth = String(model).match(/-(low|medium|high)$/i)?.[1]?.toLowerCase();
+  const embeddedDepth = String(model).match(/-(low|medium|high|xhigh|max)$/i)?.[1]?.toLowerCase();
   const effort = effortOverrides[routeId]
     || (route?.effortControl === "model_variant" ? embeddedDepth : route?.effort);
   return {
@@ -2084,6 +2119,19 @@ function bindEvents() {
     $("#menu-button").setAttribute("aria-expanded", String(open));
   });
   $("#launch-form").addEventListener("submit", launchRun);
+  $("#launch-form").addEventListener("click", (event) => {
+    const input = event.target.closest?.(
+      `input[name="aggregator"][value="${FABLE_ROUTE_ID}"]`
+    );
+    if (!input || input.dataset.fableAuthorized === "true") return;
+    event.preventDefault();
+    openFableWarning(input);
+  });
+  $("#fable-warning-form").addEventListener("submit", authorizeFable);
+  $("#fable-warning-cancel").addEventListener("click", closeFableWarning);
+  $("#fable-warning-dialog").addEventListener("cancel", () => {
+    state.pendingFableInput = null;
+  });
   $$(".source-tab").forEach((button) => button.addEventListener("click", () => {
     setSourceMode(button.dataset.sourceMode);
   }));

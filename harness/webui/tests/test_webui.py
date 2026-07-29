@@ -219,6 +219,14 @@ class WebUITest(unittest.TestCase):
             404,
         )
 
+    def test_fable_warning_modal_is_present_without_exposing_a_server_secret(self):
+        page = self.client.get("/")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn(b'id="fable-warning-dialog"', page.data)
+        self.assertIn(b'id="fable-warning-password"', page.data)
+        self.assertIn(b"substantial hit to shared limits", page.data)
+        self.assertNotIn(b"driveline11", page.data)
+
     def test_initial_views_expose_visible_accessible_loading_states(self):
         page = self.client.get("/")
         self.assertEqual(page.status_code, 200)
@@ -400,6 +408,37 @@ class WebUITest(unittest.TestCase):
             f"/api/jobs/{created.get_json()['id']}"
         ).get_json()
         self.assertEqual(detail["config"]["aggregator"], "codex-sol")
+
+    def test_fable_is_rejected_outside_the_aggregator_layer(self):
+        for field in ("proposers", "refiners"):
+            payload = {
+                "workspace": str(self.root),
+                "goal": "Reject Fable in upstream layers.",
+                "proposers": ["grok"],
+                "refiners": ["kimi"],
+                "aggregator": "codex-sol",
+            }
+            payload[field] = ["fable"]
+            response = self.client.post("/api/jobs", json=payload)
+            self.assertEqual(response.status_code, 400)
+            self.assertIn("aggregator-only", response.get_json()["error"])
+
+    def test_fable_is_accepted_as_an_explicit_aggregator(self):
+        created = self.client.post(
+            "/api/jobs",
+            json={
+                "workspace": str(self.root),
+                "goal": "Use Fable only for final synthesis.",
+                "proposers": ["grok"],
+                "refiners": ["kimi"],
+                "aggregator": "fable",
+            },
+        )
+        self.assertEqual(created.status_code, 201)
+        detail = self.client.get(
+            f"/api/jobs/{created.get_json()['id']}"
+        ).get_json()
+        self.assertEqual(detail["config"]["aggregator"], "fable")
 
     def test_runs_are_private_to_the_browser_that_submitted_them(self):
         created = self.client.post(

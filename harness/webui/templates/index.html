@@ -471,6 +471,26 @@
   </form>
 </dialog>
 
+<dialog class="fable-warning-dialog" id="fable-warning-dialog" aria-labelledby="fable-warning-title">
+  <form class="fable-warning-shell" id="fable-warning-form">
+    <div class="fable-warning-mark" aria-hidden="true">!</div>
+    <p class="eyebrow">LIMIT WARNING</p>
+    <h2 id="fable-warning-title">Fable consumes a lot of quota</h2>
+    <p>Fable 5 uses a 1M context route with extra-high thinking. Choose it only when the run justifies a substantial hit to shared limits.</p>
+    <div class="fable-warning-callout">
+      <strong>This is a warning gate, not security.</strong>
+      <span>Enter the shared acknowledgement phrase to enable Fable for this browser session.</span>
+    </div>
+    <label for="fable-warning-password">Acknowledgement phrase</label>
+    <input id="fable-warning-password" type="password" autocomplete="off" spellcheck="false">
+    <p class="field-error" id="fable-warning-error" role="alert" hidden>That acknowledgement phrase is not correct.</p>
+    <div class="dialog-actions">
+      <button class="secondary-button" id="fable-warning-cancel" type="button">Keep GPT-5.6 Sol</button>
+      <button class="primary-button danger-button" type="submit">I understand—use Fable</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog class="prompt-coach-dialog" id="prompt-coach-dialog" aria-labelledby="prompt-coach-title">
   <div class="prompt-coach-shell">
     <header class="prompt-coach-head">

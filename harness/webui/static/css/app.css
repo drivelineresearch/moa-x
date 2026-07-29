@@ -794,6 +794,64 @@ h3 { font-size: 13px; line-height: 1.2; }
   border: 2px solid var(--dark);
   box-shadow: 12px 12px 0 rgba(0, 0, 0, .28);
 }
+
+.fable-warning-dialog {
+  width: min(560px, calc(100vw - 28px));
+  padding: 0;
+  border: 2px solid var(--dark);
+  color: var(--dark);
+  background: var(--paper);
+  box-shadow: 14px 14px 0 rgba(15, 16, 17, .88);
+}
+.fable-warning-dialog::backdrop { background: rgba(15, 16, 17, .76); }
+.fable-warning-shell { position: relative; padding: 34px; }
+.fable-warning-mark {
+  position: absolute;
+  top: 24px;
+  right: 28px;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border: 2px solid var(--dark);
+  background: var(--accent);
+  font: 900 28px/1 var(--font-display);
+  transform: rotate(3deg);
+}
+.fable-warning-shell h2 {
+  max-width: 390px;
+  margin: 6px 0 12px;
+  font-size: clamp(28px, 5vw, 42px);
+  line-height: 1;
+}
+.fable-warning-shell > p:not(.eyebrow, .field-error) {
+  max-width: 460px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.fable-warning-callout {
+  display: grid;
+  gap: 5px;
+  margin: 22px 0;
+  padding: 15px 17px;
+  border: 1px solid var(--dark);
+  border-left: 7px solid var(--accent);
+  background: var(--cream);
+}
+.fable-warning-callout strong { text-transform: uppercase; font-size: 11px; letter-spacing: .08em; }
+.fable-warning-callout span { color: var(--muted); font-size: 12px; line-height: 1.45; }
+.fable-warning-shell label {
+  display: block;
+  margin-bottom: 7px;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.fable-warning-shell input {
+  width: 100%;
+  border: 2px solid var(--dark);
+}
+.fable-warning-shell .field-error { margin: 8px 0 0; color: var(--bad); font-weight: 800; }
 .prompt-coach-dialog::backdrop { background: rgba(15, 16, 17, .68); }
 .attachment-progress-dialog {
   width: min(720px, calc(100vw - 32px));

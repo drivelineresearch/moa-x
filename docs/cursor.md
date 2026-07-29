@@ -198,8 +198,8 @@ Add the Grok lane on top of the default ensemble. `cursor-grok`
 
 ```yaml
 layers:
-  proposers: [agy-gemini-pro, codex, sonnet, cursor-grok]
-  refiners:  [qwen, opus]
+  proposers: [agy-gemini-pro, grok, glm, cursor-grok]
+  refiners:  [qwen, kimi, opus]
   aggregator: codex-sol
 ```
 
@@ -209,8 +209,8 @@ To pin a different Cursor Grok tier, override the built-in's model:
 providers:
   cursor-grok: {harness: cursor, model: cursor-grok-4.5-medium}
 layers:
-  proposers: [agy-gemini-pro, codex, sonnet, cursor-grok]
-  refiners:  [qwen, opus]
+  proposers: [agy-gemini-pro, grok, glm, cursor-grok]
+  refiners:  [qwen, kimi, opus]
   aggregator: codex-sol
 ```
 
@@ -218,8 +218,8 @@ Google models use the separate AGY surface:
 
 ```yaml
 layers:
-  proposers: [agy-gemini-pro, codex, sonnet]
-  refiners:  [qwen, opus]
+  proposers: [agy-gemini-pro, grok, glm]
+  refiners:  [qwen, kimi, opus]
   aggregator: codex-sol
 ```
 
@@ -255,7 +255,8 @@ bypassed in headless mode.
 (via the same `load_resolved_config()` path the orchestrator uses) and
 checks only what your config actually needs:
 
-- **Required harnesses** = `{p.harness for p in proposers + refiners}`.
+- **Required harnesses** =
+  `{p.harness for p in proposers + refiners + [aggregator]}`.
   Harnesses not referenced in any layer are reported as "unused" and
   skipped — no failure for codex/claude/opencode not being installed if
   your config is cursor-only.
@@ -273,8 +274,8 @@ checks only what your config actually needs:
   sessions surface here, before a real run wastes wall-clock.
 
 If `harness/config.yaml` doesn't exist, preflight falls back to the
-built-in default ensemble (`proposers: [agy-gemini-pro, codex, sonnet]`,
-`refiners: [qwen, opus]`, aggregator `codex-sol`), which preserves the
+built-in default ensemble (`proposers: [agy-gemini-pro, grok, glm]`,
+`refiners: [qwen, kimi, opus]`, aggregator `codex-sol`), which preserves the
 "is the moa-x shipped
 baseline ready?" diagnostic.
 

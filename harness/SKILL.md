@@ -2,9 +2,8 @@
 name: mixture-of-agents
 description: |
   Run a non-trivial planning task through a layered ensemble of frontier models
-  from four different labs (proposers Gemini 3.1 Pro high +
-  codex/gpt-5.6-terra high + Claude Sonnet 5; refiners
-  qwen3.8-max-preview + Claude Opus 5 high) before producing a final implementation
+  from distinct labs (proposers Gemini 3.1 Pro high + Grok 4.5 + GLM-5.2;
+  refiners qwen3.8-max-preview + Kimi K3 + Claude Opus 5 high) before producing a final implementation
   plan. The configured proposers run in parallel, broadcast refiners (each
   sees all proposals) verify and cross-check, then GPT-5.6 Sol at `xhigh`
   (stable provider name `codex-sol`) aggregates through the recorded Layer 3
@@ -32,11 +31,10 @@ allowed-tools:
 # Mixture of Agents
 
 Layered ensemble planning. The configured proposers — by default three
-frontier models from three different labs (OpenAI's codex CLI at gpt-5.6-terra high,
-Google's Gemini 3.1 Pro through AGY, and Anthropic's Claude Code CLI at
-`claude-sonnet-5`, under the stable provider name `sonnet`) — each produce an independent plan grounded in real repo
+frontier models from three different labs (Google's Gemini 3.1 Pro through
+AGY, xAI's Grok 4.5, and Zhipu's GLM-5.2 through OpenCode) — each produce an independent plan grounded in real repo
 code AND aggressive web research, then the refiners (default
-`qwen`/qwen3.8-max-preview + `opus`/claude-opus-5 high)
+`qwen`/qwen3.8-max-preview + `kimi`/kimi-k3 + `opus`/claude-opus-5 high)
 broadcast-refine by reading all the proposals and producing cross-verifications,
 then `codex-sol`/gpt-5.6-sol at `xhigh` synthesizes everything into a final
 actionable plan through the recorded Layer 3 path.
@@ -67,24 +65,25 @@ Layer 0 — Spec triage                      (parent Claude Code, in-place)
    ├─ get user approval to spend roughly 12-25 minutes
    └─ write .moa/<session>/scout-brief.json
                    ↓
-Layer 1 — Proposers                        (3 parallel, headless, yolo/read-only)
+Layer 1 — Proposers                        (3 parallel, headless, read-only)
    │
    ├─ agy --model gemini-3.1-pro-high --mode plan --sandbox
    │     │   (Google research lane; live catalog-gated)
    │     └→ .moa/<session>/layer1/agy-gemini-pro-proposer.json
    │
-   ├─ codex exec --sandbox read-only -a never -m gpt-5.6-terra -c model_reasoning_effort=high
-   │     │   (filesystem-enforced read-only + --output-schema enforced, web research required)
-   │     └→ .moa/<session>/layer1/codex-proposer.json
+   ├─ opencode run --model opencode-go/grok-4.5
+   │     └→ .moa/<session>/layer1/grok-proposer.json
    │
-   └─ claude -p --model claude-sonnet-5 --dangerously-skip-permissions --json-schema ...
-         │   (pinned current model; hard read-only tool allowlist + workspace guard)
-         └→ .moa/<session>/layer1/sonnet-proposer.json
+   └─ opencode run --model opencode-go/glm-5.2
+         └→ .moa/<session>/layer1/glm-proposer.json
                    ↓
-Layer 2 — Broadcast refiners               (2 parallel; each sees ALL valid proposals)
+Layer 2 — Broadcast refiners               (3 parallel; each sees ALL valid proposals)
    │
    ├─ qwen refines the broadcast (opencode @ qwen3.8-max-preview; 600s cap)
    │     └→ .moa/<session>/layer2/qwen-refiner-broadcast.json
+   │
+   ├─ kimi refines the broadcast (opencode @ kimi-k3)
+   │     └→ .moa/<session>/layer2/kimi-refiner-broadcast.json
    │
    └─ opus refines the broadcast (claude-opus-5 @ high)
          └→ .moa/<session>/layer2/opus-refiner-broadcast.json
@@ -113,12 +112,13 @@ Layer 0 happens in this Claude Code session. Layers 1 and 2 are spawned as
 external subprocesses. Layer 3 runs through the orchestrator's recorded Codex
 subprocess phase.
 
-### Why Anthropic is upstream of Sol
+### Why every default stage uses different labs
 
-Claude Sonnet 5 (stable provider name `sonnet`) proposes and Claude Opus 5
-(`opus`) reviews. GPT-5.6 Sol (`codex-sol`) aggregates at `xhigh`. The default
-reviewers `{qwen, opus}` are both lab-independent from the OpenAI aggregator.
-Qwen also supplies a non-Anthropic check on the Sonnet proposal.
+Gemini, Grok, and GLM propose; Qwen, Kimi, and Opus review; GPT-5.6 Sol
+aggregates at `xhigh`. No model family repeats across those stages, so each
+layer adds a genuinely independent failure mode instead of a second sample
+from the same lab. Fable is an optional quota-heavy Claude aggregator only and
+is never a proposer or refiner.
 
 ### Why broadcast, not cross-pair
 
@@ -141,7 +141,7 @@ First time only or if you suspect drift, run:
 python3 ~/.claude/skills/mixture-of-agents/scripts/install_deps.py
 ```
 This is config-aware: it checks that every harness your resolved roster needs
-(for the default roster: AGY, Codex, Claude, and OpenCode for Qwen; plus
+(for the default roster: AGY, Codex, Claude, and OpenCode; plus
 Cursor when one of its routes is configured) is installed and
 authenticated. If anything fails, stop and surface the install/auth fix to
 the user. Do NOT
@@ -194,7 +194,7 @@ proposer/refiner sets come from `harness/scripts/config.py`'s
 
 1. `MOA_PROPOSERS` / `MOA_REFINERS` env vars (comma-separated names)
 2. `harness/config.yaml` → `layers.proposers` / `layers.refiners`
-3. Defaults: `[agy-gemini-pro, codex, sonnet]`, `[qwen, opus]`,
+3. Defaults: `[agy-gemini-pro, grok, glm]`, `[qwen, kimi, opus]`,
    aggregator `codex-sol` at `xhigh`
 
 User-defined provider names declared under `providers:` in
@@ -390,25 +390,23 @@ This skill is a from-scratch port of the 2024 Mixture-of-Agents paper
 (arXiv:2406.04692, Wang et al., Together AI) adapted for repo-grounded
 planning rather than chat-answer ensembling. Differences from the paper:
 
-- **3 proposers, not 6.** Frontier models with tool use produce richer
+- **3 proposers by default, not 6.** Frontier models with tool use produce richer
   outputs than open-source chat models, so fewer proposers are sufficient.
   The paper's ablation showed diversity (different labs) beats quantity
   (more copies of the same model); we pick 3 labs.
 - **Heterogeneous, not homogeneous.** The paper showed cross-lab beats
   same-model temperature sampling; we keep that result. The default roster
-  spans Google (Gemini Pro) + OpenAI (Codex Terra) + Anthropic (Sonnet)
-  across the proposers, with Alibaba (Qwen) joining at the refiner layer —
-  four labs
-  in all.
+  spans Google (Gemini Pro) + xAI (Grok) + Zhipu (GLM) across the
+  proposers, with Alibaba (Qwen), Moonshot (Kimi), and Anthropic (Opus)
+  joining at the refiner layer and OpenAI (Sol) aggregating.
 - **Broadcast refinement, paper-faithful.** Every refiner sees every
   proposal, per the paper. v0.1 of this skill used cross-pair (each refiner
   saw only one other proposer), which was NOT paper-faithful; v0.2 corrected
   this.
-- **2 refiners, not 3.** The paper uses N refiners where N = N proposers,
-  but we drop to 2 to (a) keep Layer 2 lab-independent from the OpenAI
-  aggregator, and (b) control wall clock. The
-  paper's own ablation shows layer 2→3 has the worst latency-per-quality
-  tradeoff, so 2 refiners is a deliberate "latency-conscious broadcast".
+- **3 refiners for Balanced.** Each refiner sees every proposal, but the
+  three labs bring different review priors: Qwen for broad technical
+  validation, Kimi for an additional independent synthesis check, and Opus
+  for deeper adversarial critique.
 - **Recorded synthesis by default.** GPT-5.6 Sol at `xhigh` produces the final
   phase through the Codex adapter, preserving schema validation, exact
   lineage, timing, and logs in the run artifacts.

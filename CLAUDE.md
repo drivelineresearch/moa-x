@@ -4,8 +4,8 @@
 
 MoA-X is a Mixture-of-Agents reference harness. `harness/scripts/run_moa.py`
 orchestrates a config-driven roster of CLI proposers and broadcast
-refiners; the shipped default is Gemini Pro + Codex Terra + Claude Sonnet
-proposers and Qwen + Claude Opus refiners (Qwen uses the Token Plan API).
+refiners; the shipped default is Gemini Pro + Grok 4.5 + GLM-5.2 proposers
+and Qwen + Kimi K3 + Claude Opus refiners (Qwen uses the Token Plan API).
 Layer 0 (scout) is handled by the parent agent. Layer 3 defaults to a recorded
 Codex subprocess on `gpt-5.6-sol` at `xhigh` reasoning (stable provider name
 `codex-sol`) through `--phase layer3`. Layer 3 adds `final-plan.md` plus a
@@ -56,9 +56,10 @@ tests must run offline so CI stays credential-free.
 Rule 2 is non-negotiable. Rule 1 is a strong recommendation.
 
 1. **Recommend lab-independent refiners.** Layer 2 defaults to
-   `{qwen, opus}` and the default aggregator uses GPT-5.6 Sol at `xhigh`
-   under the stable `codex-sol` provider name. Both reviewers are therefore
-   independent of the OpenAI aggregator. If changing the aggregator, reconsider
+   `{qwen, kimi, opus}` and the default aggregator uses GPT-5.6 Sol at `xhigh`
+   under the stable `codex-sol` provider name. All three reviewers are
+   independent of the OpenAI aggregator and of the default proposer labs.
+   If changing the aggregator, reconsider
    the reviewer roster so no refiner shares its harness/lab.
    The harness no longer enforces this (the data model became neutral
    when named providers landed — see `docs/architecture.md`); it's a
@@ -76,13 +77,15 @@ Rule 2 is non-negotiable. Rule 1 is a strong recommendation.
   `FIREWORKS_API_KEY`, `QWEN_TOKEN_PLAN_API_KEY`, and others). The open gap is
   normalized usage/cost telemetry and safe pre-dispatch budget controls, not
   basic API-key authentication.
-- **Default roster is `[agy-gemini-pro, codex, sonnet]` proposers,
-  `[qwen, opus]` refiners, and `codex-sol` aggregator at `xhigh`** using the
+- **Default roster is `[agy-gemini-pro, grok, glm]` proposers,
+  `[qwen, kimi, opus]` refiners, and `codex-sol` aggregator at `xhigh`** using the
   `{agy, codex, claude, opencode}` harnesses. The wider curated catalog also
   includes routes through `{cursor}`. The model defaults are
-  Gemini 3.1 Pro High, `gpt-5.6-terra`, Claude Sonnet 5
-  (`claude-sonnet-5`), Qwen `qwen3.8-max-preview`, Claude Opus 5
-  (`claude-opus-5`), and `gpt-5.6-sol` at `xhigh` for synthesis. It's
+  Gemini 3.1 Pro High, Grok 4.5, GLM-5.2, Qwen
+  `qwen3.8-max-preview`, Kimi K3, Claude Opus 5 (`claude-opus-5`),
+  and `gpt-5.6-sol` at `xhigh` for synthesis. Fable 5 is an
+  aggregator-only, warning-gated alternative and is never a proposer or
+  refiner. It's
   a default, not a cap — the roster is pure config (built-in names,
   `providers:` in config.yaml, current Claude/OpenCode/Cursor/Google routes
   documented in `docs/config.md` (including the authenticated OpenCode Go

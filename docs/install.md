@@ -24,7 +24,7 @@ codex login
 agy install
 agy models
 
-# opencode (drives the default Qwen Token Plan refiner)
+# opencode (drives the default Grok/GLM proposers and Qwen/Kimi refiners)
 curl -fsSL https://opencode.ai/install | bash
 # or: npm i -g opencode-ai
 opencode auth login    # interactive login
@@ -35,10 +35,12 @@ opencode auth login    # interactive login
 #   export QWEN_TOKEN_PLAN_API_KEY=sk-sp-...  # default Qwen refiner
 ```
 
-The default roster is Gemini 3.1 Pro and GPT-5.6 Terra plus
-`claude-sonnet-5` as proposers; Qwen and `claude-opus-5` as refiners; and
-GPT-5.6 Sol at `xhigh` as the aggregator—four labs: Google, OpenAI,
-Anthropic, and Alibaba.
+The Balanced default roster uses Gemini 3.1 Pro, Grok 4.5, and GLM-5.2 as
+proposers; Qwen 3.8, Kimi K3, and Claude Opus 5 at `high` as refiners; and
+GPT-5.6 Sol at `xhigh` as the aggregator. That keeps the default lane
+lab-distinct across Google, xAI, Zhipu, Alibaba, Moonshot, Anthropic, and
+OpenAI. Fable 5 1M at `xhigh` is an optional, quota-heavy Claude aggregator and
+is never eligible as a proposer or refiner.
 
 The built-in `qwen` refiner uses the Qwen Cloud Token Plan endpoint and
 defaults to `qwen-token-plan/qwen3.8-max-preview`, with a 600-second cap.

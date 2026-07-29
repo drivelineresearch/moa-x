@@ -11,9 +11,9 @@
 
 ```mermaid
 flowchart LR
-  S["Scout brief"] --> P["Proposers: Gemini Pro + GPT-5.6 Terra + Claude Sonnet 5"]
-  P --> R["Broadcast refiners: Qwen 3.8 Max + Claude Opus 5"]
-  R --> A["Aggregator: GPT-5.6 Sol xhigh"]
+  S["Scout brief"] --> P["Proposers: Gemini Pro + Grok 4.5 + GLM-5.2"]
+  P --> R["Broadcast refiners: Qwen 3.8 + Kimi K3 + Claude Opus 5"]
+  R --> A["Aggregator: GPT-5.6 Sol xhigh; gated Fable option"]
   A --> O["Final plan + decision lineage + report"]
 ```
 
@@ -22,13 +22,14 @@ A small, CLI-native take on the 2024
 a different job: producing **repo-grounded implementation plans** for
 coding agents instead of chat answers. The default roster puts proposers
 from three different labs to work — Google `agy-gemini-pro`
-(`gemini-3.1-pro-high`), OpenAI `codex` (`gpt-5.6-terra`), and Anthropic
-`sonnet` (`claude-sonnet-5` via Claude Code) — reading the repo in
+(`gemini-3.1-pro-high`), xAI `grok` (`opencode-go/grok-4.5`), and Zhipu
+`glm` (`opencode-go/glm-5.2`) — reading the repo in
 parallel, doing their own web research, and each writing an independent
-plan. Two refiners—Alibaba Qwen `qwen3.8-max-preview` and Anthropic
-`claude-opus-5`—then refine in broadcast mode (every refiner sees every
-plan). The shipped defaults and all recommended Web UI modes run Layer 3
+plan. Three refiners—Alibaba Qwen `qwen3.8-max-preview`, Moonshot Kimi K3,
+and Anthropic `claude-opus-5`—then refine in broadcast mode (every refiner
+sees every plan). The shipped defaults and all recommended Web UI modes run Layer 3
 through the recorded Codex path with `gpt-5.6-sol` at `xhigh` reasoning.
+Fable 5 is available only as a warning-gated, quota-heavy aggregator option.
 
 Built to run **inside Claude Code** as a skill, or from the local Web UI.
 Standalone Python works too. The harness ships curated providers across five
@@ -103,14 +104,14 @@ AGY is the curated Google route and reuses the account already signed into
 
 ```
 Layer 0 — Scout brief           (parent Claude, in-place)
-Layer 1 — Proposers (parallel)    default: Gemini Pro + Terra + Sonnet
-Layer 2 — Broadcast refiners      default: Qwen + Opus, each sees ALL proposals
+Layer 1 — Proposers (parallel)    default: Gemini Pro + Grok + GLM
+Layer 2 — Broadcast refiners      default: Qwen + Kimi + Opus, each sees ALL proposals
 Layer 3 — Aggregator              default: recorded GPT-5.6 Sol at xhigh
 ```
 
-The roster is config-driven; the defaults above span Google, OpenAI,
-Anthropic, and Alibaba and keep both refiners independent of the OpenAI
-aggregator's lab.
+The roster is config-driven; every named route in the default pipeline comes
+from a different lab: Google, xAI, Zhipu, Alibaba, Moonshot, Anthropic, and
+OpenAI.
 
 Every run also writes a self-contained `.moa/<session>/report.html` — a
 zero-network visual post-mortem (3D pipeline, per-agent Gantt, proposer

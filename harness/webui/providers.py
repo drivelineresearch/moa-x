@@ -106,6 +106,8 @@ ROUTE_META: dict[str, dict[str, Any]] = {
                     "roles": ["proposer", "refiner"]},
     "agy-gemini-pro": {"label": "Gemini 3.1 Pro", "lab": "Google",
                        "roles": ["proposer", "refiner"]},
+    "fable": {"label": "Fable 5 1M Thinking", "lab": "Anthropic",
+                  "roles": ["aggregator"]},
 }
 
 HIDDEN_ROUTES = {"codex-reviewer", "codex-aggregator"}
@@ -129,6 +131,7 @@ EFFORT_OPTIONS = {
 }
 ROUTE_EFFORT_OPTIONS = {
     "agy-gemini-pro": ["low", "high"],
+    "fable": [],
 }
 
 

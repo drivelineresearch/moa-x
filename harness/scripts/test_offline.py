@@ -1039,7 +1039,10 @@ def test_install_deps_default_config_only_needs_default_harnesses() -> bool:
     from pathlib import Path as _Path
     # Force "no config.yaml" by passing a nonexistent path
     loaded = load_resolved_config(config_path=_Path("/tmp/install_deps_no_yaml_xx_DOES_NOT_EXIST.yaml"))
-    needed = {p.harness for p in loaded.proposers + loaded.refiners}
+    needed = {
+        p.harness
+        for p in loaded.proposers + loaded.refiners + [loaded.aggregator]
+    }
     return _ok(
         needed == {"agy", "codex", "opencode", "claude"},
         f"got {sorted(needed)}",
@@ -1059,6 +1062,7 @@ def test_install_deps_cursor_only_config_skips_other_harnesses() -> bool:
         layers:
           proposers: [c-gpt, c-gemini]
           refiners:  [c-gpt]
+          aggregator: c-gpt
     """)
     with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
         f.write(yaml_text)
@@ -1748,6 +1752,7 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
         "composer": ("cursor", "composer-2.5"),
         "cursor-grok": ("cursor", "cursor-grok-4.5-high"),
         "agy-gemini-pro": ("agy", "gemini-3.1-pro-high"),
+        "fable": ("claude", "claude-fable-5"),
     }
     routes_ok = all(
         name in by_id
@@ -1762,10 +1767,13 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
         and by_id["codex"]["supports_effort"]
         and by_id["agy-gemini-pro"]["effort_options"] == ["low", "high"]
         and by_id["agy-gemini-pro"]["effort_control"] == "model_variant"
+        and by_id["fable"]["effort"] == "xhigh"
+        and by_id["fable"]["effort_options"] == []
     )
     grouped_ok = (
         groups["claude"]["lab"] == "Anthropic"
         and any(route["id"] == "sonnet" for route in groups["claude"]["routes"])
+        and any(route["id"] == "fable" for route in groups["claude"]["routes"])
         and any(route["id"] == "qwen-opencode" for route in groups["opencode"]["routes"])
         and [route["id"] for route in groups["opencode"]["routes"] if route["id"].startswith("deepseek")]
         == ["deepseek", "deepseek-flash"]
@@ -1774,18 +1782,21 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
     )
     role_ok = (
         {item["id"] for item in models if "aggregator" in item["roles"]}
-        == {"codex-sol"}
+        == {"codex-sol", "fable"}
+        and by_id["fable"]["roles"] == ["aggregator"]
         and by_id["opus"]["roles"] == ["proposer", "refiner"]
         and by_id["deepseek"]["roles"] == ["proposer", "refiner"]
         and by_id["deepseek-flash"]["roles"] == ["proposer", "refiner"]
     )
     defaults_ok = (
         by_id["agy-gemini-pro"]["default_roles"] == ["proposer"]
-        and by_id["codex"]["default_roles"] == ["proposer"]
-        and by_id["sonnet"]["default_roles"] == ["proposer"]
+        and by_id["grok"]["default_roles"] == ["proposer"]
+        and by_id["glm"]["default_roles"] == ["proposer"]
         and by_id["qwen"]["default_roles"] == ["refiner"]
+        and by_id["kimi"]["default_roles"] == ["refiner"]
         and by_id["opus"]["default_roles"] == ["refiner"]
         and by_id["codex-sol"]["default_roles"] == ["aggregator"]
+        and by_id["fable"]["default_roles"] == []
     )
     app_js = (
         repo_root / "harness" / "webui" / "static" / "js" / "app.js"
@@ -1795,18 +1806,16 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
     preset_ok = all(
         snippet in app_js
         for snippet in (
-            'preferred: ["agy-gemini-pro", "sonnet"]',
-            'efforts: { "agy-gemini-pro": "low", sonnet: "medium" }',
-            'preferred: ["agy-gemini-pro", "codex", "sonnet"]',
-            'efforts: { "agy-gemini-pro": "high", codex: "high", sonnet: "high" }',
-            'preferred: ["agy-gemini-pro", "codex", "sonnet", "glm"]',
-            'efforts: { "agy-gemini-pro": "high", codex: "xhigh", sonnet: "max" }',
-            'preferred: ["qwen", "opus", "deepseek"]',
+            'preferred: ["agy-gemini-pro", "grok"]',
+            'refiner: { preferred: ["kimi"], limit: 1 }',
+            'preferred: ["agy-gemini-pro", "grok", "glm"]',
+            'preferred: ["agy-gemini-pro", "grok", "glm", "deepseek"]',
+            'preferred: ["qwen", "kimi", "opus"]',
             'efforts: { opus: "max" }',
             'preferred: ["codex-sol"]',
             'efforts: { "codex-sol": "xhigh" }',
-            'if (role === "aggregator") return id === "codex-sol";',
-            'const route = provider?.routes?.find((item) => item.id === "codex-sol");',
+            '["codex-sol", FABLE_ROUTE_ID].includes(id)',
+            'const FABLE_WARNING_PASSWORD = "driveline11";',
             "syncSelectedProviderGroups();",
         )
     )
@@ -1877,6 +1886,7 @@ def test_google_provider_builtins_are_default_and_resolve() -> bool:
         else:
             _os.environ[effort_key] = old_effort
     defaults = harness_config.load_resolved_config(config_path=Path("/nonexistent"))
+    fable = resolve_provider("fable", user_providers={})
     proposer_names = [p.name for p in defaults.proposers]
     refiner_names = [p.name for p in defaults.refiners]
     try:
@@ -1898,10 +1908,15 @@ def test_google_provider_builtins_are_default_and_resolve() -> bool:
         and agy_pro.effort == "high"
         and agy_effort_override.model == "gemini-3.1-pro-high"
         and agy_effort_override.effort == "high"
-        and proposer_names == ["agy-gemini-pro", "codex", "sonnet"]
-        and refiner_names == ["qwen", "opus"]
+        and proposer_names == ["agy-gemini-pro", "grok", "glm"]
+        and refiner_names == ["qwen", "kimi", "opus"]
         and defaults.aggregator is not None
         and defaults.aggregator.name == "codex-sol"
+        and fable.harness == "claude"
+        and fable.model == "claude-fable-5"
+        and harness_config.provider_allows_role("fable", "aggregator")
+        and not harness_config.provider_allows_role("fable", "proposer")
+        and not harness_config.provider_allows_role("fable", "refiner")
         and gemini_removed
         and flash_removed
     )
@@ -2611,6 +2626,56 @@ def test_layer3_codex_phase_writes_plan_and_lineage() -> bool:
         return _ok(ok, f"success={result.success} error={result.error}")
 
 
+def test_layer3_fable_phase_uses_claude_and_writes_artifacts() -> bool:
+    print("\n[N] Fable Layer 3 uses Claude and remains schema-validated")
+    import tempfile
+    from unittest import mock
+    from adapters import claude as _claude_adapter
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        session = root / ".moa" / "fixture"
+        session.mkdir(parents=True)
+        (session / "synthesis-input.md").write_text("# Synthesis\nfixture")
+        lineage = {
+            "version": 1,
+            "title": "Small documentation improvement",
+            "summary": "Add one concise report-opening note.",
+            "confidence": {"level": "high", "rationale": "All reviewers agree."},
+            "steps": [],
+            "rejected_inputs": [],
+        }
+        markdown = "# Final Plan: Small docs change\n\n" + ("Minimal plan. " * 10)
+        adapter_result = _claude_adapter.ClaudeResult(
+            success=True,
+            payload={"final_plan_markdown": markdown, "lineage": lineage},
+            raw_stdout="{}",
+            raw_stderr="",
+            exit_code=0,
+            duration_seconds=1.25,
+        )
+        provider = run_moa.harness_config.resolve_provider(
+            "fable", user_providers={}
+        )
+        with mock.patch.object(run_moa.claude_adapter, "run", return_value=adapter_result) as call:
+            result = run_moa.run_layer3(
+                provider=provider,
+                repo_path=root,
+                session_dir=session,
+                timeout=600,
+                codex_effort="xhigh",
+                layer1=[],
+                layer2=[],
+            )
+        ok = (
+            result.success and result.schema_valid
+            and call.call_args.kwargs["model"] == "claude-fable-5"
+            and call.call_args.kwargs["reasoning_effort"] == "xhigh"
+            and (session / "final-plan.md").read_text() == markdown
+            and json.loads((session / "final-plan.json").read_text()) == lineage
+        )
+        return _ok(ok, f"success={result.success} error={result.error}")
+
+
 def main() -> int:
     print("Mixture-of-Agents — offline smoke test (v2: 3 proposers + broadcast refiners)")
     print("=" * 72)
@@ -2729,6 +2794,7 @@ def main() -> int:
         test_report_template_accessibility_contracts,
         test_layer3_aggregation_schema_and_prompt_contract,
         test_layer3_codex_phase_writes_plan_and_lineage,
+        test_layer3_fable_phase_uses_claude_and_writes_artifacts,
     ]
     results = [t() for t in tests]
     print("\n" + "=" * 72)

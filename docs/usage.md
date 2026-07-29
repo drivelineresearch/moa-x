@@ -26,9 +26,8 @@ What happens:
    Estimated wall-clock: roughly 12–25 minutes for research-heavy runs.
    Nothing spawns until you say yes.
 3. **Proposers (Layer 1, parallel).** Three headless subprocesses
-   fire in parallel by default: `agy-gemini-pro` (AGY harness), `codex`
-   (codex harness), and `sonnet` (claude harness) — Google, OpenAI, and
-   Anthropic. Additional lanes (a `cursor` provider,
+   fire in parallel by default: `agy-gemini-pro` (AGY harness), `grok`, and
+   `glm` (OpenCode harness) — Google, xAI, and Zhipu. Additional lanes (a `cursor` provider,
    Kimi, DeepSeek V4 Pro/Flash through OpenCode Go, or any user provider) are available — see
    [`docs/install.md`](install.md#optional-cursor-cli-extra-provider)
    and [`docs/config.md`](config.md). Each
@@ -36,8 +35,9 @@ What happens:
    sandboxing for Codex, a hard tool allowlist for Claude, and a
    permission-deny policy for OpenCode), does web research, and writes an independent plan to
    `.moa/<session>/layer1/`.
-4. **Broadcast refiners (Layer 2, parallel).** Two more subprocesses,
-   `qwen` (`qwen3.8-max-preview`) and `opus` (`claude-opus-5`, high), each
+4. **Broadcast refiners (Layer 2, parallel).** Three more subprocesses,
+   `qwen` (`qwen3.8-max-preview`), `kimi` (`kimi-k3`), and `opus`
+   (`claude-opus-5`, high), each
    receive every valid proposal and
    produce verification output in `.moa/<session>/layer2/`.
    "Broadcast" means every refiner sees every proposal, per the MoA
@@ -47,6 +47,10 @@ What happens:
    phase, synthesizes, honors refiner contradictions, and writes
    `.moa/<session>/final-plan.md` plus the structured `final-plan.json`
    decision lineage.
+   The Web UI also exposes Fable 5 1M at `xhigh` as an opt-in AGY
+   aggregator. Its selection is guarded by a warning/password modal because
+   it can consume very large quotas; Fable is not available in either
+   upstream layer.
 6. **Plan presented.** Claude shows you the plan and asks if you want
    to start executing.
 

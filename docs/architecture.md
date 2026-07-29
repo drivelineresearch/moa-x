@@ -7,9 +7,9 @@ plans for coding agents instead of chat answers.
 
 ```mermaid
 flowchart LR
-  S["Scout brief"] --> P["Proposers: Gemini Pro + GPT-5.6 Terra + Claude Sonnet 5"]
-  P --> R["Broadcast refiners: Qwen 3.8 Max + Claude Opus 5"]
-  R --> A["Aggregator: GPT-5.6 Sol xhigh"]
+  S["Scout brief"] --> P["Proposers: Gemini Pro + Grok 4.5 + GLM-5.2"]
+  P --> R["Broadcast refiners: Qwen 3.8 + Kimi K3 + Claude Opus 5"]
+  R --> A["Aggregator: GPT-5.6 Sol xhigh; gated Fable option"]
   A --> O["Final plan + decision lineage + report"]
 ```
 
@@ -17,8 +17,8 @@ flowchart LR
 
 ```
 Layer 0 — Scout brief           (parent Claude, in-place)
-Layer 1 — Proposers (parallel)    default: Gemini Pro + Terra + Sonnet
-Layer 2 — Broadcast refiners      default: Qwen + Opus, each sees ALL proposals
+Layer 1 — Proposers (parallel)    default: Gemini Pro + Grok + GLM
+Layer 2 — Broadcast refiners      default: Qwen + Kimi + Opus, each sees ALL proposals
 Layer 3 — Aggregator              default: recorded GPT-5.6 Sol at xhigh
 ```
 
@@ -31,17 +31,17 @@ out-of-scope). The brief bounds how much exploration the downstream
 models do.
 
 **Layer 1: proposers across labs.** The default is Google
-`agy-gemini-pro`, OpenAI `codex`, and Anthropic `sonnet`. Each produces an
+`agy-gemini-pro`, xAI `grok`, and Zhipu `glm`. Each produces an
 independent plan. Every proposer reads the repo
-(codex with a filesystem-enforced read-only sandbox; opencode with a
-permission-deny policy plus the prompt rule; sonnet with a hard read-only
-tool allowlist) and does web research. Different labs tend to mean
+(AGY with plan mode plus sandboxing; OpenCode with a permission-deny policy
+plus the prompt rule) and does web research. Different labs tend to mean
 different training data, different tool-use behavior, and different blind
 spots.
 
 **Layer 2: broadcast refiners.** The default refiners are `qwen` (Alibaba
-`qwen3.8-max-preview` through Qwen Token Plan and `opencode`) and `opus`
-(Anthropic `claude-opus-5` at high reasoning). Each sees all the proposals
+`qwen3.8-max-preview` through Qwen Token Plan and `opencode`), `kimi`
+(Moonshot Kimi K3 through OpenCode Go), and `opus` (Anthropic
+`claude-opus-5` at high reasoning). Each sees all the proposals
 and produces verification output: which claims are verified,
 which are contradicted, what's missing, what the proposers disagreed on.
 "Broadcast" means every refiner sees every proposal, not cross-pair. This
@@ -67,25 +67,24 @@ gives each refiner enough context to spot cross-proposer
 convergence and divergence signals that a one-input view can't
 reveal. v0.2 corrected this.
 
-## Why Anthropic moved into proposal and review
+## Why each default lane uses a different lab
 
-`claude-sonnet-5` proposes and `claude-opus-5` reviews, while GPT-5.6 Sol
-aggregates. The stable provider names remain `sonnet`, `opus`, and
-`codex-sol`. This deliberately puts Anthropic upstream in both Layer 1 and
-Layer 2 so Opus can challenge the entire proposal set rather than author the
-final synthesis. Qwen supplies a second, non-Anthropic review. Both default
-reviewers are independent of the OpenAI aggregator; Thorough mode adds
-DeepSeek V4 Pro as a third independent reviewer.
+Gemini Pro, Grok, and GLM propose; Qwen, Kimi K3, and Claude Opus review;
+GPT-5.6 Sol aggregates. No lab authors more than one default lane. This keeps
+the aggregator from seeing an upstream plan from its own family and prevents
+Opus from reviewing a Sonnet proposal. Thorough adds DeepSeek V4 Pro as a
+fourth proposer without introducing a repeated lab.
 
 ## Why this roster
 
-The default roster spans four labs — Google (`agy-gemini-pro`), OpenAI
-(`codex`/`codex-sol`), Anthropic (`sonnet`/`opus`), and Alibaba (`qwen`).
+The default roster spans seven labs — Google (`agy-gemini-pro`), xAI
+(`grok`), Zhipu (`glm`), Alibaba (`qwen`), Moonshot (`kimi`), Anthropic
+(`opus`), and OpenAI (`codex-sol`).
 
 - **Cross-lab diversity beats quantity.** The paper's own ablation
   shows diversity (different labs) beats more copies of the same model.
-  Four independent labs across two countries cover a lot of the current
-  frontier and break the US-only monoculture the earlier lineup had.
+  Seven independent labs cover more of the current frontier and avoid
+  repeating one vendor at multiple decision stages.
 - **Adding lanes costs wall-clock and auth complexity.** Each provider
   needs an auth story (subscription OAuth or an API key) and adds to the
   parallel fan-out, though the wall-clock cost is bounded since layers

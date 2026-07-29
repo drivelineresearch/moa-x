@@ -901,6 +901,12 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             return _error("goal is required")
         if len(goal) > 100_000:
             return _error("goal is too large")
+        requested_proposers = _string_list(body.get("proposers"))
+        requested_refiners = _string_list(body.get("refiners"))
+        if "fable" in requested_proposers:
+            return _error("Fable is aggregator-only and cannot be a proposer")
+        if "fable" in requested_refiners:
+            return _error("Fable is aggregator-only and cannot be a refiner")
         profile_id = profile["id"]
 
         job_id = (
@@ -1013,8 +1019,8 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             json.dumps(scout, indent=2), encoding="utf-8"
         )
         config = {
-            "proposers": _string_list(body.get("proposers")),
-            "refiners": _string_list(body.get("refiners")),
+            "proposers": requested_proposers,
+            "refiners": requested_refiners,
             "aggregator": str(body.get("aggregator") or "codex-sol"),
             "options": (
                 body.get("options")

@@ -47,17 +47,23 @@ and the strongest synthesis route in every run:
 
 | Mode | Proposers | Broadcast refiners | Aggregator |
 |---|---|---|---|
-| Quick | Gemini Pro `low`; Sonnet `medium` | Qwen | GPT-5.6 Sol `xhigh` |
-| Balanced | Gemini Pro `high`; Terra `high`; Sonnet `high` | Qwen; Opus `high` | GPT-5.6 Sol `xhigh` |
-| Thorough | Gemini Pro `high`; Terra `xhigh`; Sonnet `max`; GLM | Qwen; Opus `max`; DeepSeek V4 Pro | GPT-5.6 Sol `xhigh` |
+| Quick | Gemini Pro `low`; Grok 4.5 | Kimi K3 | GPT-5.6 Sol `xhigh` |
+| Balanced | Gemini Pro `high`; Grok 4.5; GLM-5.2 | Qwen 3.8; Kimi K3; Opus `high` | GPT-5.6 Sol `xhigh` |
+| Thorough | Gemini Pro `high`; Grok 4.5; GLM-5.2; DeepSeek V4 Pro | Qwen 3.8; Kimi K3; Opus `max` | GPT-5.6 Sol `xhigh` |
 
 Gemini Pro stays in the proposal layer because it contributes a
-Google-native research lane before the ensemble converges. Sonnet supplies an
-Anthropic proposal; Opus becomes the higher-cost adversarial reviewer in
-Balanced and Thorough. Qwen keeps the default reviewer set independent from
-the OpenAI aggregator, and Thorough adds GLM plus DeepSeek to widen the
-non-OpenAI evidence and review paths. The aggregator is intentionally fixed
-to GPT-5.6 Sol at `xhigh` in every recommended mode.
+Google-native research lane before the ensemble converges. Grok contributes
+the xAI proposal lane, GLM joins at Balanced, and DeepSeek joins at Thorough.
+Kimi K3 is the Quick reviewer and remains in the full broadcast-review set
+alongside Qwen and Opus at higher depths. Every named default lane comes from
+a different lab. GPT-5.6 Sol remains the selected `xhigh` aggregator in every
+recommended mode.
+
+Fable 5 is available as an aggregator-only alternative. Selecting it opens a
+quota warning and requires the shared acknowledgement phrase before the radio
+selection is applied. This is intentionally only a warning shot—the phrase is
+present in browser JavaScript and is not an authentication or authorization
+boundary. Fable never appears in proposer or refiner lists.
 
 Whenever a route is selected—by initial defaults, a depth-mode change, or a
 manual click—the corresponding provider accordion opens automatically so the

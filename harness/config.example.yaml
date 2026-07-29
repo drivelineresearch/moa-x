@@ -22,6 +22,7 @@
 #   grok      → {harness: opencode, model: opencode-go/grok-4.5}         # xAI Grok via OpenCode Go
 #   cursor-grok → {harness: cursor, model: cursor-grok-4.5-high}         # xAI Grok via Cursor; needs cursor-agent login / CURSOR_API_KEY
 #   agy-gemini-pro → {harness: agy, model: gemini-3.1-pro-high}           # sole curated Gemini route; depth is the model suffix (do not add AGY effort)
+#   fable          → {harness: claude, model: claude-fable-5}            # xhigh; aggregator only; quota-heavy
 #
 # Override a built-in's model via:
 #   --codex-model / --sonnet-model CLI flags, or
@@ -36,8 +37,8 @@
 #
 # Layer assignments: subset of (built-in names ∪ user-named providers).
 layers:
-  proposers: [agy-gemini-pro, codex, sonnet]
-  refiners:  [qwen, opus]
+  proposers: [agy-gemini-pro, grok, glm]
+  refiners:  [qwen, kimi, opus]
   aggregator: codex-sol
   # Set true to skip the refinement layer entirely.
   skip_refinement: false
@@ -46,14 +47,14 @@ layers:
 # shell/.env shorthand: MOA_PROVIDER_<NAME>=<harness>:<model> (see .env.example).
 # YAML wins over the env shorthand on a name conflict.
 #
-# Example: add xAI Grok as a 4th proposer. `grok` is a built-in (harness:
-# opencode, model opencode-go/grok-4.5), so no `providers:` block is needed —
-# just list it. It reuses the authenticated OpenCode Go account. Override the
-# model with MOA_GROK_MODEL; a direct `xai/...` route requires XAI_API_KEY.
+# Example: the shipped Grok proposer is a built-in (harness: opencode, model
+# opencode-go/grok-4.5), so no `providers:` block is needed. It reuses the
+# authenticated OpenCode Go account. Override the model with MOA_GROK_MODEL;
+# a direct `xai/...` route requires XAI_API_KEY.
 #
 # layers:
-#   proposers: [agy-gemini-pro, codex, sonnet, grok]
-#   refiners:  [qwen, opus]
+#   proposers: [agy-gemini-pro, grok, glm]
+#   refiners:  [qwen, kimi, opus]
 #   aggregator: codex-sol
 #
 # Example: 4-lane proposer mix adding the Cursor Grok lane. `cursor-grok` is a
@@ -62,16 +63,16 @@ layers:
 # model id with MOA_CURSOR_GROK_MODEL as Cursor's catalog advances.
 #
 # layers:
-#   proposers: [agy-gemini-pro, codex, sonnet, cursor-grok]
-#   refiners:  [qwen, opus]
+#   proposers: [agy-gemini-pro, grok, glm, cursor-grok]
+#   refiners:  [qwen, kimi, opus]
 #   aggregator: codex-sol
 #
 # Example: also use Qwen Token Plan as a fourth proposer. Put the dedicated
 # `sk-sp-...` key in .env as QWEN_TOKEN_PLAN_API_KEY; never put it here.
 #
 # layers:
-#   proposers: [agy-gemini-pro, codex, sonnet, qwen]
-#   refiners:  [qwen, opus]
+#   proposers: [agy-gemini-pro, grok, glm, qwen]
+#   refiners:  [kimi, opus]
 #   aggregator: codex-sol
 #
 # DeepSeek V4 through the authenticated OpenCode Go account. Both curated
@@ -79,8 +80,8 @@ layers:
 # GPT-5.6 Sol.
 #
 # layers:
-#   proposers: [agy-gemini-pro, codex, sonnet, deepseek]
-#   refiners:  [qwen, opus, deepseek-flash]
+#   proposers: [agy-gemini-pro, grok, glm, deepseek]
+#   refiners:  [qwen, kimi, opus]
 #   aggregator: codex-sol
 #
 # Example: run GLM-5.2 through Fireworks serverless instead of opencode-go
@@ -88,16 +89,17 @@ layers:
 # providers:
 #   glm-fw:  {harness: opencode, model: fireworks-ai/accounts/fireworks/models/glm-5p2}
 # layers:
-#   proposers: [agy-gemini-pro, codex, sonnet, glm-fw]
-#   refiners:  [qwen, opus]
+#   proposers: [agy-gemini-pro, grok, glm-fw]
+#   refiners:  [qwen, kimi, opus]
 #   aggregator: codex-sol
 #
 # Google consumer account via AGY (requires agy 1.1.5+ and local sign-in)
 #
 # layers:
-#   proposers: [agy-gemini-pro, codex, sonnet]
-#   refiners:  [qwen, opus]
+#   proposers: [agy-gemini-pro, grok, glm]
+#   refiners:  [qwen, kimi, opus]
 #   aggregator: codex-sol
 #
-# CLAUDE.md recommends keeping refiner labs disjoint from the aggregator
-# (OpenAI). This is no longer harness-enforced — see the doc for context.
+# `fable` may replace `codex-sol` only in `layers.aggregator`. The loader
+# rejects it in proposer/refiner lists. The Web UI adds a warning/password
+# speed bump because this route can consume very large quota.

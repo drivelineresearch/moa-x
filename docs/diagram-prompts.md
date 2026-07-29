@@ -7,10 +7,10 @@ The brand images are current and live:
   (generated from Prompt 1). The docs now use Mermaid until this asset is
   regenerated for the current roster.
 
-The banner reflects the four-lab default roster. The next workflow image should
-show the current default proposers (Gemini Pro, Codex Terra, Claude Sonnet 5),
-current broadcast refiners (Qwen 3.8 and Claude Opus 5), GPT-5.6 Sol `xhigh`
-aggregation, and the
+The banner reflects the cross-lab ensemble theme. The next workflow image should
+show the current default proposers (Gemini Pro, Grok 4.5, and GLM-5.2),
+current broadcast refiners (Qwen 3.8, Kimi K3, and Claude Opus 5), GPT-5.6 Sol
+`xhigh` default aggregation, the warning-gated optional Fable aggregator, and the
 generated plan/report artifacts. The prompts below are the source of truth for
 regenerating or tweaking them — keep the same style so the pair stays visually
 consistent.
@@ -49,35 +49,38 @@ Z-path exactly as written below.
 > ② PROPOSERS (top-right quadrant): three full-size isometric desks in a row,
 > each with a monitor showing a globe icon (web research). Desk colors and
 > labels identify the default proposer roster: a BLUE desk labeled "Gemini
-> Pro", a GREEN desk labeled "Codex Terra", and an ORANGE desk labeled "Sonnet
-> 5". A bold red ribbon reading "READ-ONLY" bands across all three desks,
+> Pro", a BLACK desk labeled "Grok 4.5", and a PURPLE desk labeled "GLM-5.2".
+> A bold red ribbon reading "READ-ONLY" bands across all three desks,
 > with a padlock icon. JSON pages drop out of each output tray.
 >
 > ③ BROADCAST REFINERS (bottom-left quadrant): two people at desks reviewing
 > cork boards labeled "ALL VALID PROPOSALS" (both refiners receive the complete
-> surviving proposal set). A TEAL desk labeled "Qwen 3.8" and an ORANGE desk
-> labeled "Opus 5". Add a "VERIFIED" stamp on one desk.
+> surviving proposal set). A TEAL desk labeled "Qwen 3.8", a VIOLET desk
+> labeled "Kimi K3", and an ORANGE desk labeled "Opus 5". Add a "VERIFIED"
+> stamp on one desk.
 >
 > ④ AGGREGATOR (bottom-right quadrant): a pair of hands in orange sleeves
 > drawing on a drafting table, assembling a blueprint and three outputs: a
 > document labeled "final-plan.md", a small linked-node data card labeled
 > "final-plan.json", and a browser card labeled "report.html" containing tiny
-> bar-chart, timeline, and decision-lineage shapes. Add a small "GPT-5.6 Sol
-> · xhigh" label in the corner.
+> bar-chart, timeline, and decision-lineage shapes. Add a primary "GPT-5.6 Sol
+> · xhigh · DEFAULT" label and a smaller alternate switch labeled "Fable 5 1M
+> · xhigh" with a warning triangle, lock, and "HIGH QUOTA" badge.
 >
-> The connecting arrows are colored ribbon-pipes (blue, green, and orange
-> from the proposers; teal and orange from the refiners). Along the very bottom,
+> The connecting arrows are colored ribbon-pipes (blue, black, and purple
+> from the proposers; teal, violet, and orange from the refiners). Along the very bottom,
 > below the grid, a thin horizontal ruler/measuring line with the caption
 > "~12–25 min wall-clock". Overall palette: Google blue, OpenAI green,
-> Anthropic orange, and Qwen teal on light gray. No photorealism, no
+> Anthropic orange, Qwen teal, Kimi violet, xAI black, and GLM purple on light gray. No photorealism, no
 > heavy-3D render — keep the flat illustrated cel-shaded look.
 
 Notes for whoever runs it:
 - Image models render obscure logos unreliably — the desk-front **text labels**
-  (`Gemini Pro`, `Codex Terra`, `Sonnet 5`, `Qwen 3.8`, `Opus 5`, `GPT-5.6 Sol`) carry
+  (`Gemini Pro`, `Grok 4.5`, `GLM-5.2`, `Qwen 3.8`, `Kimi K3`, `Opus 5`,
+  `GPT-5.6 Sol`, `Fable 5 1M`) carry
   the identification; logo motifs are nice-to-have accents, not load-bearing.
-- Keep Qwen in Layer 2. It is a default broadcast refiner, not the optional
-  proposer shown by the v0.4.1 illustration.
+- Keep Qwen and Kimi in Layer 2. Keep Grok in Layer 1. Do not repeat Claude
+  or GPT across stages.
 - Keep the image focused on the default recorded GPT-5.6 Sol route.
 
 ## Prompt 2 — hero/banner (`docs/moa-x-header.png`)

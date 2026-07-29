@@ -12,7 +12,8 @@ versioning.
   uploads, lifecycle events, provider health, and responsive run review.
 - Curated current routes for GPT-5.6 Terra/Sol/Luna, Claude Sonnet/Opus 5,
   OpenCode Go, Qwen Token Plan, Cursor Grok, and AGY Gemini 3.1 Pro
-  High/Low. The Web UI restricts aggregation to GPT-5.6 Sol.
+  High/Low. The Web UI offers GPT-5.6 Sol by default plus a warning-gated
+  Fable 5 1M `xhigh` aggregator.
 - Generated provider portraits, workflow/state art, favicon, and responsive
   control-room illustrations.
 - Interactive decision-lineage explorer in `report.html`, backed by a new
@@ -30,13 +31,14 @@ versioning.
 
 ### Changed
 
-- Default proposers use Gemini 3.1 Pro, Codex `gpt-5.6-terra`, and pinned
-  Claude Sonnet 5. Default broadcast refiners use Qwen
-  `qwen3.8-max-preview` plus Claude Opus 5; the default aggregator is
-  GPT-5.6 Sol at `xhigh`.
-- Quick, Balanced, and Thorough recommend Gemini Pro as a proposer and
-  GPT-5.6 Sol at `xhigh` as the sole aggregator. Balanced and Thorough add
-  Claude Opus at `high` and `max` refiner effort, respectively.
+- Default proposers use Gemini 3.1 Pro, Grok 4.5, and GLM-5.2. Default
+  broadcast refiners use Qwen `qwen3.8-max-preview`, Kimi K3, and Claude
+  Opus 5; the default aggregator remains GPT-5.6 Sol at `xhigh`.
+- Quick, Balanced, and Thorough all include Gemini Pro and Grok as
+  proposers and GPT-5.6 Sol at `xhigh` as the default aggregator. Quick
+  uses Kimi K3 as its compact refiner lane. Balanced adds GLM plus
+  Qwen/Kimi/Opus (`high`), while Thorough also adds DeepSeek V4 Pro and
+  raises Opus to `max`.
 - Qwen Token Plan is now part of the default refiner roster and has a bounded
   600-second timeout instead of inheriting the OpenCode harness timeout.
 - The report now includes recorded Layer 3 status, timing, logs, and run-health
