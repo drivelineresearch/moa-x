@@ -10,20 +10,13 @@
 #   auth:     codex login   (creates ~/.codex/auth.json)
 #             or: printenv OPENAI_API_KEY | codex login --with-api-key
 
-# opencode CLI (runs GLM 5.2 + Qwen Token Plan; Kimi remains available)
+# OpenCode CLI (runs Grok, Kimi, and Qwen routes)
 #   install:  curl -fsSL https://opencode.ai/install | bash
 #   auth:     opencode auth login
-#             or set provider keys: ZHIPU_API_KEY (GLM),
-#             MOONSHOT_API_KEY (Kimi), FIREWORKS_API_KEY (Fireworks routing),
+#             or set provider keys: MOONSHOT_API_KEY (Kimi),
 #             QWEN_TOKEN_PLAN_API_KEY (Qwen Token Plan, sk-sp-...)
 
 # claude CLI (Anthropic / Claude Code)
 #   install:  see https://docs.claude.com/en/docs/claude-code/quickstart
 #   auth:     claude        (interactive OAuth; creates ~/.claude/)
 #             or set ANTHROPIC_API_KEY
-
-# cursor CLI (optional — routes composer / Cursor-hosted models)
-#   install:  see https://cursor.com/docs/cli
-#   binary:   cursor-agent (older) or agent (newer); set MOA_CURSOR_BIN to override
-#   auth:     cursor-agent login   (creates ~/.cursor/)
-#             or set CURSOR_API_KEY

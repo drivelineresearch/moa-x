@@ -4,7 +4,7 @@
 
 MoA-X is a Mixture-of-Agents reference harness. `harness/scripts/run_moa.py`
 orchestrates a config-driven roster of CLI proposers and broadcast
-refiners; the shipped default is Gemini Pro + Grok 4.5 + GLM-5.2 proposers
+refiners; the shipped default is Gemini Pro + Grok 4.5 + GPT-5.6 Luna proposers
 and Qwen + Kimi K3 + Claude Opus refiners (Qwen uses the Token Plan API).
 Layer 0 (scout) is handled by the parent agent. Layer 3 defaults to a recorded
 Codex subprocess on `gpt-5.6-sol` at `xhigh` reasoning (stable provider name
@@ -72,28 +72,26 @@ Rule 2 is non-negotiable. Rule 1 is a strong recommendation.
 ## Soft defaults (open to change via PR)
 
 - **Auth follows the underlying CLI.** Codex supports persisted API-key login,
-  Claude accepts `ANTHROPIC_API_KEY`, Cursor accepts `CURSOR_API_KEY`, and
-  OpenCode reads provider keys (`ZHIPU_API_KEY`, `MOONSHOT_API_KEY`,
+  Claude accepts `ANTHROPIC_API_KEY`, and OpenCode reads provider keys
+  (`MOONSHOT_API_KEY`,
   `FIREWORKS_API_KEY`, `QWEN_TOKEN_PLAN_API_KEY`, and others). The open gap is
   normalized usage/cost telemetry and safe pre-dispatch budget controls, not
   basic API-key authentication.
-- **Default roster is `[agy-gemini-pro, grok, glm]` proposers,
+- **Default roster is `[agy-gemini-pro, grok, codex-luna]` proposers,
   `[qwen, kimi, opus]` refiners, and `codex-sol` aggregator at `xhigh`** using the
-  `{agy, codex, claude, opencode}` harnesses. The wider curated catalog also
-  includes routes through `{cursor}`. The model defaults are
-  Gemini 3.1 Pro High, Grok 4.5, GLM-5.2, Qwen
+  `{agy, codex, claude, opencode}` harnesses. Cursor is unsupported; GLM and
+  DeepSeek are retained only as archived-run identities after repeated
+  incomplete or schema-invalid live outputs. The model defaults are
+  Gemini 3.1 Pro High, Grok 4.5, GPT-5.6 Luna, Qwen
   `qwen3.8-max-preview`, Kimi K3, Claude Opus 5 (`claude-opus-5`),
   and `gpt-5.6-sol` at `xhigh` for synthesis. Fable 5 is an
   aggregator-only, warning-gated alternative and is never a proposer or
-  refiner. It's
-  a default, not a cap — the roster is pure config (built-in names,
-  `providers:` in config.yaml, current Claude/OpenCode/Cursor/Google routes
-  documented in `docs/config.md` (including the authenticated OpenCode Go
-  DeepSeek V4 Pro and V4 Flash routes), or the
-  `MOA_PROVIDER_<NAME>` env shorthand). DeepSeek V4 Pro/Flash are tested
-  built-ins; recipes for MiniMax and Mistral are welcome. Most are an
-  opencode/cursor model string, but a new
-  *harness* needs its own adapter — open an issue first. Stable provider names
+  refiner. It is a default, not a cap—the roster is pure config (built-in names,
+  `providers:` in config.yaml, current Claude/OpenCode/Google routes
+  documented in `docs/config.md`, or the
+  `MOA_PROVIDER_<NAME>` env shorthand). OpenCode-backed routes use a
+  `provider/model` string, but a new *harness* needs its own adapter—open an
+  issue first. Stable provider names
   such as `sonnet`, `opus`, `qwen`, and `kimi` are compatibility/configuration
   identifiers; manifests and the Web UI record their resolved current model.
 
@@ -125,17 +123,23 @@ then `harness/config.yaml`, then built-in defaults. Loader lives at
   `effortPresentation()` and never reuse the route's `data-effort-mode` marker
   for the `fieldset[data-effort-control]` container; keep the Playwright
   contract test green. → `docs/webui.md`.
+- **Model lab owns visual identity; execution harness never does.** Every
+  roster group, review node, live lane, health-card portrait, archived run,
+  and responsive state must resolve `lab_id` through
+  `harness/scripts/model_labs.py`. Unknown custom routes use the independent
+  lab fallback. Never add `provider-*` or harness-keyed `pixel-*` art.
+  → `docs/assets.md`.
 - **Don't guess opencode `run` flags — they contradict the published docs.** No
   `-q`/`--auto`; auto-approve is `--dangerously-skip-permissions`; no stdin
   (prompt via `-f`, big prompts overflow argv); `-f` is a greedy array so the
   message goes before it. → `opencode-headless-run-invocation` skill + `adapters/opencode.py`.
 - **opencode model ids are `provider/model` strings.** Swap billing paths by
-  overriding the model string (`MOA_GLM_MODEL=fireworks-ai/...`), not by adding a
+  overriding the model string (`MOA_CUSTOM_MODEL=provider/model`), not by adding a
   harness. → `docs/config.md`.
-- **Cursor CLI binary was renamed `cursor-agent` → `agent`** (bare `cursor` is the
-  IDE launcher). The adapter probes both; honor `MOA_CURSOR_BIN`. → `adapters/cursor.py`.
-- **Schema-unenforced adapters (cursor, opencode) share one JSON extractor.**
-  Change `adapters.extract_json_from_text` once, not per-adapter.
+- **OpenCode gets one bounded schema-repair pass, not a full research retry.**
+  If its JSON parses but fails schema/evidence validation, repair only the
+  supplied object inside the session directory; incomplete output still uses
+  the existing one-time redispatch path. → `harness/scripts/run_moa.py`.
 - **Google runs through AGY.** Live probes control route availability;
   execution fails closed on plan mode + sandbox and reuses local CLI auth.
   → `docs/architecture.md`.

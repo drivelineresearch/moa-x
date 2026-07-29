@@ -22,7 +22,7 @@ and credit you in the advisory unless you prefer otherwise.
 ## Scope
 
 MoA-X is a thin orchestrator around authenticated external vendor CLIs
-(`codex`, `claude`, `opencode`, `cursor`, `agy`) and includes an optional
+(`codex`, `claude`, `opencode`, `agy`) and includes an optional
 local Flask control room. Reports in scope:
 
 - Command injection, path traversal, or similar in the orchestrator or
@@ -51,6 +51,6 @@ the machine hosting the Web UI are approved to process it.
 
 Reports out of scope (please take these upstream):
 
-- Vulnerabilities in the codex / claude / opencode / cursor CLIs themselves
+- Vulnerabilities in the Codex / Claude / OpenCode / AGY CLIs themselves
 - Vulnerabilities in the underlying LLM APIs
 - Issues specific to auth state (subscription or API) managed by those CLIs

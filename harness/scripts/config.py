@@ -14,7 +14,7 @@ CLI flags passed to run_moa.py still override everything — they are
 parsed after this module populates os.environ.
 
 Harnesses supported by the built-in adapters are {codex, claude, opencode,
-cursor, agy, gemini}. Curated named routes are declared in
+agy, gemini}. Curated named routes are declared in
 ``BUILTIN_PROVIDERS`` below; user-defined entries in harness/config.yaml are
 layered on top.
 
@@ -67,6 +67,9 @@ _DEFAULT_BINS = {
     "agy": "agy",
     "gemini": "gemini",
 }
+SUPPORTED_HARNESSES = frozenset(
+    {"codex", "claude", "opencode", "agy", "gemini"}
+)
 
 
 @dataclass(frozen=True)
@@ -80,7 +83,7 @@ class ResolvedProvider:
     harness/config.yaml or MOA_<NAME>_TIMEOUT env var.
     """
     name: str                         # user-facing label, used as agent_id in payloads
-    harness: str                      # adapter: codex, claude, opencode, cursor, agy, gemini
+    harness: str                      # adapter: codex, claude, opencode, agy, gemini
     model: str                        # model id passed to the harness
     timeout: Optional[int] = None     # per-provider timeout in seconds; None → harness default
     effort: Optional[str] = None      # provider-native reasoning effort / variant
@@ -97,24 +100,19 @@ class ResolvedProvider:
 # for twenty minutes.
 BUILTIN_PROVIDERS: dict[str, ResolvedProvider] = {
     "codex":          ResolvedProvider(name="codex",          harness="codex",    model="gpt-5.6-terra", effort="high"),
-    "codex-sol":      ResolvedProvider(name="codex-sol",      harness="codex",    model="gpt-5.6-sol", effort="high"),
+    "codex-sol":      ResolvedProvider(name="codex-sol",      harness="codex",    model="gpt-5.6-sol", effort="xhigh"),
     "codex-luna":     ResolvedProvider(name="codex-luna",     harness="codex",    model="gpt-5.6-luna", effort="medium"),
     "codex-reviewer": ResolvedProvider(name="codex-reviewer", harness="codex",    model="gpt-5.6-sol", effort="high"),
-    "codex-aggregator": ResolvedProvider(name="codex-aggregator", harness="codex", model="gpt-5.6-sol", timeout=600, effort="high"),
+    "codex-aggregator": ResolvedProvider(name="codex-aggregator", harness="codex", model="gpt-5.6-sol", timeout=600, effort="xhigh"),
     # Pin current canonical Anthropic ids. Claude Code's rolling `sonnet`
     # alias still resolved to 4.6 on 2.1.220 while Sonnet 5 was available
     # explicitly, so aliases would make the UI and recorded provenance lie.
     "sonnet":         ResolvedProvider(name="sonnet",         harness="claude",   model="claude-sonnet-5", effort="high"),
     "opus":           ResolvedProvider(name="opus",           harness="claude",   model="claude-opus-5", effort="high"),
-    "glm":            ResolvedProvider(name="glm",            harness="opencode", model="opencode-go/glm-5.2"),
     "kimi":           ResolvedProvider(name="kimi",           harness="opencode", model="opencode-go/kimi-k3"),
     "qwen":           ResolvedProvider(name="qwen",           harness="opencode", model="qwen-token-plan/qwen3.8-max-preview", timeout=600),
     "qwen-opencode":  ResolvedProvider(name="qwen-opencode",  harness="opencode", model="opencode-go/qwen3.7-max"),
-    "deepseek":       ResolvedProvider(name="deepseek",       harness="opencode", model="opencode-go/deepseek-v4-pro"),
-    "deepseek-flash": ResolvedProvider(name="deepseek-flash", harness="opencode", model="opencode-go/deepseek-v4-flash"),
-    "composer":       ResolvedProvider(name="composer",       harness="cursor",   model="composer-2.5"),
     "grok":           ResolvedProvider(name="grok",           harness="opencode", model="opencode-go/grok-4.5"),
-    "cursor-grok":    ResolvedProvider(name="cursor-grok",    harness="cursor",   model="cursor-grok-4.5-high"),
     # Google runs through AGY, which reuses the account signed into the local
     # Antigravity CLI. Gemini Pro is part of the shipped proposer defaults.
     # AGY selects depth in the model slug itself (for example
@@ -132,8 +130,18 @@ PROVIDER_ALLOWED_ROLES: dict[str, frozenset[str]] = {
 }
 
 
-def provider_allows_role(name: str, role: str) -> bool:
-    """Return whether a named built-in route is allowed in a pipeline role."""
+def provider_allows_role(
+    name: str,
+    role: str,
+    model: str | None = None,
+) -> bool:
+    """Return whether a route is allowed in a pipeline role.
+
+    The Fable restriction follows both the curated route id and the model id so
+    a user-defined alias cannot move the quota-intensive model upstream.
+    """
+    if str(model or "").lower().startswith("claude-fable-"):
+        return role == "aggregator"
     return role in PROVIDER_ALLOWED_ROLES.get(
         name, frozenset({"proposer", "refiner", "aggregator"})
     )
@@ -191,6 +199,18 @@ def resolve_provider(name: str, *, user_providers: dict[str, dict]) -> ResolvedP
         valid = sorted(set(BUILTIN_PROVIDERS) | set(user_providers))
         raise ValueError(
             f"unknown provider name {name!r}; valid names: {valid}"
+        )
+
+    if rp.harness not in SUPPORTED_HARNESSES:
+        retired = (
+            " Cursor support was removed because its headless success envelope "
+            "did not reliably contain a final structured result."
+            if rp.harness == "cursor"
+            else ""
+        )
+        raise ValueError(
+            f"provider {name!r} uses unsupported harness {rp.harness!r}; "
+            f"supported harnesses: {sorted(SUPPORTED_HARNESSES)}.{retired}"
         )
 
     env_prefix = f"MOA_{name.upper().replace('-', '_')}"
@@ -256,8 +276,7 @@ def resolve_bin(provider: str) -> str:
     """Return the binary name/path for a provider.
 
     Honors MOA_<PROVIDER>_BIN (e.g. MOA_CODEX_BIN, MOA_CLAUDE_BIN) with a
-    default of the bare binary name on PATH. Cursor and OpenCode adapters
-    resolve their own renamed/multi-path binaries.
+    default of the bare binary name on PATH. OpenCode resolves its own binary.
     """
     provider = provider.lower()
     if provider not in _DEFAULT_BINS:
@@ -379,7 +398,7 @@ def _user_providers_from_yaml(cfg: dict[str, Any]) -> dict[str, dict]:
 # Harnesses a provider spec may target. Used to validate MOA_PROVIDER_* env
 # definitions loudly at parse time instead of failing deep in dispatch.
 _KNOWN_HARNESSES = frozenset(
-    {"codex", "claude", "opencode", "cursor", "agy", "gemini"}
+    {"codex", "claude", "opencode", "agy", "gemini"}
 )
 
 
@@ -431,7 +450,7 @@ class LoadedConfig:
 
 
 # Default layer assignments when no YAML / env override is set.
-_DEFAULT_PROPOSERS = ["agy-gemini-pro", "grok", "glm"]
+_DEFAULT_PROPOSERS = ["agy-gemini-pro", "grok", "codex-luna"]
 _DEFAULT_REFINERS = ["qwen", "kimi", "opus"]
 _DEFAULT_AGGREGATOR = "codex-sol"
 
@@ -481,11 +500,11 @@ def load_resolved_config(
     aggregator = resolve_provider(aggregator_name, user_providers=user_providers)
     invalid_proposers = [
         item.name for item in proposers
-        if not provider_allows_role(item.name, "proposer")
+        if not provider_allows_role(item.name, "proposer", item.model)
     ]
     invalid_refiners = [
         item.name for item in refiners
-        if not provider_allows_role(item.name, "refiner")
+        if not provider_allows_role(item.name, "refiner", item.model)
     ]
     if invalid_proposers:
         raise ValueError(
@@ -495,7 +514,9 @@ def load_resolved_config(
         raise ValueError(
             f"providers are not allowed as refiners: {invalid_refiners}"
         )
-    if not provider_allows_role(aggregator.name, "aggregator"):
+    if not provider_allows_role(
+        aggregator.name, "aggregator", aggregator.model
+    ):
         raise ValueError(
             f"provider is not allowed as aggregator: {aggregator.name}"
         )

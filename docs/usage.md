@@ -26,11 +26,10 @@ What happens:
    Estimated wall-clock: roughly 12–25 minutes for research-heavy runs.
    Nothing spawns until you say yes.
 3. **Proposers (Layer 1, parallel).** Three headless subprocesses
-   fire in parallel by default: `agy-gemini-pro` (AGY harness), `grok`, and
-   `glm` (OpenCode harness) — Google, xAI, and Zhipu. Additional lanes (a `cursor` provider,
-   Kimi, DeepSeek V4 Pro/Flash through OpenCode Go, or any user provider) are available — see
-   [`docs/install.md`](install.md#optional-cursor-cli-extra-provider)
-   and [`docs/config.md`](config.md). Each
+   fire in parallel by default: `agy-gemini-pro` (AGY harness), `grok`
+   (OpenCode), and `codex-luna` (Codex) — Google, xAI, and OpenAI.
+   Additional supported custom routes are documented in
+   [`docs/config.md`](config.md). Each
    reads the repo under adapter-specific read-only controls (filesystem
    sandboxing for Codex, a hard tool allowlist for Claude, and a
    permission-deny policy for OpenCode), does web research, and writes an independent plan to
@@ -122,7 +121,7 @@ Each invocation creates a directory under `.moa/`:
 ├── layer1-manifest.json  # phase-split checkpoint and redispatch state
 ├── layer1/
 │   ├── codex-proposer.{json,log}
-│   ├── glm-proposer.{json,log}
+│   ├── codex-luna-proposer.{json,log}
 │   └── sonnet-proposer.{json,log}
 ├── layer2/
 │   ├── codex-sol-refiner-broadcast.{json,log}
@@ -148,7 +147,7 @@ aborting outright:
 
 - One or two proposers fail: refiners still run on the survivors,
   the aggregator handles the degraded input and flags it.
-- All three proposers fail: `--phase layer1` writes the checkpoint manifest
+- All proposers fail: `--phase layer1` writes the checkpoint manifest
   and exits 0 so the parent can offer redispatch; legacy `--phase all` exits
   code 4 with no synthesis.
 - One refiner fails: the aggregator works with the surviving

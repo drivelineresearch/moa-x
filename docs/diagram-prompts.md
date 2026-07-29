@@ -7,7 +7,7 @@ The brand images are current and live:
   (generated from Prompt 1), embedded in the README.
 
 The banner reflects the cross-lab ensemble theme. The next workflow image should
-show the current default proposers (Gemini Pro, Grok 4.5, and GLM-5.2),
+show the current Balanced proposers (Gemini Pro, Grok 4.5, and GPT-5.6 Luna),
 current broadcast refiners (Qwen 3.8, Kimi K3, and Claude Opus 5), GPT-5.6 Sol
 `xhigh` default aggregation, the warning-gated optional Fable aggregator, and the
 generated plan/report artifacts. The prompts below are the source of truth for
@@ -45,15 +45,17 @@ Z-path exactly as written below.
 > sticky notes; a small "scout-brief.json" note and an "APPROVED · 12–25 min"
 > rubber stamp on the desk.
 >
-> ② PROPOSERS (top-right quadrant): three full-size isometric desks in a row,
+> ② PROPOSERS (top-right quadrant): three full-size isometric desks in a row
+> plus one smaller dashed Thorough-only lane,
 > each with a monitor showing a globe icon (web research). Desk colors and
 > labels identify the default proposer roster: a BLUE desk labeled "Gemini
-> Pro", a BLACK desk labeled "Grok 4.5", and a PURPLE desk labeled "GLM-5.2".
-> A bold red ribbon reading "READ-ONLY" bands across all three desks,
+> Pro", a VIOLET desk labeled "Grok 4.5", a GREEN desk labeled "GPT-5.6
+> Luna", and a smaller TEAL Thorough-only desk labeled "GPT-5.6 Terra".
+> A bold red ribbon reading "READ-ONLY" bands across all four desks,
 > with a padlock icon. JSON pages drop out of each output tray.
 >
-> ③ BROADCAST REFINERS (bottom-left quadrant): two people at desks reviewing
-> cork boards labeled "ALL VALID PROPOSALS" (both refiners receive the complete
+> ③ BROADCAST REFINERS (bottom-left quadrant): three people at desks reviewing
+> cork boards labeled "ALL VALID PROPOSALS" (every refiner receives the complete
 > surviving proposal set). A TEAL desk labeled "Qwen 3.8", a VIOLET desk
 > labeled "Kimi K3", and an ORANGE desk labeled "Opus 5". Add a "VERIFIED"
 > stamp on one desk.
@@ -63,23 +65,24 @@ Z-path exactly as written below.
 > document labeled "final-plan.md", a small linked-node data card labeled
 > "final-plan.json", and a browser card labeled "report.html" containing tiny
 > bar-chart, timeline, and decision-lineage shapes. Add a primary "GPT-5.6 Sol
-> · xhigh · DEFAULT" label and a smaller alternate switch labeled "Fable 5 1M
-> · xhigh" with a warning triangle, lock, and "HIGH QUOTA" badge.
+> · xhigh · DEFAULT" label plus two smaller alternate cards: "Claude Opus 5"
+> and "Fable 5 1M · xhigh", with a warning triangle, lock, and "HIGH QUOTA"
+> badge on Fable.
 >
 > The connecting arrows are colored ribbon-pipes (blue, black, and purple
 > from the proposers; teal, violet, and orange from the refiners). Along the very bottom,
 > below the grid, a thin horizontal ruler/measuring line with the caption
 > "~12–25 min wall-clock". Overall palette: Google blue, OpenAI green,
-> Anthropic orange, Qwen teal, Kimi violet, xAI black, and GLM purple on light gray. No photorealism, no
+> Anthropic orange, Qwen teal, Kimi blue, xAI violet, and OpenAI green on light gray. No photorealism, no
 > heavy-3D render — keep the flat illustrated cel-shaded look.
 
 Notes for whoever runs it:
 - Image models render obscure logos unreliably — the desk-front **text labels**
-  (`Gemini Pro`, `Grok 4.5`, `GLM-5.2`, `Qwen 3.8`, `Kimi K3`, `Opus 5`,
+  (`Gemini Pro`, `Grok 4.5`, `GPT-5.6 Luna`, `GPT-5.6 Terra`, `Qwen 3.8`, `Kimi K3`, `Opus 5`,
   `GPT-5.6 Sol`, `Fable 5 1M`) carry
   the identification; logo motifs are nice-to-have accents, not load-bearing.
-- Keep Qwen and Kimi in Layer 2. Keep Grok in Layer 1. Do not repeat Claude
-  or GPT across stages.
+- Keep Qwen and Kimi in Layer 2. Keep Grok in Layer 1. Do not repeat the same
+  route or model in multiple stages.
 - Keep the image focused on the default recorded GPT-5.6 Sol route.
 
 ## Prompt 2 — hero/banner (`docs/moa-x-header.png`)

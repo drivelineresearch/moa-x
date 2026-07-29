@@ -34,7 +34,7 @@ READ_ONLY_RULE = (
 # back to proc.kill(), which wraps TerminateProcess — kills only the top
 # child, not subprocess-of-subprocess, so runaway grandchildren are possible
 # on Windows timeouts. This is acceptable: MoA is primarily a macOS/Linux
-# workflow (the codex/claude/opencode/cursor CLIs are best supported there).
+# workflow (the Codex/Claude/OpenCode CLIs are best supported there).
 _POSIX = sys.platform != "win32"
 
 
@@ -99,7 +99,7 @@ def extract_json_from_text(
     """Pull the largest valid JSON object out of a free-text model response.
 
     Shared by the adapters whose CLIs have no native schema enforcement
-    (cursor, opencode) — their model text may wrap the payload in markdown
+    (OpenCode and legacy adapters) — model text may wrap the payload in markdown
     fences or surround it with prose. Strategy, longest-match-first:
 
       0. Fast path: if the whole (stripped) text is a single JSON object,

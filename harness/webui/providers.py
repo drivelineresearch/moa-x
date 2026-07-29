@@ -20,7 +20,8 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 import config as harness_config  # noqa: E402
-from adapters import agy, claude, codex, cursor, opencode  # noqa: E402
+from model_labs import ROUTE_META, model_lab, route_lab_id  # noqa: E402
+from adapters import agy, claude, codex, opencode  # noqa: E402
 
 
 PROVIDER_META = {
@@ -51,15 +52,6 @@ PROVIDER_META = {
         "install": "curl -fsSL https://opencode.ai/install | bash",
         "login": "opencode auth login",
     },
-    "cursor": {
-        "label": "Cursor",
-        "lab": "Multi-lab",
-        "group": "Cursor subscription routes",
-        "binary": cursor._cursor_bin,
-        "probe": cursor.check_available,
-        "install": "curl https://cursor.com/install -fsS | bash",
-        "login": "cursor-agent login",
-    },
     "agy": {
         "label": "Antigravity",
         "lab": "Google",
@@ -75,56 +67,12 @@ PROVIDER_META = {
 # run_moa CLI. Model ids themselves come from config.BUILTIN_PROVIDERS, so the
 # API cannot drift from actual dispatch. In particular, Claude 5 routes show
 # the pinned canonical ids rather than the stale rolling aliases.
-ROUTE_META: dict[str, dict[str, Any]] = {
-    "codex": {"label": "GPT-5.6 Terra", "lab": "OpenAI",
-              "roles": ["proposer", "refiner"]},
-    "codex-sol": {"label": "GPT-5.6 Sol", "lab": "OpenAI",
-                  "roles": ["proposer", "refiner", "aggregator"]},
-    "codex-luna": {"label": "GPT-5.6 Luna", "lab": "OpenAI",
-                   "roles": ["proposer", "refiner"]},
-    "sonnet": {"label": "Claude Sonnet 5", "lab": "Anthropic",
-               "roles": ["proposer", "refiner"]},
-    "opus": {"label": "Claude Opus 5", "lab": "Anthropic",
-             "roles": ["proposer", "refiner", "aggregator"]},
-    "glm": {"label": "GLM-5.2", "lab": "Zhipu",
-            "roles": ["proposer", "refiner"]},
-    "kimi": {"label": "Kimi K3", "lab": "Moonshot",
-             "roles": ["proposer", "refiner"]},
-    "qwen": {"label": "Qwen 3.8 Max Preview · Token Plan", "lab": "Alibaba",
-             "roles": ["proposer", "refiner"]},
-    "qwen-opencode": {"label": "Qwen 3.7 Max", "lab": "Alibaba",
-                      "roles": ["proposer", "refiner"]},
-    "deepseek": {"label": "DeepSeek V4 Pro", "lab": "DeepSeek",
-                 "roles": ["proposer", "refiner"]},
-    "deepseek-flash": {"label": "DeepSeek V4 Flash", "lab": "DeepSeek",
-                       "roles": ["proposer", "refiner"]},
-    "grok": {"label": "Grok 4.5", "lab": "xAI",
-             "roles": ["proposer", "refiner"]},
-    "composer": {"label": "Composer 2.5", "lab": "Cursor",
-                 "roles": ["proposer", "refiner"]},
-    "cursor-grok": {"label": "Grok 4.5 High", "lab": "xAI",
-                    "roles": ["proposer", "refiner"]},
-    "agy-gemini-pro": {"label": "Gemini 3.1 Pro", "lab": "Google",
-                       "roles": ["proposer", "refiner"]},
-    "fable": {"label": "Fable 5 1M Thinking", "lab": "Anthropic",
-                  "roles": ["aggregator"]},
-}
-
 HIDDEN_ROUTES = {"codex-reviewer", "codex-aggregator"}
 
 # Routes that authenticated successfully but failed repeated full-schema live
 # validation. Keep them visible for provenance, but prevent paid launches until
 # the upstream CLI/model reliably returns its final structured response.
-LIVE_BLOCKED_ROUTES = {
-    "composer": (
-        "Disabled after two live attempts returned progress text without "
-        "the required final JSON"
-    ),
-    "cursor-grok": (
-        "Disabled after repeated live attempts returned research-progress "
-        "text without the required final JSON; use Grok 4.5 through OpenCode"
-    ),
-}
+LIVE_BLOCKED_ROUTES: dict[str, str] = {}
 
 EFFORT_OPTIONS = {
     "codex": ["low", "medium", "high", "xhigh"],
@@ -164,13 +112,23 @@ def _route_records(harness: str) -> list[dict[str, Any]]:
         ):
             continue
         meta = ROUTE_META.get(item.name, {})
+        lab_id = route_lab_id(item.name, item.model)
+        lab = model_lab(lab_id)
+        roles = meta.get("roles") or [
+            role
+            for role in ("proposer", "refiner", "aggregator")
+            if harness_config.provider_allows_role(item.name, role, item.model)
+        ]
         records.append(
             {
                 "id": item.name,
                 "name": meta.get("label", item.name),
                 "model": item.model,
-                "lab": meta.get("lab", PROVIDER_META[harness]["lab"]),
-                "roles": meta.get("roles", ["proposer", "refiner"]),
+                "lab_id": lab_id,
+                "lab": lab["label"],
+                "lab_avatar": f"/static/images/{lab['avatar']}",
+                "lab_pixel": f"/static/images/{lab['pixel']}",
+                "roles": roles,
                 "effort": item.effort,
                 "supports_effort": harness in EFFORT_OPTIONS,
                 "effort_options": ROUTE_EFFORT_OPTIONS.get(
@@ -292,6 +250,7 @@ def probe_provider(provider_id: str) -> dict[str, Any]:
         "version": version,
         "models": models,
         "routes": routes,
+        "lab_ids": list(dict.fromkeys(route["lab_id"] for route in routes)),
         "supports_effort": provider_id in EFFORT_OPTIONS,
         "effort_options": EFFORT_OPTIONS.get(provider_id, []),
         "install_command": meta["install"],
@@ -340,6 +299,11 @@ def provider_catalog(probe: bool = True) -> list[dict[str, Any]]:
                     for route in _route_records(provider_id)
                 ],
                 "routes": _route_records(provider_id),
+                "lab_ids": list(
+                    dict.fromkeys(
+                        route["lab_id"] for route in _route_records(provider_id)
+                    )
+                ),
                 "supports_effort": (
                     provider_id in EFFORT_OPTIONS
                 ),
@@ -363,7 +327,13 @@ def model_catalog(*, probe: bool = True) -> list[dict[str, Any]]:
         if item.name in HIDDEN_ROUTES or item.harness not in PROVIDER_META:
             continue
         meta = ROUTE_META.get(item.name, {})
-        roles = meta.get("roles", ["proposer", "refiner"])
+        lab_id = route_lab_id(item.name, item.model)
+        lab = model_lab(lab_id)
+        roles = meta.get("roles") or [
+            role
+            for role in ("proposer", "refiner", "aggregator")
+            if harness_config.provider_allows_role(item.name, role, item.model)
+        ]
         default_roles = []
         if item.name in proposer_defaults:
             default_roles.append("proposer")
@@ -393,8 +363,12 @@ def model_catalog(*, probe: bool = True) -> list[dict[str, Any]]:
                 "model": item.model,
                 "lab": meta.get(
                     "lab",
-                    PROVIDER_META[item.harness]["lab"],
+                    lab["label"],
                 ),
+                "lab_id": lab_id,
+                "lab_avatar": f"/static/images/{lab['avatar']}",
+                "lab_pixel": f"/static/images/{lab['pixel']}",
+                "lab_accent": lab["accent"],
                 "timeout": item.timeout,
                 "effort": item.effort,
                 "supports_effort": (

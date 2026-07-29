@@ -94,6 +94,7 @@ header.report-head { padding: 40px 0 30px; }
 .meta-row b { color: var(--ink); font-weight: 700; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip { display: inline-flex; max-width: 100%; align-items: center; gap: 7px; padding: 5px 12px; border: 1px solid var(--track); border-radius: 999px; font-size: 0.8rem; background: var(--white); overflow-wrap: anywhere; }
+.chip .lab-avatar { width: 24px; height: 24px; }
 .chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--gold); }
 .chip .role { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; }
 .badge { display: inline-block; padding: 4px 11px; border-radius: 6px; font-family: var(--font-head); font-weight: 800; text-transform: uppercase; font-size: 0.68rem; letter-spacing: 0.08em; }
@@ -153,6 +154,18 @@ header.report-head { padding: 40px 0 30px; }
 .network-stage .stage-title { margin: 3px 0 5px; font-weight: 800; }
 .network-stage .stage-desc { color: var(--secondary); font-size: .76rem; line-height: 1.45; }
 .network-roster { margin-top: 8px; color: var(--ink); font-family: var(--font-mono); font-size: .7rem; overflow-wrap: anywhere; }
+.network-labs { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+.lab-avatar {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border: 1px solid var(--track);
+  border-bottom: 3px solid var(--gold);
+  border-radius: 7px;
+  background: var(--panel);
+  object-fit: cover;
+}
+.c-head > .lab-avatar { width: 36px; height: 36px; }
 
 /* ---- Sticky nav ---- */
 nav.mininav { position: sticky; top: 8px; z-index: 50; background: rgba(255,255,255,0.94); backdrop-filter: blur(4px); border-bottom: 1px solid var(--track); }
@@ -331,7 +344,8 @@ table.dl th { font-family: var(--font-head); text-transform: uppercase; font-siz
 .timeline-gap { margin: -2px 0 14px; padding: 7px 10px; border-left: 3px solid var(--gold); background: rgba(255,163,0,.08); color: var(--secondary); font-size: .74rem; }
 .timeline-rows { display: grid; gap: 10px; }
 .timeline-row { display: grid; grid-template-columns: minmax(130px, 190px) minmax(180px, 1fr) 64px; align-items: center; gap: 12px; min-width: 0; }
-.timeline-who { min-width: 0; }
+.timeline-who { min-width: 0; display: grid; grid-template-columns: 34px minmax(0, 1fr); column-gap: 9px; align-items: center; }
+.timeline-who .lab-avatar { grid-row: 1 / 3; width: 34px; height: 34px; }
 .timeline-who .name { overflow-wrap: anywhere; font-weight: 800; font-size: .78rem; }
 .timeline-who .role { color: var(--secondary); font-size: .68rem; text-transform: capitalize; }
 .timeline-track { position: relative; height: 22px; overflow: hidden; border-radius: 999px; background: var(--panel); }
@@ -479,6 +493,22 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
   function esc(s) { var d = document.createElement("div"); d.textContent = s == null ? "" : String(s); return d.innerHTML; }
   function fmtDur(s) { if (s == null) return "—"; if (s < 60) return s.toFixed(1) + "s"; var m = Math.floor(s / 60); return m + "m " + Math.round(s - m * 60) + "s"; }
   function statusPip(r) { return r.success ? "pip-ok" : (r.transient_empty ? "pip-warn" : "pip-fail"); }
+  function labIdFor(value) {
+    value = value || {};
+    if (value.lab_id && DATA.model_labs && DATA.model_labs[value.lab_id]) return value.lab_id;
+    var route = DATA.route_labs && DATA.route_labs[value.name || value.agent_id];
+    return route && route.lab_id || "independent";
+  }
+  function labPortrait(value, kind, altSuffix) {
+    var labId = labIdFor(value), lab = DATA.model_labs && DATA.model_labs[labId] || { label: "Independent lab" };
+    var src = ART["lab_" + labId + "_" + (kind || "avatar")] || ART.lab_independent_avatar;
+    return el("img", {
+      class: "lab-avatar",
+      src: src,
+      alt: lab.label + (altSuffix || " model-lab portrait"),
+      loading: "lazy"
+    });
+  }
 
   var app = document.getElementById("app");
   var sections = [];
@@ -579,7 +609,7 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
   })();
   function providerChip(p, role) {
     return el("span", { class: "chip" }, [
-      el("span", { class: "dot" }),
+      labPortrait(p, "avatar", " model-lab avatar"),
       el("span", { html: "<b>" + esc(p.name) + "</b>" }),
       el("span", { class: "role", text: p.model || p.harness || role })
     ]);
@@ -660,18 +690,24 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
       if (!rows.length) return "Not run";
       return rows.map(function (r) { return r.agent_id + (r.success ? "" : " (did not complete)"); }).join(" · ");
     }
-    function stage(number, title, desc, roster) {
-      return el("div", { class: "network-stage" }, [
+    function stage(number, title, desc, roster, rows) {
+      var node = el("div", { class: "network-stage" }, [
         el("div", { class: "stage-n", text: "Stage " + number }),
         el("div", { class: "stage-title", text: title }),
         el("div", { class: "stage-desc", text: desc }),
         el("div", { class: "network-roster", text: roster })
       ]);
+      if (rows && rows.length) {
+        var portraits = el("div", { class: "network-labs", "aria-label": "Contributing model labs" });
+        rows.forEach(function (row) { portraits.appendChild(labPortrait(row, "avatar", " contributor")); });
+        node.appendChild(portraits);
+      }
+      return node;
     }
-    flow.appendChild(stage("01", "Frame the task", sb.frozen_spec ? "A written brief fixed the goal and boundaries before recommendations began." : "The run recorded the task context available to the team.", "Scout brief"));
-    flow.appendChild(stage("02", "Develop options", l1.length + " independent contributor" + (l1.length === 1 ? "" : "s") + " worked from the same brief.", names(l1)));
-    flow.appendChild(stage("03", "Review the options", l2.length ? l2.length + " reviewer" + (l2.length === 1 ? "" : "s") + " checked the recommendations and their evidence." : "No review stage was recorded for this run.", names(l2)));
-    flow.appendChild(stage("04", "Choose a direction", DATA.final_plan_html ? "The reviewed material was combined into the final recommendation." : "A final recommendation has not yet been recorded.", l3.length ? names(l3) : (agg ? [agg.name, agg.model].filter(Boolean).join(" · ") : "Configured parent session")));
+    flow.appendChild(stage("01", "Frame the task", sb.frozen_spec ? "A written brief fixed the goal and boundaries before recommendations began." : "The run recorded the task context available to the team.", "Scout brief", []));
+    flow.appendChild(stage("02", "Develop options", l1.length + " independent contributor" + (l1.length === 1 ? "" : "s") + " worked from the same brief.", names(l1), l1));
+    flow.appendChild(stage("03", "Review the options", l2.length ? l2.length + " reviewer" + (l2.length === 1 ? "" : "s") + " checked the recommendations and their evidence." : "No review stage was recorded for this run.", names(l2), l2));
+    flow.appendChild(stage("04", "Choose a direction", DATA.final_plan_html ? "The reviewed material was combined into the final recommendation." : "A final recommendation has not yet been recorded.", l3.length ? names(l3) : (agg ? [agg.name, agg.model].filter(Boolean).join(" · ") : "Configured parent session"), l3.length ? l3 : (agg ? [agg] : [])));
     card.appendChild(flow);
     return card;
   }
@@ -757,7 +793,7 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
     if (p && p.plan) stats.push(["steps", p.plan.length]);
     if (p && p.plan) stats.push(["evidence", p.plan.reduce(function (a, s) { return a + ((s.evidence || []).length); }, 0)]);
     stats.push(["dur", fmtDur(r.duration_seconds)]);
-    return collapsible(r.agent_id + " recommendation", statusPip(r), stats, body, false);
+    return collapsible(r.agent_id + " recommendation", statusPip(r), stats, body, false, r);
   }
   function planStep(s, i) {
     var d = el("div", { class: "step" });
@@ -936,7 +972,7 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
     }
     var reviewed = (r.reviewing || []).join(", ");
     var finalUses = lineageInfluenceCounts().refiner[r.agent_id] || 0;
-    return collapsible(r.agent_id + " review — full findings", statusPip(r), [["reviewed", reviewed || "—"], ["final", finalUses + " cited"], ["dur", fmtDur(r.duration_seconds)]], body, false);
+    return collapsible(r.agent_id + " review — full findings", statusPip(r), [["reviewed", reviewed || "—"], ["final", finalUses + " cited"], ["dur", fmtDur(r.duration_seconds)]], body, false, r);
   }
 
   // Decision lineage — why each step survived (legacy report label).
@@ -1259,7 +1295,7 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
     sec.appendChild(controlBar("logs"));
     all.forEach(function (r) {
       if (!r.log || (!r.log.stdout && !r.log.stderr)) return;
-      sec.appendChild(collapsible(r.agent_id + " · " + r.role, statusPip(r), [["dur", fmtDur(r.duration_seconds)]], logViewer(r), false));
+      sec.appendChild(collapsible(r.agent_id + " · " + r.role, statusPip(r), [["dur", fmtDur(r.duration_seconds)]], logViewer(r), false, r));
     });
     addSection("logs", "Technical logs", sec);
   })();
@@ -1309,11 +1345,12 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
 
   // ---------------------------------------------------------------- shared: collapsible
   var collapseSequence = 0;
-  function collapsible(title, pipClass, stats, bodyNode, openByDefault) {
+  function collapsible(title, pipClass, stats, bodyNode, openByDefault, agent) {
     var wrap = el("div", { class: "collapse" + (openByDefault ? " open" : "") });
     var sequence = ++collapseSequence, headId = "collapse-head-" + sequence, bodyId = "collapse-body-" + sequence;
     var head = el("button", { class: "c-head", type: "button", id: headId, "aria-expanded": openByDefault ? "true" : "false", "aria-controls": bodyId });
     head.appendChild(el("span", { class: "status-pip " + (pipClass || "pip-ok"), "aria-hidden": "true" }));
+    if (agent) head.appendChild(labPortrait(agent, "avatar", " model-lab avatar"));
     head.appendChild(el("span", { class: "c-title", text: title }));
     if (stats) { var ms = el("span", { class: "mini-stats" }); stats.forEach(function (s) { ms.appendChild(el("span", { html: esc(s[0]) + " <b>" + esc(s[1]) + "</b>" })); }); head.appendChild(ms); }
     head.appendChild(el("span", { class: "caret", text: "▶", "aria-hidden": "true" }));
@@ -1440,6 +1477,7 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
         track.appendChild(el("span", { class: barClass, style: "left:" + left.toFixed(2) + "%;width:" + width.toFixed(2) + "%" }));
         rows.appendChild(el("div", { class: "timeline-row" + (retry || span.previous ? " is-retry" : "") }, [
           el("div", { class: "timeline-who" }, [
+            labPortrait(span.r, "avatar", " timeline contributor"),
             el("div", { class: "name", text: span.r.agent_id + ((span.attempt.attempt || 1) > 1 || span.previous ? " · attempt " + (span.attempt.attempt || 1) : "") }),
             el("div", { class: "role", text: String(span.r.role || "contributor").replace(/-/g, " ") + " · " + rowStatus })
           ]),

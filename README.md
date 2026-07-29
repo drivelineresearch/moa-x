@@ -6,20 +6,20 @@
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license">
   <img src="https://img.shields.io/badge/python-3.9%2B-blue.svg" alt="Python 3.9+">
   <img src="https://img.shields.io/badge/runner-Claude%20Code-8b5cf6.svg" alt="Claude Code">
-  <img src="https://img.shields.io/badge/providers-codex%20%7C%20claude%20%7C%20opencode%20%7C%20cursor%20%7C%20agy-informational" alt="supported CLIs">
+  <img src="https://img.shields.io/badge/harnesses-codex%20%7C%20claude%20%7C%20opencode%20%7C%20agy-informational" alt="supported CLIs">
 </p>
 
 <p align="center">
-  <img src="docs/moa-x-workflow.png" alt="MoA-X four-stage workflow: Scout and control room, Gemini Pro/Grok/GLM proposers, Qwen/Kimi/Opus broadcast refiners, and GPT-5.6 Sol aggregation with a warning-gated Fable alternative" width="100%">
+  <img src="docs/moa-x-workflow.png" alt="MoA-X four-stage workflow: Scout and control room, Gemini Pro/Grok/GPT-5.6 Luna proposers, Qwen/Kimi/Opus broadcast refiners, and GPT-5.6 Sol aggregation with Opus and warning-gated Fable alternatives" width="100%">
 </p>
 
 A small, CLI-native take on the 2024
 [Mixture-of-Agents paper](https://arxiv.org/abs/2406.04692), pointed at
 a different job: producing **repo-grounded implementation plans** for
 coding agents instead of chat answers. The default roster puts proposers
-from three different labs to work — Google `agy-gemini-pro`
-(`gemini-3.1-pro-high`), xAI `grok` (`opencode-go/grok-4.5`), and Zhipu
-`glm` (`opencode-go/glm-5.2`) — reading the repo in
+from three model labs to work — Google `agy-gemini-pro`
+(`gemini-3.1-pro-high`), xAI `grok` (`opencode-go/grok-4.5`), and
+OpenAI `codex-luna` (`gpt-5.6-luna`) — reading the repo in
 parallel, doing their own web research, and each writing an independent
 plan. Three refiners—Alibaba Qwen `qwen3.8-max-preview`, Moonshot Kimi K3,
 and Anthropic `claude-opus-5`—then refine in broadcast mode (every refiner
@@ -29,8 +29,8 @@ Claude Opus 5 is also available as an aggregator, while Fable 5 is available
 only as a warning-gated, quota-heavy aggregator option.
 
 Built to run **inside Claude Code** as a skill, or from the local Web UI.
-Standalone Python works too. The harness ships curated providers across five
-harnesses (`codex`, `claude`, `opencode`, `cursor`, `agy`) and the roster — which providers run at
+Standalone Python works too. The harness ships curated routes across four
+execution harnesses (`codex`, `claude`, `opencode`, `agy`) and the roster — which models run at
 which layer, and how many — is pure config. API-based auth and more
 providers are already supported. See "Contributions we'd prioritize" below
 for the remaining gaps.
@@ -45,7 +45,7 @@ key stays in `.env`; see [`docs/config.md`](docs/config.md#add-qwen-token-plan).
 # 1. Install the CLIs (see docs/install.md for details)
 npm i -g @openai/codex               && codex login
 curl -fsSL https://opencode.ai/install | bash   # then: opencode auth login,
-                                                 # or export ZHIPU_API_KEY / MOONSHOT_API_KEY
+                                                 # or export MOONSHOT_API_KEY
 # claude CLI: https://docs.claude.com/en/docs/claude-code/quickstart
 # AGY/Antigravity: install/update Antigravity, run `agy install`, then sign in
 
@@ -101,14 +101,15 @@ AGY is the curated Google route and reuses the account already signed into
 
 ```
 Layer 0 — Scout brief           (parent Claude, in-place)
-Layer 1 — Proposers (parallel)    default: Gemini Pro + Grok + GLM
+Layer 1 — Proposers (parallel)    default: Gemini Pro + Grok + GPT-5.6 Luna
 Layer 2 — Broadcast refiners      default: Qwen + Kimi + Opus, each sees ALL proposals
 Layer 3 — Aggregator              default: recorded GPT-5.6 Sol at xhigh
 ```
 
 The roster is config-driven; every named route in the default pipeline comes
-from a different lab: Google, xAI, Zhipu, Alibaba, Moonshot, Anthropic, and
-OpenAI.
+from a deliberately named lab: Google, xAI, OpenAI, Alibaba, Moonshot, and
+Anthropic. The UI groups and illustrates routes by model lab, independently
+of the CLI used to execute them.
 
 Every run also writes a self-contained `.moa/<session>/report.html` — a
 zero-network visual post-mortem (3D pipeline, per-agent Gantt, proposer
@@ -139,7 +140,7 @@ architecture work, not one-line fixes. Background in
 ```
 README.md              this file
 CLAUDE.md              agent guidance for this repo
-AGENTS.md              pointer to CLAUDE.md for Codex / OpenCode / Cursor / Zed
+AGENTS.md              pointer to CLAUDE.md for coding agents
 CONTRIBUTING.md        contributor guide
 CHANGELOG.md           release notes
 SECURITY.md            vulnerability reporting
@@ -174,12 +175,12 @@ remaining contributions are:
   subscription from metered runs, and make unknown cost explicit. A safe
   budget control could stop later dispatches before a configured ceiling is
   exceeded; it must not pretend it can undo an already-billed request.
-- **Tested provider recipes, not just model-name examples.** Qwen and the
-  authenticated OpenCode Go DeepSeek V4 Pro/Flash routes are already built in.
-  Contributions for MiniMax, xAI Grok, Mistral,
+- **Tested provider recipes, not just model-name examples.** Qwen Token Plan,
+  OpenCode Go Kimi, and OpenCode Go Grok routes are already built in.
+  Contributions for MiniMax, Mistral,
   or another credible coding model should include a reproducible config,
   credential preflight, captured parser fixtures, and an end-to-end smoke-test
-  result. Most should use the existing OpenCode or Cursor adapter; discuss a
+  result. Most should use the existing OpenCode adapter; discuss a
   genuinely new harness in an issue first.
 - **CLI compatibility and recovery hardening.** Add version/capability probes,
   fixture-based coverage for real failure envelopes, clearer auth/quota/model
@@ -187,15 +188,15 @@ remaining contributions are:
   agents after an interrupted session.
 
 API-key billing itself is no longer a missing feature: Codex supports API-key
-login, Claude accepts `ANTHROPIC_API_KEY`, OpenCode routes provider keys, and
-Cursor accepts `CURSOR_API_KEY`. The missing layer is normalized usage and cost
-telemetry across those different billing modes.
+login, Claude accepts `ANTHROPIC_API_KEY`, and OpenCode routes provider keys.
+The missing layer is normalized usage and cost telemetry across those different
+billing modes.
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the PR protocol.
 
 ## Status
 
-Active reference implementation, currently v0.4.1. The default four-lab roster
+Active reference implementation, currently v0.4.1. The default six-lab roster
 and Qwen Token Plan route have been exercised end to end; offline CI covers
 configuration, schemas, adapters, checkpoint recovery, recorded Layer 3, and
 self-contained HTML report generation. Contributions are welcome; see

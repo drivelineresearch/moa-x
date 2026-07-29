@@ -47,6 +47,27 @@ class EffortControlsBrowserTest(unittest.TestCase):
                     "WORKSPACE_ROOTS": [root],
                 }
             )
+            session = root / "brief" / "lab-audit"
+            session.mkdir(parents=True)
+            app.extensions["moa_store"].insert_job(
+                {
+                    "id": "lab-audit",
+                    "title": "Model-lab visual audit",
+                    "workspace": str(root),
+                    "session_dir": str(session),
+                    "goal": "Exercise every model-lab visual consumer.",
+                    "status": "running",
+                    "phase": "layer1",
+                    "progress": 35,
+                    "imported": True,
+                    "config": {
+                        "proposers": ["agy-gemini-pro", "grok", "codex-luna"],
+                        "refiners": ["qwen", "kimi", "opus"],
+                        "aggregator": "codex-sol",
+                        "options": {"aggregate": True},
+                    },
+                }
+            )
             server = make_server("127.0.0.1", 0, app, threaded=True)
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             with (
@@ -57,13 +78,14 @@ class EffortControlsBrowserTest(unittest.TestCase):
                 thread.start()
                 try:
                     self._assert_browser_contract(
-                        f"http://127.0.0.1:{server.server_port}/new"
+                        f"http://127.0.0.1:{server.server_port}/new",
+                        app.extensions["moa_store"],
                     )
                 finally:
                     server.shutdown()
                     thread.join(timeout=5)
 
-    def _assert_browser_contract(self, url: str) -> None:
+    def _assert_browser_contract(self, url: str, store) -> None:
         expected_presets = {
             "quick": {"agy-gemini-pro": "Low", "codex-sol": "Xhigh"},
             "balanced": {
@@ -96,6 +118,30 @@ class EffortControlsBrowserTest(unittest.TestCase):
 
             rows = page.locator(".model-option")
             self.assertGreater(rows.count(), 10)
+            group_images = page.locator(
+                ".model-provider-group .chooser-avatar img"
+            )
+            self.assertGreaterEqual(group_images.count(), 6)
+            for index in range(group_images.count()):
+                source = group_images.nth(index).get_attribute("src")
+                self.assertRegex(
+                    source or "",
+                    r"^/static/images/lab-[a-z]+-avatar\.webp$",
+                )
+                self.assertTrue(
+                    group_images.nth(index).evaluate(
+                        "node => node.complete && node.naturalWidth > 0"
+                    ),
+                    source,
+                )
+            self.assertEqual(
+                page.locator(
+                    'img[src*="provider-"], img[src*="pixel-codex"], '
+                    'img[src*="pixel-claude"], img[src*="pixel-opencode"], '
+                    'img[src*="pixel-agy"]'
+                ).count(),
+                0,
+            )
             for index in range(rows.count()):
                 row = rows.nth(index)
                 route = row.locator(".route-choice")
@@ -207,7 +253,7 @@ class EffortControlsBrowserTest(unittest.TestCase):
                   return tracePresentation({
                     seq: 1,
                     kind: "log",
-                    message: "[orchestrator] Layer 1: spawning ['cursor-grok'] in parallel... (redispatch)",
+                    message: "[orchestrator] Layer 1: spawning ['grok'] in parallel... (redispatch)",
                     data: { phase: "layer1" },
                   });
                 }"""
@@ -217,6 +263,38 @@ class EffortControlsBrowserTest(unittest.TestCase):
                 retry_trace["message"],
                 "One proposer lane is retrying.",
             )
+            profile_id = page.evaluate(
+                "JSON.parse(localStorage.getItem('moax.profile')).id"
+            )
+            self.assertTrue(store.claim_job_profile("lab-audit", profile_id))
+            base_url = url.rsplit("/new", 1)[0]
+            for viewport in (
+                {"width": 1440, "height": 1000},
+                {"width": 390, "height": 844},
+            ):
+                page.set_viewport_size(viewport)
+                for route in ("/", "/new", "/runs", "/providers", "/runs/lab-audit"):
+                    page_url = base_url + route
+                    page.goto(page_url, wait_until="domcontentloaded")
+                    page.wait_for_timeout(600)
+                    label = f"{page_url} at {viewport['width']}px"
+                    self.assertEqual(
+                        page.locator(
+                            'img[src*="provider-"], img[src*="pixel-codex"], '
+                            'img[src*="pixel-claude"], img[src*="pixel-opencode"], '
+                            'img[src*="pixel-agy"]'
+                        ).count(),
+                        0,
+                        label,
+                    )
+                    lab_images = page.locator('img[src*="/static/images/lab-"]')
+                    self.assertGreater(lab_images.count(), 0, label)
+                    self.assertTrue(
+                        lab_images.evaluate_all(
+                            "nodes => nodes.every(node => node.complete && node.naturalWidth > 0)"
+                        ),
+                        label,
+                    )
             self.assertEqual(console_errors, [])
             browser.close()
 

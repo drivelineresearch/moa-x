@@ -24,20 +24,61 @@ import {
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const bootstrap = window.MOAX_BOOTSTRAP || {};
-const PROVIDER_AVATARS = Object.freeze({
-  codex: "/static/images/provider-codex.webp",
-  claude: "/static/images/provider-claude.webp",
-  opencode: "/static/images/provider-opencode.webp",
-  cursor: "/static/images/provider-cursor.webp",
-  agy: "/static/images/provider-agy.webp",
+const LAB_VISUALS = Object.freeze({
+  openai: { label: "OpenAI", accent: "teal" },
+  google: { label: "Google", accent: "blue" },
+  anthropic: { label: "Anthropic", accent: "amber" },
+  xai: { label: "xAI", accent: "violet" },
+  moonshot: { label: "Moonshot", accent: "indigo" },
+  alibaba: { label: "Alibaba", accent: "cyan" },
+  deepseek: { label: "DeepSeek", accent: "navy" },
+  zhipu: { label: "Zhipu", accent: "green" },
+  independent: { label: "Independent lab", accent: "gold" },
 });
-const REVIEW_PIXEL_ART = Object.freeze({
-  codex: "/static/images/pixel-codex.webp",
-  claude: "/static/images/pixel-claude.webp",
-  opencode: "/static/images/pixel-opencode.webp",
-  agy: "/static/images/pixel-agy.webp",
-  cursor: "/static/images/provider-cursor.webp",
-});
+
+function normalizeLabId(value) {
+  const normalized = String(value || "").trim().toLowerCase()
+    .replaceAll(" ", "")
+    .replaceAll("-", "");
+  const aliases = {
+    openai: "openai",
+    google: "google",
+    anthropic: "anthropic",
+    xai: "xai",
+    moonshot: "moonshot",
+    alibaba: "alibaba",
+    deepseek: "deepseek",
+    zhipu: "zhipu",
+    independent: "independent",
+    independentlab: "independent",
+  };
+  return aliases[normalized] || "independent";
+}
+
+function labVisual(labId, label) {
+  const id = normalizeLabId(labId);
+  const configured = LAB_VISUALS[id] || LAB_VISUALS.independent;
+  return {
+    id,
+    label: label || configured.label,
+    accent: configured.accent,
+    avatar: `/static/images/lab-${id}-avatar.webp`,
+    pixel: `/static/images/lab-${id}-pixel.webp`,
+  };
+}
+
+function inferLabId(routeId, model = "", label = "") {
+  const signature = `${routeId || ""} ${model || ""} ${label || ""}`.toLowerCase();
+  if (/gemini|google|agy/.test(signature)) return "google";
+  if (/claude|sonnet|opus|fable|anthropic/.test(signature)) return "anthropic";
+  if (/grok|xai/.test(signature)) return "xai";
+  if (/kimi|moonshot/.test(signature)) return "moonshot";
+  if (/qwen|alibaba/.test(signature)) return "alibaba";
+  if (/deepseek/.test(signature)) return "deepseek";
+  if (/glm|zhipu/.test(signature)) return "zhipu";
+  if (/gpt-|codex|openai/.test(signature)) return "openai";
+  return "independent";
+}
 const DEPTH_PRESENTATION = Object.freeze({
   quick: {
     value: 0,
@@ -348,16 +389,22 @@ function renderProviders() {
   target.innerHTML = state.providers.map((provider, index) => {
     const listedModels = provider.routes?.length ? provider.routes : provider.models;
     const modelNames = listedModels.map((model) => model.name || model.id).join(", ") || "Discovered at launch";
-    const avatarPath = PROVIDER_AVATARS[provider.id];
-    const initials = provider.name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase();
+    const routeLabs = [...new Set(
+      listedModels.map((route) => normalizeLabId(
+        route.lab_id || inferLabId(route.id, route.model, route.lab),
+      )),
+    )];
+    const visibleLabs = (routeLabs.length ? routeLabs : ["independent"]).slice(0, 4);
     return `
       <article class="provider-card" data-provider-id="${escapeHtml(provider.id)}">
         <aside class="provider-card-portrait">
-          <div class="provider-avatar">
-            ${avatarPath ? `<img data-optional-src="${avatarPath}" alt="${escapeHtml(provider.name)} provider portrait" hidden>` : ""}
-            <span class="asset-fallback">${escapeHtml(initials)}</span>
+          <div class="provider-lab-stack" aria-label="${escapeHtml(visibleLabs.map((id) => labVisual(id).label).join(", "))}">
+            ${visibleLabs.map((id) => {
+              const visual = labVisual(id);
+              return `<span class="provider-avatar accent-${escapeHtml(visual.accent)}"><img src="${escapeHtml(visual.avatar)}" alt="${escapeHtml(visual.label)} model-lab portrait"></span>`;
+            }).join("")}
           </div>
-          <span>${String(index + 1).padStart(2, "0")} · ${escapeHtml(titleCase(provider.lab))}</span>
+          <span>${String(index + 1).padStart(2, "0")} · ${escapeHtml(visibleLabs.length)} model lab${visibleLabs.length === 1 ? "" : "s"}</span>
         </aside>
         <div class="provider-card-body">
           <div class="provider-card-head">
@@ -374,7 +421,7 @@ function renderProviders() {
             <div><dt>Version</dt><dd>${escapeHtml(provider.version)}</dd></div>
             <div><dt>Authentication</dt><dd>${escapeHtml(provider.authMode)}</dd></div>
             <div><dt>Models</dt><dd title="${escapeHtml(modelNames)}">${escapeHtml(modelNames)}</dd></div>
-            <div><dt>Lab</dt><dd>${escapeHtml(titleCase(provider.lab))}</dd></div>
+            <div><dt>Model labs</dt><dd>${escapeHtml(visibleLabs.map((id) => labVisual(id).label).join(", "))}</dd></div>
           </dl>
           <div class="provider-foot">
             <small>${provider.last_checked ? `Checked ${escapeHtml(formatTime(provider.last_checked))}` : "Not checked this session"}</small>
@@ -519,7 +566,6 @@ function modelsForRole(role) {
     const id = String(model.id);
     const harness = model.harness || model.provider_id || model.provider || "cli";
     if (harness === "gemini" || id === "gemini-cli-pro") return false;
-    if (harness === "cursor" && !["composer", "cursor-grok"].includes(id)) return false;
     if (harness === "codex" && !["codex", "codex-sol", "codex-luna"].includes(id)) return false;
     if (["codex-reviewer", "codex-aggregator"].includes(id)) return false;
     const roles = model.roles || model.supported_roles || [];
@@ -539,6 +585,10 @@ function modelsForRole(role) {
       effortOptions: model.effort_options || model.effortOptions || [],
       effortControl: model.effort_control || model.effortControl || "model_id",
       lab: model.lab || model.vendor || model.providerId || model.provider_id || model.provider || model.id,
+      labId: normalizeLabId(model.lab_id || inferLabId(model.id, model.model, model.lab)),
+      labAvatar: model.lab_avatar,
+      labPixel: model.lab_pixel,
+      labAccent: model.lab_accent,
       harness,
       available: model.available ?? model.ready ?? providerReady(provider || {}),
       availabilityDetail: model.availability_detail || model.availabilityDetail || "",
@@ -554,10 +604,14 @@ function modelsForRole(role) {
       id: "codex-sol",
       name: route.name || "GPT-5.6 Sol",
       model: route.model || "gpt-5.6-sol",
-      effort: route.effort || "high",
+      effort: route.effort || "xhigh",
       effortOptions: route.effort_options || ["low", "medium", "high", "xhigh"],
       effortControl: route.effort_control || "flag",
       lab: route.lab || "OpenAI",
+      labId: normalizeLabId(route.lab_id || "openai"),
+      labAvatar: route.lab_avatar,
+      labPixel: route.lab_pixel,
+      labAccent: route.lab_accent,
       harness: "codex",
       available: providerReady(provider),
       default: true,
@@ -575,6 +629,7 @@ function modelsForRole(role) {
         effortOptions: model.effort_options || [],
         effortControl: model.effort_control || "model_id",
         lab: provider.lab,
+        labId: normalizeLabId(model.lab_id || inferLabId(model.id, model.name, provider.lab)),
         harness: provider.harness,
         available: providerReady(provider),
         default: provider.default_roles?.includes?.(role) || false,
@@ -588,7 +643,7 @@ function defaultSelected(option, role, index) {
   if (typeof configured === "string") return configured === option.id;
   if (option.default) return true;
   const standard = {
-    proposer: ["agy-gemini-pro", "grok", "glm"],
+    proposer: ["agy-gemini-pro", "grok", "codex-luna"],
     refiner: ["qwen", "kimi", "opus"],
     aggregator: ["codex-sol"],
   };
@@ -609,7 +664,7 @@ function effortPresentation(option) {
   const mode = option?.effortControl || "model_id";
   const adjustable = options.length > 1
     && ["flag", "model_variant"].includes(mode)
-    && !["cursor", "gemini", "opencode"].includes(option?.harness);
+    && !["gemini", "opencode"].includes(option?.harness);
   const configuredEffort = String(option?.effort || "").toLowerCase();
   const initialEffort = options.includes(configuredEffort)
     ? configuredEffort
@@ -643,20 +698,20 @@ function renderModelOptions(role, targetId, inputType) {
   const target = $(targetId);
   target.setAttribute("aria-busy", "false");
   const groups = options.reduce((map, option) => {
-    const key = option.harness || option.lab || "other";
+    const key = option.labId || normalizeLabId(option.lab);
     if (!map.has(key)) map.set(key, []);
     map.get(key).push(option);
     return map;
   }, new Map());
   let optionIndex = 0;
   target.innerHTML = options.length ? [...groups].map(([group, items]) => {
-    const provider = state.providers.find((item) => item.id === group);
-    const providerName = provider?.name || titleCase(group);
-    const avatarPath = PROVIDER_AVATARS[group];
+    const visual = labVisual(group, items[0]?.lab);
+    const providerName = visual.label;
+    const avatarPath = items[0]?.labAvatar || visual.avatar;
     const initials = providerName.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase();
     const groupReady = items.some((option) => option.available);
     const groupOpen = groupReady && items.some((option, index) => defaultSelected(option, role, optionIndex + index));
-    const providerSearch = [providerName, group, items[0]?.lab].join(" ").toLowerCase();
+    const providerSearch = [providerName, group, ...items.map((item) => item.harness)].join(" ").toLowerCase();
     return `
       <details class="model-provider-group${groupReady ? "" : " is-unavailable"}" data-model-group data-provider-search="${escapeHtml(providerSearch)}" ${groupReady ? "" : "data-unavailable"} ${groupOpen ? "open" : ""}>
         <summary class="model-provider-head" aria-disabled="${String(!groupReady)}">
@@ -666,7 +721,7 @@ function renderModelOptions(role, targetId, inputType) {
           </span>
           <span class="provider-summary-copy">
             <strong>${escapeHtml(providerName)}</strong>
-            <small>${escapeHtml(titleCase(items[0]?.lab || group))} · ${items.length} route${items.length === 1 ? "" : "s"}</small>
+            <small>Model lab · ${items.length} route${items.length === 1 ? "" : "s"} via ${escapeHtml([...new Set(items.map((item) => titleCase(item.harness)))].join(", "))}</small>
           </span>
           <span class="provider-ready-count">${items.filter((item) => item.available).length}/${items.length} ready</span>
         </summary>
@@ -685,6 +740,7 @@ function renderModelOptions(role, targetId, inputType) {
                   name="${role}"
                   value="${escapeHtml(option.id)}"
                   data-lab="${escapeHtml(option.lab)}"
+                  data-lab-id="${escapeHtml(option.labId)}"
                   data-model="${escapeHtml(option.model)}"
                   data-effort="${escapeHtml(option.effort)}"
                   data-default-effort="${escapeHtml(option.effort)}"
@@ -928,7 +984,7 @@ function optimizedProfile(preset) {
     },
     balanced: {
       proposer: {
-        preferred: ["agy-gemini-pro", "grok", "glm"],
+        preferred: ["agy-gemini-pro", "grok", "codex-luna"],
         limit: 3,
         efforts: { "agy-gemini-pro": "high" },
       },
@@ -945,7 +1001,7 @@ function optimizedProfile(preset) {
     },
     thorough: {
       proposer: {
-        preferred: ["agy-gemini-pro", "grok", "glm", "deepseek"],
+        preferred: ["agy-gemini-pro", "grok", "codex-luna", "codex"],
         limit: 4,
         efforts: { "agy-gemini-pro": "high" },
       },
@@ -1008,7 +1064,9 @@ function updateRosterChecks() {
     callout.innerHTML = `<span>LAB CHECK</span><p>Select refiners and an aggregator to check independence.</p>`;
     return;
   }
-  const overlaps = refiners.filter((input) => input.dataset.lab === aggregator.dataset.lab);
+  const overlaps = refiners.filter(
+    (input) => input.dataset.labId === aggregator.dataset.labId,
+  );
   if (overlaps.length) {
     callout.className = "independence-callout is-warning";
     callout.innerHTML = `<span>SHARED LAB</span><p>${overlaps.length} refiner${overlaps.length === 1 ? "" : "s"} share the aggregator’s lab. Consider an independent reviewer for a stronger check.</p>`;
@@ -1102,13 +1160,15 @@ function renderReview() {
     : "Task only";
   const networkNodes = (role) => $$(`input[name="${role}"]:checked`).map((input) => {
     const route = modelsForRole(role).find((item) => item.id === input.value);
-    const harness = route?.harness || input.value;
+    const labId = route?.labId || inferLabId(input.value, route?.model, route?.lab);
+    const visual = labVisual(labId, route?.lab);
     return {
       id: input.value,
       name: route?.name || titleCase(input.value),
       model: displayModelName(route) || input.dataset.model || input.value,
-      harness,
-      image: REVIEW_PIXEL_ART[harness] || PROVIDER_AVATARS[harness] || "/static/images/moax-mark.webp",
+      labId,
+      lab: visual.label,
+      image: route?.labPixel || visual.pixel,
     };
   });
   const renderNetworkLayer = (label, title, nodes) => `
@@ -1116,7 +1176,7 @@ function renderReview() {
       <header><span>${escapeHtml(label)}</span><strong>${escapeHtml(title)}</strong></header>
       <div class="network-node-list">${nodes.map((node) => `
         <article class="network-node">
-          <span class="network-avatar" data-harness="${escapeHtml(node.harness)}"><img src="${escapeHtml(node.image)}" alt=""></span>
+          <span class="network-avatar accent-${escapeHtml(labVisual(node.labId).accent)}" data-lab-id="${escapeHtml(node.labId)}"><img src="${escapeHtml(node.image)}" alt="${escapeHtml(node.lab)} model-lab pixel character"></span>
           <div><strong title="${escapeHtml(node.name)}">${escapeHtml(node.name)}</strong><small title="${escapeHtml(node.model)}">${escapeHtml(node.model)}</small></div>
         </article>
       `).join("")}</div>
@@ -1190,7 +1250,7 @@ function validateStep(step) {
 }
 
 function coachModelLabel(model = {}) {
-  return model.fallback ? "DeepSeek V4 Flash · backup" : "GPT-5.6 Luna";
+  return model.fallback ? "Gemini 3.1 Pro · backup" : "GPT-5.6 Luna";
 }
 
 function renderCoachProgress(stage) {
@@ -1235,6 +1295,7 @@ async function finishPromptCoach() {
       answers: coach.answers,
       context_mode: state.sourceMode,
       attachment_count: state.pendingFiles.length,
+      planning_depth: state.depthPreset,
     });
     renderCoachPreview();
   } catch (error) {
@@ -1365,6 +1426,7 @@ async function openPromptCoach() {
       brief,
       context_mode: state.sourceMode,
       attachment_count: state.pendingFiles.length,
+      planning_depth: state.depthPreset,
     });
     renderCoachAnalysis();
   } catch (error) {
@@ -1597,6 +1659,12 @@ function normalizeAgent(raw, index) {
     summary: raw.summary || raw.message || raw.error || "",
     startedAt: raw.started_at || raw.startedAt,
     finishedAt: raw.finished_at || raw.finishedAt,
+    labId: normalizeLabId(raw.lab_id || raw.labId || inferLabId(raw.id, raw.model, raw.lab)),
+    lab: raw.lab,
+    labAvatar: raw.lab_avatar || raw.labAvatar,
+    labPixel: raw.lab_pixel || raw.labPixel,
+    labAccent: raw.lab_accent || raw.labAccent,
+    harness: raw.harness,
   };
 }
 
@@ -1615,6 +1683,12 @@ function fallbackAgent(job, routeId, role, status) {
     model: `${model}${effort && effort !== "default" ? ` · ${titleCase(effort)} effort` : ""}`,
     role,
     status,
+    labId: route?.labId || inferLabId(routeId, model, route?.lab),
+    lab: route?.lab,
+    labAvatar: route?.labAvatar,
+    labPixel: route?.labPixel,
+    labAccent: route?.labAccent,
+    harness: route?.harness,
   };
 }
 
@@ -1656,21 +1730,16 @@ function agentsFromJob(job) {
 }
 
 function agentVisual(agent) {
-  const signature = `${agent.id} ${agent.name} ${agent.model}`.toLowerCase();
-  if (signature.includes("agy") || signature.includes("gemini")) {
-    return { key: "agy", label: "Antigravity", accent: "violet" };
-  }
-  if (signature.includes("claude") || signature.includes("sonnet") || signature.includes("opus")) {
-    return { key: "claude", label: "Claude", accent: "amber" };
-  }
-  if (signature.includes("codex") || signature.includes("gpt-5")) {
-    return { key: "codex", label: "Codex", accent: "teal" };
-  }
-  const accent = signature.includes("deepseek") ? "violet"
-    : signature.includes("qwen") ? "gold"
-    : signature.includes("glm") ? "green"
-    : "green";
-  return { key: "opencode", label: "OpenCode", accent };
+  const labId = normalizeLabId(
+    agent.labId || inferLabId(agent.id, agent.model, agent.lab || agent.name),
+  );
+  const visual = labVisual(labId, agent.lab);
+  return {
+    ...visual,
+    pixel: agent.labPixel || visual.pixel,
+    avatar: agent.labAvatar || visual.avatar,
+    accent: agent.labAccent || visual.accent,
+  };
 }
 
 function agentStateCopy(agent) {
@@ -1685,14 +1754,7 @@ function agentStateCopy(agent) {
 }
 
 function agentArtwork(visual, status) {
-  const still = `/static/images/pixel-${visual.key}.webp`;
-  if (status === "running") {
-    return { still, src: `/static/images/pixel-${visual.key}-work-animated.webp` };
-  }
-  if (status === "completed") {
-    return { still, src: `/static/images/pixel-${visual.key}-victory-animated.webp` };
-  }
-  return { still, src: still };
+  return { still: visual.pixel, src: visual.pixel };
 }
 
 function renderAgents(job) {

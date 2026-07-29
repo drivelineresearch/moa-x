@@ -4,7 +4,7 @@ Invokes `claude -p` headlessly with --json-schema for guaranteed JSON
 shape. Claude Code supports arbitrary JSON Schema enforcement natively
 via the --json-schema flag, which writes the validated object to
 `.structured_output` in the outer result envelope. This makes parsing
-cleaner than the cursor/opencode adapters (where we strip fences) and on par with codex
+cleaner than the OpenCode adapter (where we strip fences) and on par with Codex
 (which uses --output-schema).
 
 Key differences from the other adapters:

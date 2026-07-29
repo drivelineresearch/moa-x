@@ -89,12 +89,12 @@ Save to `.moa/<session>/scout-brief.json`:
 ### 7. Show the brief to the user
 Render the brief in markdown for human review. Then ask via `AskUserQuestion`,
 **phrased from the user's resolved roster** — do not hardcode
-`codex + glm + sonnet`. Read the active proposer/refiner sets from
+`agy-gemini-pro + grok + codex-luna`. Read the active proposer/refiner sets from
 (highest precedence first) `MOA_PROPOSERS` / `MOA_REFINERS` env vars,
 then `harness/config.yaml`'s `layers.proposers` / `layers.refiners`, then
-the defaults `[agy-gemini-pro, grok, glm]` and `[qwen, kimi, opus]`.
+the defaults `[agy-gemini-pro, grok, codex-luna]` and `[qwen, kimi, opus]`.
 User-defined
-names from the `providers:` block (e.g. `cursor-grok`) are valid and must
+names from the `providers:` block (e.g. `custom-reviewer`) are valid and must
 be shown verbatim. Honor `MOA_SKIP_LAYER2` / `layers.skip_refinement` by
 omitting the refiner clause. In `--self-moa` mode use the self-MoA instance
 IDs instead.

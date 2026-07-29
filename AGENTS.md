@@ -1,14 +1,14 @@
 # AGENTS.md
 
 MoA-X keeps a single source of agent guidance in **[CLAUDE.md](CLAUDE.md)** —
-it applies to every tool that reads an agent instructions file (Codex,
-OpenCode, Cursor, Zed, Claude Code). Read it before making changes.
+it applies to every coding agent that reads an agent instructions file. Read it
+before making changes.
 
 It covers:
 
 - **WHAT** — the project map: `harness/` (orchestrator, adapters, prompts,
   schemas) and `docs/` (topic-by-topic).
-- **WHY** — the cross-lab design: repo-grounded plans from a four-lab ensemble,
+- **WHY** — the cross-lab design: repo-grounded plans from a multi-lab ensemble,
   and why refiner/aggregator lab-independence is load-bearing.
 - **HOW** — the workflow: `install_deps.py` preflight, offline `test_offline.py`
   (must pass, no network), and the branch → PR → merge rule (never push `main`).
