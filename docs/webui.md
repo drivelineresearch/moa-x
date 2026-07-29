@@ -32,6 +32,44 @@ may also expose locally licensed Gotham Office Regular and Bold files from
 Waitress is installed from `requirements-web.txt` and selected automatically;
 Flask's development server is only the fallback when Waitress is unavailable.
 
+### Model depth and effort
+
+The route chooser only exposes an adjustable control when the underlying CLI
+can honor it safely. Codex and Claude use their native reasoning-effort flags.
+AGY Gemini Pro selects depth by changing the model suffix (for example,
+`gemini-3.1-pro-low` to `gemini-3.1-pro-high`), so the UI sends a model
+variant and never sends a conflicting AGY `--effort` flag. OpenCode variants
+remain configured by their named route/model id, and Cursor has no separate
+effort flag.
+
+The three recommended depth modes deliberately keep Google search coverage
+and the strongest synthesis route in every run:
+
+| Mode | Proposers | Broadcast refiners | Aggregator |
+|---|---|---|---|
+| Quick | Gemini Pro `low`; Grok 4.5 | Kimi K3 | GPT-5.6 Sol `xhigh` |
+| Balanced | Gemini Pro `high`; Grok 4.5; GLM-5.2 | Qwen 3.8; Kimi K3; Opus `high` | GPT-5.6 Sol `xhigh` |
+| Thorough | Gemini Pro `high`; Grok 4.5; GLM-5.2; DeepSeek V4 Pro | Qwen 3.8; Kimi K3; Opus `max` | GPT-5.6 Sol `xhigh` |
+
+Gemini Pro stays in the proposal layer because it contributes a
+Google-native research lane before the ensemble converges. Grok contributes
+the xAI proposal lane, GLM joins at Balanced, and DeepSeek joins at Thorough.
+Kimi K3 is the Quick reviewer and remains in the full broadcast-review set
+alongside Qwen and Opus at higher depths. Every named default lane comes from
+a different lab. GPT-5.6 Sol remains the selected `xhigh` aggregator in every
+recommended mode.
+
+Claude Opus 5 is available as a normal aggregator alternative. Fable 5 is
+available as an aggregator-only alternative. Selecting Fable opens a
+quota warning and requires the shared acknowledgement phrase before the radio
+selection is applied. This is intentionally only a warning shot—the phrase is
+present in browser JavaScript and is not an authentication or authorization
+boundary. Fable never appears in proposer or refiner lists.
+
+Whenever a route is selected—by initial defaults, a depth-mode change, or a
+manual click—the corresponding provider accordion opens automatically so the
+checked model and its effort control remain visible.
+
 The worker inherits the server process's `HOME`, `PATH`, environment, CLI
 keychains, and authenticated accounts. It never copies API keys or OAuth
 tokens into the browser or SQLite.
@@ -105,6 +143,17 @@ run uses a private per-job workspace under `workspaces/brief/`, so a repository
 is never required. Existing repository sessions can still be imported into
 the SQLite index without moving their artifacts.
 
+## Sharing a final report
+
+Completed runs can create a **Share report** link from the result controls or
+the header of the private report artifact itself. It is a high-entropy,
+revocable bearer link that exposes only the self-contained
+`report.html`—not the run page, logs, source uploads, manifests, or other
+artifacts. Creating a new link revokes the prior one; the owner can also revoke
+the active link immediately. Shared reports are served with no-store and
+no-index headers, but anyone who receives the link can read it, so do not share
+reports containing material that the recipient is not permitted to process.
+
 ## Context sources
 
 The new-run flow offers two explicit choices:
@@ -128,8 +177,17 @@ image formats are copied into `.moa/<session>/inputs/` and converted locally int
 embedded in the scout brief, so every proposer, broadcast refiner, and
 aggregator receives identical contents without depending on its CLI sandbox
 being able to open `.moa/`. PDF page headings are preserved for citations.
-Scanned PDFs with no text layer are rejected with an OCR instruction rather
-than silently becoming unavailable.
+Scanned PDFs with no text layer are rendered page-by-page with Poppler and
+OCRed locally with Tesseract; the recovered text is shared across providers.
+Install both tools with `sudo apt install poppler-utils tesseract-ocr` on
+Ubuntu/Debian or `brew install poppler tesseract` on macOS. PDF OCR uses a
+bounded 200-DPI render (maximum 2,200 pixels on the long edge) and preserves
+page headings for citations.
+
+Reference preparation runs in the local worker rather than holding the launch
+request open. The launch dialog shows the active file plus the current PDF page
+as it is checked, rendered, and OCRed; after preparation, it transitions to
+the normal live run trace.
 
 Images are not base64-dumped into model prompts. Base64 would consume large
 amounts of context and text-only CLI transports would not interpret it as

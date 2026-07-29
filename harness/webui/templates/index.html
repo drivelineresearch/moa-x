@@ -471,6 +471,26 @@
   </form>
 </dialog>
 
+<dialog class="fable-warning-dialog" id="fable-warning-dialog" aria-labelledby="fable-warning-title">
+  <form class="fable-warning-shell" id="fable-warning-form">
+    <div class="fable-warning-mark" aria-hidden="true">!</div>
+    <p class="eyebrow">LIMIT WARNING</p>
+    <h2 id="fable-warning-title">Fable consumes a lot of quota</h2>
+    <p>Fable 5 uses a 1M context route with extra-high thinking. Choose it only when the run justifies a substantial hit to shared limits.</p>
+    <div class="fable-warning-callout">
+      <strong>This is a warning gate, not security.</strong>
+      <span>Enter the shared acknowledgement phrase to enable Fable for this browser session.</span>
+    </div>
+    <label for="fable-warning-password">Acknowledgement phrase</label>
+    <input id="fable-warning-password" type="password" autocomplete="off" spellcheck="false">
+    <p class="field-error" id="fable-warning-error" role="alert" hidden>That acknowledgement phrase is not correct.</p>
+    <div class="dialog-actions">
+      <button class="secondary-button" id="fable-warning-cancel" type="button">Keep GPT-5.6 Sol</button>
+      <button class="primary-button danger-button" type="submit">I understand—use Fable</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog class="prompt-coach-dialog" id="prompt-coach-dialog" aria-labelledby="prompt-coach-title">
   <div class="prompt-coach-shell">
     <header class="prompt-coach-head">
@@ -487,5 +507,39 @@
     <div class="prompt-coach-progress" id="prompt-coach-progress" aria-label="Prompt coach progress"></div>
     <section class="prompt-coach-body" id="prompt-coach-body" aria-live="polite"></section>
   </div>
+</dialog>
+
+<dialog class="attachment-progress-dialog" id="attachment-progress-dialog" aria-labelledby="attachment-progress-title">
+  <div class="attachment-progress-shell">
+    <img src="/static/images/prompt-coach-teacher.webp" alt="Anime-style research guide preparing reference material" class="attachment-progress-art">
+    <section class="attachment-progress-copy" aria-live="polite">
+      <p class="eyebrow">REFERENCE PREP</p>
+      <h2 id="attachment-progress-title">Preparing your references</h2>
+      <p id="attachment-progress-message">Sending files to the local worker…</p>
+      <div class="attachment-progress-track" role="progressbar" aria-label="Reference preparation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <i id="attachment-progress-fill"></i>
+      </div>
+      <div class="attachment-progress-meta">
+        <span class="run-spinner" aria-hidden="true"></span>
+        <strong id="attachment-progress-pages">Waiting for page details…</strong>
+      </div>
+      <p class="attachment-progress-note">Scanned PDFs are rendered and OCRed locally before the ensemble starts.</p>
+    </section>
+  </div>
+</dialog>
+
+<dialog class="report-share-dialog" id="report-share-dialog" aria-labelledby="report-share-title">
+  <form method="dialog" class="report-share-shell">
+    <p class="eyebrow">SHARE REPORT</p>
+    <h2 id="report-share-title">Private link, ready to send</h2>
+    <p id="report-share-status" aria-live="polite">Creating a revocable report link…</p>
+    <label for="report-share-url">Report link</label>
+    <input id="report-share-url" type="url" readonly>
+    <div class="dialog-actions">
+      <button class="secondary-button" id="report-share-copy" type="button">Copy link</button>
+      <button class="secondary-button danger-button" id="report-share-revoke" type="button" hidden>Revoke link</button>
+      <button class="primary-button" type="submit">Done</button>
+    </div>
+  </form>
 </dialog>
 {% endblock %}

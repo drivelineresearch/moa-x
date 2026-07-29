@@ -4,7 +4,7 @@
 Loads the resolved config (harness/config.yaml + .env + built-in defaults via
 the same path run_moa.py uses) and verifies coherence:
 
-  - Which harnesses are actually needed (proposers + refiners union)
+  - Which harnesses are actually needed (proposers + refiners + aggregator)
   - Each needed harness's check_available() (CLI present + auth probe)
   - Schema-pattern coherence: every resolved provider name matches the
     regex pattern in proposer/refiner schemas. Catches the kind of
@@ -83,6 +83,11 @@ def _print_provider_summary(loaded_cfg: "LoadedConfig") -> None:
         ", ".join(f"{p.name} ({p.harness} → {p.model})" for p in loaded_cfg.refiners)
         or "(none — refinement skipped)"
     ))
+    print(
+        "    aggregator: "
+        f"{loaded_cfg.aggregator.name} ({loaded_cfg.aggregator.harness} → "
+        f"{loaded_cfg.aggregator.model})"
+    )
 
 
 def _check_provider_credentials(loaded_cfg: "LoadedConfig", failures: list[str]) -> None:
@@ -90,6 +95,8 @@ def _check_provider_credentials(loaded_cfg: "LoadedConfig", failures: list[str])
     active = list(loaded_cfg.proposers)
     if not loaded_cfg.skip_refinement:
         active += loaded_cfg.refiners
+    if loaded_cfg.aggregator is not None:
+        active.append(loaded_cfg.aggregator)
     qwen = [p.name for p in active if p.model.startswith("qwen-token-plan/")]
     if not qwen:
         return
@@ -113,6 +120,8 @@ def _check_needed_harnesses(loaded_cfg: "LoadedConfig", failures: list[str]) -> 
     providers = list(loaded_cfg.proposers)
     if not loaded_cfg.skip_refinement:
         providers += loaded_cfg.refiners
+    if loaded_cfg.aggregator is not None:
+        providers.append(loaded_cfg.aggregator)
     needed = {p.harness for p in providers}
     print("")
     print(f"  required harnesses (from layer assignments): {sorted(needed)}")
@@ -237,7 +246,12 @@ def _check_cursor_models(loaded_cfg: "LoadedConfig", needed: set[str], failures:
     (GPT-5.6 Sol vs gpt-5.6-sol-high, Grok 4.5 vs cursor-grok-4.5-high)."""
     if "cursor" not in needed:
         return
-    cursor_providers = [p for p in loaded_cfg.proposers + loaded_cfg.refiners if p.harness == "cursor"]
+    cursor_providers = [
+        p
+        for p in loaded_cfg.proposers + loaded_cfg.refiners
+        + ([loaded_cfg.aggregator] if loaded_cfg.aggregator is not None else [])
+        if p.harness == "cursor"
+    ]
     if not cursor_providers:
         return
 
@@ -299,7 +313,10 @@ def _check_agy_models(loaded_cfg: "LoadedConfig", needed: set[str], failures: li
     if "agy" not in needed:
         return
     providers = [
-        p for p in loaded_cfg.proposers + loaded_cfg.refiners if p.harness == "agy"
+        p
+        for p in loaded_cfg.proposers + loaded_cfg.refiners
+        + ([loaded_cfg.aggregator] if loaded_cfg.aggregator is not None else [])
+        if p.harness == "agy"
     ]
     if not providers:
         return

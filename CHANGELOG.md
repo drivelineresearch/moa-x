@@ -11,8 +11,9 @@ versioning.
   browser-local profiles, task-only and managed GitHub launches, reference
   uploads, lifecycle events, provider health, and responsive run review.
 - Curated current routes for GPT-5.6 Terra/Sol/Luna, Claude Sonnet/Opus 5,
-  OpenCode Go, Qwen Token Plan, Cursor Grok, and AGY Gemini 3.6 Flash
-  High/Medium. The Web UI restricts aggregation to Opus or GPT-5.6 Sol.
+  OpenCode Go, Qwen Token Plan, Cursor Grok, and AGY Gemini 3.1 Pro
+  High/Low. The Web UI offers GPT-5.6 Sol by default, Claude Opus 5 as an
+  alternative aggregator, and warning-gated Fable 5 1M at `xhigh`.
 - Generated provider portraits, workflow/state art, favicon, and responsive
   control-room illustrations.
 - Interactive decision-lineage explorer in `report.html`, backed by a new
@@ -24,15 +25,20 @@ versioning.
   `--phase layer3` path reuses retained proposer/refiner output, validates one
   strict Markdown-plus-lineage bundle, records timing and logs, and refreshes
   the HTML report without rerunning Layers 1 or 2.
-- Canonical `codex-sol` provider (`gpt-5.6-sol`, high reasoning) and dedicated
+- Canonical `codex-sol` provider (`gpt-5.6-sol`, `xhigh` aggregation) and dedicated
   `MOA_AGGREGATOR_EFFORT` control. Older reviewer/aggregator names remain
   compatibility aliases only.
 
 ### Changed
 
-- Default proposers use Codex `gpt-5.6-terra`, GLM 5.2, and pinned Claude
-  Sonnet 5. Default broadcast refiners use canonical `codex-sol` plus Qwen
-  `qwen3.8-max-preview`; the default aggregator is pinned Claude Opus 5.
+- Default proposers use Gemini 3.1 Pro, Grok 4.5, and GLM-5.2. Default
+  broadcast refiners use Qwen `qwen3.8-max-preview`, Kimi K3, and Claude
+  Opus 5; the default aggregator remains GPT-5.6 Sol at `xhigh`.
+- Quick, Balanced, and Thorough all include Gemini Pro and Grok as
+  proposers and GPT-5.6 Sol at `xhigh` as the default aggregator. Quick
+  uses Kimi K3 as its compact refiner lane. Balanced adds GLM plus
+  Qwen/Kimi/Opus (`high`), while Thorough also adds DeepSeek V4 Pro and
+  raises Opus to `max`.
 - Qwen Token Plan is now part of the default refiner roster and has a bounded
   600-second timeout instead of inheriting the OpenCode harness timeout.
 - The report now includes recorded Layer 3 status, timing, logs, and run-health
@@ -52,8 +58,8 @@ versioning.
   Cursor/OpenCode incomplete outputs receive exactly one bounded redispatch,
   and OpenCode readiness is evaluated per configured route.
 - AGY headless runs explicitly approve read tools inside plan+sandbox mode.
-  The misleading Pro alias was replaced by the Gemini 3.6 Flash High model
-  actually served by the authenticated consumer account.
+  Gemini Flash routes were retired after Gemini 3.1 Pro passed long-context
+  structured-output validation on the authenticated consumer account.
 - Proposer/refiner payloads are isolated as data, model identity is verified,
   and every harness is covered by a Git-visible before/after workspace guard.
 - Report disclosures and lineage tabs now expose consistent keyboard and ARIA
@@ -61,10 +67,12 @@ versioning.
 
 ### Validation
 
-- Offline suite: 110/110 tests pass; focused Flask suite: 10/10.
-- Five paid ensemble configurations exercised every surfaced route. Terra,
+- Offline suite: 114/114 tests pass; focused Flask suite: 34/34.
+- Five paid ensemble configurations exercised the pre-Pro route matrix. Terra,
   Luna, Sol, Sonnet, Opus, Cursor Grok, GLM, Grok, Kimi, Qwen Token Plan,
-  Qwen OpenCode, and both AGY Flash routes returned schema-valid artifacts.
+  Qwen OpenCode, and the then-surfaced AGY routes returned schema-valid
+  artifacts. Gemini 3.1 Pro separately passed a 380,311-character
+  schema-shaped proposer probe with exact end-marker retention.
 - A 103,507-byte synthesis completed through Opus over stdin. Composer returned
   progress-only output on both its initial attempt and bounded retry, so the
   Web UI leaves it visible but disabled. Across the matrix there were no

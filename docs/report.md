@@ -6,6 +6,12 @@ browser — it needs no server and makes zero network requests. Everything
 (page, charts, illustrations, the session data, decision lineage, and the
 rendered final recommendation) is inlined into the one file.
 
+When the report is opened through the Web UI's private artifact URL, its
+header also includes **Share report**. It creates and copies the same
+revocable bearer link available from the run page. That control is deliberately
+absent from downloaded reports and public shared-report links, which remain
+standalone and make no network requests.
+
 If Codex Desktop shows `report.html` as markup, open the same file in your
 system web browser from the file manager or the browser's **File > Open**
 command. The report remains self-contained; this does not require a local
@@ -38,7 +44,10 @@ supporting process and raw output remain available for deeper inspection.
 - **Independent recommendations** — per-contributor summary, plan steps
   (step/why/files/risks), evidence chips (`code` = file:line, `external`
   = links), and research sources.
-- **Review and challenge** — a verdict matrix (reviewers × recommendations), an
+- **Review and challenge** — a verdict matrix (reviewers × recommendations), a
+  transparent at-a-glance consensus grade derived only from those structured
+  verdicts, and the number of final decisions citing each contributor. The
+  detailed verdicts remain visible, so the grade is never a black box. An
   evidence-verification dot matrix (verified / unverified / contradicted,
   click a dot for the finding), agreements, disagreements, missing and
   incorrect steps, and each reviewer's `synthesis_recommendation` as a
@@ -106,6 +115,14 @@ Older sessions without `final-plan.json` remain fully readable and show a
 lineage-unavailable notice. A structurally invalid file is ignored with a
 visible warning. Valid files with stale pointers still render, with each bad
 pointer listed so the source can be corrected.
+
+The lineage graph separates a review category (for example, `KIMI · MISSING
+STEP`) from its content: the card summarizes the actual missing work and
+expands to the full finding on hover or selection. Repeated reviewer labels
+are therefore distinct findings cited by the final decision, not placeholders.
+The same readable-card treatment applies to verifications, disagreements,
+incorrect steps, and synthesis recommendations; internal provenance paths
+remain available in the detailed review instead of becoming graph-card titles.
 
 ## Turning it off
 

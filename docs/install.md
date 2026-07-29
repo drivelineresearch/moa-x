@@ -1,12 +1,12 @@
 # Install
 
 MoA-X runs inside **Claude Code** as a skill. You can also invoke the
-orchestrator directly from a shell. Either way, you need three vendor
+orchestrator directly from a shell. Either way, you need four vendor
 CLIs on your PATH, each authenticated. Any auth path the CLI itself
 supports is fine. Subscription (OAuth / keychain) is what I run;
 API-key auth works too.
 
-## 1. Install the three CLIs
+## 1. Install the four CLIs
 
 ```bash
 # OpenAI codex
@@ -19,7 +19,12 @@ codex login
 # See https://docs.claude.com/en/docs/claude-code/quickstart
 # API-billed alternative: export ANTHROPIC_API_KEY=...
 
-# opencode (drives the GLM proposer and Qwen Token Plan refiner)
+# Google AGY / Antigravity
+# Install or update Antigravity, then:
+agy install
+agy models
+
+# opencode (drives the default Grok/GLM proposers and Qwen/Kimi refiners)
 curl -fsSL https://opencode.ai/install | bash
 # or: npm i -g opencode-ai
 opencode auth login    # interactive login
@@ -30,11 +35,12 @@ opencode auth login    # interactive login
 #   export QWEN_TOKEN_PLAN_API_KEY=sk-sp-...  # default Qwen refiner
 ```
 
-The default roster is `codex` (`gpt-5.6-terra` proposer and
-`gpt-5.6-sol` high reviewer), pinned `claude-sonnet-5`/`claude-opus-5`
-routes via Claude Code, `glm` (`opencode-go/glm-5.2`), and Qwen through
-`opencode` — four labs:
-OpenAI, Anthropic, Zhipu, and Alibaba.
+The Balanced default roster uses Gemini 3.1 Pro, Grok 4.5, and GLM-5.2 as
+proposers; Qwen 3.8, Kimi K3, and Claude Opus 5 at `high` as refiners; and
+GPT-5.6 Sol at `xhigh` as the aggregator. That keeps the default lane
+lab-distinct across Google, xAI, Zhipu, Alibaba, Moonshot, Anthropic, and
+OpenAI. Fable 5 1M at `xhigh` is an optional, quota-heavy Claude aggregator and
+is never eligible as a proposer or refiner.
 
 The built-in `qwen` refiner uses the Qwen Cloud Token Plan endpoint and
 defaults to `qwen-token-plan/qwen3.8-max-preview`, with a 600-second cap.
@@ -71,13 +77,13 @@ Then add a `providers:` block to `harness/config.yaml`. See
 provider (harness `cursor`, model `composer-2.5`) is available once
 the CLI is installed.
 
-### Optional: AGY
+### AGY model readiness
 
 Google providers reuse existing local AGY authentication; MoA-X never prompts
 for a key. Install AGY 1.1.5+, sign in interactively once, and verify
-`agy models`. Select `agy-gemini-pro` for deeper planning or
-`agy-gemini-flash` for lower latency; the default roster does not require AGY,
-and live probes determine availability.
+`agy models`. `agy-gemini-pro` is the only curated Gemini route and is part
+of the default proposer roster. Live probes determine availability and fail
+closed if the signed-in account does not expose it.
 
 ### Optional: Local Web UI and GitHub picker
 
@@ -85,9 +91,9 @@ and live probes determine availability.
 # From a clean clone of this repository:
 python3 -m venv .venv
 .venv/bin/pip install -r requirements-web.txt
-# Optional but recommended for PNG/JPEG/WebP/TIFF/BMP attachment OCR:
-sudo apt install tesseract-ocr       # Ubuntu/Debian
-# brew install tesseract             # macOS
+# Optional but recommended for image and scanned-PDF attachment OCR:
+sudo apt install poppler-utils tesseract-ocr  # Ubuntu/Debian
+# brew install poppler tesseract               # macOS
 MOA_WEBUI_GITHUB_OWNER=your-github-user-or-org \
   .venv/bin/python -m harness.webui
 ```
@@ -156,7 +162,7 @@ python3 harness/scripts/run_moa.py \
   --scout-brief path/to/your-scout-brief.json \
   --phase layer3 \
   --aggregator-provider codex-sol \
-  --aggregator-effort high
+  --aggregator-effort xhigh
 ```
 
 See [`docs/usage.md`](usage.md#running-standalone) for the scout format,

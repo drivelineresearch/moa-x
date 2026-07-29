@@ -2,25 +2,29 @@
 """run_moa.py — Mixture of Agents orchestrator.
 
 Layer 0 (scout brief) is prepared by the interactive parent agent. Layers 1
-and 2 run through external CLIs. Layer 3 can be completed interactively or
-run later as a recorded Codex/Claude subprocess with ``--phase layer3``.
+and 2 run through external CLIs. Layer 3 defaults to a recorded Codex
+subprocess with ``--phase layer3``.
 
 The roster is config-driven
 (harness/config.yaml + .env + built-in defaults); the default set is:
 
   Layer 1 (Proposers, parallel):
-    - codex  (gpt-5.6-terra @ high, OpenAI via codex CLI)
-    - glm    (glm-5.2, Zhipu via opencode CLI)
-    - sonnet (rolling `sonnet` alias, Anthropic via `claude -p`)
+    - agy-gemini-pro (gemini-3.1-pro-high, Google via AGY)
+    - grok             (grok-4.5, xAI via OpenCode Go)
+    - glm              (glm-5.2, Zhipu via OpenCode Go)
 
   Layer 2 (Refiners, parallel, broadcast):
-    - codex-reviewer (gpt-5.6-sol @ high; sees ALL proposer outputs)
-    - qwen   (qwen3.8-max-preview, Alibaba via Qwen Token Plan; sees ALL outputs)
+    - qwen (qwen3.8-max-preview, Alibaba via Qwen Token Plan; sees ALL outputs)
+    - kimi (kimi-k3, Moonshot via OpenCode Go; sees ALL outputs)
+    - opus (claude-opus-5 @ high, Anthropic; sees ALL proposer outputs)
+
+  Layer 3 (Aggregator):
+    - codex-sol (gpt-5.6-sol @ xhigh, OpenAI via recorded Codex subprocess)
 
 Broadcast refinement (each refiner sees every proposer's output) is
-paper-faithful to Wang et al. 2024 (arXiv:2406.04692). The default keeps
-Layer 2 refiners off the Anthropic lab that supplies both the Sonnet
-proposer and the `opus` aggregator, so verification stays lab-independent.
+paper-faithful to Wang et al. 2024 (arXiv:2406.04692). The default uses a
+different lab for every named route across proposal, refinement, and
+aggregation, so verification and synthesis stay lab-independent.
 This is a recommended default, not a runtime invariant — see CLAUDE.md.
 
 Flow:
@@ -28,7 +32,7 @@ Flow:
     run_moa.py         --[Layer 1 parallel]-->  proposer subprocesses
     run_moa.py         --[Layer 2 parallel]-->  broadcast refiner subprocesses
     run_moa.py         --[synthesis-input.md + manifest.json]--> .moa/<session>/
-    parent REPL or run_moa.py --phase layer3  --aggregates retained synthesis
+    run_moa.py --phase layer3  --aggregates retained synthesis with Codex Sol
 
 Usage:
     run_moa.py --scout-brief PATH [--repo PATH] [--timeout SEC]
@@ -144,6 +148,10 @@ class LayerResult:
     # failure mode like quota, auth, timeout, or schema invalidation.
     # The orchestrator uses this to drive the redispatch user prompt.
     transient_empty: bool = False
+    # A redispatch replaces a transient first attempt in the active result set.
+    # Preserve a compact timing/status record so reports can show both attempts.
+    attempt: int = 1
+    previous_attempt: Optional[dict] = None
     # Original model-reported identity when it differs from the runner-owned
     # agent id. Persist provenance without letting a hallucinated id corrupt
     # attribution in downstream lineage.
@@ -1018,8 +1026,9 @@ def _dispatch_provider(
          --sonnet-timeout CLI flags or their MOA_*_TIMEOUT env equivalents
 
     ``provider.effort`` is forwarded to adapters with native effort/variant
-    support (Claude, OpenCode, and AGY). Codex keeps its role-specific CLI
-    effort override, which is passed as ``codex_effort``.
+    support (Claude and OpenCode). AGY selects depth in the model id, and
+    Codex keeps its role-specific CLI effort override passed as
+    ``codex_effort``.
     """
     before = _workspace_snapshot(repo_path, session_dir)
     h = provider.harness
@@ -1074,7 +1083,7 @@ def _dispatch_provider(
             repo_path=repo_path, session_dir=session_dir,
             timeout=timeout,
             model=provider.model,
-            reasoning_effort=provider.effort,
+            reasoning_effort=None,
             agent_id=provider.name,
             reviewing=reviewing,
         )
@@ -1430,7 +1439,7 @@ def write_synthesis_input(
     layer2_mode: str = "broadcast",
     proposer_agent_ids: tuple[str, ...],
     refiner_agent_ids: tuple[str, ...],
-    aggregator_model: str = "opus",
+    aggregator_model: str = "codex-sol",
 ) -> Path:
     """Write the synthesis-input.md file consumed by the Layer 3 aggregator.
 
@@ -1941,6 +1950,8 @@ def load_layer_results_from_manifest(
             log_path=entry.get("log_path"),
             json_path=entry.get("json_path"),
             transient_empty=entry.get("transient_empty", False),
+            attempt=entry.get("attempt", 1),
+            previous_attempt=entry.get("previous_attempt"),
             reported_agent_id=entry.get("reported_agent_id"),
             workspace_mutations=entry.get("workspace_mutations"),
         )
@@ -2017,6 +2028,26 @@ def parse_redispatch_arg(
         )
         sys.exit(2)
     return names
+
+
+def mark_redispatch_attempts(
+    replacements: list[LayerResult], existing: list[LayerResult]
+) -> None:
+    """Carry forward the replaced transient attempt for report provenance."""
+    prior_by_agent = {result.agent_id: result for result in existing}
+    for result in replacements:
+        prior = prior_by_agent.get(result.agent_id)
+        if not prior:
+            continue
+        result.attempt = max(1, prior.attempt) + 1
+        result.previous_attempt = {
+            "attempt": prior.attempt,
+            "success": prior.success,
+            "transient_empty": prior.transient_empty,
+            "started_at": prior.started_at,
+            "duration_seconds": prior.duration_seconds,
+            "error": prior.error,
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -2139,16 +2170,17 @@ def main() -> int:
                         default=os.environ.get("MOA_AGGREGATOR_MODEL"),
                         help="Model override recorded or invoked for Layer 3. "
                              "Defaults to the configured aggregator provider (normally "
-                             "the rolling 'opus' alias).")
+                             "the canonical 'codex-sol' route).")
     parser.add_argument("--aggregator-provider",
                         default=os.environ.get("MOA_AGGREGATOR"),
-                        help="Named provider for Layer 3. Curated choices are "
-                             "opus and codex-sol.")
+                        help="Named provider for Layer 3. The curated/default "
+                             "route is codex-sol; explicit custom or legacy "
+                             "Claude aggregation remains supported.")
     parser.add_argument("--aggregator-effort",
-                        default=os.environ.get("MOA_AGGREGATOR_EFFORT") or "high",
+                        default=os.environ.get("MOA_AGGREGATOR_EFFORT") or "xhigh",
                         choices=["low", "medium", "high", "xhigh"],
                         help="Reasoning effort for a Codex Layer 3 subprocess. "
-                             "Default 'high'.")
+                             "Default 'xhigh'.")
     parser.add_argument("--skip-layer2",
                         action="store_true",
                         default=_bool_env("MOA_SKIP_LAYER2"),
@@ -2163,7 +2195,7 @@ def main() -> int:
                         help="Comma-separated provider names (built-ins "
                              "codex/glm/sonnet/kimi/qwen/deepseek/deepseek-flash/"
                              "composer/grok/cursor-grok/"
-                             "agy-gemini-pro/agy-gemini-flash plus user-named "
+                             "agy-gemini-pro plus user-named "
                              "providers). Default: the configured proposer layer.")
     parser.add_argument("--refiners",
                         default=os.environ.get("MOA_REFINERS"),
@@ -2449,16 +2481,37 @@ def main() -> int:
                     file=sys.stderr,
                 )
                 sys.exit(2)
+            role = "proposer" if label == "proposers" else "refiner"
+            invalid_role = [
+                name for name in requested
+                if not harness_config.provider_allows_role(name, role)
+            ]
+            if invalid_role:
+                print(
+                    f"ERROR: --{label} contains providers not allowed as "
+                    f"{role}s: {invalid_role}.",
+                    file=sys.stderr,
+                )
+                sys.exit(2)
             return [provider_catalog[name] for name in requested]
 
         final_proposers = _select_providers(list(loaded_cfg.proposers), args.proposers, "proposers")
         final_refiners = _select_providers(list(loaded_cfg.refiners), args.refiners, "refiners")
-        final_aggregator = loaded_cfg.aggregator or provider_catalog["opus"]
+        final_aggregator = loaded_cfg.aggregator or provider_catalog["codex-sol"]
         if args.aggregator_provider:
             if args.aggregator_provider not in provider_catalog:
                 print(
                     f"ERROR: unknown aggregator provider {args.aggregator_provider!r}. "
                     f"Valid providers: {sorted(provider_catalog)}.",
+                    file=sys.stderr,
+                )
+                return 2
+            if not harness_config.provider_allows_role(
+                args.aggregator_provider, "aggregator"
+            ):
+                print(
+                    f"ERROR: provider {args.aggregator_provider!r} is not "
+                    "allowed as an aggregator.",
                     file=sys.stderr,
                 )
                 return 2
@@ -2783,6 +2836,7 @@ def main() -> int:
                 )
 
             if redispatch_refiner_names:
+                mark_redispatch_attempts(layer2, existing_layer2)
                 kept = [r for r in existing_layer2 if r.agent_id not in redispatch_refiner_names]
                 layer2 = kept + layer2
 
@@ -2875,6 +2929,7 @@ def main() -> int:
         # future resolves, so we don't repeat them here.
 
         if redispatch_proposer_names:
+            mark_redispatch_attempts(layer1_new, existing_layer1)
             kept = [r for r in existing_layer1 if r.agent_id not in redispatch_proposer_names]
             layer1 = kept + layer1_new
         else:

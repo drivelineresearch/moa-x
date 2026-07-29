@@ -83,8 +83,9 @@ and actionable failures.
 - Keep the existing before/after workspace guard. A local smoke test confirmed
   the target repository stayed unchanged, although AGY wrote a managed scratch
   artifact and overstated what it had done.
-- Add Google providers as opt-in lanes first. Do not change the
-  lab-independent default roster until they have real canary history.
+- Gemini Pro was introduced as an opt-in lane first, then promoted into the
+  default proposer roster after long-context and live canary validation.
+  Retired Gemini Flash aliases must not return to the curated catalog.
 
 ## UI direction
 
@@ -160,13 +161,34 @@ use deterministic status summaries so monitoring does not create hidden cost.
 - Existing offline tests pass.
 - Web UI starts from one documented command.
 - Current Codex, Claude, OpenCode, and AGY accounts show usable.
-- AGY Pro and Flash availability reflects live account probes.
+- AGY Gemini Pro availability reflects live account probes.
 - A user can create, queue, watch, cancel, and reopen a run.
 - Old `.moa` runs are visible.
 - No credentials are stored in browser storage or SQLite.
 - The app is attractive and usable on desktop and reasonably usable on mobile.
 - The reviewed server may run on `0.0.0.0`; public installs default to
   loopback.
+
+## Follow-up TODO (2026-07-27)
+
+- [x] Run scanned-PDF OCR in the background and show file/page progress in the
+  launch modal, including the existing prompt-coach illustration.
+- [x] Preserve OCR metadata so an operator can confirm how many PDF pages were
+  converted before dispatch.
+- [x] Add revocable, high-entropy bearer links for completed final reports.
+  Shared links expose only the rendered report and are marked `noindex`.
+- [x] Distinguish timeline stages by color, animate the bar texture while a
+  browser permits motion, and retain retry-attempt timing for newly dispatched
+  runs.
+- [ ] Backfill retry provenance for historical sessions whose manifests were
+  written before attempt history was recorded. The current UI must describe
+  those late bars as inferred retries rather than fabricate a per-attempt row.
+- [ ] Improve evidence validation for PDF-derived evidence: accept an explicit
+  PDF page/location reference where a source cannot provide a code line, while
+  keeping code evidence line numbers mandatory.
+- [ ] For counsel-preparation runs, attach the complete application
+  specification and drawings when the requested analysis depends on written
+  description. A claims-only attachment is not a substitute for those records.
 
 ## Primary references
 

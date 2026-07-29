@@ -13,6 +13,9 @@ import time
 from pathlib import Path
 from typing import Any
 
+from harness.scripts.attachments import AttachmentError, prepare_attachment_context
+from harness.scripts import config as harness_config
+
 from .monitoring import OperationalError, capture_operational_error
 from .store import Store
 
@@ -157,6 +160,7 @@ class JobWorker:
         config = job["config"]
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"
+        provider_catalog = harness_config.load_provider_catalog()
         for provider_name, model in (
             config.get("options", {}).get("model_overrides") or {}
         ).items():
@@ -166,6 +170,11 @@ class JobWorker:
         for provider_name, effort in (
             config.get("options", {}).get("effort_overrides") or {}
         ).items():
+            provider = provider_catalog.get(str(provider_name))
+            # AGY depth is selected by the model suffix, not --effort. Never
+            # let an old browser payload create a conflicting CLI invocation.
+            if provider and provider.harness == "agy":
+                continue
             if (
                 re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,79}", str(provider_name))
                 and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,39}", str(effort))
@@ -221,6 +230,80 @@ class JobWorker:
             exit_code=code,
         )
         return code
+
+    def _prepare_attachments(self, job: dict[str, Any]) -> None:
+        """Build attachment context in the worker so progress is observable."""
+        job_id = job["id"]
+        session_dir = Path(job["session_dir"])
+        scout_path = session_dir / "scout-brief.json"
+        if not scout_path.is_file():
+            return
+        scout = json.loads(scout_path.read_text(encoding="utf-8"))
+        uploads = scout.get("uploaded_files") or []
+        if not uploads:
+            return
+
+        self.store.update_job(job_id, phase="attachments", progress=0.03)
+        self._event(
+            job_id,
+            "attachment-progress",
+            f"Preparing {len(uploads)} reference {'file' if len(uploads) == 1 else 'files'}",
+            file_count=len(uploads),
+            stage="starting",
+        )
+
+        def report(update: dict[str, Any]) -> None:
+            file_index = int(update.get("file_index") or 1)
+            file_count = max(int(update.get("file_count") or len(uploads)), 1)
+            page_number = int(update.get("page_number") or 0)
+            page_count = int(update.get("page_count") or 0)
+            stage = str(update.get("stage") or "preparing")
+            if page_count:
+                completed = (file_index - 1) + (page_number - 1) / page_count
+                if stage == "complete":
+                    completed = (file_index - 1) + page_number / page_count
+            else:
+                completed = file_index - 1 + (1 if stage == "complete" else 0)
+            self.store.update_job(
+                job_id,
+                phase="attachments",
+                progress=0.03 + 0.05 * min(completed / file_count, 1),
+            )
+            name = str(update.get("file_name") or "reference file")
+            if page_count:
+                verb = {
+                    "extracting": "Checking",
+                    "rendering": "Rendering",
+                    "recognizing": "OCRing",
+                    "complete": "Completed",
+                }.get(stage, "Preparing")
+                message = f"{verb} {name}: page {page_number} of {page_count}"
+            else:
+                message = (
+                    f"Completed {name}"
+                    if stage == "complete"
+                    else f"Preparing {name} ({file_index} of {file_count})"
+                )
+            self._event(job_id, "attachment-progress", message, **update)
+
+        try:
+            prepare_attachment_context(scout, session_dir, progress=report)
+        except AttachmentError:
+            raise
+        scout_path.write_text(json.dumps(scout, indent=2), encoding="utf-8")
+        context = scout["attachment_context"]
+        self.store.update_job(job_id, progress=0.08)
+        self._event(
+            job_id,
+            "attachment",
+            (
+                f"Prepared {context['source_count']} reference "
+                f"{'file' if context['source_count'] == 1 else 'files'} as shared text context"
+            ),
+            source_count=context["source_count"],
+            characters=context["characters"],
+            sources=context["sources"],
+        )
 
     @staticmethod
     def _transient_agents(job: dict[str, Any], phase: str) -> list[str]:
@@ -379,6 +462,7 @@ class JobWorker:
         self._event(job_id, "job", "Job started")
         code = 1
         try:
+            self._prepare_attachments(job)
             options = job["config"].get("options") or {}
             retry = job["config"].get("redispatch") or {}
             retry_phase = retry.get("phase")
@@ -460,6 +544,16 @@ class JobWorker:
                 finished_at=time.time(),
             )
             self._event(job_id, "job", "Job cancelled")
+        except AttachmentError as exc:
+            self.store.update_job(
+                job_id,
+                status="failed",
+                phase="failed",
+                summary=str(exc),
+                exit_code=1,
+                finished_at=time.time(),
+            )
+            self._event(job_id, "error", f"Reference preparation failed: {exc}")
         except Exception as exc:
             self.store.update_job(
                 job_id,

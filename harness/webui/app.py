@@ -16,18 +16,8 @@ from pathlib import Path
 from typing import Any
 
 from flask import Flask, Response, abort, jsonify, render_template, request, send_file
+from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.utils import secure_filename
-
-try:
-    from harness.scripts.attachments import (
-        AttachmentError,
-        prepare_attachment_context,
-    )
-except ModuleNotFoundError:  # Installed skill, invoked from its own root.
-    from scripts.attachments import (  # type: ignore[no-redef]
-        AttachmentError,
-        prepare_attachment_context,
-    )
 
 from .github import (
     GitHubWorkspaceError,
@@ -370,6 +360,8 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     sentry_enabled = not (test_config or {}).get("TESTING") and configure_sentry()
     data_dir = _default_data_dir()
     app = Flask(__name__, template_folder="templates", static_folder="static")
+    app.config["PREFERRED_URL_SCHEME"] = "https"
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
     app.config.from_mapping(
         DATABASE=str(data_dir / "webui.sqlite3"),
         UPLOAD_DIR=str(data_dir / "uploads"),
@@ -909,6 +901,12 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             return _error("goal is required")
         if len(goal) > 100_000:
             return _error("goal is too large")
+        requested_proposers = _string_list(body.get("proposers"))
+        requested_refiners = _string_list(body.get("refiners"))
+        if "fable" in requested_proposers:
+            return _error("Fable is aggregator-only and cannot be a proposer")
+        if "fable" in requested_refiners:
+            return _error("Fable is aggregator-only and cannot be a refiner")
         profile_id = profile["id"]
 
         job_id = (
@@ -1017,20 +1015,13 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             "clarifications_resolved": body.get("clarifications_resolved") or [],
             "uploaded_files": uploaded_files,
         }
-        try:
-            prepare_attachment_context(scout, session_dir)
-        except AttachmentError as exc:
-            shutil.rmtree(session_dir, ignore_errors=True)
-            if source_info == {"type": "brief"}:
-                shutil.rmtree(workspace, ignore_errors=True)
-            return _error(str(exc), 422)
         (session_dir / "scout-brief.json").write_text(
             json.dumps(scout, indent=2), encoding="utf-8"
         )
         config = {
-            "proposers": _string_list(body.get("proposers")),
-            "refiners": _string_list(body.get("refiners")),
-            "aggregator": str(body.get("aggregator") or "opus"),
+            "proposers": requested_proposers,
+            "refiners": requested_refiners,
+            "aggregator": str(body.get("aggregator") or "codex-sol"),
             "options": (
                 body.get("options")
                 if isinstance(body.get("options"), dict)
@@ -1052,19 +1043,17 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             }
         )
         if uploaded_files:
-            context = scout["attachment_context"]
             store.append_event(
                 job_id,
-                "attachment",
+                "attachment-progress",
                 (
-                    f"Prepared {context['source_count']} reference "
-                    f"{'file' if context['source_count'] == 1 else 'files'} "
-                    "as shared text context"
+                    f"Queued {len(uploaded_files)} reference "
+                    f"{'file' if len(uploaded_files) == 1 else 'files'} "
+                    "for local preparation"
                 ),
                 {
-                    "source_count": context["source_count"],
-                    "characters": context["characters"],
-                    "sources": context["sources"],
+                    "file_count": len(uploaded_files),
+                    "stage": "queued",
                 },
             )
         store.append_event(job_id, "job", "Job queued", {"position": "pending"})
@@ -1227,6 +1216,47 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         if not path.is_file():
             abort(404)
         return send_file(path)
+
+    @app.post("/api/jobs/<job_id>/share")
+    @require_profile
+    def create_report_share(profile: dict[str, Any], job_id: str):
+        job = owned_job(profile, job_id)
+        report = Path(job["session_dir"]) / "report.html" if job else None
+        if not job or job.get("status") != "completed" or not report.is_file():
+            return _error(
+                "a completed report is required before it can be shared", 409
+            )
+        token = secrets.token_urlsafe(32)
+        digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        store.create_report_share(
+            job_id=job_id, profile_id=profile["id"], token_hash=digest
+        )
+        return jsonify({"url": f"/shared/reports/{token}"}), 201
+
+    @app.delete("/api/jobs/<job_id>/share")
+    @require_profile
+    def revoke_report_share(profile: dict[str, Any], job_id: str):
+        if not owned_job(profile, job_id):
+            return _error("job not found", 404)
+        revoked = store.revoke_report_shares(
+            job_id=job_id, profile_id=profile["id"]
+        )
+        return jsonify({"revoked": revoked})
+
+    @app.get("/shared/reports/<token>")
+    def shared_report(token: str):
+        if not re.fullmatch(r"[A-Za-z0-9_-]{32,160}", token):
+            abort(404)
+        digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        share = store.get_active_report_share(digest)
+        job = store.get_job(share["job_id"]) if share else None
+        report = Path(job["session_dir"]) / "report.html" if job else None
+        if not job or job.get("status") != "completed" or not report.is_file():
+            abort(404)
+        response = send_file(report, mimetype="text/html", conditional=True)
+        response.headers["Cache-Control"] = "private, no-store"
+        response.headers["X-Robots-Tag"] = "noindex, nofollow"
+        return response
 
     @app.post("/api/history/import")
     @require_profile
