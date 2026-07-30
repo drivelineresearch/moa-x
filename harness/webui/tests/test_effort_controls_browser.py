@@ -291,7 +291,7 @@ class EffortControlsBrowserTest(unittest.TestCase):
             )
             for portrait_style, expected_scale in zip(
                 portrait_styles,
-                ("matrix(3.25", "matrix(4", "matrix(3"),
+                ("matrix(3.25", "matrix(6", "matrix(3"),
                 strict=True,
             ):
                 self.assertEqual(portrait_style["objectFit"], "cover")

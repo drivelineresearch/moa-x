@@ -1849,7 +1849,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); outline
   object-fit: cover;
   object-position: 50% 0;
   image-rendering: pixelated;
-  transform: translateY(-18px) scale(4);
+  transform: translateY(-24px) scale(6);
   transform-origin: 50% 0;
 }
 .network-avatar.accent-teal { border-bottom-color: #087f77; }
