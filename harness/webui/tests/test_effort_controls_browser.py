@@ -263,6 +263,47 @@ class EffortControlsBrowserTest(unittest.TestCase):
                 retry_trace["message"],
                 "One proposer lane is retrying.",
             )
+            portrait_styles = page.evaluate(
+                """() => {
+                  const fixture = document.createElement("div");
+                  fixture.innerHTML = `
+                    <div class="loading-stage"><picture><img></picture></div>
+                    <span class="network-avatar"><img></span>
+                    <figure class="agent-pixel-stage"><picture><img></picture></figure>
+                  `;
+                  document.body.append(fixture);
+                  const styles = [
+                    ".loading-stage picture img",
+                    ".network-avatar img",
+                    ".agent-pixel-stage img",
+                  ].map((selector) => {
+                    const style = getComputedStyle(fixture.querySelector(selector));
+                    return {
+                      objectFit: style.objectFit,
+                      objectPosition: style.objectPosition,
+                      transform: style.transform,
+                      transformOrigin: style.transformOrigin,
+                    };
+                  });
+                  fixture.remove();
+                  return styles;
+                }"""
+            )
+            for portrait_style, expected_scale in zip(
+                portrait_styles,
+                ("matrix(2.65", "matrix(3.25", "matrix(2.4"),
+                strict=True,
+            ):
+                self.assertEqual(portrait_style["objectFit"], "cover")
+                self.assertEqual(portrait_style["objectPosition"], "50% 0px")
+                self.assertTrue(
+                    portrait_style["transform"].startswith(expected_scale),
+                    portrait_style["transform"],
+                )
+                self.assertTrue(
+                    portrait_style["transformOrigin"].endswith(" 0px"),
+                    portrait_style["transformOrigin"],
+                )
             profile_id = page.evaluate(
                 "JSON.parse(localStorage.getItem('moax.profile')).id"
             )
