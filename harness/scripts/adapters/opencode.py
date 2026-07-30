@@ -15,10 +15,11 @@ the other schema-unenforced adapters used by older MoA-X releases.
 
 Prompt delivery: OpenCode does NOT read stdin (the feature request was
 declined upstream) and a single argv entry is capped at MAX_ARG_STRLEN
-(128 KB on Linux). Refiner prompts — scout brief plus every proposer's
-full output — blow past that, so the adapter writes the prompt to a file
-and passes it with `-f`, plus a short positional instruction to read and
-follow it.
+(128 KB on Linux). Normal prompts — especially broadcast refiners — are
+therefore written to a file and passed with `-f`. Bounded repair prompts
+that fit safely below that limit are passed inline so the model receives
+the malformed JSON directly instead of trying to read a long JSON line
+through OpenCode's truncated file-view tool.
 
 Read-only discipline is enforced two ways: the shared READ_ONLY_RULE is
 prepended to the prompt, and a `permission` block that denies `edit` and
@@ -80,7 +81,15 @@ _QWEN_TOKEN_PLAN_BASE_URL = (
 )
 
 
-def _config_for_model(model: str, *, allow_webfetch: bool = True) -> dict:
+_MAX_INLINE_PROMPT_BYTES = 96 * 1024
+
+
+def _config_for_model(
+    model: str,
+    *,
+    allow_webfetch: bool = True,
+    allow_tools: bool = True,
+) -> dict:
     """Build the isolated OpenCode config, adding known custom providers.
 
     Qwen Token Plan is not an OpenCode built-in. The official Qwen/OpenCode
@@ -88,7 +97,12 @@ def _config_for_model(model: str, *, allow_webfetch: bool = True) -> dict:
     out of this generated file by using OpenCode's env substitution syntax.
     """
     config = json.loads(json.dumps(_READONLY_CONFIG))
-    if not allow_webfetch:
+    if not allow_tools:
+        # Repair has the complete payload and schema inline. Deny every tool,
+        # including subagents and user-configured integrations, so it cannot
+        # waste the bounded pass re-reading files or repeating research.
+        config["permission"] = {"*": "deny"}
+    elif not allow_webfetch:
         config["permission"]["webfetch"] = "deny"
     prefix = f"{_QWEN_TOKEN_PLAN_PROVIDER_ID}/"
     if model.startswith(prefix):
@@ -293,13 +307,14 @@ def run(
     log_file: Optional[Path] = None,
     reasoning_effort: Optional[str] = None,
     allow_webfetch: bool = True,
+    allow_tools: bool = True,
 ) -> OpenCodeResult:
     """Invoke `opencode run` with the given prompt.
 
     Args:
-        prompt: The full prompt text. Written to a file and attached with
-            `-f`; the READ_ONLY_RULE is prepended. NOT passed on argv
-            (opencode has no stdin and argv is ARG_MAX-capped).
+        prompt: The full prompt text. Normal calls write it to a file and
+            attach it with `-f`; the READ_ONLY_RULE is prepended. Tool-free
+            repair calls pass a safely bounded prompt inline.
         repo_path: Working directory, passed via `--dir` and Popen cwd.
         model: `provider/model` id, e.g. "zhipuai/glm-5.2".
         schema_path: Optional output schema. Its top-level required keys keep
@@ -314,6 +329,9 @@ def run(
         allow_webfetch: Whether the isolated OpenCode policy permits webfetch.
             Repair-only calls disable it so a schema correction cannot repeat
             research or consume additional external context.
+        allow_tools: Whether OpenCode tools are available. Repair-only calls
+            deny every tool and receive the payload inline when it fits below
+            Linux's per-argument limit.
 
     Returns:
         OpenCodeResult with the parsed payload (or None on failure).
@@ -333,22 +351,36 @@ def run(
         # Read-only permission policy via a temp config file.
         config_path = Path(tmpdir) / "opencode.json"
         config_path.write_text(
-            json.dumps(_config_for_model(model, allow_webfetch=allow_webfetch)),
+            json.dumps(
+                _config_for_model(
+                    model,
+                    allow_webfetch=allow_webfetch,
+                    allow_tools=allow_tools,
+                )
+            ),
             encoding="utf-8",
         )
         env["OPENCODE_CONFIG"] = str(config_path)
 
-        # Prompt goes in a file (see module docstring). Keep it inside the
-        # session's .moa/ dir (next to log_file) when we have one, so opencode
-        # reads it as a project-local file; otherwise fall back to the tmpdir
-        # (--dangerously-skip-permissions auto-approves the external read).
-        full_prompt = READ_ONLY_RULE + "\n\n" + prompt
-        if log_file is not None:
-            prompt_file = log_file.with_name(log_file.stem + ".prompt.md")
-            prompt_file.parent.mkdir(parents=True, exist_ok=True)
-        else:
-            prompt_file = Path(tmpdir) / "opencode-prompt.md"
-        prompt_file.write_text(full_prompt, encoding="utf-8")
+        full_prompt = (
+            READ_ONLY_RULE + "\n\n" + prompt
+            if allow_tools
+            else prompt
+        )
+        inline_prompt = (
+            not allow_tools
+            and len(full_prompt.encode("utf-8")) <= _MAX_INLINE_PROMPT_BYTES
+        )
+        prompt_file: Optional[Path] = None
+        if not inline_prompt:
+            # Keep attached prompts inside the session's .moa/ directory when
+            # possible so OpenCode sees a project-local file.
+            if log_file is not None:
+                prompt_file = log_file.with_name(log_file.stem + ".prompt.md")
+                prompt_file.parent.mkdir(parents=True, exist_ok=True)
+            else:
+                prompt_file = Path(tmpdir) / "opencode-prompt.md"
+            prompt_file.write_text(full_prompt, encoding="utf-8")
 
         # Arg order matters: `-f/--file` is a greedy yargs ARRAY option, so the
         # positional message must come BEFORE it (or -f would swallow the
@@ -359,8 +391,12 @@ def run(
         cmd = [
             _opencode_bin(),
             "run",
-            "Read the attached file in full and follow its instructions exactly. "
-            "Output only the requested JSON object.",
+            (
+                full_prompt
+                if inline_prompt
+                else "Read the attached file in full and follow its instructions "
+                "exactly. Output only the requested JSON object."
+            ),
             "-m", model,
             "--dir", str(repo_path),
             "--dangerously-skip-permissions",
@@ -374,7 +410,8 @@ def run(
         ]
         if reasoning_effort:
             cmd.extend(["--variant", reasoning_effort])
-        cmd.extend(["-f", str(prompt_file)])
+        if prompt_file is not None:
+            cmd.extend(["-f", str(prompt_file)])
 
         try:
             proc = subprocess.Popen(

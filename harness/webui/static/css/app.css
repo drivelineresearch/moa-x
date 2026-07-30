@@ -436,10 +436,23 @@ h3 { font-size: 13px; line-height: 1.2; }
   text-transform: uppercase;
   letter-spacing: .05em;
 }
-.status-tag.running, .status-tag.queued { color: var(--ink); background: var(--accent); }
+.status-tag.running { color: var(--paper); background: #2563EB; }
+.status-tag.queued { color: var(--ink); background: var(--accent); }
 .status-tag.completed { color: var(--paper); background: var(--good); }
-.status-tag.failed, .status-tag.cancelled { color: var(--paper); background: var(--bad); }
-.status-tag.blocked { color: var(--ink); background: var(--line); }
+.status-tag.failed { color: var(--paper); background: var(--bad); }
+.status-tag.cancelled { color: var(--paper); background: #4B5563; }
+.status-tag.blocked { color: var(--dark); background: var(--track); }
+.status-tag.running::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  margin-right: 5px;
+  border: 1.5px solid rgba(255, 255, 255, .45);
+  border-top-color: var(--paper);
+  border-radius: 50%;
+  animation: spin 750ms linear infinite;
+}
 .progress-track { height: 5px; background: var(--track); }
 .progress-track i { display: block; height: 100%; width: 0; background: var(--accent); transition: width 300ms ease; }
 .active-meta {
@@ -518,7 +531,7 @@ h3 { font-size: 13px; line-height: 1.2; }
   object-fit: cover;
   object-position: 50% 0;
   image-rendering: pixelated;
-  transform: scale(2.65);
+  transform: translateY(-17px) scale(3.25);
   transform-origin: 50% 0;
 }
 .loading-stage h3,
@@ -1836,7 +1849,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); outline
   object-fit: cover;
   object-position: 50% 0;
   image-rendering: pixelated;
-  transform: scale(3.25);
+  transform: translateY(-18px) scale(4);
   transform-origin: 50% 0;
 }
 .network-avatar.accent-teal { border-bottom-color: #087f77; }
@@ -2248,7 +2261,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); outline
   object-fit: cover;
   object-position: 50% 0;
   image-rendering: pixelated;
-  transform: scale(2.4);
+  transform: translateY(-25px) scale(3);
   transform-origin: 50% 0;
 }
 .agent-pixel-stage figcaption {

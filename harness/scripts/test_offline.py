@@ -1602,10 +1602,42 @@ def test_opencode_schema_repair_is_bounded_and_offline() -> bool:
             and repair_call["repo_path"] == session
             and repair_call["timeout_seconds"] == 240
             and repair_call["allow_webfetch"] is False
+            and repair_call["allow_tools"] is False
             and "Do not research, browse" in repair_call["prompt"]
             and "Never invent a file, line, URL, snippet, claim" in repair_call["prompt"]
         )
         return _ok(ok, f"success={result.success} calls={adapter_run.call_count}")
+
+
+def test_opencode_repair_prompt_is_inline_and_tool_free() -> bool:
+    print("\n[N] OpenCode repair prompt avoids truncated file reads")
+    from adapters import opencode as opencode_adapter
+
+    invalid = _make_valid_proposer("glm")
+    invalid["plan"][0]["evidence"][1]["snippet"] = None
+    prompt = run_moa._build_bounded_repair_prompt(
+        invalid,
+        "evidence cross-field violations",
+        run_moa.PROPOSER_SCHEMA_PATH,
+        "glm",
+    )
+    config = opencode_adapter._config_for_model(
+        "opencode-go/glm-5.2",
+        allow_webfetch=False,
+        allow_tools=False,
+    )
+    invalid_json = prompt.split("INVALID JSON\n", 1)[1]
+    ok = (
+        config["permission"] == {"*": "deny"}
+        and len(prompt.encode("utf-8"))
+        <= opencode_adapter._MAX_INLINE_PROMPT_BYTES
+        and max(map(len, invalid_json.splitlines())) < 2000
+    )
+    return _ok(
+        ok,
+        f"bytes={len(prompt.encode('utf-8'))} "
+        f"max_line={max(map(len, invalid_json.splitlines()))}",
+    )
 
 
 def test_claude_schema_repair_is_bounded_and_tool_free() -> bool:
@@ -2789,6 +2821,7 @@ def main() -> int:
         test_provider_catalog_includes_optional_builtins,
         test_dispatch_propagates_native_provider_effort,
         test_opencode_schema_repair_is_bounded_and_offline,
+        test_opencode_repair_prompt_is_inline_and_tool_free,
         test_claude_schema_repair_is_bounded_and_tool_free,
         test_model_lab_assets_and_catalog_contract,
         test_webui_model_catalog_is_provider_grouped_and_current,

@@ -799,7 +799,7 @@ def _build_bounded_repair_prompt(
         f"VALIDATION ERROR\n{validation_error}\n\n"
         f"JSON SCHEMA\n{schema_text}\n\n"
         "INVALID JSON\n"
-        + json.dumps(payload, ensure_ascii=False)
+        + json.dumps(payload, ensure_ascii=False, indent=2)
     )
 
 
@@ -895,6 +895,7 @@ def _run_opencode(
             log_file=repair_log,
             reasoning_effort=reasoning_effort,
             allow_webfetch=False,
+            allow_tools=False,
         )
         _apply_bounded_repair(
             layer_result=layer_result,

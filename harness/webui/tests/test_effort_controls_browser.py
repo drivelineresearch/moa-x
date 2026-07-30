@@ -291,7 +291,7 @@ class EffortControlsBrowserTest(unittest.TestCase):
             )
             for portrait_style, expected_scale in zip(
                 portrait_styles,
-                ("matrix(2.65", "matrix(3.25", "matrix(2.4"),
+                ("matrix(3.25", "matrix(4", "matrix(3"),
                 strict=True,
             ):
                 self.assertEqual(portrait_style["objectFit"], "cover")
@@ -304,6 +304,39 @@ class EffortControlsBrowserTest(unittest.TestCase):
                     portrait_style["transformOrigin"].endswith(" 0px"),
                     portrait_style["transformOrigin"],
                 )
+            status_styles = page.evaluate(
+                """() => {
+                  const fixture = document.createElement("div");
+                  const states = [
+                    "running", "queued", "completed",
+                    "failed", "cancelled", "blocked",
+                  ];
+                  fixture.innerHTML = states.map(
+                    (state) => `<span class="status-tag ${state}">${state}</span>`
+                  ).join("");
+                  document.body.append(fixture);
+                  const styles = Object.fromEntries(states.map((state) => {
+                    const tag = fixture.querySelector(`.${state}`);
+                    const style = getComputedStyle(tag);
+                    const marker = getComputedStyle(tag, "::before");
+                    return [state, {
+                      background: style.backgroundColor,
+                      markerContent: marker.content,
+                      markerAnimation: marker.animationName,
+                    }];
+                  }));
+                  fixture.remove();
+                  return styles;
+                }"""
+            )
+            self.assertEqual(
+                len({style["background"] for style in status_styles.values()}),
+                len(status_styles),
+            )
+            self.assertEqual(status_styles["running"]["markerContent"], '""')
+            self.assertEqual(status_styles["running"]["markerAnimation"], "spin")
+            for state in ("queued", "completed", "failed", "cancelled", "blocked"):
+                self.assertEqual(status_styles[state]["markerContent"], "none")
             profile_id = page.evaluate(
                 "JSON.parse(localStorage.getItem('moax.profile')).id"
             )
