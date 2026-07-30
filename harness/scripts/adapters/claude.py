@@ -160,6 +160,7 @@ def _build_cmd(
     schema_json: str,
     system_prompt_suffix: str,
     reasoning_effort: Optional[str] = None,
+    tools: str = SONNET_READONLY_TOOLS,
 ) -> list[str]:
     """Build an authenticated but customization-isolated Claude invocation."""
     cmd = [
@@ -171,7 +172,7 @@ def _build_cmd(
         "--output-format", "json",
         "--json-schema", schema_json,
         "--append-system-prompt", system_prompt_suffix,
-        "--tools", SONNET_READONLY_TOOLS,
+        "--tools", tools,
     ]
     if reasoning_effort:
         cmd.extend(["--effort", reasoning_effort])
@@ -188,6 +189,7 @@ def run(
     log_file: Optional[Path] = None,
     temperature_shim: Optional[str] = None,
     reasoning_effort: Optional[str] = None,
+    allow_research: bool = True,
 ) -> ClaudeResult:
     """Invoke claude -p with the given prompt and schema.
 
@@ -209,6 +211,9 @@ def run(
             simulate temperature diversity. The claude CLI has no --temperature
             flag; for self-moa we inject an explicit diversity directive instead.
             When None the READ_ONLY_RULE is used alone (moa-x behavior, unchanged).
+        allow_research: When false, expose no Claude tools. A bounded schema
+            repair already has the invalid object and must not inspect files
+            or repeat web research.
 
     Returns:
         ClaudeResult with the parsed structured_output (or None on failure).
@@ -266,6 +271,7 @@ def run(
             schema_json=schema_json,
             system_prompt_suffix=system_prompt_suffix,
             reasoning_effort=reasoning_effort,
+            tools=SONNET_READONLY_TOOLS if allow_research else "",
         )
 
         try:

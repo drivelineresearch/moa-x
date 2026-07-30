@@ -79,9 +79,9 @@ Rule 2 is non-negotiable. Rule 1 is a strong recommendation.
   basic API-key authentication.
 - **Default roster is `[agy-gemini-pro, grok, codex-luna]` proposers,
   `[qwen, kimi, opus]` refiners, and `codex-sol` aggregator at `xhigh`** using the
-  `{agy, codex, claude, opencode}` harnesses. Cursor is unsupported; GLM and
-  DeepSeek are retained only as archived-run identities after repeated
-  incomplete or schema-invalid live outputs. The model defaults are
+  `{agy, codex, claude, opencode}` harnesses. Cursor is unsupported. GLM 5.2
+  and DeepSeek V4 Pro/Flash are optional curated routes after full-schema live
+  qualification, but remain outside recommended presets. The model defaults are
   Gemini 3.1 Pro High, Grok 4.5, GPT-5.6 Luna, Qwen
   `qwen3.8-max-preview`, Kimi K3, Claude Opus 5 (`claude-opus-5`),
   and `gpt-5.6-sol` at `xhigh` for synthesis. Fable 5 is an
@@ -136,10 +136,11 @@ then `harness/config.yaml`, then built-in defaults. Loader lives at
 - **opencode model ids are `provider/model` strings.** Swap billing paths by
   overriding the model string (`MOA_CUSTOM_MODEL=provider/model`), not by adding a
   harness. → `docs/config.md`.
-- **OpenCode gets one bounded schema-repair pass, not a full research retry.**
-  If its JSON parses but fails schema/evidence validation, repair only the
-  supplied object inside the session directory; incomplete output still uses
-  the existing one-time redispatch path. → `harness/scripts/run_moa.py`.
+- **Schema-invalid roots get one bounded repair pass, not a research retry.**
+  OpenCode retains root-shaped objects missing required fields; OpenCode and
+  Claude repair only the supplied object inside the session directory with
+  research disabled. Incomplete output still uses the existing one-time
+  redispatch path. → `harness/scripts/run_moa.py`.
 - **Google runs through AGY.** Live probes control route availability;
   execution fails closed on plan mode + sandbox and reuses local CLI auth.
   → `docs/architecture.md`.

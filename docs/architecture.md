@@ -50,8 +50,9 @@ reach those labs. The canonical mapping and asset names live in
 
 Unknown custom routes receive an `independent` lab identity until their model
 prefix can be mapped explicitly. Historical GLM, DeepSeek, Composer, and
-Cursor-Grok manifests remain attributable for archive rendering even though
-those routes are not offered in the current launch catalog.
+Cursor-Grok manifests remain attributable for archive rendering. GLM 5.2 and
+DeepSeek V4 Pro/Flash are again available as optional curated routes after live
+full-schema qualification; none is in a recommended preset.
 
 ## Why this roster
 
@@ -67,15 +68,20 @@ those routes are not offered in the current launch catalog.
 
 The default is intentionally a reliability-weighted ensemble, not a claim
 that more lanes are always better. Retained-run evidence showed repeated
-incomplete GLM output and schema-invalid DeepSeek output. Those routes were
-removed from the curated surface rather than allowed to make paid workflows
-look healthier than they were.
+incomplete GLM output and schema-invalid DeepSeek output, so both were removed
+from the curated surface. DeepSeek V4 Pro later passed the repaired adapter's
+full proposer contract on its first attempt. GLM and DeepSeek Flash each
+truncated once and passed the single redispatch allowed by the real pipeline.
+All three returned as optional routes without changing the
+reliability-weighted defaults.
 
 ## OpenCode output handling
 
 OpenCode does not provide a native output-schema flag. MoA-X extracts the
-outer JSON object and validates it locally. Two failures are treated
-differently:
+outer JSON object and validates it locally. A root-shaped object that is
+missing required fields is retained for validation and repair; a structural
+signature prevents nested objects from being promoted as roots. Two failures
+are treated differently:
 
 1. Empty or incomplete output with no quota/auth signal receives at most one
    full redispatch.
@@ -85,7 +91,14 @@ differently:
    not repeat repository or web research.
 
 If repair still fails, the lane fails closed and its invalid output never
-enters refinement.
+enters refinement. Provider quota/auth classification only considers precise
+billing signals when no model response was captured, so tool errors such as
+oversized grep records cannot masquerade as depleted account balance.
+
+Claude's native schema output can still violate semantic cross-field rules
+that JSON Schema does not express. Claude therefore receives the same single
+session-confined repair opportunity, with every repository and web tool
+disabled during repair.
 
 ## Read-only and process isolation
 

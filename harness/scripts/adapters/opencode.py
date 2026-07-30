@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -256,6 +257,32 @@ def _write_log_file(log_file: Optional[Path], stdout: str, stderr: str) -> None:
         print(f"[opencode adapter] failed to write log {log_file}: {e}", file=_sys.stderr)
 
 
+def _extract_schema_candidate(stdout: str, required_keys: set[str]) -> Optional[dict]:
+    """Extract the response root even when it is missing required fields."""
+    payload = extract_json_from_text(stdout, required_keys=required_keys)
+    if payload is not None or not required_keys:
+        return payload
+
+    # A missing required field is schema-invalid, not unparseable. Keep a
+    # root-shaped object so the orchestrator's bounded repair pass can correct
+    # it. The structural-signature threshold prevents a nested object that
+    # happens to contain agent_id from being mistaken for the response root.
+    candidate = extract_json_from_text(stdout)
+    signature_matches = (
+        len(required_keys.intersection(candidate))
+        if isinstance(candidate, dict)
+        else 0
+    )
+    minimum_signature = max(2, len(required_keys) // 2)
+    if (
+        isinstance(candidate, dict)
+        and isinstance(candidate.get("agent_id"), str)
+        and signature_matches >= minimum_signature
+    ):
+        return candidate
+    return None
+
+
 def run(
     *,
     prompt: str,
@@ -416,7 +443,7 @@ def run(
                 required_keys = set(json.loads(schema_path.read_text(encoding="utf-8")).get("required", []))
             except (OSError, json.JSONDecodeError):
                 required_keys = set()
-        payload = extract_json_from_text(stdout_captured, required_keys=required_keys)
+        payload = _extract_schema_candidate(stdout_captured, required_keys)
         if payload is None:
             msg, transient = _diagnose_failure(stdout_captured, stderr_captured)
             return OpenCodeResult(
@@ -443,14 +470,19 @@ def _diagnose_failure(stdout: str, stderr: str) -> tuple[str, bool]:
 
     transient_empty=True when stdout is empty or contains an incomplete /
     malformed model response and stderr shows no quota or auth signal. Tool
-    calls can emit 404/transport noise on stderr even when the model route
-    itself worked, so a non-empty model response takes precedence over the
-    routing classifier. Quota and auth failures remain non-transient.
+    calls can emit 403/404/transport noise on stderr even when the model route
+    itself worked, so a non-empty model response takes precedence over stderr
+    classifiers. Quota and auth failures with no model output remain
+    non-transient.
     """
     stderr_lower = (stderr or "").lower()
-    quota_hit = any(
-        p in stderr_lower
-        for p in ("rate limit", "quota", "429", "exceeded", "insufficient balance")
+    quota_hit = bool(
+        re.search(
+            r"\b(?:rate[ _-]*limit(?:ed)?|quota (?:exceeded|exhausted)|"
+            r"insufficient (?:balance|credits?)|balance (?:exhausted|too low)|"
+            r"payment required)\b",
+            stderr_lower,
+        )
     )
     auth_hit = any(
         p in stderr_lower
@@ -460,17 +492,17 @@ def _diagnose_failure(stdout: str, stderr: str) -> tuple[str, bool]:
         p in stderr_lower
         for p in ("not found", "404", "unsupported model", "model not found")
     )
+    if stdout and stdout.strip():
+        return (
+            "opencode produced non-empty but unparseable/incomplete JSON under "
+            "a clean auth state. Likely transient — one re-dispatch may recover."
+        ), True
     if quota_hit:
         return ("opencode hit rate-limit / quota errors (see stderr). Check the "
                 "provider's dashboard or the relevant *_API_KEY budget."), False
     if auth_hit:
         return ("opencode authentication error (see stderr). Run `opencode auth "
                 "login` or export the provider's API key."), False
-    if stdout and stdout.strip():
-        return (
-            "opencode produced non-empty but unparseable/incomplete JSON under "
-            "a clean auth state. Likely transient — one re-dispatch may recover."
-        ), True
     if routing_hit:
         return ("opencode provider/model routing error (see stderr). Check the "
                 "custom provider base URL, transport, and model id."), False

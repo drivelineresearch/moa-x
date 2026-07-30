@@ -21,14 +21,20 @@ Never commit `.env`, provider keys, or generated `harness/config.yaml`.
 | `qwen` | OpenCode | `qwen-token-plan/qwen3.8-max-preview` | proposer, refiner | configured variant |
 | `qwen-opencode` | OpenCode | `opencode-go/qwen3.7-max` | proposer, refiner | provider-managed |
 | `kimi` | OpenCode | `opencode-go/kimi-k3` | proposer, refiner | provider-managed |
+| `glm` | OpenCode | `opencode-go/glm-5.2` | proposer, refiner | provider-managed |
+| `deepseek` | OpenCode | `opencode-go/deepseek-v4-pro` | proposer, refiner | provider-managed |
+| `deepseek-flash` | OpenCode | `opencode-go/deepseek-v4-flash` | proposer, refiner | provider-managed |
 | `sonnet` | Claude Code | `claude-sonnet-5` | proposer, refiner | adjustable; high default |
 | `opus` | Claude Code | `claude-opus-5` | proposer, refiner, aggregator | adjustable; high default |
 | `codex-sol` | Codex | `gpt-5.6-sol` | proposer, refiner, aggregator | adjustable; xhigh default |
 | `fable` | Claude Code | `claude-fable-5` | aggregator only | fixed xhigh |
 
-Cursor is not a supported harness. GLM and DeepSeek are not curated launch
-routes after repeated incomplete or schema-invalid live outputs. Archived
-manifests still preserve and display their original model-lab identity.
+Cursor is not a supported harness. GLM 5.2 and DeepSeek V4 Pro/Flash returned
+to the optional curated catalog after live full-schema qualification; none is
+part of the recommended presets. Pro passed its first attempt. GLM and Flash
+each produced one incomplete response and then passed the single redispatch
+allowed by the real pipeline. Archived manifests preserve every original
+model-lab identity.
 
 ## Default ensemble
 

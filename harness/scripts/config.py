@@ -113,6 +113,9 @@ BUILTIN_PROVIDERS: dict[str, ResolvedProvider] = {
     "qwen":           ResolvedProvider(name="qwen",           harness="opencode", model="qwen-token-plan/qwen3.8-max-preview", timeout=600),
     "qwen-opencode":  ResolvedProvider(name="qwen-opencode",  harness="opencode", model="opencode-go/qwen3.7-max"),
     "grok":           ResolvedProvider(name="grok",           harness="opencode", model="opencode-go/grok-4.5"),
+    "glm":            ResolvedProvider(name="glm",            harness="opencode", model="opencode-go/glm-5.2"),
+    "deepseek":       ResolvedProvider(name="deepseek",       harness="opencode", model="opencode-go/deepseek-v4-pro"),
+    "deepseek-flash": ResolvedProvider(name="deepseek-flash", harness="opencode", model="opencode-go/deepseek-v4-flash"),
     # Google runs through AGY, which reuses the account signed into the local
     # Antigravity CLI. Gemini Pro is part of the shipped proposer defaults.
     # AGY selects depth in the model slug itself (for example
