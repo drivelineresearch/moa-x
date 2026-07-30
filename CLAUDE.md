@@ -5,7 +5,7 @@
 MoA-X is a Mixture-of-Agents reference harness. `harness/scripts/run_moa.py`
 orchestrates a config-driven roster of CLI proposers and broadcast
 refiners; the shipped default is Gemini Pro + Grok 4.5 + GPT-5.6 Luna proposers
-and Qwen + Kimi K3 + Claude Opus refiners (Qwen uses the Token Plan API).
+and Qwen + DeepSeek V4 Pro + Claude Opus refiners (Qwen uses the Token Plan API).
 Layer 0 (scout) is handled by the parent agent. Layer 3 defaults to a recorded
 Codex subprocess on `gpt-5.6-sol` at `xhigh` reasoning (stable provider name
 `codex-sol`) through `--phase layer3`. Layer 3 adds `final-plan.md` plus a
@@ -56,7 +56,7 @@ tests must run offline so CI stays credential-free.
 Rule 2 is non-negotiable. Rule 1 is a strong recommendation.
 
 1. **Recommend lab-independent refiners.** Layer 2 defaults to
-   `{qwen, kimi, opus}` and the default aggregator uses GPT-5.6 Sol at `xhigh`
+   `{qwen, deepseek, opus}` and the default aggregator uses GPT-5.6 Sol at `xhigh`
    under the stable `codex-sol` provider name. All three reviewers are
    independent of the OpenAI aggregator and of the default proposer labs.
    If changing the aggregator, reconsider
@@ -78,13 +78,13 @@ Rule 2 is non-negotiable. Rule 1 is a strong recommendation.
   normalized usage/cost telemetry and safe pre-dispatch budget controls, not
   basic API-key authentication.
 - **Default CLI roster is `[agy-gemini-pro, grok, codex-luna]` proposers,
-  `[qwen, kimi, opus]` refiners, and `codex-sol` aggregator at `xhigh`** using the
+  `[qwen, deepseek, opus]` refiners, and `codex-sol` aggregator at `xhigh`** using the
   `{agy, codex, claude, opencode}` harnesses. The Web UI Thorough preset replaces
   Luna with GLM 5.2 beside Terra so all four proposer lanes come from independent
   labs. Cursor is unsupported. DeepSeek V4 Pro/Flash remain optional curated
   routes outside recommended presets. The model defaults are
   Gemini 3.1 Pro High, Grok 4.5, GPT-5.6 Luna, Qwen
-  `qwen3.8-max-preview`, Kimi K3, Claude Opus 5 (`claude-opus-5`),
+  `qwen3.8-max-preview`, DeepSeek V4 Pro, Claude Opus 5 (`claude-opus-5`),
   and `gpt-5.6-sol` at `xhigh` for synthesis. Fable 5 is an
   aggregator-only, warning-gated alternative and is never a proposer or
   refiner. It is a default, not a cap—the roster is pure config (built-in names,
@@ -93,7 +93,7 @@ Rule 2 is non-negotiable. Rule 1 is a strong recommendation.
   `MOA_PROVIDER_<NAME>` env shorthand). OpenCode-backed routes use a
   `provider/model` string, but a new *harness* needs its own adapter—open an
   issue first. Stable provider names
-  such as `sonnet`, `opus`, `qwen`, and `kimi` are compatibility/configuration
+  such as `sonnet`, `opus`, `qwen`, and `deepseek` are compatibility/configuration
   identifiers; manifests and the Web UI record their resolved current model.
 
 ## Config surface

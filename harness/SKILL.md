@@ -3,7 +3,7 @@ name: mixture-of-agents
 description: |
   Run a non-trivial planning task through a layered ensemble of frontier models
   from distinct labs (proposers Gemini 3.1 Pro high + Grok 4.5 + GPT-5.6 Luna;
-  refiners qwen3.8-max-preview + Kimi K3 + Claude Opus 5 high) before producing a final implementation
+  refiners qwen3.8-max-preview + DeepSeek V4 Pro + Claude Opus 5 high) before producing a final implementation
   plan. The configured proposers run in parallel, broadcast refiners (each
   sees all proposals) verify and cross-check, then GPT-5.6 Sol at `xhigh`
   (stable provider name `codex-sol`) aggregates through the recorded Layer 3
@@ -35,7 +35,7 @@ frontier models from three different labs (Google's Gemini 3.1 Pro through
 AGY, xAI's Grok 4.5 through OpenCode, and OpenAI's GPT-5.6 Luna through
 Codex) — each produce an independent plan grounded in real repo
 code AND aggressive web research, then the refiners (default
-`qwen`/qwen3.8-max-preview + `kimi`/kimi-k3 + `opus`/claude-opus-5 high)
+`qwen`/qwen3.8-max-preview + `deepseek`/deepseek-v4-pro + `opus`/claude-opus-5 high)
 broadcast-refine by reading all the proposals and producing cross-verifications,
 then `codex-sol`/gpt-5.6-sol at `xhigh` synthesizes everything into a final
 actionable plan through the recorded Layer 3 path.
@@ -83,8 +83,8 @@ Layer 2 — Broadcast refiners               (3 parallel; each sees ALL valid pr
    ├─ qwen refines the broadcast (opencode @ qwen3.8-max-preview; 600s cap)
    │     └→ .moa/<session>/layer2/qwen-refiner-broadcast.json
    │
-   ├─ kimi refines the broadcast (opencode @ kimi-k3)
-   │     └→ .moa/<session>/layer2/kimi-refiner-broadcast.json
+   ├─ deepseek refines the broadcast (opencode @ deepseek-v4-pro)
+   │     └→ .moa/<session>/layer2/deepseek-refiner-broadcast.json
    │
    └─ opus refines the broadcast (claude-opus-5 @ high)
          └→ .moa/<session>/layer2/opus-refiner-broadcast.json
@@ -115,7 +115,7 @@ subprocess phase.
 
 ### Why every default stage uses different labs
 
-Gemini, Grok, and GPT-5.6 Luna propose; Qwen, Kimi, and Opus review; GPT-5.6
+Gemini, Grok, and GPT-5.6 Luna propose; Qwen, DeepSeek, and Opus review; GPT-5.6
 Sol aggregates at `xhigh`. The proposer and aggregator stages intentionally
 share OpenAI, but every recommended refiner remains independent of the
 aggregator. Fable is an optional quota-heavy Claude aggregator only and is
@@ -193,7 +193,7 @@ them in this precedence
 
 1. `MOA_PROPOSERS` / `MOA_REFINERS` env vars (comma-separated names)
 2. `harness/config.yaml` → `layers.proposers` / `layers.refiners`
-3. Defaults: `[agy-gemini-pro, grok, codex-luna]`, `[qwen, kimi, opus]`,
+3. Defaults: `[agy-gemini-pro, grok, codex-luna]`, `[qwen, deepseek, opus]`,
    aggregator `codex-sol` at `xhigh`
 
 User-defined provider names declared under `providers:` in
@@ -375,7 +375,7 @@ the whole point of the planning phase was deliberation.
 - `scripts/install_deps.py` — dependency check / bootstrap
 - `scripts/test_offline.py` — offline smoke test for parsing + schema layers
 - `scripts/adapters/codex.py` — codex CLI subprocess wrapper
-- `scripts/adapters/opencode.py` — OpenCode CLI subprocess wrapper (Grok, Qwen, Kimi)
+- `scripts/adapters/opencode.py` — OpenCode CLI subprocess wrapper (Grok, Qwen, DeepSeek)
 - `scripts/adapters/claude.py` — claude CLI subprocess wrapper (sonnet proposer)
 - `scripts/adapters/agy.py` — Antigravity wrapper for consumer Google accounts
 - `scripts/schemas/proposer.schema.json` — JSON Schema for Layer 1 outputs
@@ -395,7 +395,7 @@ planning rather than chat-answer ensembling. Differences from the paper:
 - **Heterogeneous, not homogeneous.** The paper showed cross-lab beats
   same-model temperature sampling; we keep that result. The default roster
   spans Google (Gemini Pro) + xAI (Grok) + OpenAI (Luna) across the
-  proposers, with Alibaba (Qwen), Moonshot (Kimi), and Anthropic (Opus)
+  proposers, with Alibaba (Qwen), DeepSeek, and Anthropic (Opus)
   joining at the refiner layer and OpenAI (Sol) aggregating. Refiner
   independence from the aggregator is the protected boundary.
 - **Broadcast refinement, paper-faithful.** Every refiner sees every
@@ -404,7 +404,7 @@ planning rather than chat-answer ensembling. Differences from the paper:
   this.
 - **3 refiners for Balanced.** Each refiner sees every proposal, but the
   three labs bring different review priors: Qwen for broad technical
-  validation, Kimi for an additional independent synthesis check, and Opus
+  validation, DeepSeek for an additional independent synthesis check, and Opus
   for deeper adversarial critique.
 - **Recorded synthesis by default.** GPT-5.6 Sol at `xhigh` produces the final
   phase through the Codex adapter, preserving schema validation, exact

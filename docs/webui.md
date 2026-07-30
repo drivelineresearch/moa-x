@@ -66,18 +66,23 @@ and the strongest synthesis route in every run:
 
 | Mode | Proposers | Broadcast refiners | Aggregator |
 |---|---|---|---|
-| Quick | Gemini Pro `low`; Grok 4.5 | Kimi K3 | GPT-5.6 Sol `xhigh` |
-| Balanced | Gemini Pro `high`; Grok 4.5; GPT-5.6 Luna `medium` | Qwen 3.8; Kimi K3; Opus `high` | GPT-5.6 Sol `xhigh` |
-| Thorough | Gemini Pro `high`; Grok 4.5; GPT-5.6 Terra `high`; GLM 5.2 | Qwen 3.8; Kimi K3; Opus `max` | GPT-5.6 Sol `xhigh` |
+| Quick | Gemini Pro `low`; Grok 4.5 | DeepSeek V4 Pro | GPT-5.6 Sol `xhigh` |
+| Balanced | Gemini Pro `high`; Grok 4.5; GPT-5.6 Luna `medium` | Qwen 3.8; DeepSeek V4 Pro; Opus `high` | GPT-5.6 Sol `xhigh` |
+| Thorough | Gemini Pro `high`; Grok 4.5; GPT-5.6 Terra `high`; GLM 5.2 | Qwen 3.8; DeepSeek V4 Pro; Opus `max` | GPT-5.6 Sol `xhigh` |
 
 Gemini Pro stays in the proposal layer because it contributes a
 Google-native research lane before the ensemble converges. Grok contributes
 the xAI proposal lane, Luna joins at Balanced, and Terra joins at Thorough.
-Kimi K3 is the Quick reviewer and remains in the full broadcast-review set
-alongside Qwen and Opus at higher depths. Every named default lane comes from
-a distinct lab within its own layer, and all recommended refiners are
+DeepSeek V4 Pro is the Quick reviewer and remains in the full broadcast-review
+set alongside Qwen and Opus at higher depths. Every named default lane comes
+from a distinct lab within its own layer, and all recommended refiners are
 lab-independent from the OpenAI aggregator. GPT-5.6 Sol remains the selected
 `xhigh` aggregator in every recommended mode.
+
+Kimi K3 remains visible on the OpenCode provider page only for archived
+provenance. New launches are disabled because OpenCode Go repeatedly rejects
+the route before inference with `Provider rate limit exceeded`, including when
+balance fallback is enabled.
 
 Claude Opus 5 is available as a normal aggregator alternative. Fable 5 is
 available as an aggregator-only alternative. Selecting Fable opens a

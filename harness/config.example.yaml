@@ -9,7 +9,7 @@
 #   fable          -> Claude Code / claude-fable-5 (xhigh; aggregator only)
 #   agy-gemini-pro -> AGY / gemini-3.1-pro-high
 #   grok           -> OpenCode Go / grok-4.5
-#   kimi           -> OpenCode Go / kimi-k3
+#   kimi           -> OpenCode Go / kimi-k3 (disabled; archived provenance only)
 #   qwen           -> Qwen Token Plan / qwen3.8-max-preview
 #   qwen-opencode  -> OpenCode Go / qwen3.7-max
 #   glm            -> OpenCode Go / glm-5.2 (Thorough proposer)
@@ -23,7 +23,7 @@
 # aggregator; Gemini Pro and Grok enter the evidence pipeline immediately.
 layers:
   proposers: [agy-gemini-pro, grok, codex-luna]
-  refiners: [qwen, kimi, opus]
+  refiners: [qwen, deepseek, opus]
   aggregator: codex-sol
   skip_refinement: false
 
@@ -39,7 +39,7 @@ layers:
 #
 # layers:
 #   proposers: [agy-gemini-pro, grok, codex-luna]
-#   refiners: [qwen, kimi, opus, custom-reviewer]
+#   refiners: [qwen, deepseek, opus, custom-reviewer]
 #   aggregator: codex-sol
 #
 # Secrets belong in .env or the shell, never in this file. Qwen Token Plan

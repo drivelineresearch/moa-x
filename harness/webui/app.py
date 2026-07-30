@@ -938,10 +938,13 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             ]
             if disallowed:
                 names = ", ".join(disallowed)
+                if disallowed == ["fable"]:
+                    detail = "Fable models are aggregator-only"
+                else:
+                    detail = "the route is disabled or restricted to another role"
                 return _error(
                     f"{names} {'is' if len(disallowed) == 1 else 'are'} "
-                    f"not allowed in the {role} layer; Fable models are "
-                    "aggregator-only"
+                    f"not allowed in the {role} layer; {detail}"
                 )
         profile_id = profile["id"]
 

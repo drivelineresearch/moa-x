@@ -7,7 +7,7 @@ repo-grounded implementation planning.
 ```mermaid
 flowchart LR
   S["Scout brief"] --> P["Proposers: Gemini Pro + Grok 4.5 + GPT-5.6 Luna"]
-  P --> R["Broadcast refiners: Qwen 3.8 + Kimi K3 + Claude Opus 5"]
+  P --> R["Broadcast refiners: Qwen 3.8 + DeepSeek V4 Pro + Claude Opus 5"]
   R --> A["Aggregator: GPT-5.6 Sol xhigh default; Opus or gated Fable alternatives"]
   A --> O["Final plan + decision lineage + report"]
 ```
@@ -21,7 +21,7 @@ brief with focus files, explicit scope, and shared attachment context.
 research, Grok contributes an xAI lane, and GPT-5.6 Luna contributes an
 OpenAI planning lane. They run in parallel and cannot see each other's work.
 
-**Layer 2: broadcast refinement.** Qwen, Kimi K3, and Claude Opus each receive
+**Layer 2: broadcast refinement.** Qwen, DeepSeek V4 Pro, and Claude Opus each receive
 every surviving proposal. They verify claims, identify disagreements, add
 missing evidence, and produce structured review output. Broadcast refinement
 is paper-faithful and gives every reviewer the same comparison surface.
@@ -42,17 +42,17 @@ A route is a `{name, harness, model}` triple:
 - `model` is the exact model id sent to that CLI.
 
 The producing model lab is a separate field. This distinction is
-load-bearing: OpenCode executes xAI, Moonshot, and Alibaba routes but is not
+load-bearing: OpenCode executes xAI, DeepSeek, Zhipu, and Alibaba routes but is not
 itself a model lab. The Web UI therefore groups and illustrates routes by
 `lab_id`, while the provider-health page reports the execution harness used to
 reach those labs. The canonical mapping and asset names live in
 `harness/scripts/model_labs.py`.
 
 Unknown custom routes receive an `independent` lab identity until their model
-prefix can be mapped explicitly. Historical GLM, DeepSeek, Composer, and
-Cursor-Grok manifests remain attributable for archive rendering. GLM 5.2 and
-DeepSeek V4 Pro/Flash are again available as optional curated routes after live
-full-schema qualification; none is in a recommended preset.
+prefix can be mapped explicitly. Historical Moonshot, GLM, DeepSeek, Composer,
+and Cursor-Grok manifests remain attributable for archive rendering. GLM 5.2
+and DeepSeek V4 Pro/Flash are available after live full-schema qualification;
+GLM is a Thorough proposer and DeepSeek V4 Pro is a recommended refiner.
 
 ## Why this roster
 
@@ -61,7 +61,7 @@ full-schema qualification; none is in a recommended preset.
 - Grok enters every mode as an independent xAI proposal lane.
 - Balanced adds GPT-5.6 Luna; Thorough adds GPT-5.6 Terra for a deeper OpenAI
   proposer pass without relying on the less reliable retired routes.
-- Kimi is present in every refinement profile.
+- DeepSeek V4 Pro is present in every refinement profile.
 - Qwen and Opus join Balanced and Thorough; Opus uses high and max effort,
   respectively.
 - The recommended refiners remain lab-independent from the OpenAI aggregator.
@@ -72,8 +72,9 @@ incomplete GLM output and schema-invalid DeepSeek output, so both were removed
 from the curated surface. DeepSeek V4 Pro later passed the repaired adapter's
 full proposer contract on its first attempt. GLM and DeepSeek Flash each
 truncated once and passed the single redispatch allowed by the real pipeline.
-All three returned as optional routes without changing the
-reliability-weighted defaults.
+DeepSeek V4 Pro is now a reliability-weighted default refiner. Kimi K3 remains
+attributable in archives but is disabled for new runs after its OpenCode Go
+route repeatedly failed before inference.
 
 ## OpenCode output handling
 

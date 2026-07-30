@@ -97,7 +97,10 @@ ROUTE_META: dict[str, dict[str, Any]] = {
     "kimi": {
         "label": "Kimi K3",
         "lab_id": "moonshot",
-        "roles": ["proposer", "refiner"],
+        # Retained for archived manifests and explicit CLI compatibility.
+        # The Web UI blocks new launches because the OpenCode Go route rejects
+        # requests before inference even when balance fallback is enabled.
+        "roles": [],
     },
     "qwen": {
         "label": "Qwen 3.8 Max Preview · Token Plan",

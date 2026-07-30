@@ -1,10 +1,11 @@
 """OpenCode CLI adapter (multi-lab via `opencode run`).
 
 Invokes `opencode run` headlessly. OpenCode is transport for several unrelated
-model labs; the curated roster currently uses Kimi (Moonshot), Qwen (Alibaba),
-and Grok (xAI). User-defined routes may target other OpenCode providers.
-Model ids are `provider/model` strings, e.g. `opencode-go/kimi-k3`,
-`opencode-go/grok-4.5`, or `qwen-token-plan/qwen3.8-max-preview`.
+model labs; the curated roster currently uses DeepSeek, Qwen (Alibaba), and
+Grok (xAI). Kimi remains resolvable only for archived provenance. User-defined
+routes may target other OpenCode providers. Model ids are `provider/model`
+strings, e.g. `opencode-go/deepseek-v4-pro`, `opencode-go/grok-4.5`, or
+`qwen-token-plan/qwen3.8-max-preview`.
 
 OpenCode has no JSON envelope in default text mode — the model's final
 text goes straight to stdout, so we pull the inner JSON payload with the

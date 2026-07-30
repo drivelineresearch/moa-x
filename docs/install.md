@@ -24,19 +24,18 @@ codex login
 agy install
 agy models
 
-# OpenCode (drives Grok plus the Qwen/Kimi routes)
+# OpenCode (drives Grok plus the Qwen/DeepSeek routes)
 curl -fsSL https://opencode.ai/install | bash
 # or: npm i -g opencode-ai
 opencode auth login    # interactive login
 # or export a provider key (no login needed):
-#   export MOONSHOT_API_KEY=...    # Kimi
 #   export QWEN_TOKEN_PLAN_API_KEY=sk-sp-...  # default Qwen refiner
 ```
 
 The Balanced default roster uses Gemini 3.1 Pro, Grok 4.5, and GPT-5.6 Luna as
-proposers; Qwen 3.8, Kimi K3, and Claude Opus 5 at `high` as refiners; and
+proposers; Qwen 3.8, DeepSeek V4 Pro, and Claude Opus 5 at `high` as refiners; and
 GPT-5.6 Sol at `xhigh` as the aggregator. That keeps the default lane
-lab-diverse across Google, xAI, OpenAI, Alibaba, Moonshot, and Anthropic.
+lab-diverse across Google, xAI, OpenAI, Alibaba, DeepSeek, and Anthropic.
 Fable 5 1M at `xhigh` is an optional, quota-heavy Claude aggregator and
 is never eligible as a proposer or refiner.
 

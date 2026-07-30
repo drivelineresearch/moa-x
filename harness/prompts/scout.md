@@ -92,7 +92,7 @@ Render the brief in markdown for human review. Then ask via `AskUserQuestion`,
 `agy-gemini-pro + grok + codex-luna`. Read the active proposer/refiner sets from
 (highest precedence first) `MOA_PROPOSERS` / `MOA_REFINERS` env vars,
 then `harness/config.yaml`'s `layers.proposers` / `layers.refiners`, then
-the defaults `[agy-gemini-pro, grok, codex-luna]` and `[qwen, kimi, opus]`.
+the defaults `[agy-gemini-pro, grok, codex-luna]` and `[qwen, deepseek, opus]`.
 User-defined
 names from the `providers:` block (e.g. `custom-reviewer`) are valid and must
 be shown verbatim. Honor `MOA_SKIP_LAYER2` / `layers.skip_refinement` by

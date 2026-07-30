@@ -15,7 +15,7 @@ The roster is config-driven
 
   Layer 2 (Refiners, parallel, broadcast):
     - qwen (qwen3.8-max-preview, Alibaba via Qwen Token Plan; sees ALL outputs)
-    - kimi (kimi-k3, Moonshot via OpenCode Go; sees ALL outputs)
+    - deepseek (DeepSeek V4 Pro via OpenCode Go; sees ALL outputs)
     - opus (claude-opus-5 @ high, Anthropic; sees ALL proposer outputs)
 
   Layer 3 (Aggregator):
@@ -465,7 +465,7 @@ def _build_refiner_prompt(
 
     Under paper-faithful broadcast refinement, the refiner sees ALL proposer
     outputs (not just one). The refiner_id identifies which refiner is
-    running (e.g. codex or kimi).
+    running (e.g. codex or deepseek).
     """
     template = REFINER_PROMPT_PATH.read_text(encoding="utf-8")
 

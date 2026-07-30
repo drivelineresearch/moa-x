@@ -1192,7 +1192,7 @@ def test_config_load_resolved_end_to_end() -> bool:
           custom-grok: {harness: opencode, model: grok-4.20}
         layers:
           proposers: [codex, codex-luna, custom-grok]
-          refiners:  [codex, kimi]
+          refiners:  [codex, deepseek]
     """)
     with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
         f.write(yaml_text)
@@ -1923,7 +1923,9 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
         and by_id["grok"]["default_roles"] == ["proposer"]
         and by_id["codex-luna"]["default_roles"] == ["proposer"]
         and by_id["qwen"]["default_roles"] == ["refiner"]
-        and by_id["kimi"]["default_roles"] == ["refiner"]
+        and by_id["deepseek"]["default_roles"] == ["refiner"]
+        and by_id["kimi"]["default_roles"] == []
+        and by_id["kimi"]["roles"] == []
         and by_id["opus"]["default_roles"] == ["refiner"]
         and by_id["codex-sol"]["default_roles"] == ["aggregator"]
         and by_id["fable"]["default_roles"] == []
@@ -1937,10 +1939,10 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
         snippet in app_js
         for snippet in (
             'preferred: ["agy-gemini-pro", "grok"]',
-            'refiner: { preferred: ["kimi"], limit: 1 }',
+            'refiner: { preferred: ["deepseek"], limit: 1 }',
             'preferred: ["agy-gemini-pro", "grok", "codex-luna"]',
             'preferred: ["agy-gemini-pro", "grok", "codex", "glm"]',
-            'preferred: ["qwen", "kimi", "opus"]',
+            'preferred: ["qwen", "deepseek", "opus"]',
             'efforts: { opus: "max" }',
             'preferred: ["codex-sol"]',
             'efforts: { "codex-sol": "xhigh" }',
@@ -2037,12 +2039,15 @@ def test_google_provider_builtins_are_default_and_resolve() -> bool:
         and agy_effort_override.model == "gemini-3.1-pro-high"
         and agy_effort_override.effort == "high"
         and proposer_names == ["agy-gemini-pro", "grok", "codex-luna"]
-        and refiner_names == ["qwen", "kimi", "opus"]
+        and refiner_names == ["qwen", "deepseek", "opus"]
         and defaults.aggregator is not None
         and defaults.aggregator.name == "codex-sol"
         and fable.harness == "claude"
         and fable.model == "claude-fable-5"
         and harness_config.provider_allows_role("fable", "aggregator")
+        and not harness_config.provider_allows_role(
+            "custom-kimi", "refiner", "opencode-go/kimi-k3"
+        )
         and not harness_config.provider_allows_role("fable", "proposer")
         and not harness_config.provider_allows_role("fable", "refiner")
         and harness_config.provider_allows_role(

@@ -130,6 +130,7 @@ BUILTIN_PROVIDERS: dict[str, ResolvedProvider] = {
 
 PROVIDER_ALLOWED_ROLES: dict[str, frozenset[str]] = {
     "fable": frozenset({"aggregator"}),
+    "kimi": frozenset(),
 }
 
 
@@ -140,11 +141,15 @@ def provider_allows_role(
 ) -> bool:
     """Return whether a route is allowed in a pipeline role.
 
-    The Fable restriction follows both the curated route id and the model id so
-    a user-defined alias cannot move the quota-intensive model upstream.
+    Fable is aggregator-only. Kimi K3 remains resolvable for archived
+    provenance but is blocked from every new pipeline role because its
+    OpenCode Go route currently rejects requests before inference.
     """
-    if str(model or "").lower().startswith("claude-fable-"):
+    model_id = str(model or "").lower()
+    if model_id.startswith("claude-fable-"):
         return role == "aggregator"
+    if model_id.endswith("/kimi-k3"):
+        return False
     return role in PROVIDER_ALLOWED_ROLES.get(
         name, frozenset({"proposer", "refiner", "aggregator"})
     )
@@ -454,7 +459,7 @@ class LoadedConfig:
 
 # Default layer assignments when no YAML / env override is set.
 _DEFAULT_PROPOSERS = ["agy-gemini-pro", "grok", "codex-luna"]
-_DEFAULT_REFINERS = ["qwen", "kimi", "opus"]
+_DEFAULT_REFINERS = ["qwen", "deepseek", "opus"]
 _DEFAULT_AGGREGATOR = "codex-sol"
 
 

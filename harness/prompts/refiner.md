@@ -12,7 +12,7 @@ what the aggregator should do about each disagreement.
 This is the broadcast refiner layer of the mixture-of-agents pipeline,
 modeled on the 2024 MoA paper (arXiv:2406.04692), which uses
 full-broadcast refinement (every refiner sees every proposal). The default
-refiners are `qwen` (Alibaba qwen3.8-max-preview), `kimi` (Moonshot Kimi K3),
+refiners are `qwen` (Alibaba qwen3.8-max-preview), `deepseek` (DeepSeek V4 Pro),
 and `opus` (Anthropic Claude Opus 5 at high reasoning); GPT-5.6 Sol
 aggregates at `xhigh`. All three reviewer labs are independent of the OpenAI
 aggregator and of the default proposer labs.

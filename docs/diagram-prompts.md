@@ -8,7 +8,7 @@ The brand images are current and live:
 
 The banner reflects the cross-lab ensemble theme. The next workflow image should
 show the current Balanced proposers (Gemini Pro, Grok 4.5, and GPT-5.6 Luna),
-current broadcast refiners (Qwen 3.8, Kimi K3, and Claude Opus 5), GPT-5.6 Sol
+current broadcast refiners (Qwen 3.8, DeepSeek V4 Pro, and Claude Opus 5), GPT-5.6 Sol
 `xhigh` default aggregation, the warning-gated optional Fable aggregator, and the
 generated plan/report artifacts. The prompts below are the source of truth for
 regenerating or tweaking them — keep the same style so the pair stays visually
@@ -57,7 +57,7 @@ Z-path exactly as written below.
 > ③ BROADCAST REFINERS (bottom-left quadrant): three people at desks reviewing
 > cork boards labeled "ALL VALID PROPOSALS" (every refiner receives the complete
 > surviving proposal set). A TEAL desk labeled "Qwen 3.8", a VIOLET desk
-> labeled "Kimi K3", and an ORANGE desk labeled "Opus 5". Add a "VERIFIED"
+> labeled "DeepSeek V4 Pro", and an ORANGE desk labeled "Opus 5". Add a "VERIFIED"
 > stamp on one desk.
 >
 > ④ AGGREGATOR (bottom-right quadrant): a pair of hands in orange sleeves
@@ -73,15 +73,15 @@ Z-path exactly as written below.
 > from the proposers; teal, violet, and orange from the refiners). Along the very bottom,
 > below the grid, a thin horizontal ruler/measuring line with the caption
 > "~12–25 min wall-clock". Overall palette: Google blue, OpenAI green,
-> Anthropic orange, Qwen teal, Kimi blue, xAI violet, and OpenAI green on light gray. No photorealism, no
+> Anthropic orange, Qwen teal, DeepSeek navy, xAI violet, and OpenAI green on light gray. No photorealism, no
 > heavy-3D render — keep the flat illustrated cel-shaded look.
 
 Notes for whoever runs it:
 - Image models render obscure logos unreliably — the desk-front **text labels**
-  (`Gemini Pro`, `Grok 4.5`, `GPT-5.6 Luna`, `GPT-5.6 Terra`, `Qwen 3.8`, `Kimi K3`, `Opus 5`,
+  (`Gemini Pro`, `Grok 4.5`, `GPT-5.6 Luna`, `GPT-5.6 Terra`, `Qwen 3.8`, `DeepSeek V4 Pro`, `Opus 5`,
   `GPT-5.6 Sol`, `Fable 5 1M`) carry
   the identification; logo motifs are nice-to-have accents, not load-bearing.
-- Keep Qwen and Kimi in Layer 2. Keep Grok in Layer 1. Do not repeat the same
+- Keep Qwen and DeepSeek in Layer 2. Keep Grok in Layer 1. Do not repeat the same
   route or model in multiple stages.
 - Keep the image focused on the default recorded GPT-5.6 Sol route.
 

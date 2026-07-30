@@ -16,7 +16,7 @@
     "agent_id": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]{0,31}$",
-      "description": "Identifier of the proposer agent that produced this output. Lowercase, dash-separated, 1-32 chars. Curated routes include agy-gemini-pro, grok, codex-luna, codex, sonnet, qwen, qwen-opencode, kimi, and opus. User-named providers follow the same pattern."
+      "description": "Identifier of the proposer agent that produced this output. Lowercase, dash-separated, 1-32 chars. Curated routes include agy-gemini-pro, grok, codex-luna, codex, sonnet, qwen, qwen-opencode, deepseek, and opus. User-named providers follow the same pattern."
     },
     "summary": {
       "type": "string",
