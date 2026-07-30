@@ -54,6 +54,9 @@ versioning.
 
 ### Fixed
 
+- Live agent lanes now keep static model-lab characters in face-aware focal
+  crops while queued, working, completed, failed, blocked, and cancelled
+  states use distinct colors and icons. Active lanes use a CSS-only spinner.
 - Phase-split and redispatched runs now preserve the original session start in
   their manifests. Reports also repair v0.4.1-and-older phase-local timing from
   retained agent timestamps, fixing truncated wall-clock totals and Layer 1

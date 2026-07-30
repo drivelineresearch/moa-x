@@ -39,6 +39,13 @@ harnesses such as OpenCode or AGY must never determine character identity.
 Unknown custom routes use the `independent` lab set. Do not reintroduce
 `provider-*` or harness-keyed `pixel-*` assets.
 
+Live agent lanes keep that lab character static while work is in progress.
+Lifecycle is communicated separately with a text label, icon, state-specific
+color, and a CSS-only spinner for active work. Per-lab focal crops belong in
+`harness/webui/static/css/app.css`; verify both desktop and mobile crops so
+faces remain visible without restoring the empty frame baked into the source
+art. Do not generate animated running/queued/completed variants.
+
 When contributing new assets:
 
 - use work you created or have clear redistribution rights to;

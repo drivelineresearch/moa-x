@@ -127,7 +127,10 @@ then `harness/config.yaml`, then built-in defaults. Loader lives at
   roster group, review node, live lane, health-card portrait, archived run,
   and responsive state must resolve `lab_id` through
   `harness/scripts/model_labs.py`. Unknown custom routes use the independent
-  lab fallback. Never add `provider-*` or harness-keyed `pixel-*` art.
+  lab fallback. Live-lane art stays static: CSS color, icon, and spinner own
+  lifecycle state, and lab-specific focal crops must retain faces at desktop
+  and mobile sizes. Never add `provider-*`, harness-keyed `pixel-*`, or
+  per-state animated art.
   → `docs/assets.md`.
 - **Don't guess opencode `run` flags — they contradict the published docs.** No
   `-q`/`--auto`; auto-approve is `--dangerously-skip-permissions`; no stdin

@@ -1753,8 +1753,15 @@ function agentStateCopy(agent) {
   return "Waiting for the worker to report this lane’s state.";
 }
 
-function agentArtwork(visual, status) {
-  return { still: visual.pixel, src: visual.pixel };
+function agentStatusLabel(status) {
+  return {
+    running: "Working",
+    queued: "Queued",
+    completed: "Complete",
+    failed: "Failed",
+    blocked: "Blocked",
+    cancelled: "Cancelled",
+  }[status] || titleCase(status);
 }
 
 function renderAgents(job) {
@@ -1762,9 +1769,9 @@ function renderAgents(job) {
   $("#agent-grid").innerHTML = agents.length ? agents.map((agent) => {
     const visual = agentVisual(agent);
     const status = jobStatus(agent);
-    const artwork = agentArtwork(visual, status);
+    const statusLabel = agentStatusLabel(status);
     return `
-    <article class="agent-card agent-card-${escapeHtml(status)}">
+    <article class="agent-card agent-card-${escapeHtml(status)}" data-agent-status="${escapeHtml(status)}">
       <div class="agent-card-layout">
         <div class="agent-card-copy">
           <div class="agent-card-head">
@@ -1773,13 +1780,10 @@ function renderAgents(job) {
           <p class="agent-summary">${escapeHtml(agentStateCopy(agent))}</p>
           <div class="agent-timing"><span>${escapeHtml(formatTime(agent.startedAt, false))}</span><span>${escapeHtml(formatDuration(agent.startedAt, agent.finishedAt || Date.now()))}</span></div>
         </div>
-        <figure class="agent-pixel-stage is-${escapeHtml(status)} accent-${escapeHtml(visual.accent)}" aria-label="${escapeHtml(`${visual.label} character: ${titleCase(agent.status)}`)}">
-          <picture>
-            <source media="(prefers-reduced-motion: reduce)" srcset="${escapeHtml(artwork.still)}">
-            <img src="${escapeHtml(artwork.src)}" alt="" width="320" height="320">
-          </picture>
+        <figure class="agent-pixel-stage is-${escapeHtml(status)} accent-${escapeHtml(visual.accent)}" data-lab-id="${escapeHtml(visual.id)}" aria-label="${escapeHtml(`${visual.label} character, ${statusLabel}`)}">
+          <img src="${escapeHtml(visual.pixel)}" alt="" width="320" height="320">
           <figcaption>
-            <span class="status-tag ${escapeHtml(status)}">${escapeHtml(titleCase(agent.status))}</span>
+            <span class="status-tag ${escapeHtml(status)}"><i class="agent-status-icon" aria-hidden="true"></i><span>${escapeHtml(statusLabel)}</span></span>
             <small>${escapeHtml(visual.label)}</small>
           </figcaption>
         </figure>

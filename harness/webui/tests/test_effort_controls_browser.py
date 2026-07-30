@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import threading
 import unittest
@@ -63,6 +64,54 @@ class EffortControlsBrowserTest(unittest.TestCase):
                     "config": {
                         "proposers": ["agy-gemini-pro", "grok", "codex-luna"],
                         "refiners": ["qwen", "kimi", "opus"],
+                        "aggregator": "codex-sol",
+                        "options": {"aggregate": True},
+                    },
+                }
+            )
+            state_session = root / "brief" / "state-audit"
+            state_session.mkdir(parents=True)
+            (state_session / "layer1-manifest.json").write_text(
+                json.dumps(
+                    {
+                        "layer1": [
+                            {
+                                "agent_id": "agy-gemini-pro",
+                                "layer": 1,
+                                "role": "proposer",
+                                "success": True,
+                                "schema_valid": True,
+                                "started_at": 100,
+                                "duration_seconds": 42,
+                            },
+                            {
+                                "agent_id": "grok",
+                                "layer": 1,
+                                "role": "proposer",
+                                "success": False,
+                                "schema_valid": False,
+                                "started_at": 100,
+                                "duration_seconds": 45,
+                                "error": "Structured response validation failed.",
+                            },
+                        ]
+                    }
+                )
+            )
+            app.extensions["moa_store"].insert_job(
+                {
+                    "id": "state-audit",
+                    "title": "Lane state visual audit",
+                    "workspace": str(root),
+                    "session_dir": str(state_session),
+                    "goal": "Exercise every live lane lifecycle treatment.",
+                    "status": "running",
+                    "phase": "layer2",
+                    "progress": 62,
+                    "imported": True,
+                    "config": {
+                        "proposers": ["agy-gemini-pro", "grok", "codex-luna"],
+                        "refiners": ["kimi", "opus", "qwen"],
                         "aggregator": "codex-sol",
                         "options": {"aggregate": True},
                     },
@@ -267,7 +316,52 @@ class EffortControlsBrowserTest(unittest.TestCase):
                 "JSON.parse(localStorage.getItem('moax.profile')).id"
             )
             self.assertTrue(store.claim_job_profile("lab-audit", profile_id))
+            self.assertTrue(store.claim_job_profile("state-audit", profile_id))
             base_url = url.rsplit("/new", 1)[0]
+            page.goto(base_url + "/runs/state-audit", wait_until="domcontentloaded")
+            page.wait_for_selector(".agent-pixel-stage")
+            page.wait_for_timeout(300)
+            stages = page.locator(".agent-pixel-stage")
+            self.assertEqual(stages.count(), 7)
+            self.assertEqual(
+                set(
+                    page.locator(".agent-card").evaluate_all(
+                        "nodes => nodes.map(node => node.dataset.agentStatus)"
+                    )
+                ),
+                {"completed", "failed", "blocked", "running", "queued"},
+            )
+            self.assertEqual(
+                page.locator(".status-tag.running span").first.inner_text(),
+                "WORKING",
+            )
+            self.assertEqual(
+                page.locator(
+                    ".status-tag.running .agent-status-icon"
+                ).first.evaluate("node => getComputedStyle(node).animationName"),
+                "spin",
+            )
+            state_colors = page.locator(
+                ".status-tag.completed, .status-tag.failed, "
+                ".status-tag.blocked, .status-tag.running, .status-tag.queued"
+            ).evaluate_all(
+                "nodes => [...new Set(nodes.map(node => "
+                "getComputedStyle(node).backgroundColor))]"
+            )
+            self.assertEqual(len(state_colors), 5)
+            self.assertEqual(stages.locator("picture").count(), 0)
+            self.assertTrue(
+                stages.evaluate_all(
+                    """nodes => nodes.every(node => {
+                      const image = node.querySelector(":scope > img");
+                      const style = getComputedStyle(image);
+                      return node.dataset.labId
+                        && node.getAttribute("aria-label")?.includes(", ")
+                        && style.objectFit === "cover"
+                        && style.transform !== "none";
+                    })"""
+                )
+            )
             for viewport in (
                 {"width": 1440, "height": 1000},
                 {"width": 390, "height": 844},
