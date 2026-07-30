@@ -29,12 +29,9 @@ Never commit `.env`, provider keys, or generated `harness/config.yaml`.
 | `codex-sol` | Codex | `gpt-5.6-sol` | proposer, refiner, aggregator | adjustable; xhigh default |
 | `fable` | Claude Code | `claude-fable-5` | aggregator only | fixed xhigh |
 
-Cursor is not a supported harness. GLM 5.2 and DeepSeek V4 Pro/Flash returned
-to the optional curated catalog after live full-schema qualification; none is
-part of the recommended presets. Pro passed its first attempt. GLM and Flash
-each produced one incomplete response and then passed the single redispatch
-allowed by the real pipeline. Archived manifests preserve every original
-model-lab identity.
+Cursor is not a supported harness. GLM 5.2 is the fourth proposer in the
+Thorough Web UI preset. DeepSeek V4 Pro/Flash remain optional curated routes.
+Archived manifests preserve every original model-lab identity.
 
 ## Default ensemble
 
@@ -52,12 +49,17 @@ The Web UI's optimized profiles use:
 |---|---|---|---|
 | Quick | Gemini Pro `low`; Grok 4.5 | Kimi K3 | GPT-5.6 Sol `xhigh` |
 | Balanced | Gemini Pro `high`; Grok 4.5; GPT-5.6 Luna `medium` | Qwen 3.8; Kimi K3; Opus `high` | GPT-5.6 Sol `xhigh` |
-| Thorough | Gemini Pro `high`; Grok 4.5; GPT-5.6 Luna `medium`; GPT-5.6 Terra `high` | Qwen 3.8; Kimi K3; Opus `max` | GPT-5.6 Sol `xhigh` |
+| Thorough | Gemini Pro `high`; Grok 4.5; GPT-5.6 Terra `high`; GLM 5.2 | Qwen 3.8; Kimi K3; Opus `max` | GPT-5.6 Sol `xhigh` |
 
 Gemini Pro enters every mode for early web evidence. Grok enters every mode as
 an independent xAI proposer. Kimi is always a refiner; Opus joins Balanced and
 Thorough. The default OpenAI aggregator stays lab-independent from all
 recommended refiners.
+
+Kimi K3 and GLM 5.2 use OpenCode Go. Go usage limits are separate from a Zen
+credit balance: enable **Use balance** in the OpenCode console to let Go fall
+back to Zen credits after a Go limit is reached. A larger MoA-X timeout does
+not resolve that provider-side limit.
 
 ## Environment variables
 

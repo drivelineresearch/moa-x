@@ -1001,7 +1001,7 @@ function optimizedProfile(preset) {
     },
     thorough: {
       proposer: {
-        preferred: ["agy-gemini-pro", "grok", "codex-luna", "codex"],
+        preferred: ["agy-gemini-pro", "grok", "codex", "glm"],
         limit: 4,
         efforts: { "agy-gemini-pro": "high" },
       },

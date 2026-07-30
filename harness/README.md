@@ -230,7 +230,8 @@ model/timeout/effort from the
 `MOA_<NAME>_TIMEOUT` / `MOA_<NAME>_EFFORT` env vars. You can also define a provider entirely from
 the environment with `MOA_PROVIDER_<NAME>=<harness>:<model>`. OpenCode model
 ids are `provider/model` strings. Current built-ins use
-`opencode-go/grok-4.5`, `opencode-go/kimi-k3`, Qwen Token Plan
+`opencode-go/grok-4.5`, `opencode-go/kimi-k3`,
+`opencode-go/glm-5.2`, Qwen Token Plan
 `qwen-token-plan/qwen3.8-max-preview`, and OpenCode Go
 `opencode-go/qwen3.7-max`.
 

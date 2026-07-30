@@ -77,11 +77,12 @@ Rule 2 is non-negotiable. Rule 1 is a strong recommendation.
   `FIREWORKS_API_KEY`, `QWEN_TOKEN_PLAN_API_KEY`, and others). The open gap is
   normalized usage/cost telemetry and safe pre-dispatch budget controls, not
   basic API-key authentication.
-- **Default roster is `[agy-gemini-pro, grok, codex-luna]` proposers,
+- **Default CLI roster is `[agy-gemini-pro, grok, codex-luna]` proposers,
   `[qwen, kimi, opus]` refiners, and `codex-sol` aggregator at `xhigh`** using the
-  `{agy, codex, claude, opencode}` harnesses. Cursor is unsupported. GLM 5.2
-  and DeepSeek V4 Pro/Flash are optional curated routes after full-schema live
-  qualification, but remain outside recommended presets. The model defaults are
+  `{agy, codex, claude, opencode}` harnesses. The Web UI Thorough preset replaces
+  Luna with GLM 5.2 beside Terra so all four proposer lanes come from independent
+  labs. Cursor is unsupported. DeepSeek V4 Pro/Flash remain optional curated
+  routes outside recommended presets. The model defaults are
   Gemini 3.1 Pro High, Grok 4.5, GPT-5.6 Luna, Qwen
   `qwen3.8-max-preview`, Kimi K3, Claude Opus 5 (`claude-opus-5`),
   and `gpt-5.6-sol` at `xhigh` for synthesis. Fable 5 is an

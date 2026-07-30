@@ -68,7 +68,7 @@ and the strongest synthesis route in every run:
 |---|---|---|---|
 | Quick | Gemini Pro `low`; Grok 4.5 | Kimi K3 | GPT-5.6 Sol `xhigh` |
 | Balanced | Gemini Pro `high`; Grok 4.5; GPT-5.6 Luna `medium` | Qwen 3.8; Kimi K3; Opus `high` | GPT-5.6 Sol `xhigh` |
-| Thorough | Gemini Pro `high`; Grok 4.5; GPT-5.6 Luna `medium`; GPT-5.6 Terra `high` | Qwen 3.8; Kimi K3; Opus `max` | GPT-5.6 Sol `xhigh` |
+| Thorough | Gemini Pro `high`; Grok 4.5; GPT-5.6 Terra `high`; GLM 5.2 | Qwen 3.8; Kimi K3; Opus `max` | GPT-5.6 Sol `xhigh` |
 
 Gemini Pro stays in the proposal layer because it contributes a
 Google-native research lane before the ensemble converges. Grok contributes

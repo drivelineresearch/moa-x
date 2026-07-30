@@ -277,6 +277,42 @@ def _extract_schema_candidate(stdout: str, required_keys: set[str]) -> Optional[
     if payload is not None or not required_keys:
         return payload
 
+    # GLM occasionally emits each subsequent proposer plan item after closing
+    # the surrounding plan/root brackets, even though the fields and remaining
+    # top-level collections are present. Re-open those item boundaries, then
+    # discard only an incomplete final research-source object if generation
+    # stopped midway through it. Accept the recovery only when the repaired
+    # object has every required proposer root key; strict schema and evidence
+    # validation still run in the orchestrator.
+    if {"plan", "research_sources"}.issubset(required_keys):
+        step_boundary = re.compile(
+            r'}(?:\]\})*\]*,?\{?"step":'
+        )
+
+        def restore_step_boundary(match: re.Match[str]) -> str:
+            previous = stdout[match.start() - 1] if match.start() else ""
+            # Some malformed boundaries retain the risks-array close outside
+            # the match; others consume it in the extra closing-bracket run.
+            return '},{"step":' if previous == "]" else ']},{"step":'
+
+        repaired = step_boundary.sub(restore_step_boundary, stdout)
+        recovered = extract_json_from_text(
+            repaired, required_keys=required_keys
+        )
+        if recovered is not None:
+            return recovered
+
+        sources_at = repaired.find('"research_sources":[')
+        cut_at = repaired.rfind(',{"url":', sources_at)
+        while sources_at >= 0 and cut_at > sources_at:
+            recovered = extract_json_from_text(
+                repaired[:cut_at] + "]}",
+                required_keys=required_keys,
+            )
+            if recovered is not None:
+                return recovered
+            cut_at = repaired.rfind(',{"url":', sources_at, cut_at)
+
     # A missing required field is schema-invalid, not unparseable. Keep a
     # root-shaped object so the orchestrator's bounded repair pass can correct
     # it. The structural-signature threshold prevents a nested object that
@@ -443,7 +479,9 @@ def run(
                     success=False, payload=None, raw_stdout=stdout_captured,
                     raw_stderr=stderr_captured, exit_code=-1,
                     duration_seconds=duration,
-                    error_message=f"timeout after {timeout_seconds}s",
+                    error_message=_timeout_error_message(
+                        timeout_seconds, stdout_captured, stderr_captured
+                    ),
                 )
         except FileNotFoundError as e:
             duration = time.monotonic() - start
@@ -517,7 +555,8 @@ def _diagnose_failure(stdout: str, stderr: str) -> tuple[str, bool]:
         re.search(
             r"\b(?:rate[ _-]*limit(?:ed)?|quota (?:exceeded|exhausted)|"
             r"insufficient (?:balance|credits?)|balance (?:exhausted|too low)|"
-            r"payment required)\b",
+            r"payment required|monthly spending limit|past invoices?|"
+            r"account [^\n]{0,80}\bsuspended)\b",
             stderr_lower,
         )
     )
@@ -545,3 +584,9 @@ def _diagnose_failure(stdout: str, stderr: str) -> tuple[str, bool]:
                 "custom provider base URL, transport, and model id."), False
     return ("opencode produced empty stdout under a clean exit (no quota/auth "
             "signal). Likely transient — one re-dispatch may recover."), True
+
+
+def _timeout_error_message(seconds: int, stdout: str, stderr: str) -> str:
+    """Preserve the provider cause when OpenCode's own retries hit our cap."""
+    diagnosis, _ = _diagnose_failure(stdout, stderr)
+    return f"timeout after {seconds}s; {diagnosis}"

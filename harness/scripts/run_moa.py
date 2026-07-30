@@ -552,6 +552,31 @@ def _finalize_result(
         / f"{layer_result.agent_id}-{layer_result.role}.json"
     )
 
+    # GLM has emitted a recognizable near-miss where it closes `plan` after
+    # the first item, then writes the next complete plan item at the root.
+    # Those five keys have an unambiguous destination. Restore that item before
+    # validation so the bounded repair pass receives the intended structure
+    # instead of being asked to infer the mapping.
+    if layer_result.role == "proposer":
+        misplaced_step_keys = (
+            "step", "why", "files_touched", "evidence", "risks"
+        )
+        plan = adapter_payload.get("plan")
+        if (
+            isinstance(plan, list)
+            and all(key in adapter_payload for key in misplaced_step_keys)
+        ):
+            plan.append({
+                key: adapter_payload.pop(key)
+                for key in misplaced_step_keys
+            })
+            print(
+                f"[orchestrator WARNING] {layer_result.agent_id}: restored "
+                "one plan item emitted at the JSON root",
+                file=sys.stderr,
+                flush=True,
+            )
+
     # Schema-unenforced refiners occasionally append a verification record to
     # `additional_research` after correctly producing the same record shape in
     # `verifications`. The fields are unambiguous, so restore the record to the

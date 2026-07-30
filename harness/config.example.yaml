@@ -12,7 +12,7 @@
 #   kimi           -> OpenCode Go / kimi-k3
 #   qwen           -> Qwen Token Plan / qwen3.8-max-preview
 #   qwen-opencode  -> OpenCode Go / qwen3.7-max
-#   glm            -> OpenCode Go / glm-5.2 (optional)
+#   glm            -> OpenCode Go / glm-5.2 (Thorough proposer)
 #   deepseek       -> OpenCode Go / deepseek-v4-pro (optional)
 #   deepseek-flash -> OpenCode Go / deepseek-v4-flash (optional)
 #
