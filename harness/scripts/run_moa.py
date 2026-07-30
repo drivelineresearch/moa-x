@@ -15,7 +15,7 @@ The roster is config-driven
 
   Layer 2 (Refiners, parallel, broadcast):
     - qwen (qwen3.8-max-preview, Alibaba via Qwen Token Plan; sees ALL outputs)
-    - kimi (kimi-k3, Moonshot via OpenCode Go; sees ALL outputs)
+    - deepseek (DeepSeek V4 Pro via OpenCode Go; sees ALL outputs)
     - opus (claude-opus-5 @ high, Anthropic; sees ALL proposer outputs)
 
   Layer 3 (Aggregator):
@@ -465,7 +465,7 @@ def _build_refiner_prompt(
 
     Under paper-faithful broadcast refinement, the refiner sees ALL proposer
     outputs (not just one). The refiner_id identifies which refiner is
-    running (e.g. codex or kimi).
+    running (e.g. codex or deepseek).
     """
     template = REFINER_PROMPT_PATH.read_text(encoding="utf-8")
 
@@ -551,6 +551,31 @@ def _finalize_result(
         / f"layer{layer_result.layer}"
         / f"{layer_result.agent_id}-{layer_result.role}.json"
     )
+
+    # GLM has emitted a recognizable near-miss where it closes `plan` after
+    # the first item, then writes the next complete plan item at the root.
+    # Those five keys have an unambiguous destination. Restore that item before
+    # validation so the bounded repair pass receives the intended structure
+    # instead of being asked to infer the mapping.
+    if layer_result.role == "proposer":
+        misplaced_step_keys = (
+            "step", "why", "files_touched", "evidence", "risks"
+        )
+        plan = adapter_payload.get("plan")
+        if (
+            isinstance(plan, list)
+            and all(key in adapter_payload for key in misplaced_step_keys)
+        ):
+            plan.append({
+                key: adapter_payload.pop(key)
+                for key in misplaced_step_keys
+            })
+            print(
+                f"[orchestrator WARNING] {layer_result.agent_id}: restored "
+                "one plan item emitted at the JSON root",
+                file=sys.stderr,
+                flush=True,
+            )
 
     # Schema-unenforced refiners occasionally append a verification record to
     # `additional_research` after correctly producing the same record shape in
@@ -736,7 +761,107 @@ def _run_sonnet(
         log_path=str(log_file.relative_to(session_dir)),
     )
     _finalize_result(layer_result, result.payload, schema_path, session_dir)
+    if _is_schema_repairable(result.payload, layer_result):
+        original_error = str(layer_result.error)
+        repair_log = session_dir / f"layer{layer}" / f"{agent_id}-{role}.repair.log"
+        repair = claude_adapter.run(
+            prompt=_build_bounded_repair_prompt(
+                result.payload, original_error, schema_path, agent_id
+            ),
+            schema_path=schema_path,
+            repo_path=session_dir,
+            model=model,
+            reasoning_effort=reasoning_effort,
+            timeout_seconds=min(timeout, 240),
+            log_file=repair_log,
+            allow_research=False,
+        )
+        _apply_bounded_repair(
+            layer_result=layer_result,
+            repair=repair,
+            original_error=original_error,
+            schema_path=schema_path,
+            session_dir=session_dir,
+            harness_label="Claude",
+        )
     return layer_result
+
+
+def _is_schema_repairable(payload: Any, layer_result: LayerResult) -> bool:
+    """Return whether one confined repair pass may fix a model response."""
+    error = str(layer_result.error or "")
+    return (
+        isinstance(payload, dict)
+        and not layer_result.success
+        and (
+            error.startswith("schema validation failed:")
+            or "evidence cross-field violations" in error
+        )
+    )
+
+
+def _build_bounded_repair_prompt(
+    payload: dict,
+    validation_error: str,
+    schema_path: Path,
+    agent_id: str,
+) -> str:
+    """Build the shared no-research prompt used by CLI-native repair calls."""
+    try:
+        schema_text = schema_path.read_text(encoding="utf-8")
+    except OSError:
+        schema_text = "{}"
+    return (
+        "Repair the JSON object below so it passes the supplied schema and "
+        "validation error exactly. Do not research, browse, inspect files, "
+        "or add commentary. Preserve every valid claim and citation. Never "
+        "invent a file, line, URL, snippet, claim, or research source. Remove "
+        "an unsupported evidence item instead of filling its missing evidence; "
+        "if that makes the schema impossible, return the object unchanged so "
+        "it fails closed. Add only required non-evidentiary structure, correct "
+        "invalid field shapes, and "
+        f"set agent_id to {json.dumps(agent_id)}. Output one JSON object.\n\n"
+        f"VALIDATION ERROR\n{validation_error}\n\n"
+        f"JSON SCHEMA\n{schema_text}\n\n"
+        "INVALID JSON\n"
+        + json.dumps(payload, ensure_ascii=False, indent=2)
+    )
+
+
+def _apply_bounded_repair(
+    *,
+    layer_result: LayerResult,
+    repair: Any,
+    original_error: str,
+    schema_path: Path,
+    session_dir: Path,
+    harness_label: str,
+) -> None:
+    """Validate one repair result without permitting a recursive retry."""
+    layer_result.duration_seconds += repair.duration_seconds
+    if repair.success and isinstance(repair.payload, dict):
+        layer_result.success = True
+        layer_result.payload = repair.payload
+        layer_result.error = None
+        layer_result.schema_valid = None
+        layer_result.transient_empty = False
+        _finalize_result(
+            layer_result, repair.payload, schema_path, session_dir
+        )
+        if layer_result.success:
+            print(
+                f"[orchestrator] {layer_result.agent_id}: repaired "
+                f"schema-invalid {harness_label} output in one bounded pass",
+                flush=True,
+            )
+            return
+        repair_error = layer_result.error or "repair remained schema-invalid"
+    else:
+        repair_error = repair.error_message or "repair returned no payload"
+    layer_result.error = (
+        f"{original_error}; bounded schema repair failed: {repair_error}"
+    )
+    layer_result.transient_empty = False
 
 
 def _run_opencode(
@@ -779,38 +904,13 @@ def _run_opencode(
         transient_empty=_has_transient_empty(result),
     )
     _finalize_result(layer_result, result.payload, schema_path, session_dir)
-    repairable = (
-        isinstance(result.payload, dict)
-        and not layer_result.success
-        and (
-            str(layer_result.error or "").startswith("schema validation failed:")
-            or "evidence cross-field violations" in str(layer_result.error or "")
-        )
-    )
-    if repairable:
+    if _is_schema_repairable(result.payload, layer_result):
         original_error = str(layer_result.error)
         repair_log = session_dir / f"layer{layer}" / f"{agent_id}-{role}.repair.log"
-        try:
-            schema_text = schema_path.read_text(encoding="utf-8")
-        except OSError:
-            schema_text = "{}"
-        repair_prompt = (
-            "Repair the JSON object below so it passes the supplied schema and "
-            "validation error exactly. Do not research, browse, inspect files, "
-            "or add commentary. Preserve every valid claim and citation. Never "
-            "invent a file, line, URL, snippet, claim, or research source. Remove "
-            "an unsupported evidence item instead of filling its missing evidence; "
-            "if that makes the schema impossible, return the object unchanged so "
-            "it fails closed. Add only required non-evidentiary structure, correct "
-            "invalid field shapes, and "
-            f"set agent_id to {json.dumps(agent_id)}. Output one JSON object.\n\n"
-            f"VALIDATION ERROR\n{original_error}\n\n"
-            f"JSON SCHEMA\n{schema_text}\n\n"
-            "INVALID JSON\n"
-            + json.dumps(result.payload, ensure_ascii=False)
-        )
         repair = opencode_adapter.run(
-            prompt=repair_prompt,
+            prompt=_build_bounded_repair_prompt(
+                result.payload, original_error, schema_path, agent_id
+            ),
             # Deliberately confine the repair pass to the session directory.
             # It has the invalid payload already and must not repeat research.
             repo_path=session_dir,
@@ -820,29 +920,16 @@ def _run_opencode(
             log_file=repair_log,
             reasoning_effort=reasoning_effort,
             allow_webfetch=False,
+            allow_tools=False,
         )
-        layer_result.duration_seconds += repair.duration_seconds
-        if repair.success and isinstance(repair.payload, dict):
-            layer_result.success = True
-            layer_result.payload = repair.payload
-            layer_result.error = None
-            layer_result.schema_valid = None
-            layer_result.transient_empty = False
-            _finalize_result(
-                layer_result, repair.payload, schema_path, session_dir
-            )
-            if layer_result.success:
-                print(
-                    f"[orchestrator] {agent_id}: repaired schema-invalid "
-                    "OpenCode output in one bounded pass",
-                    flush=True,
-                )
-        else:
-            repair_error = repair.error_message or "repair returned no payload"
-            layer_result.error = (
-                f"{original_error}; bounded schema repair failed: {repair_error}"
-            )
-            layer_result.transient_empty = False
+        _apply_bounded_repair(
+            layer_result=layer_result,
+            repair=repair,
+            original_error=original_error,
+            schema_path=schema_path,
+            session_dir=session_dir,
+            harness_label="OpenCode",
+        )
     return layer_result
 
 

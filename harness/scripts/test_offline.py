@@ -1192,7 +1192,7 @@ def test_config_load_resolved_end_to_end() -> bool:
           custom-grok: {harness: opencode, model: grok-4.20}
         layers:
           proposers: [codex, codex-luna, custom-grok]
-          refiners:  [codex, kimi]
+          refiners:  [codex, deepseek]
     """)
     with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
         f.write(yaml_text)
@@ -1260,6 +1260,42 @@ def test_opencode_extractor_rejects_valid_nested_object() -> bool:
     return _ok(payload is None, f"got {payload!r}")
 
 
+def test_opencode_extractor_restores_glm_plan_boundaries_and_truncated_source() -> bool:
+    print("\n[N] OpenCode extractor restores GLM's malformed plan mapping")
+    from adapters import opencode as opencode_adapter
+
+    fixture = _make_valid_proposer("glm")
+    second = json.loads(json.dumps(fixture["plan"][0]))
+    second["step"] = "Second recovered plan item with a distinct implementation action."
+    fixture["plan"].append(second)
+    compact = json.dumps(fixture, separators=(",", ":"))
+    malformed = compact.replace(
+        '},{"step":"Second recovered',
+        '}],"step":"Second recovered',
+        1,
+    )
+    last_source = malformed.rfind(',{"url":')
+    malformed = (
+        malformed[:last_source]
+        + ',{"url":"https://truncated.invalid","relevance":'
+    )
+    recovered = opencode_adapter._extract_schema_candidate(
+        "progress\n" + malformed,
+        set(fixture),
+    )
+    ok = (
+        recovered is not None
+        and len(recovered["plan"]) == 2
+        and recovered["plan"][1]["step"].startswith("Second recovered")
+        and recovered["research_sources"] == fixture["research_sources"][:-1]
+    )
+    return _ok(
+        ok,
+        f"plan={len(recovered['plan']) if recovered else None} "
+        f"sources={len(recovered['research_sources']) if recovered else None}",
+    )
+
+
 def test_qwen_token_plan_config_uses_env_secret() -> bool:
     print("\n[N] Qwen Token Plan OpenCode config uses the dedicated endpoint and env key")
     from adapters import opencode as opencode_adapter
@@ -1288,6 +1324,70 @@ def test_opencode_diagnose_quota_is_not_transient() -> bool:
     from adapters import opencode as opencode_adapter
     msg, transient = opencode_adapter._diagnose_failure("", SAMPLE_OPENCODE_STDERR_QUOTA)
     return _ok(transient is False and "quota" in msg.lower(), f"transient={transient}, msg={msg!r}")
+
+
+def test_opencode_timeout_preserves_quota_diagnosis() -> bool:
+    print("\n[N] OpenCode timeout preserves an underlying provider quota diagnosis")
+    from adapters import opencode as opencode_adapter
+    msg = opencode_adapter._timeout_error_message(
+        1200, "", SAMPLE_OPENCODE_STDERR_QUOTA
+    )
+    return _ok(
+        "timeout after 1200s" in msg and "quota" in msg.lower(),
+        f"msg={msg!r}",
+    )
+
+
+def test_opencode_diagnoses_suspended_billing_account() -> bool:
+    print("\n[N] OpenCode classifies a suspended provider billing account as quota")
+    from adapters import opencode as opencode_adapter
+    msg, transient = opencode_adapter._diagnose_failure(
+        "",
+        "Account example is suspended, possibly due to reaching the monthly "
+        "spending limit or failure to pay past invoices.",
+    )
+    return _ok(
+        transient is False and "quota" in msg.lower(),
+        f"transient={transient}, msg={msg!r}",
+    )
+
+
+def test_opencode_tool_size_error_is_not_quota() -> bool:
+    print("\n[N] OpenCode tool output 'exceeded' is not misreported as provider quota")
+    from adapters import opencode as opencode_adapter
+    msg, transient = opencode_adapter._diagnose_failure(
+        '{"agent_id":"kimi","reviewing":[',
+        "Error: Ripgrep JSON record exceeded 65536 bytes",
+    )
+    return _ok(
+        transient is True and "quota" not in msg.lower(),
+        f"transient={transient}, msg={msg!r}",
+    )
+
+
+def test_opencode_preserves_schema_invalid_root_for_repair() -> bool:
+    print("\n[N] OpenCode preserves a root missing one required field for repair")
+    from adapters import opencode as opencode_adapter
+
+    payload = _make_valid_broadcast_refiner("kimi")
+    payload.pop("additional_research")
+    required = set(
+        json.loads(run_moa.REFINER_SCHEMA_PATH.read_text(encoding="utf-8"))[
+            "required"
+        ]
+    )
+    extracted = opencode_adapter._extract_schema_candidate(
+        "research notes\n" + json.dumps(payload), required
+    )
+    nested = opencode_adapter._extract_schema_candidate(
+        'tool log {"agent_id":"nested","overall_verdict":"reject_all"}',
+        required,
+    )
+    ok = extracted == payload and "agent_id" in extracted and nested is None
+    return _ok(
+        ok,
+        f"keys={sorted(extracted) if extracted else None}, nested={nested!r}",
+    )
 
 
 def test_opencode_diagnose_not_found_is_not_transient() -> bool:
@@ -1337,7 +1437,7 @@ def test_opencode_model_readiness_is_route_specific() -> bool:
 
     auth = SimpleNamespace(
         returncode=0,
-        stdout="Credentials\nOpenCode Go api\n",
+        stdout="Credentials\nOpenCode Go api\nFireworks AI api\n",
         stderr="",
     )
     with (
@@ -1346,10 +1446,15 @@ def test_opencode_model_readiness_is_route_specific() -> bool:
         patch.dict(os.environ, {"QWEN_TOKEN_PLAN_API_KEY": ""}, clear=False),
     ):
         result = oc.check_models_available(
-            ["opencode-go/glm-5.2", "qwen-token-plan/qwen3.8-max-preview"]
+            [
+                "opencode-go/glm-5.2",
+                "fireworks-ai/accounts/fireworks/models/kimi-k3",
+                "qwen-token-plan/qwen3.8-max-preview",
+            ]
         )
     ok = (
         result["opencode-go/glm-5.2"][0] is True
+        and result["fireworks-ai/accounts/fireworks/models/kimi-k3"][0] is True
         and result["qwen-token-plan/qwen3.8-max-preview"][0] is False
     )
     return _ok(ok, f"got {result}")
@@ -1448,9 +1553,12 @@ def test_provider_catalog_includes_optional_builtins() -> bool:
         and catalog["codex-sol"].effort == "xhigh"
         and catalog["codex-luna"].model == "gpt-5.6-luna"
         and catalog["codex-luna"].effort == "medium"
-        and "glm" not in catalog
-        and "deepseek" not in catalog
-        and "deepseek-flash" not in catalog
+        and catalog.get("glm") is not None
+        and catalog["glm"].model == "opencode-go/glm-5.2"
+        and catalog.get("deepseek") is not None
+        and catalog["deepseek"].model == "opencode-go/deepseek-v4-pro"
+        and catalog.get("deepseek-flash") is not None
+        and catalog["deepseek-flash"].model == "opencode-go/deepseek-v4-flash"
         and "composer" not in catalog
         and "cursor-grok" not in catalog
         and catalog.get("codex-reviewer") is not None
@@ -1561,8 +1669,133 @@ def test_opencode_schema_repair_is_bounded_and_offline() -> bool:
             and repair_call["repo_path"] == session
             and repair_call["timeout_seconds"] == 240
             and repair_call["allow_webfetch"] is False
+            and repair_call["allow_tools"] is False
             and "Do not research, browse" in repair_call["prompt"]
             and "Never invent a file, line, URL, snippet, claim" in repair_call["prompt"]
+        )
+        return _ok(ok, f"success={result.success} calls={adapter_run.call_count}")
+
+
+def test_finalize_restores_proposer_step_emitted_at_root() -> bool:
+    print("\n[N] finalizer restores a complete proposer plan item emitted at root")
+    import tempfile
+
+    payload = _make_valid_proposer("glm")
+    misplaced = json.loads(json.dumps(payload["plan"][0]))
+    misplaced["step"] = "Second implementation step emitted after a premature array close."
+    payload.update(misplaced)
+    result = run_moa.LayerResult(
+        agent_id="glm",
+        layer=1,
+        role="proposer",
+        success=True,
+        payload=payload,
+    )
+    with tempfile.TemporaryDirectory() as raw:
+        session = Path(raw)
+        (session / "layer1").mkdir()
+        run_moa._finalize_result(
+            result, payload, run_moa.PROPOSER_SCHEMA_PATH, session
+        )
+    ok = (
+        result.success
+        and result.schema_valid
+        and len(payload["plan"]) == 2
+        and payload["plan"][1]["step"].startswith("Second implementation")
+        and all(
+            key not in payload
+            for key in ("step", "why", "files_touched", "evidence", "risks")
+        )
+    )
+    return _ok(ok, f"success={result.success} plan_items={len(payload['plan'])}")
+
+
+def test_opencode_repair_prompt_is_inline_and_tool_free() -> bool:
+    print("\n[N] OpenCode repair prompt avoids truncated file reads")
+    from adapters import opencode as opencode_adapter
+
+    invalid = _make_valid_proposer("glm")
+    invalid["plan"][0]["evidence"][1]["snippet"] = None
+    prompt = run_moa._build_bounded_repair_prompt(
+        invalid,
+        "evidence cross-field violations",
+        run_moa.PROPOSER_SCHEMA_PATH,
+        "glm",
+    )
+    config = opencode_adapter._config_for_model(
+        "opencode-go/glm-5.2",
+        allow_webfetch=False,
+        allow_tools=False,
+    )
+    invalid_json = prompt.split("INVALID JSON\n", 1)[1]
+    ok = (
+        config["permission"] == {"*": "deny"}
+        and len(prompt.encode("utf-8"))
+        <= opencode_adapter._MAX_INLINE_PROMPT_BYTES
+        and max(map(len, invalid_json.splitlines())) < 2000
+    )
+    return _ok(
+        ok,
+        f"bytes={len(prompt.encode('utf-8'))} "
+        f"max_line={max(map(len, invalid_json.splitlines()))}",
+    )
+
+
+def test_claude_schema_repair_is_bounded_and_tool_free() -> bool:
+    print("\n[N] Claude schema repair is one bounded, tool-free pass")
+    import tempfile
+    from unittest import mock
+    from adapters.claude import ClaudeResult
+
+    invalid = _make_valid_proposer("sonnet")
+    invalid["plan"][0]["evidence"][0]["line"] = None
+    repaired = _make_valid_proposer("sonnet")
+    first = ClaudeResult(
+        success=True,
+        payload=invalid,
+        raw_stdout=json.dumps({"structured_output": invalid}),
+        raw_stderr="",
+        exit_code=0,
+        duration_seconds=1.0,
+    )
+    second = ClaudeResult(
+        success=True,
+        payload=repaired,
+        raw_stdout=json.dumps({"structured_output": repaired}),
+        raw_stderr="",
+        exit_code=0,
+        duration_seconds=0.5,
+    )
+    with tempfile.TemporaryDirectory() as raw:
+        root = Path(raw)
+        session = root / ".moa" / "repair"
+        (session / "layer1").mkdir(parents=True)
+        with mock.patch.object(
+            run_moa.claude_adapter, "run", side_effect=[first, second]
+        ) as adapter_run:
+            result = run_moa._run_sonnet(
+                layer=1,
+                role="proposer",
+                prompt="fixture",
+                schema_path=run_moa.PROPOSER_SCHEMA_PATH,
+                repo_path=root,
+                session_dir=session,
+                timeout=900,
+                model="claude-sonnet-5",
+                agent_id="sonnet",
+                reasoning_effort="high",
+            )
+        repair_call = adapter_run.call_args_list[1].kwargs
+        ok = (
+            result.success
+            and result.schema_valid
+            and adapter_run.call_count == 2
+            and repair_call["repo_path"] == session
+            and repair_call["timeout_seconds"] == 240
+            and repair_call["allow_research"] is False
+            and "Do not research, browse" in repair_call["prompt"]
+            and "Never invent a file, line, URL, snippet, claim"
+            in repair_call["prompt"]
         )
         return _ok(ok, f"success={result.success} calls={adapter_run.call_count}")
 
@@ -1649,6 +1882,9 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
         "qwen": ("opencode", "qwen-token-plan/qwen3.8-max-preview"),
         "qwen-opencode": ("opencode", "opencode-go/qwen3.7-max"),
         "grok": ("opencode", "opencode-go/grok-4.5"),
+        "glm": ("opencode", "opencode-go/glm-5.2"),
+        "deepseek": ("opencode", "opencode-go/deepseek-v4-pro"),
+        "deepseek-flash": ("opencode", "opencode-go/deepseek-v4-flash"),
         "agy-gemini-pro": ("agy", "gemini-3.1-pro-high"),
         "fable": ("claude", "claude-fable-5"),
     }
@@ -1674,7 +1910,7 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
         and any(route["id"] == "fable" for route in groups["claude"]["routes"])
         and any(route["id"] == "qwen-opencode" for route in groups["opencode"]["routes"])
         and {route["lab_id"] for route in groups["opencode"]["routes"]}
-        == {"xai", "moonshot", "alibaba"}
+        == {"xai", "moonshot", "alibaba", "zhipu", "deepseek"}
     )
     role_ok = (
         {item["id"] for item in models if "aggregator" in item["roles"]}
@@ -1687,7 +1923,9 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
         and by_id["grok"]["default_roles"] == ["proposer"]
         and by_id["codex-luna"]["default_roles"] == ["proposer"]
         and by_id["qwen"]["default_roles"] == ["refiner"]
-        and by_id["kimi"]["default_roles"] == ["refiner"]
+        and by_id["deepseek"]["default_roles"] == ["refiner"]
+        and by_id["kimi"]["default_roles"] == []
+        and by_id["kimi"]["roles"] == []
         and by_id["opus"]["default_roles"] == ["refiner"]
         and by_id["codex-sol"]["default_roles"] == ["aggregator"]
         and by_id["fable"]["default_roles"] == []
@@ -1701,10 +1939,10 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
         snippet in app_js
         for snippet in (
             'preferred: ["agy-gemini-pro", "grok"]',
-            'refiner: { preferred: ["kimi"], limit: 1 }',
+            'refiner: { preferred: ["deepseek"], limit: 1 }',
             'preferred: ["agy-gemini-pro", "grok", "codex-luna"]',
-            'preferred: ["agy-gemini-pro", "grok", "codex-luna", "codex"]',
-            'preferred: ["qwen", "kimi", "opus"]',
+            'preferred: ["agy-gemini-pro", "grok", "codex", "glm"]',
+            'preferred: ["qwen", "deepseek", "opus"]',
             'efforts: { opus: "max" }',
             'preferred: ["codex-sol"]',
             'efforts: { "codex-sol": "xhigh" }',
@@ -1719,8 +1957,8 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
         for item in groups[provider_id]["routes"]
     )
     hidden_ok = (
-        {"codex-reviewer", "codex-aggregator", "gemini-cli-pro", "glm",
-         "deepseek", "deepseek-flash", "composer", "custom-grok"}.isdisjoint(by_id)
+        {"codex-reviewer", "codex-aggregator", "gemini-cli-pro",
+         "composer", "custom-grok"}.isdisjoint(by_id)
         and "gemini" not in groups
         and "cursor" not in groups
     )
@@ -1801,12 +2039,15 @@ def test_google_provider_builtins_are_default_and_resolve() -> bool:
         and agy_effort_override.model == "gemini-3.1-pro-high"
         and agy_effort_override.effort == "high"
         and proposer_names == ["agy-gemini-pro", "grok", "codex-luna"]
-        and refiner_names == ["qwen", "kimi", "opus"]
+        and refiner_names == ["qwen", "deepseek", "opus"]
         and defaults.aggregator is not None
         and defaults.aggregator.name == "codex-sol"
         and fable.harness == "claude"
         and fable.model == "claude-fable-5"
         and harness_config.provider_allows_role("fable", "aggregator")
+        and not harness_config.provider_allows_role(
+            "custom-kimi", "refiner", "opencode-go/kimi-k3"
+        )
         and not harness_config.provider_allows_role("fable", "proposer")
         and not harness_config.provider_allows_role("fable", "refiner")
         and harness_config.provider_allows_role(
@@ -2667,9 +2908,14 @@ def main() -> int:
         test_extractor_handles_bare_object_larger_than_scan_window,
         test_opencode_extractor_repairs_invalid_markdown_escape,
         test_opencode_extractor_rejects_valid_nested_object,
+        test_opencode_extractor_restores_glm_plan_boundaries_and_truncated_source,
         test_qwen_token_plan_config_uses_env_secret,
         test_opencode_diagnose_empty_is_transient,
         test_opencode_diagnose_quota_is_not_transient,
+        test_opencode_timeout_preserves_quota_diagnosis,
+        test_opencode_diagnoses_suspended_billing_account,
+        test_opencode_tool_size_error_is_not_quota,
+        test_opencode_preserves_schema_invalid_root_for_repair,
         test_opencode_diagnose_not_found_is_not_transient,
         test_opencode_tool_404_does_not_mask_model_output,
         test_opencode_result_carries_transient_empty_field,
@@ -2684,6 +2930,9 @@ def main() -> int:
         test_provider_catalog_includes_optional_builtins,
         test_dispatch_propagates_native_provider_effort,
         test_opencode_schema_repair_is_bounded_and_offline,
+        test_finalize_restores_proposer_step_emitted_at_root,
+        test_opencode_repair_prompt_is_inline_and_tool_free,
+        test_claude_schema_repair_is_bounded_and_tool_free,
         test_model_lab_assets_and_catalog_contract,
         test_webui_model_catalog_is_provider_grouped_and_current,
         test_finalize_moves_misplaced_refiner_verification,

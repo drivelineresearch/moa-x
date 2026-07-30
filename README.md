@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/moa-x-workflow.png" alt="MoA-X four-stage workflow: Scout and control room, Gemini Pro/Grok/GPT-5.6 Luna proposers, Qwen/Kimi/Opus broadcast refiners, and GPT-5.6 Sol aggregation with Opus and warning-gated Fable alternatives" width="100%">
+  <img src="docs/moa-x-workflow.png" alt="MoA-X four-stage workflow: Scout and control room, Gemini Pro/Grok/GPT-5.6 Luna proposers, Qwen/DeepSeek/Opus broadcast refiners, and GPT-5.6 Sol aggregation with Opus and warning-gated Fable alternatives" width="100%">
 </p>
 
 A small, CLI-native take on the 2024
@@ -21,7 +21,7 @@ from three model labs to work — Google `agy-gemini-pro`
 (`gemini-3.1-pro-high`), xAI `grok` (`opencode-go/grok-4.5`), and
 OpenAI `codex-luna` (`gpt-5.6-luna`) — reading the repo in
 parallel, doing their own web research, and each writing an independent
-plan. Three refiners—Alibaba Qwen `qwen3.8-max-preview`, Moonshot Kimi K3,
+plan. Three refiners—Alibaba Qwen `qwen3.8-max-preview`, DeepSeek V4 Pro,
 and Anthropic `claude-opus-5`—then refine in broadcast mode (every refiner
 sees every plan). The shipped defaults and all recommended Web UI modes run Layer 3
 through the recorded Codex path with `gpt-5.6-sol` at `xhigh` reasoning.
@@ -102,12 +102,12 @@ AGY is the curated Google route and reuses the account already signed into
 ```
 Layer 0 — Scout brief           (parent Claude, in-place)
 Layer 1 — Proposers (parallel)    default: Gemini Pro + Grok + GPT-5.6 Luna
-Layer 2 — Broadcast refiners      default: Qwen + Kimi + Opus, each sees ALL proposals
+Layer 2 — Broadcast refiners      default: Qwen + DeepSeek + Opus, each sees ALL proposals
 Layer 3 — Aggregator              default: recorded GPT-5.6 Sol at xhigh
 ```
 
 The roster is config-driven; every named route in the default pipeline comes
-from a deliberately named lab: Google, xAI, OpenAI, Alibaba, Moonshot, and
+from a deliberately named lab: Google, xAI, OpenAI, Alibaba, DeepSeek, and
 Anthropic. The UI groups and illustrates routes by model lab, independently
 of the CLI used to execute them.
 
@@ -176,7 +176,7 @@ remaining contributions are:
   budget control could stop later dispatches before a configured ceiling is
   exceeded; it must not pretend it can undo an already-billed request.
 - **Tested provider recipes, not just model-name examples.** Qwen Token Plan,
-  OpenCode Go Kimi, and OpenCode Go Grok routes are already built in.
+  OpenCode Go DeepSeek, GLM, and Grok routes are already built in.
   Contributions for MiniMax, Mistral,
   or another credible coding model should include a reproducible config,
   credential preflight, captured parser fixtures, and an end-to-end smoke-test

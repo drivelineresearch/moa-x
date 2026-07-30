@@ -20,22 +20,27 @@ Never commit `.env`, provider keys, or generated `harness/config.yaml`.
 | `codex` | Codex | `gpt-5.6-terra` | proposer, refiner | adjustable; high default |
 | `qwen` | OpenCode | `qwen-token-plan/qwen3.8-max-preview` | proposer, refiner | configured variant |
 | `qwen-opencode` | OpenCode | `opencode-go/qwen3.7-max` | proposer, refiner | provider-managed |
-| `kimi` | OpenCode | `opencode-go/kimi-k3` | proposer, refiner | provider-managed |
+| `kimi` | OpenCode | `opencode-go/kimi-k3` | disabled; archived provenance only | provider-managed |
+| `glm` | OpenCode | `opencode-go/glm-5.2` | proposer, refiner | provider-managed |
+| `deepseek` | OpenCode | `opencode-go/deepseek-v4-pro` | proposer, refiner | provider-managed |
+| `deepseek-flash` | OpenCode | `opencode-go/deepseek-v4-flash` | proposer, refiner | provider-managed |
 | `sonnet` | Claude Code | `claude-sonnet-5` | proposer, refiner | adjustable; high default |
 | `opus` | Claude Code | `claude-opus-5` | proposer, refiner, aggregator | adjustable; high default |
 | `codex-sol` | Codex | `gpt-5.6-sol` | proposer, refiner, aggregator | adjustable; xhigh default |
 | `fable` | Claude Code | `claude-fable-5` | aggregator only | fixed xhigh |
 
-Cursor is not a supported harness. GLM and DeepSeek are not curated launch
-routes after repeated incomplete or schema-invalid live outputs. Archived
-manifests still preserve and display their original model-lab identity.
+Cursor is not a supported harness. GLM 5.2 is the fourth proposer in the
+Thorough Web UI preset. DeepSeek V4 Pro is a recommended refiner; Flash remains
+an optional curated route. Kimi K3 remains cataloged for archived provenance
+but is blocked from new Web UI runs because OpenCode Go rejects it before
+inference. Archived manifests preserve every original model-lab identity.
 
 ## Default ensemble
 
 ```yaml
 layers:
   proposers: [agy-gemini-pro, grok, codex-luna]
-  refiners: [qwen, kimi, opus]
+  refiners: [qwen, deepseek, opus]
   aggregator: codex-sol
   skip_refinement: false
 ```
@@ -44,21 +49,26 @@ The Web UI's optimized profiles use:
 
 | Mode | Proposers | Refiners | Aggregator |
 |---|---|---|---|
-| Quick | Gemini Pro `low`; Grok 4.5 | Kimi K3 | GPT-5.6 Sol `xhigh` |
-| Balanced | Gemini Pro `high`; Grok 4.5; GPT-5.6 Luna `medium` | Qwen 3.8; Kimi K3; Opus `high` | GPT-5.6 Sol `xhigh` |
-| Thorough | Gemini Pro `high`; Grok 4.5; GPT-5.6 Luna `medium`; GPT-5.6 Terra `high` | Qwen 3.8; Kimi K3; Opus `max` | GPT-5.6 Sol `xhigh` |
+| Quick | Gemini Pro `low`; Grok 4.5 | DeepSeek V4 Pro | GPT-5.6 Sol `xhigh` |
+| Balanced | Gemini Pro `high`; Grok 4.5; GPT-5.6 Luna `medium` | Qwen 3.8; DeepSeek V4 Pro; Opus `high` | GPT-5.6 Sol `xhigh` |
+| Thorough | Gemini Pro `high`; Grok 4.5; GPT-5.6 Terra `high`; GLM 5.2 | Qwen 3.8; DeepSeek V4 Pro; Opus `max` | GPT-5.6 Sol `xhigh` |
 
 Gemini Pro enters every mode for early web evidence. Grok enters every mode as
-an independent xAI proposer. Kimi is always a refiner; Opus joins Balanced and
-Thorough. The default OpenAI aggregator stays lab-independent from all
-recommended refiners.
+an independent xAI proposer. DeepSeek V4 Pro is always a refiner; Opus joins
+Balanced and Thorough. The default OpenAI aggregator stays lab-independent
+from all recommended refiners.
+
+Kimi K3 is disabled for new Web UI runs. Its OpenCode Go route repeatedly
+returned `Provider rate limit exceeded` before inference or billing even with
+**Use balance** enabled. Increasing the lane timeout only prolongs that retry
+loop; use DeepSeek V4 Pro instead.
 
 ## Environment variables
 
 | Variable | Default | Purpose |
 |---|---|---|
 | `MOA_PROPOSERS` | `agy-gemini-pro,grok,codex-luna` | comma-separated proposer route ids |
-| `MOA_REFINERS` | `qwen,kimi,opus` | comma-separated refiner route ids |
+| `MOA_REFINERS` | `qwen,deepseek,opus` | comma-separated refiner route ids |
 | `MOA_AGGREGATOR` | `codex-sol` | aggregator route id |
 | `MOA_SKIP_LAYER2` | false | skip broadcast refinement |
 | `MOA_<NAME>_MODEL` | route default | per-route model override |
@@ -93,7 +103,7 @@ providers:
 
 layers:
   proposers: [agy-gemini-pro, grok, codex-luna]
-  refiners: [qwen, kimi, opus, custom-reviewer]
+  refiners: [qwen, deepseek, opus, custom-reviewer]
   aggregator: codex-sol
 ```
 
@@ -101,7 +111,7 @@ The shell shorthand is:
 
 ```bash
 MOA_PROVIDER_CUSTOM_REVIEWER=opencode:provider/model-id
-MOA_REFINERS=qwen,kimi,opus,custom-reviewer
+MOA_REFINERS=qwen,deepseek,opus,custom-reviewer
 ```
 
 Names must be lowercase, dash-separated, and at most 32 characters so they fit

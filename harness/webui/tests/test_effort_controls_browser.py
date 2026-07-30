@@ -62,7 +62,7 @@ class EffortControlsBrowserTest(unittest.TestCase):
                     "imported": True,
                     "config": {
                         "proposers": ["agy-gemini-pro", "grok", "codex-luna"],
-                        "refiners": ["qwen", "kimi", "opus"],
+                        "refiners": ["qwen", "deepseek", "opus"],
                         "aggregator": "codex-sol",
                         "options": {"aggregate": True},
                     },
@@ -263,6 +263,80 @@ class EffortControlsBrowserTest(unittest.TestCase):
                 retry_trace["message"],
                 "One proposer lane is retrying.",
             )
+            portrait_styles = page.evaluate(
+                """() => {
+                  const fixture = document.createElement("div");
+                  fixture.innerHTML = `
+                    <div class="loading-stage"><picture><img></picture></div>
+                    <span class="network-avatar"><img></span>
+                    <figure class="agent-pixel-stage"><picture><img></picture></figure>
+                  `;
+                  document.body.append(fixture);
+                  const styles = [
+                    ".loading-stage picture img",
+                    ".network-avatar img",
+                    ".agent-pixel-stage img",
+                  ].map((selector) => {
+                    const style = getComputedStyle(fixture.querySelector(selector));
+                    return {
+                      objectFit: style.objectFit,
+                      objectPosition: style.objectPosition,
+                      transform: style.transform,
+                      transformOrigin: style.transformOrigin,
+                    };
+                  });
+                  fixture.remove();
+                  return styles;
+                }"""
+            )
+            for portrait_style, expected_scale in zip(
+                portrait_styles,
+                ("matrix(3.25", "matrix(6", "matrix(3"),
+                strict=True,
+            ):
+                self.assertEqual(portrait_style["objectFit"], "cover")
+                self.assertEqual(portrait_style["objectPosition"], "50% 0px")
+                self.assertTrue(
+                    portrait_style["transform"].startswith(expected_scale),
+                    portrait_style["transform"],
+                )
+                self.assertTrue(
+                    portrait_style["transformOrigin"].endswith(" 0px"),
+                    portrait_style["transformOrigin"],
+                )
+            status_styles = page.evaluate(
+                """() => {
+                  const fixture = document.createElement("div");
+                  const states = [
+                    "running", "queued", "completed",
+                    "failed", "cancelled", "blocked",
+                  ];
+                  fixture.innerHTML = states.map(
+                    (state) => `<span class="status-tag ${state}">${state}</span>`
+                  ).join("");
+                  document.body.append(fixture);
+                  const styles = Object.fromEntries(states.map((state) => {
+                    const tag = fixture.querySelector(`.${state}`);
+                    const style = getComputedStyle(tag);
+                    const marker = getComputedStyle(tag, "::before");
+                    return [state, {
+                      background: style.backgroundColor,
+                      markerContent: marker.content,
+                      markerAnimation: marker.animationName,
+                    }];
+                  }));
+                  fixture.remove();
+                  return styles;
+                }"""
+            )
+            self.assertEqual(
+                len({style["background"] for style in status_styles.values()}),
+                len(status_styles),
+            )
+            self.assertEqual(status_styles["running"]["markerContent"], '""')
+            self.assertEqual(status_styles["running"]["markerAnimation"], "spin")
+            for state in ("queued", "completed", "failed", "cancelled", "blocked"):
+                self.assertEqual(status_styles[state]["markerContent"], "none")
             profile_id = page.evaluate(
                 "JSON.parse(localStorage.getItem('moax.profile')).id"
             )

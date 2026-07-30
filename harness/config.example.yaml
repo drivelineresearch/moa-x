@@ -9,19 +9,21 @@
 #   fable          -> Claude Code / claude-fable-5 (xhigh; aggregator only)
 #   agy-gemini-pro -> AGY / gemini-3.1-pro-high
 #   grok           -> OpenCode Go / grok-4.5
-#   kimi           -> OpenCode Go / kimi-k3
+#   kimi           -> OpenCode Go / kimi-k3 (disabled; archived provenance only)
 #   qwen           -> Qwen Token Plan / qwen3.8-max-preview
 #   qwen-opencode  -> OpenCode Go / qwen3.7-max
+#   glm            -> OpenCode Go / glm-5.2 (Thorough proposer)
+#   deepseek       -> OpenCode Go / deepseek-v4-pro (optional)
+#   deepseek-flash -> OpenCode Go / deepseek-v4-flash (optional)
 #
-# Cursor routes are unsupported. GLM and DeepSeek were removed from the
-# curated catalog after repeated incomplete or schema-invalid live outputs.
-# Archived manifests retain their original lab attribution.
+# Cursor routes are unsupported. Optional routes stay out of recommended presets.
+# Archived manifests retain every original lab attribution.
 #
 # Built-in balanced ensemble. Refiners are lab-independent from the OpenAI
 # aggregator; Gemini Pro and Grok enter the evidence pipeline immediately.
 layers:
   proposers: [agy-gemini-pro, grok, codex-luna]
-  refiners: [qwen, kimi, opus]
+  refiners: [qwen, deepseek, opus]
   aggregator: codex-sol
   skip_refinement: false
 
@@ -37,7 +39,7 @@ layers:
 #
 # layers:
 #   proposers: [agy-gemini-pro, grok, codex-luna]
-#   refiners: [qwen, kimi, opus, custom-reviewer]
+#   refiners: [qwen, deepseek, opus, custom-reviewer]
 #   aggregator: codex-sol
 #
 # Secrets belong in .env or the shell, never in this file. Qwen Token Plan

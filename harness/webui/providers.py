@@ -72,7 +72,13 @@ HIDDEN_ROUTES = {"codex-reviewer", "codex-aggregator"}
 # Routes that authenticated successfully but failed repeated full-schema live
 # validation. Keep them visible for provenance, but prevent paid launches until
 # the upstream CLI/model reliably returns its final structured response.
-LIVE_BLOCKED_ROUTES: dict[str, str] = {}
+LIVE_BLOCKED_ROUTES: dict[str, str] = {
+    "kimi": (
+        "Disabled for new runs: OpenCode Go repeatedly rejects Kimi K3 before "
+        "inference with `Provider rate limit exceeded`, including when Go "
+        "balance fallback is enabled. Retained only for archived provenance."
+    ),
+}
 
 EFFORT_OPTIONS = {
     "codex": ["low", "medium", "high", "xhigh"],
@@ -114,11 +120,15 @@ def _route_records(harness: str) -> list[dict[str, Any]]:
         meta = ROUTE_META.get(item.name, {})
         lab_id = route_lab_id(item.name, item.model)
         lab = model_lab(lab_id)
-        roles = meta.get("roles") or [
-            role
-            for role in ("proposer", "refiner", "aggregator")
-            if harness_config.provider_allows_role(item.name, role, item.model)
-        ]
+        roles = (
+            meta["roles"]
+            if "roles" in meta
+            else [
+                role
+                for role in ("proposer", "refiner", "aggregator")
+                if harness_config.provider_allows_role(item.name, role, item.model)
+            ]
+        )
         records.append(
             {
                 "id": item.name,
@@ -329,11 +339,15 @@ def model_catalog(*, probe: bool = True) -> list[dict[str, Any]]:
         meta = ROUTE_META.get(item.name, {})
         lab_id = route_lab_id(item.name, item.model)
         lab = model_lab(lab_id)
-        roles = meta.get("roles") or [
-            role
-            for role in ("proposer", "refiner", "aggregator")
-            if harness_config.provider_allows_role(item.name, role, item.model)
-        ]
+        roles = (
+            meta["roles"]
+            if "roles" in meta
+            else [
+                role
+                for role in ("proposer", "refiner", "aggregator")
+                if harness_config.provider_allows_role(item.name, role, item.model)
+            ]
+        )
         default_roles = []
         if item.name in proposer_defaults:
             default_roles.append("proposer")

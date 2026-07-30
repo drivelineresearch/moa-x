@@ -4,7 +4,7 @@ This prompt is for the configured Layer 3 aggregator. It can run in the
 interactive parent agent or as the optional `run_moa.py --phase layer3`
 Codex/Claude subprocess. It runs AFTER the orchestrator has finished Layer 1
 (the configured proposers, by default Gemini Pro + Grok + GPT-5.6 Luna) and Layer 2 (the
-configured broadcast refiners, by default Qwen + Kimi + Opus). The
+configured broadcast refiners, by default Qwen + DeepSeek + Opus). The
 orchestrator has written `.moa/<session>/synthesis-input.md` containing
 everything you need.
 
@@ -153,7 +153,7 @@ Save the human-readable plan to `.moa/<session>/final-plan.md`. Structure:
 **Session**: <session_id>
 **Spec**: <one-line summary>
 **Proposers**: <the resolved proposer roster, e.g. agy-gemini-pro (gemini-3.1-pro-high), grok (grok-4.5), codex-luna (gpt-5.6-luna)>
-**Refiners**: <the resolved refiner roster, e.g. qwen (qwen3.8-max-preview; broadcast), kimi (kimi-k3; broadcast), opus (claude-opus-5 high; broadcast)>
+**Refiners**: <the resolved refiner roster, e.g. qwen (qwen3.8-max-preview; broadcast), deepseek (deepseek-v4-pro; broadcast), opus (claude-opus-5 high; broadcast)>
 **Aggregator**: <the actual harness/provider/model used for this aggregation>
 
 ## TL;DR
@@ -260,7 +260,7 @@ Example shape (illustrative values only):
       "description": "Implement the verified widget path and its fallback.",
       "files_touched": ["src/widget.py"],
       "decision": "revised",
-      "adjudication": "Adopts Codex's core step and applies Kimi's verified fallback correction.",
+      "adjudication": "Adopts Codex's core step and applies DeepSeek's verified fallback correction.",
       "proposer_refs": [
         {
           "agent_id": "codex",
@@ -271,7 +271,7 @@ Example shape (illustrative values only):
       ],
       "refiner_refs": [
         {
-          "agent_id": "kimi",
+          "agent_id": "deepseek",
           "kind": "verification",
           "index": 0,
           "note": "Verified the path and identified the fallback constraint."

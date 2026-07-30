@@ -35,7 +35,7 @@ What happens:
    permission-deny policy for OpenCode), does web research, and writes an independent plan to
    `.moa/<session>/layer1/`.
 4. **Broadcast refiners (Layer 2, parallel).** Three more subprocesses,
-   `qwen` (`qwen3.8-max-preview`), `kimi` (`kimi-k3`), and `opus`
+   `qwen` (`qwen3.8-max-preview`), `deepseek` (`deepseek-v4-pro`), and `opus`
    (`claude-opus-5`, high), each
    receive every valid proposal and
    produce verification output in `.moa/<session>/layer2/`.

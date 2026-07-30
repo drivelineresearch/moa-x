@@ -644,7 +644,7 @@ function defaultSelected(option, role, index) {
   if (option.default) return true;
   const standard = {
     proposer: ["agy-gemini-pro", "grok", "codex-luna"],
-    refiner: ["qwen", "kimi", "opus"],
+    refiner: ["qwen", "deepseek", "opus"],
     aggregator: ["codex-sol"],
   };
   if (standard[role].includes(option.id)) return true;
@@ -975,7 +975,7 @@ function optimizedProfile(preset) {
         limit: 2,
         efforts: { "agy-gemini-pro": "low" },
       },
-      refiner: { preferred: ["kimi"], limit: 1 },
+      refiner: { preferred: ["deepseek"], limit: 1 },
       aggregator: {
         preferred: ["codex-sol"],
         limit: 1,
@@ -989,7 +989,7 @@ function optimizedProfile(preset) {
         efforts: { "agy-gemini-pro": "high" },
       },
       refiner: {
-        preferred: ["qwen", "kimi", "opus"],
+        preferred: ["qwen", "deepseek", "opus"],
         limit: 3,
         efforts: { opus: "high" },
       },
@@ -1001,12 +1001,12 @@ function optimizedProfile(preset) {
     },
     thorough: {
       proposer: {
-        preferred: ["agy-gemini-pro", "grok", "codex-luna", "codex"],
+        preferred: ["agy-gemini-pro", "grok", "codex", "glm"],
         limit: 4,
         efforts: { "agy-gemini-pro": "high" },
       },
       refiner: {
-        preferred: ["qwen", "kimi", "opus"],
+        preferred: ["qwen", "deepseek", "opus"],
         limit: 3,
         efforts: { opus: "max" },
       },

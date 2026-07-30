@@ -4,7 +4,7 @@ Layered planning ensemble for Claude Code. The configured proposers — by
 default three models from three different labs (Google Gemini 3.1 Pro via
 AGY, xAI Grok 4.5 via OpenCode, and OpenAI GPT-5.6 Luna via Codex) — read
 the repo, do heavy web research, and write independent plans. The refiners
-(Qwen qwen3.8-max-preview + Kimi K3 + Claude Opus 5 high) then
+(Qwen qwen3.8-max-preview + DeepSeek V4 Pro + Claude Opus 5 high) then
 **broadcast-refine** by
 reading all the proposals and producing cross-verifications. Layer 3
 synthesizes one plan in a recorded Codex subprocess on `gpt-5.6-sol` at
@@ -28,7 +28,7 @@ The skill will:
 2. Generate a "scout brief" with focus files, in-scope items, out-of-scope items.
 3. Show you the brief and ask "ready to run? ~12-25 minutes".
 4. On yes, spawn Gemini Pro, Grok 4.5, and GPT-5.6 Luna in parallel.
-5. Spawn the broadcast refiners in parallel (Qwen, Kimi K3, and Claude Opus);
+5. Spawn the broadcast refiners in parallel (Qwen, DeepSeek V4 Pro, and Claude Opus);
    each sees all proposals.
 6. Synthesize the proposals + refinements into `final-plan.md` and the
    structured `final-plan.json` decision lineage.
@@ -40,7 +40,7 @@ The skill will:
 ```
 Layer 0 — Scout brief                (parent Claude Code, in-place)
 Layer 1 — Proposers (parallel)       (default Gemini Pro + Grok + GPT-5.6 Luna)
-Layer 2 — Broadcast refiners         (default Qwen + Kimi + Opus, each sees all proposals)
+Layer 2 — Broadcast refiners         (default Qwen + DeepSeek + Opus, each sees all proposals)
 Layer 3 — Aggregator                 (recorded GPT-5.6 Sol at xhigh)
 ```
 
@@ -62,9 +62,9 @@ that a one-input view can't reveal.
 ### Why model families do not repeat across the default stages
 
 The Balanced lane assigns Google, xAI, and OpenAI to proposal; Alibaba,
-Moonshot, and Anthropic to broadcast refinement; and OpenAI to aggregation.
+DeepSeek, and Anthropic to broadcast refinement; and OpenAI to aggregation.
 The refiners remain independent of the aggregator, preserving the
-cross-check that matters most. Quick trims the lane to Gemini + Grok → Kimi →
+cross-check that matters most. Quick trims the lane to Gemini + Grok → DeepSeek →
 Sol. Thorough adds GPT-5.6 Terra upstream and raises Opus to `max`.
 
 ## Why this skill exists
@@ -105,7 +105,7 @@ into `~/.claude/skills/mixture-of-agents/`. The default roster needs:
 - **codex** — `npm i -g @openai/codex && codex login`
 - **agy / Antigravity** — install or update Antigravity, run `agy install`,
   sign in, and verify `agy models`
-- **opencode** (runs Grok and Qwen/Kimi routes) — `curl -fsSL https://opencode.ai/install | bash`
+- **opencode** (runs Grok, Qwen, DeepSeek, and optional routes) — `curl -fsSL https://opencode.ai/install | bash`
   (or `npm i -g opencode-ai`), then `opencode auth login`, or export provider
   API keys (`MOONSHOT_API_KEY` /
   `QWEN_TOKEN_PLAN_API_KEY`)
@@ -194,7 +194,7 @@ python3 ~/.claude/skills/mixture-of-agents/scripts/run_moa.py \
   --codex-timeout 1500 \
   --sonnet-timeout 1200 \
   --proposers agy-gemini-pro,grok,codex-luna \
-  --refiners qwen,kimi,opus \
+  --refiners qwen,deepseek,opus \
   --skip-layer2          # debug only; skips refiners
 ```
 
@@ -217,20 +217,21 @@ Defaults:
 - `--sonnet-model claude-sonnet-5`; stable Anthropic provider names remain
   `sonnet` and `opus`
 - `--aggregator-provider codex-sol --aggregator-effort xhigh`
-- `--proposers agy-gemini-pro,grok,codex-luna` and `--refiners qwen,kimi,opus`
+- `--proposers agy-gemini-pro,grok,codex-luna` and `--refiners qwen,deepseek,opus`
 
 The default Qwen refiner routes `qwen-token-plan/qwen3.8-max-preview` through
 OpenCode with a 600-second cap. Set `QWEN_TOKEN_PLAN_API_KEY=sk-sp-...` in
 `.env`; Qwen can also be included in the proposer set.
 
 The Codex and Claude harnesses have dedicated flags. Every other harness
-(OpenCode for Grok + Qwen/Kimi, and AGY) takes its
+(OpenCode for Grok + Qwen/DeepSeek, and AGY) takes its
 model/timeout/effort from the
 `providers:` block in `harness/config.yaml` or from `MOA_<NAME>_MODEL` /
 `MOA_<NAME>_TIMEOUT` / `MOA_<NAME>_EFFORT` env vars. You can also define a provider entirely from
 the environment with `MOA_PROVIDER_<NAME>=<harness>:<model>`. OpenCode model
 ids are `provider/model` strings. Current built-ins use
-`opencode-go/grok-4.5`, `opencode-go/kimi-k3`, Qwen Token Plan
+`opencode-go/grok-4.5`, disabled legacy `opencode-go/kimi-k3`,
+`opencode-go/glm-5.2`, Qwen Token Plan
 `qwen-token-plan/qwen3.8-max-preview`, and OpenCode Go
 `opencode-go/qwen3.7-max`.
 
@@ -249,7 +250,7 @@ authenticated in the local CLI:
 ```yaml
 layers:
   proposers: [agy-gemini-pro, grok, codex-luna]
-  refiners: [qwen, kimi, opus]
+  refiners: [qwen, deepseek, opus]
   aggregator: codex-sol
 ```
 
@@ -272,8 +273,8 @@ The live account catalog must expose the selected stable model slug.
   it. If a CLI is rate-limited on its web search tool, the proposal
   or refinement will be weaker. Thin `research_sources` arrays in
   the manifest are a signal to retry later.
-- **Heterogeneity is the point.** The default roster spans seven labs
-  (Google, xAI, Zhipu, Alibaba, Moonshot, Anthropic, OpenAI). If you override the defaults so
+- **Heterogeneity is the point.** The recommended rosters span seven labs
+  (Google, xAI, Zhipu, Alibaba, DeepSeek, Anthropic, OpenAI). If you override the defaults so
   they converge on the same vendor, you've defeated the whole purpose of MoA.
 - **Claude `--bare` mode is not used for sonnet.** `--bare` requires
   `ANTHROPIC_API_KEY` and skips OAuth/keychain auth, which means
@@ -313,7 +314,7 @@ Version history:
   selection, routing diagnostics, documentation, and workflow art were
   hardened and refreshed.
 - **Current development:** AGY provides Gemini Pro in every recommended
-  proposer roster; Qwen + Opus refine the Balanced default; and GPT-5.6 Sol
+  proposer roster; Qwen + DeepSeek + Opus refine the Balanced default; and GPT-5.6 Sol
   at `xhigh` aggregates every recommended mode. The local Flask control room
   adds queued runs, provider
   probes, SQLite history, sandbox-independent PDF/text context extraction,

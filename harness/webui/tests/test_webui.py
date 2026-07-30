@@ -487,7 +487,7 @@ class WebUITest(unittest.TestCase):
                 "workspace": str(self.root),
                 "goal": "Reject Fable in upstream layers.",
                 "proposers": ["grok"],
-                "refiners": ["kimi"],
+                "refiners": ["deepseek"],
                 "aggregator": "codex-sol",
             }
             payload[field] = ["fable"]
@@ -502,7 +502,7 @@ class WebUITest(unittest.TestCase):
                 "workspace": str(self.root),
                 "goal": "Use Fable only for final synthesis.",
                 "proposers": ["grok"],
-                "refiners": ["kimi"],
+                "refiners": ["deepseek"],
                 "aggregator": "fable",
             },
         )
@@ -511,6 +511,20 @@ class WebUITest(unittest.TestCase):
             f"/api/jobs/{created.get_json()['id']}"
         ).get_json()
         self.assertEqual(detail["config"]["aggregator"], "fable")
+
+    def test_kimi_is_rejected_for_new_runs(self):
+        response = self.client.post(
+            "/api/jobs",
+            json={
+                "workspace": str(self.root),
+                "goal": "Do not launch the blocked Kimi route.",
+                "proposers": ["grok"],
+                "refiners": ["kimi"],
+                "aggregator": "codex-sol",
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("route is disabled", response.get_json()["error"])
 
     def test_runs_are_private_to_the_browser_that_submitted_them(self):
         created = self.client.post(

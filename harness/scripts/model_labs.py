@@ -46,8 +46,7 @@ MODEL_LABS: dict[str, dict[str, str]] = {
         "avatar": "lab-alibaba-avatar.webp",
         "pixel": "lab-alibaba-pixel.webp",
     },
-    # Retained for accurate rendering of archived runs even though these
-    # unreliable routes are no longer offered in the curated launch roster.
+    # Retained for accurate rendering of archived runs and optional routes.
     "deepseek": {
         "label": "DeepSeek",
         "accent": "navy",
@@ -98,7 +97,10 @@ ROUTE_META: dict[str, dict[str, Any]] = {
     "kimi": {
         "label": "Kimi K3",
         "lab_id": "moonshot",
-        "roles": ["proposer", "refiner"],
+        # Retained for archived manifests and explicit CLI compatibility.
+        # The Web UI blocks new launches because the OpenCode Go route rejects
+        # requests before inference even when balance fallback is enabled.
+        "roles": [],
     },
     "qwen": {
         "label": "Qwen 3.8 Max Preview · Token Plan",
@@ -125,8 +127,6 @@ ROUTE_META: dict[str, dict[str, Any]] = {
         "lab_id": "anthropic",
         "roles": ["aggregator"],
     },
-    # Legacy-only identities. These remain resolvable for archived manifests
-    # but are intentionally absent from the curated provider catalog.
     "glm": {
         "label": "GLM-5.2",
         "lab_id": "zhipu",
@@ -142,6 +142,7 @@ ROUTE_META: dict[str, dict[str, Any]] = {
         "lab_id": "deepseek",
         "roles": ["proposer", "refiner"],
     },
+    # Legacy-only identities. These remain resolvable for archived manifests.
     "composer": {
         "label": "Composer 2.5",
         "lab_id": "independent",

@@ -11,7 +11,7 @@ versioning.
   browser-local profiles, task-only and managed GitHub launches, reference
   uploads, lifecycle events, provider health, and responsive run review.
 - Curated current routes for GPT-5.6 Terra/Sol/Luna, Claude Sonnet/Opus 5,
-  OpenCode Go Kimi/Grok, Qwen Token Plan, and AGY Gemini 3.1 Pro High/Low.
+  OpenCode Go Grok/GLM/DeepSeek, Qwen Token Plan, and AGY Gemini 3.1 Pro High/Low.
   The Web UI offers GPT-5.6 Sol by default, Claude Opus 5 as an alternative
   aggregator, and warning-gated Fable 5 1M at `xhigh`.
 - Nine model-lab portrait and pixel-art pairs for OpenAI, Google, Anthropic,
@@ -30,21 +30,28 @@ versioning.
 - Canonical `codex-sol` provider (`gpt-5.6-sol`, `xhigh` aggregation) and dedicated
   `MOA_AGGREGATOR_EFFORT` control. Older reviewer/aggregator names remain
   compatibility aliases only.
+- GLM 5.2 and DeepSeek V4 Pro/Flash returned as optional OpenCode routes after
+  live full-schema proposer qualification. All remain outside recommended
+  presets; Pro passed immediately, while GLM and Flash passed the pipeline's
+  single redispatch.
 
 ### Changed
 
 - Default proposers use Gemini 3.1 Pro, Grok 4.5, and GPT-5.6 Luna. Default
-  broadcast refiners use Qwen `qwen3.8-max-preview`, Kimi K3, and Claude
+  broadcast refiners use Qwen `qwen3.8-max-preview`, DeepSeek V4 Pro, and Claude
   Opus 5; the default aggregator remains GPT-5.6 Sol at `xhigh`.
 - Quick, Balanced, and Thorough all include Gemini Pro and Grok as
   proposers and GPT-5.6 Sol at `xhigh` as the default aggregator. Quick
-  uses Kimi K3 as its compact refiner lane. Balanced adds GPT-5.6 Luna plus
-  Qwen/Kimi/Opus (`high`), while Thorough also adds GPT-5.6 Terra and raises
+  uses DeepSeek V4 Pro as its compact refiner lane. Balanced adds GPT-5.6 Luna plus
+  Qwen/DeepSeek/Opus (`high`), while Thorough also adds GPT-5.6 Terra and raises
   Opus to `max`.
+- Kimi K3 is disabled for new runs after OpenCode Go repeatedly rejected it
+  before inference even with balance fallback enabled. Its route and Moonshot
+  visuals remain for archived provenance.
 - Cursor execution support and its route catalog were removed. GLM and
-  DeepSeek were also removed from the curated launch roster after retained
-  runs showed repeated incomplete output and schema failures; their lab
-  identities remain available only for accurate archived-run rendering.
+  DeepSeek were initially removed from the curated launch roster after
+  retained runs showed incomplete output and schema failures; their lab
+  identities remain available for accurate archived-run rendering.
 - The prompt coach keeps GPT-5.6 Luna as primary and now uses Gemini 3.1 Pro
   as its bounded fallback instead of an unreliable OpenCode route.
 - Qwen Token Plan is now part of the default refiner roster and has a bounded
@@ -67,6 +74,11 @@ versioning.
   parseable schema-invalid output receives one session-confined repair pass
   with repository reads and web access disabled. Readiness is evaluated per
   configured route.
+- OpenCode now retains root-shaped responses that are missing required fields
+  so bounded repair can receive them, rejects nested-object lookalikes with a
+  structural signature, and no longer reports tool messages such as
+  `Ripgrep JSON record exceeded` as depleted provider quota. Claude receives
+  the same one-shot, tool-free repair for semantic evidence violations.
 - AGY headless runs explicitly approve read tools inside plan+sandbox mode.
   Gemini Flash routes were retired after Gemini 3.1 Pro passed long-context
   structured-output validation on the authenticated consumer account.
@@ -82,6 +94,9 @@ versioning.
 
 - Offline and focused Flask/browser suite counts are refreshed at release
   time after the model-lab migration.
+- Live route requalification accepted DeepSeek V4 Pro on its first
+  schema-valid response and accepted GLM 5.2 plus DeepSeek V4 Flash on the
+  single redispatch allowed after an incomplete first response.
 - Five paid ensemble configurations exercised the pre-Pro route matrix. Terra,
   Luna, Sol, Sonnet, Opus, Cursor Grok, GLM, Grok, Kimi, Qwen Token Plan,
   Qwen OpenCode, and the then-surfaced AGY routes returned schema-valid

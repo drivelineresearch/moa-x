@@ -1,10 +1,11 @@
 """OpenCode CLI adapter (multi-lab via `opencode run`).
 
 Invokes `opencode run` headlessly. OpenCode is transport for several unrelated
-model labs; the curated roster currently uses Kimi (Moonshot), Qwen (Alibaba),
-and Grok (xAI). User-defined routes may target other OpenCode providers.
-Model ids are `provider/model` strings, e.g. `opencode-go/kimi-k3`,
-`opencode-go/grok-4.5`, or `qwen-token-plan/qwen3.8-max-preview`.
+model labs; the curated roster currently uses DeepSeek, Qwen (Alibaba), and
+Grok (xAI). Kimi remains resolvable only for archived provenance. User-defined
+routes may target other OpenCode providers. Model ids are `provider/model`
+strings, e.g. `opencode-go/deepseek-v4-pro`, `opencode-go/grok-4.5`, or
+`qwen-token-plan/qwen3.8-max-preview`.
 
 OpenCode has no JSON envelope in default text mode — the model's final
 text goes straight to stdout, so we pull the inner JSON payload with the
@@ -15,10 +16,11 @@ the other schema-unenforced adapters used by older MoA-X releases.
 
 Prompt delivery: OpenCode does NOT read stdin (the feature request was
 declined upstream) and a single argv entry is capped at MAX_ARG_STRLEN
-(128 KB on Linux). Refiner prompts — scout brief plus every proposer's
-full output — blow past that, so the adapter writes the prompt to a file
-and passes it with `-f`, plus a short positional instruction to read and
-follow it.
+(128 KB on Linux). Normal prompts — especially broadcast refiners — are
+therefore written to a file and passed with `-f`. Bounded repair prompts
+that fit safely below that limit are passed inline so the model receives
+the malformed JSON directly instead of trying to read a long JSON line
+through OpenCode's truncated file-view tool.
 
 Read-only discipline is enforced two ways: the shared READ_ONLY_RULE is
 prepended to the prompt, and a `permission` block that denies `edit` and
@@ -37,6 +39,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -79,7 +82,15 @@ _QWEN_TOKEN_PLAN_BASE_URL = (
 )
 
 
-def _config_for_model(model: str, *, allow_webfetch: bool = True) -> dict:
+_MAX_INLINE_PROMPT_BYTES = 96 * 1024
+
+
+def _config_for_model(
+    model: str,
+    *,
+    allow_webfetch: bool = True,
+    allow_tools: bool = True,
+) -> dict:
     """Build the isolated OpenCode config, adding known custom providers.
 
     Qwen Token Plan is not an OpenCode built-in. The official Qwen/OpenCode
@@ -87,7 +98,12 @@ def _config_for_model(model: str, *, allow_webfetch: bool = True) -> dict:
     out of this generated file by using OpenCode's env substitution syntax.
     """
     config = json.loads(json.dumps(_READONLY_CONFIG))
-    if not allow_webfetch:
+    if not allow_tools:
+        # Repair has the complete payload and schema inline. Deny every tool,
+        # including subagents and user-configured integrations, so it cannot
+        # waste the bounded pass re-reading files or repeating research.
+        config["permission"] = {"*": "deny"}
+    elif not allow_webfetch:
         config["permission"]["webfetch"] = "deny"
     prefix = f"{_QWEN_TOKEN_PLAN_PROVIDER_ID}/"
     if model.startswith(prefix):
@@ -256,6 +272,68 @@ def _write_log_file(log_file: Optional[Path], stdout: str, stderr: str) -> None:
         print(f"[opencode adapter] failed to write log {log_file}: {e}", file=_sys.stderr)
 
 
+def _extract_schema_candidate(stdout: str, required_keys: set[str]) -> Optional[dict]:
+    """Extract the response root even when it is missing required fields."""
+    payload = extract_json_from_text(stdout, required_keys=required_keys)
+    if payload is not None or not required_keys:
+        return payload
+
+    # GLM occasionally emits each subsequent proposer plan item after closing
+    # the surrounding plan/root brackets, even though the fields and remaining
+    # top-level collections are present. Re-open those item boundaries, then
+    # discard only an incomplete final research-source object if generation
+    # stopped midway through it. Accept the recovery only when the repaired
+    # object has every required proposer root key; strict schema and evidence
+    # validation still run in the orchestrator.
+    if {"plan", "research_sources"}.issubset(required_keys):
+        step_boundary = re.compile(
+            r'}(?:\]\})*\]*,?\{?"step":'
+        )
+
+        def restore_step_boundary(match: re.Match[str]) -> str:
+            previous = stdout[match.start() - 1] if match.start() else ""
+            # Some malformed boundaries retain the risks-array close outside
+            # the match; others consume it in the extra closing-bracket run.
+            return '},{"step":' if previous == "]" else ']},{"step":'
+
+        repaired = step_boundary.sub(restore_step_boundary, stdout)
+        recovered = extract_json_from_text(
+            repaired, required_keys=required_keys
+        )
+        if recovered is not None:
+            return recovered
+
+        sources_at = repaired.find('"research_sources":[')
+        cut_at = repaired.rfind(',{"url":', sources_at)
+        while sources_at >= 0 and cut_at > sources_at:
+            recovered = extract_json_from_text(
+                repaired[:cut_at] + "]}",
+                required_keys=required_keys,
+            )
+            if recovered is not None:
+                return recovered
+            cut_at = repaired.rfind(',{"url":', sources_at, cut_at)
+
+    # A missing required field is schema-invalid, not unparseable. Keep a
+    # root-shaped object so the orchestrator's bounded repair pass can correct
+    # it. The structural-signature threshold prevents a nested object that
+    # happens to contain agent_id from being mistaken for the response root.
+    candidate = extract_json_from_text(stdout)
+    signature_matches = (
+        len(required_keys.intersection(candidate))
+        if isinstance(candidate, dict)
+        else 0
+    )
+    minimum_signature = max(2, len(required_keys) // 2)
+    if (
+        isinstance(candidate, dict)
+        and isinstance(candidate.get("agent_id"), str)
+        and signature_matches >= minimum_signature
+    ):
+        return candidate
+    return None
+
+
 def run(
     *,
     prompt: str,
@@ -266,13 +344,14 @@ def run(
     log_file: Optional[Path] = None,
     reasoning_effort: Optional[str] = None,
     allow_webfetch: bool = True,
+    allow_tools: bool = True,
 ) -> OpenCodeResult:
     """Invoke `opencode run` with the given prompt.
 
     Args:
-        prompt: The full prompt text. Written to a file and attached with
-            `-f`; the READ_ONLY_RULE is prepended. NOT passed on argv
-            (opencode has no stdin and argv is ARG_MAX-capped).
+        prompt: The full prompt text. Normal calls write it to a file and
+            attach it with `-f`; the READ_ONLY_RULE is prepended. Tool-free
+            repair calls pass a safely bounded prompt inline.
         repo_path: Working directory, passed via `--dir` and Popen cwd.
         model: `provider/model` id, e.g. "zhipuai/glm-5.2".
         schema_path: Optional output schema. Its top-level required keys keep
@@ -287,6 +366,9 @@ def run(
         allow_webfetch: Whether the isolated OpenCode policy permits webfetch.
             Repair-only calls disable it so a schema correction cannot repeat
             research or consume additional external context.
+        allow_tools: Whether OpenCode tools are available. Repair-only calls
+            deny every tool and receive the payload inline when it fits below
+            Linux's per-argument limit.
 
     Returns:
         OpenCodeResult with the parsed payload (or None on failure).
@@ -306,22 +388,36 @@ def run(
         # Read-only permission policy via a temp config file.
         config_path = Path(tmpdir) / "opencode.json"
         config_path.write_text(
-            json.dumps(_config_for_model(model, allow_webfetch=allow_webfetch)),
+            json.dumps(
+                _config_for_model(
+                    model,
+                    allow_webfetch=allow_webfetch,
+                    allow_tools=allow_tools,
+                )
+            ),
             encoding="utf-8",
         )
         env["OPENCODE_CONFIG"] = str(config_path)
 
-        # Prompt goes in a file (see module docstring). Keep it inside the
-        # session's .moa/ dir (next to log_file) when we have one, so opencode
-        # reads it as a project-local file; otherwise fall back to the tmpdir
-        # (--dangerously-skip-permissions auto-approves the external read).
-        full_prompt = READ_ONLY_RULE + "\n\n" + prompt
-        if log_file is not None:
-            prompt_file = log_file.with_name(log_file.stem + ".prompt.md")
-            prompt_file.parent.mkdir(parents=True, exist_ok=True)
-        else:
-            prompt_file = Path(tmpdir) / "opencode-prompt.md"
-        prompt_file.write_text(full_prompt, encoding="utf-8")
+        full_prompt = (
+            READ_ONLY_RULE + "\n\n" + prompt
+            if allow_tools
+            else prompt
+        )
+        inline_prompt = (
+            not allow_tools
+            and len(full_prompt.encode("utf-8")) <= _MAX_INLINE_PROMPT_BYTES
+        )
+        prompt_file: Optional[Path] = None
+        if not inline_prompt:
+            # Keep attached prompts inside the session's .moa/ directory when
+            # possible so OpenCode sees a project-local file.
+            if log_file is not None:
+                prompt_file = log_file.with_name(log_file.stem + ".prompt.md")
+                prompt_file.parent.mkdir(parents=True, exist_ok=True)
+            else:
+                prompt_file = Path(tmpdir) / "opencode-prompt.md"
+            prompt_file.write_text(full_prompt, encoding="utf-8")
 
         # Arg order matters: `-f/--file` is a greedy yargs ARRAY option, so the
         # positional message must come BEFORE it (or -f would swallow the
@@ -332,8 +428,12 @@ def run(
         cmd = [
             _opencode_bin(),
             "run",
-            "Read the attached file in full and follow its instructions exactly. "
-            "Output only the requested JSON object.",
+            (
+                full_prompt
+                if inline_prompt
+                else "Read the attached file in full and follow its instructions "
+                "exactly. Output only the requested JSON object."
+            ),
             "-m", model,
             "--dir", str(repo_path),
             "--dangerously-skip-permissions",
@@ -347,7 +447,8 @@ def run(
         ]
         if reasoning_effort:
             cmd.extend(["--variant", reasoning_effort])
-        cmd.extend(["-f", str(prompt_file)])
+        if prompt_file is not None:
+            cmd.extend(["-f", str(prompt_file)])
 
         try:
             proc = subprocess.Popen(
@@ -379,7 +480,9 @@ def run(
                     success=False, payload=None, raw_stdout=stdout_captured,
                     raw_stderr=stderr_captured, exit_code=-1,
                     duration_seconds=duration,
-                    error_message=f"timeout after {timeout_seconds}s",
+                    error_message=_timeout_error_message(
+                        timeout_seconds, stdout_captured, stderr_captured
+                    ),
                 )
         except FileNotFoundError as e:
             duration = time.monotonic() - start
@@ -416,7 +519,7 @@ def run(
                 required_keys = set(json.loads(schema_path.read_text(encoding="utf-8")).get("required", []))
             except (OSError, json.JSONDecodeError):
                 required_keys = set()
-        payload = extract_json_from_text(stdout_captured, required_keys=required_keys)
+        payload = _extract_schema_candidate(stdout_captured, required_keys)
         if payload is None:
             msg, transient = _diagnose_failure(stdout_captured, stderr_captured)
             return OpenCodeResult(
@@ -443,14 +546,20 @@ def _diagnose_failure(stdout: str, stderr: str) -> tuple[str, bool]:
 
     transient_empty=True when stdout is empty or contains an incomplete /
     malformed model response and stderr shows no quota or auth signal. Tool
-    calls can emit 404/transport noise on stderr even when the model route
-    itself worked, so a non-empty model response takes precedence over the
-    routing classifier. Quota and auth failures remain non-transient.
+    calls can emit 403/404/transport noise on stderr even when the model route
+    itself worked, so a non-empty model response takes precedence over stderr
+    classifiers. Quota and auth failures with no model output remain
+    non-transient.
     """
     stderr_lower = (stderr or "").lower()
-    quota_hit = any(
-        p in stderr_lower
-        for p in ("rate limit", "quota", "429", "exceeded", "insufficient balance")
+    quota_hit = bool(
+        re.search(
+            r"\b(?:rate[ _-]*limit(?:ed)?|quota (?:exceeded|exhausted)|"
+            r"insufficient (?:balance|credits?)|balance (?:exhausted|too low)|"
+            r"payment required|monthly spending limit|past invoices?|"
+            r"account [^\n]{0,80}\bsuspended)\b",
+            stderr_lower,
+        )
     )
     auth_hit = any(
         p in stderr_lower
@@ -460,19 +569,25 @@ def _diagnose_failure(stdout: str, stderr: str) -> tuple[str, bool]:
         p in stderr_lower
         for p in ("not found", "404", "unsupported model", "model not found")
     )
+    if stdout and stdout.strip():
+        return (
+            "opencode produced non-empty but unparseable/incomplete JSON under "
+            "a clean auth state. Likely transient — one re-dispatch may recover."
+        ), True
     if quota_hit:
         return ("opencode hit rate-limit / quota errors (see stderr). Check the "
                 "provider's dashboard or the relevant *_API_KEY budget."), False
     if auth_hit:
         return ("opencode authentication error (see stderr). Run `opencode auth "
                 "login` or export the provider's API key."), False
-    if stdout and stdout.strip():
-        return (
-            "opencode produced non-empty but unparseable/incomplete JSON under "
-            "a clean auth state. Likely transient — one re-dispatch may recover."
-        ), True
     if routing_hit:
         return ("opencode provider/model routing error (see stderr). Check the "
                 "custom provider base URL, transport, and model id."), False
     return ("opencode produced empty stdout under a clean exit (no quota/auth "
             "signal). Likely transient — one re-dispatch may recover."), True
+
+
+def _timeout_error_message(seconds: int, stdout: str, stderr: str) -> str:
+    """Preserve the provider cause when OpenCode's own retries hit our cap."""
+    diagnosis, _ = _diagnose_failure(stdout, stderr)
+    return f"timeout after {seconds}s; {diagnosis}"
