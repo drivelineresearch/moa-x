@@ -74,6 +74,7 @@
     "verifications": {
       "type": "array",
       "description": "Per-claim verification of evidence entries across proposer outputs. Identify which proposer's evidence you are verifying. Verify against the actual repo and against external sources. Mark each as verified, unverified, or contradicted. Prioritize verifying claims that proposers disagree on.",
+      "minItems": 1,
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -86,7 +87,8 @@
           },
           "claim_index_path": {
             "type": "string",
-            "description": "Path identifying which evidence entry this verifies, e.g. 'plan[2].evidence[0]'."
+            "pattern": "^plan\\[[0-9]+\\]\\.evidence\\[[0-9]+\\]$",
+            "description": "Exact path identifying which evidence entry this verifies, e.g. 'plan[2].evidence[0]'."
           },
           "status": {
             "type": "string",
@@ -95,11 +97,12 @@
           },
           "actual_finding": {
             "type": "string",
-            "description": "What you actually found when you tried to verify this claim. Be specific."
+            "description": "What you actually found when you tried to verify this claim. Be specific.",
+            "minLength": 1
           },
           "source_url": {
             "type": ["string", "null"],
-            "description": "External URL or local file:line reference that supports your finding. Null when the finding required no external source (e.g. when status is unverified and you could not check)."
+            "description": "External URL or local file:line reference that supports your finding. Required and non-empty for verified or contradicted findings; null only when status is unverified and you could not check."
           }
         }
       }

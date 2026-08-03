@@ -9,7 +9,7 @@ flowchart LR
   S["Scout brief"] --> P["Proposers: Gemini Pro + Grok 4.5 + GPT-5.6 Luna"]
   P --> R["Broadcast refiners: Qwen 3.8 + DeepSeek V4 Pro + Claude Opus 5"]
   R --> A["Aggregator: GPT-5.6 Sol xhigh default; Opus or gated Fable alternatives"]
-  A --> O["Final plan + decision lineage + report"]
+  A --> O["Final plan + evidence-weighted decision map + report"]
 ```
 
 ## Four layers
@@ -31,6 +31,31 @@ It consumes only validated upstream artifacts, resolves disagreements without
 hiding them, and writes the final Markdown plan plus exact JSON decision
 lineage. Claude Opus is an alternative aggregator. Fable is aggregator-only
 and warning-gated because it can consume extreme quota.
+
+## Derived evidence layer
+
+At each retained checkpoint, `harness/scripts/decision_map.py` derives
+`decision-map.json` from the validated proposer payloads, refiner findings,
+final-plan lineage, and manifest. Models never choose graph identifiers,
+quality scores, or gates. Normalized claim text and source records receive
+content-addressed IDs, allowing the same evidence → claim → verification →
+decision relationships to evolve from proposals through final synthesis.
+
+The first live checkpoint also records repository commit/tree identity and
+hashes of Git status and diff state. Code evidence receives file and cited-line
+hashes when the repository still matches that receipt; raw repository files
+and diffs are not copied into the map. External evidence retains its canonical
+URL and a hash of the model-declared snippet, but is labeled as a declared
+excerpt rather than a captured web-page snapshot. Sensitive, unsafe, binary,
+symlinked, oversized, or unreadable paths fail closed at the receipt boundary.
+
+Deterministic gates cover receipt integrity, review coverage, contradictions,
+verification by independent model labs, source diversity, final-step evidence
+coverage, and pointer integrity. The aggregator's stated confidence remains
+visible, but an evidence ceiling caps the effective confidence when those
+gates are incomplete. Map generation is best-effort: a failure warns without
+invalidating otherwise usable planning artifacts. Legacy sessions remain
+readable with unavailable or drifted receipt states made explicit.
 
 ## Lab diversity and execution harnesses
 

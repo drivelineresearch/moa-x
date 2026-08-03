@@ -3,8 +3,9 @@
 Every full MoA-X run ends by rendering a single, self-contained HTML
 report of the session to `.moa/<session>/report.html`. Open it in any
 browser — it needs no server and makes zero network requests. Everything
-(page, charts, illustrations, the session data, decision lineage, and the
-rendered final recommendation) is inlined into the one file.
+(page, charts, illustrations, session data, evidence-weighted decision map,
+exact lineage, and the rendered final recommendation) is inlined into the one
+file.
 
 When the report is opened through the Web UI's private artifact URL, its
 header also includes **Share report**. It creates and copies the same
@@ -52,6 +53,11 @@ supporting process and raw output remain available for deeper inspection.
   click a dot for the finding), agreements, disagreements, missing and
   incorrect steps, and each reviewer's `synthesis_recommendation` as a
   pull-quote.
+- **Evidence-weighted living decision map** — model-lab lanes connect retained
+  evidence receipts to atomic claims and final decisions. Select a node to
+  inspect its source, review status, and downstream use. A quality strip,
+  explicit gates, evidence-debt warnings, and an accessible ledger expose
+  coverage and independence without turning a model's confidence into a score.
 - **Decision trail** — select any final-recommendation step to see the exact
   source steps and review findings that shaped it. Solid paths mean used as
   written, dashed paths mean revised, and dotted paths show reviewer influence;
@@ -75,7 +81,8 @@ supporting process and raw output remain available for deeper inspection.
 - **Technical logs** — collapsible per-contributor STDOUT/STDERR with a line
   filter.
 
-Wide evidence tables, verdict matrices, decision graphs, and step tabs scroll
+Wide evidence tables, verdict matrices, decision maps, lineage graphs, and step
+tabs scroll
 inside their own containers on narrow screens. They do not widen the page, so
 the report remains usable on phones and small browser windows.
 
@@ -98,9 +105,34 @@ python3 harness/scripts/report.py --session .moa/<session-id> -o /tmp/run.html
 
 It reads `manifest.json` (or `layer1-manifest.json` for a phase-split
 Layer-1-only run, rendered as *partial*) and exits 2 if neither exists.
+The renderer reads the current `decision-map.json` or derives an up-to-date map
+from retained artifacts, so older checkpoints can use the same presentation.
 For v0.4.1 and older phase-split sessions, the renderer also repairs a
 phase-local manifest start time from the earliest retained agent timestamp so
 the wall-clock and Gantt offsets cover the whole run.
+
+## Evidence-weighted decision-map data
+
+`decision-map.json` is an orchestrator-owned derivative. The report validates
+it against `harness/scripts/schemas/decision-map.schema.json` before rendering.
+It joins retained proposer evidence, canonical refiner verification pointers,
+and final-plan lineage with stable content IDs. Its stage advances through `setup`,
+`proposals`, `review`, and `complete`; the same visual therefore gains
+evidence, review findings, and decisions without changing its vocabulary.
+
+Repository receipts contain commit/tree identity plus status and diff hashes.
+Code receipts add file and cited-line hashes; they do not copy repository file
+contents into the map. External receipts retain the canonical URL and declared
+snippet hash but do not claim that MoA-X archived the source page. The map also
+records source concentration, independent reviewer-lab coverage,
+contradictions, lineage coverage, and unresolved-pointer warnings.
+
+The report presents the aggregator's stated confidence separately from the
+deterministic evidence ceiling. Effective confidence is the lower of the two,
+so an unsupported or incompletely reviewed plan cannot display a stronger
+result merely because the aggregator selected `high`. Legacy sessions still
+render; missing live receipts are labeled unavailable rather than reconstructed
+from current repository contents.
 
 ## Decision-lineage data
 
@@ -139,8 +171,9 @@ pure white canvas, the signature 8px Mine Shaft top bar, goldenrod
 (no chart library). Fonts use a system stack so the report stays
 license-clean and portable as a single file.
 
-Collapsible sections use native buttons with keyboard/ARIA state, and the
-decision-lineage tab rail supports arrow, Home, and End keys.
+Collapsible sections use native buttons with keyboard/ARIA state. The decision
+map includes native node controls and a table ledger, while the decision-lineage
+tab rail supports arrow, Home, and End keys.
 
 The template and embedded illustration assets live in `harness/report/`; the
 generator is `harness/scripts/report.py`.

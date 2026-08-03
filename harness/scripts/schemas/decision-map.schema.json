@@ -1,0 +1,203 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MoA-X Evidence-Weighted Decision Map",
+  "description": "Deterministic, orchestrator-owned graph derived from retained proposer, refiner, and final-plan artifacts.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version", "session_id", "input_digest", "stage", "generated_at",
+    "title", "summary", "repository", "agents", "evidence", "claims",
+    "verifications", "decisions", "edges", "quality", "warnings"
+  ],
+  "properties": {
+    "version": {"type": "integer", "const": 1},
+    "session_id": {"type": "string"},
+    "input_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "stage": {"type": "string", "enum": ["setup", "proposals", "review", "complete"]},
+    "generated_at": {"type": ["string", "null"]},
+    "title": {"type": "string"},
+    "summary": {"type": "string"},
+    "repository": {"$ref": "#/$defs/repository"},
+    "agents": {"type": "array", "items": {"$ref": "#/$defs/agent"}},
+    "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence"}},
+    "claims": {"type": "array", "items": {"$ref": "#/$defs/claim"}},
+    "verifications": {"type": "array", "items": {"$ref": "#/$defs/verification"}},
+    "decisions": {"type": "array", "items": {"$ref": "#/$defs/decision"}},
+    "edges": {"type": "array", "items": {"$ref": "#/$defs/edge"}},
+    "quality": {"$ref": "#/$defs/quality"},
+    "warnings": {"type": "array", "items": {"type": "string"}}
+  },
+  "$defs": {
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit", "tree", "dirty", "status_sha256", "diff_sha256", "captured_at", "capture_status"],
+      "properties": {
+        "commit": {"type": ["string", "null"]},
+        "tree": {"type": ["string", "null"]},
+        "dirty": {"type": ["boolean", "null"]},
+        "status_sha256": {"type": ["string", "null"]},
+        "diff_sha256": {"type": ["string", "null"]},
+        "captured_at": {"type": ["string", "null"]},
+        "capture_status": {"type": "string"}
+      }
+    },
+    "agent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "role", "lab_id", "lab", "model", "status"],
+      "properties": {
+        "id": {"type": "string"},
+        "label": {"type": "string"},
+        "role": {"type": "string", "enum": ["proposer", "refiner", "aggregator"]},
+        "lab_id": {"type": "string"},
+        "lab": {"type": "string"},
+        "model": {"type": "string"},
+        "status": {"type": "string"}
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "type", "label", "claim_ids", "proposer_ids", "file", "line",
+        "url", "source_key", "source_domain", "snippet", "snippet_sha256",
+        "file_sha256", "line_sha256", "capture_status"
+      ],
+      "properties": {
+        "id": {"type": "string"},
+        "type": {"type": "string"},
+        "label": {"type": "string"},
+        "claim_ids": {"type": "array", "items": {"type": "string"}},
+        "proposer_ids": {"type": "array", "items": {"type": "string"}},
+        "file": {"type": ["string", "null"]},
+        "line": {"type": ["integer", "null"]},
+        "url": {"type": ["string", "null"]},
+        "source_key": {"type": "string"},
+        "source_domain": {"type": ["string", "null"]},
+        "snippet": {"type": ["string", "null"]},
+        "snippet_sha256": {"type": ["string", "null"]},
+        "file_sha256": {"type": ["string", "null"]},
+        "line_sha256": {"type": ["string", "null"]},
+        "capture_status": {"type": "string"}
+      }
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "text", "status", "critical", "proposer_ids", "evidence_ids",
+        "verification_ids", "decision_ids", "independent_sources", "verified_reviewer_labs"
+      ],
+      "properties": {
+        "id": {"type": "string"},
+        "text": {"type": "string"},
+        "status": {"type": "string", "enum": ["unreviewed", "unverified", "verified", "contradicted", "disputed"]},
+        "critical": {"type": "boolean"},
+        "proposer_ids": {"type": "array", "items": {"type": "string"}},
+        "evidence_ids": {"type": "array", "items": {"type": "string"}},
+        "verification_ids": {"type": "array", "items": {"type": "string"}},
+        "decision_ids": {"type": "array", "items": {"type": "string"}},
+        "independent_sources": {"type": "integer", "minimum": 0},
+        "verified_reviewer_labs": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "index", "reviewer_id", "reviewer_lab_id", "proposer_id",
+        "claim_id", "evidence_id", "declared_status", "status", "finding",
+        "source_url", "source_type", "source_capture_status", "file_sha256",
+        "line_sha256"
+      ],
+      "properties": {
+        "id": {"type": "string"},
+        "index": {"type": "integer", "minimum": 0},
+        "reviewer_id": {"type": "string"},
+        "reviewer_lab_id": {"type": "string"},
+        "proposer_id": {"type": "string"},
+        "claim_id": {"type": ["string", "null"]},
+        "evidence_id": {"type": ["string", "null"]},
+        "declared_status": {"type": "string", "enum": ["verified", "unverified", "contradicted"]},
+        "status": {"type": "string", "enum": ["verified", "unverified", "contradicted"]},
+        "finding": {"type": "string"},
+        "source_url": {"type": ["string", "null"]},
+        "source_type": {"type": ["string", "null"], "enum": ["external", "code", null]},
+        "source_capture_status": {"type": "string"},
+        "file_sha256": {"type": ["string", "null"]},
+        "line_sha256": {"type": ["string", "null"]}
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "description", "status", "claim_ids", "evidence_ids", "files_touched"],
+      "properties": {
+        "id": {"type": "string"},
+        "title": {"type": "string"},
+        "description": {"type": "string"},
+        "status": {"type": "string", "enum": ["accepted", "revised", "new", "rejected"]},
+        "claim_ids": {"type": "array", "items": {"type": "string"}},
+        "evidence_ids": {"type": "array", "items": {"type": "string"}},
+        "files_touched": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "from", "to", "kind", "status"],
+      "properties": {
+        "id": {"type": "string"},
+        "from": {"type": "string"},
+        "to": {"type": "string"},
+        "kind": {"type": "string"},
+        "status": {"type": "string"}
+      }
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "status", "detail"],
+      "properties": {
+        "id": {"type": "string"},
+        "label": {"type": "string"},
+        "status": {"type": "string", "enum": ["pass", "warn", "fail", "pending", "n/a"]},
+        "detail": {"type": "string"}
+      }
+    },
+    "quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "level", "evidence_ceiling", "stated_confidence", "effective_confidence",
+        "total_claims", "critical_claims", "supported_critical_claims",
+        "verified_critical_claims", "contradicted_critical_claims", "support_coverage",
+        "review_coverage", "verification_coverage", "independent_verified_coverage",
+        "step_evidence_coverage", "source_concentration", "independent_sources",
+        "external_domains", "gates", "warnings"
+      ],
+      "properties": {
+        "level": {"type": "string", "enum": ["strong", "guarded", "weak", "pending"]},
+        "evidence_ceiling": {"type": "string", "enum": ["high", "medium", "low", "pending"]},
+        "stated_confidence": {"type": ["string", "null"]},
+        "effective_confidence": {"type": "string"},
+        "total_claims": {"type": "integer", "minimum": 0},
+        "critical_claims": {"type": "integer", "minimum": 0},
+        "supported_critical_claims": {"type": "integer", "minimum": 0},
+        "verified_critical_claims": {"type": "integer", "minimum": 0},
+        "contradicted_critical_claims": {"type": "integer", "minimum": 0},
+        "support_coverage": {"type": "number", "minimum": 0, "maximum": 1},
+        "review_coverage": {"type": "number", "minimum": 0, "maximum": 1},
+        "verification_coverage": {"type": "number", "minimum": 0, "maximum": 1},
+        "independent_verified_coverage": {"type": "number", "minimum": 0, "maximum": 1},
+        "step_evidence_coverage": {"type": "number", "minimum": 0, "maximum": 1},
+        "source_concentration": {"type": "number", "minimum": 0, "maximum": 1},
+        "independent_sources": {"type": "integer", "minimum": 0},
+        "external_domains": {"type": "array", "items": {"type": "string"}},
+        "gates": {"type": "array", "items": {"$ref": "#/$defs/gate"}},
+        "warnings": {"type": "array", "items": {"type": "string"}}
+      }
+    }
+  }
+}

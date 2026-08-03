@@ -48,6 +48,7 @@
           "evidence": {
             "type": "array",
             "description": "Claims this step depends on, each backed by either a code citation or an external source. Refiners will verify these.",
+            "minItems": 1,
             "items": {
               "type": "object",
               "additionalProperties": false,
@@ -64,6 +65,7 @@
                 },
                 "line": {
                   "type": ["integer", "null"],
+                  "minimum": 1,
                   "description": "Line number in the file. Required when type=code; set to null when type=external."
                 },
                 "url": {
@@ -76,7 +78,8 @@
                 },
                 "claim": {
                   "type": "string",
-                  "description": "What this evidence proves or supports. Always required."
+                  "description": "One atomic proposition this evidence proves or supports. Always required.",
+                  "minLength": 1
                 }
               }
             }

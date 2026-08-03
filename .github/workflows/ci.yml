@@ -48,5 +48,9 @@ jobs:
           pip install -r requirements-web-dev.txt
           playwright install --with-deps chromium
 
-      - name: Run Web UI effort-control browser contract
-        run: python3 -m unittest harness.webui.tests.test_effort_controls_browser
+      - name: Run Web UI browser contracts
+        run: >-
+          python3 -m unittest
+          harness.webui.tests.test_webui
+          harness.webui.tests.test_effort_controls_browser
+          harness.webui.tests.test_decision_map_browser

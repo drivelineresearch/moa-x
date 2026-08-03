@@ -19,6 +19,8 @@ from flask import Flask, Response, abort, jsonify, render_template, request, sen
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.utils import secure_filename
 
+from harness.scripts import decision_map as decision_map_module
+
 from .github import (
     GitHubWorkspaceError,
     allowed_owner,
@@ -101,6 +103,151 @@ def _safe_workspace(raw: str, roots: list[Path]) -> Path:
     if not any(path == root or root in path.parents for root in roots):
         raise ValueError("workspace is outside the configured workspace roots")
     return path
+
+
+_FileFingerprint = tuple[int, int, int, int]
+_FileSnapshot = tuple[Path, _FileFingerprint]
+_ManifestSnapshot = tuple[Path, dict[str, Any], _FileFingerprint]
+_VerifiedArtifactSnapshot = tuple[Path, bytes, _FileFingerprint]
+
+
+def _file_fingerprint(path: Path) -> _FileFingerprint:
+    stat = path.stat()
+    return stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns
+
+
+def _active_manifest_snapshot(
+    session: Path,
+) -> _ManifestSnapshot | None:
+    manifest_path, manifest = decision_map_module.active_manifest_for_session(session)
+    if manifest_path is None:
+        return None
+    try:
+        fingerprint = _file_fingerprint(manifest_path)
+    except OSError:
+        return None
+    return manifest_path, manifest, fingerprint
+
+
+def _verified_decision_map_snapshot(
+    session: Path,
+    manifest_snapshot: _ManifestSnapshot | None = None,
+) -> _VerifiedArtifactSnapshot | None:
+    manifest_snapshot = manifest_snapshot or _active_manifest_snapshot(session)
+    if manifest_snapshot is None:
+        return None
+    _manifest_path, manifest, _manifest_fingerprint = manifest_snapshot
+    artifacts = manifest.get("artifacts")
+    receipt = artifacts.get("decision_map") if isinstance(artifacts, dict) else None
+    expected = receipt.get("sha256") if isinstance(receipt, dict) else None
+    if not isinstance(expected, str) or not re.fullmatch(r"[a-f0-9]{64}", expected):
+        return None
+
+    path = session / "decision-map.json"
+    try:
+        before = _file_fingerprint(path)
+        payload = path.read_bytes()
+        after = _file_fingerprint(path)
+    except OSError:
+        return None
+    if before != after:
+        return None
+    actual = hashlib.sha256(payload).hexdigest()
+    if not secrets.compare_digest(actual, expected):
+        return None
+    if _active_manifest_snapshot(session) != manifest_snapshot:
+        return None
+    return path, payload, after
+
+
+def _active_report_input_snapshots(
+    session: Path,
+    manifest_snapshot: _ManifestSnapshot,
+) -> tuple[_FileSnapshot, ...] | None:
+    manifest_path, manifest, manifest_fingerprint = manifest_snapshot
+    inputs: list[_FileSnapshot] = [(manifest_path, manifest_fingerprint)]
+
+    # Report generation uses this same predicate before embedding either final
+    # artifact. Copied outputs from a failed Layer 3 or an active Layer 1 retry
+    # must not make an otherwise current partial report appear stale.
+    if decision_map_module.final_artifact_staleness(session, manifest) is None:
+        for filename in ("final-plan.md", "final-plan.json"):
+            path = session / filename
+            try:
+                fingerprint = _file_fingerprint(path)
+            except FileNotFoundError:
+                continue
+            except OSError:
+                return None
+            if not path.is_file():
+                return None
+            inputs.append((path, fingerprint))
+
+    map_path = session / "decision-map.json"
+    try:
+        map_exists = map_path.exists()
+    except OSError:
+        return None
+    artifacts = manifest.get("artifacts")
+    map_receipt_declared = (
+        isinstance(artifacts, dict) and "decision_map" in artifacts
+    )
+    if map_exists or map_receipt_declared:
+        map_snapshot = _verified_decision_map_snapshot(session, manifest_snapshot)
+        if map_snapshot is None:
+            return None
+        inputs.append((map_snapshot[0], map_snapshot[2]))
+
+    if _active_manifest_snapshot(session) != manifest_snapshot:
+        return None
+    return tuple(inputs)
+
+
+def _fresh_report_snapshot(
+    session: Path,
+) -> tuple[
+    Path,
+    _FileFingerprint,
+    _ManifestSnapshot,
+    tuple[_FileSnapshot, ...],
+] | None:
+    manifest_snapshot = _active_manifest_snapshot(session)
+    if manifest_snapshot is None:
+        return None
+    inputs_before = _active_report_input_snapshots(session, manifest_snapshot)
+    if inputs_before is None:
+        return None
+    report_path = session / "report.html"
+    try:
+        report_before = _file_fingerprint(report_path)
+    except OSError:
+        return None
+    inputs_after = _active_report_input_snapshots(session, manifest_snapshot)
+    try:
+        report_after = _file_fingerprint(report_path)
+    except OSError:
+        return None
+    if inputs_before != inputs_after or report_before != report_after:
+        return None
+    if any(report_after[3] < fingerprint[3] for _path, fingerprint in inputs_after):
+        return None
+    return report_path, report_after, manifest_snapshot, inputs_after
+
+
+def _read_fresh_report(session: Path) -> bytes | None:
+    snapshot = _fresh_report_snapshot(session)
+    if snapshot is None:
+        return None
+    try:
+        payload = snapshot[0].read_bytes()
+    except OSError:
+        return None
+    return payload if _fresh_report_snapshot(session) == snapshot else None
+
+
+def _read_verified_decision_map(session: Path) -> bytes | None:
+    snapshot = _verified_decision_map_snapshot(session)
+    return snapshot[1] if snapshot is not None else None
 
 
 def _phase_number(value: Any) -> int:
@@ -291,13 +438,28 @@ def _agent_views(job: dict[str, Any], session: Path) -> tuple[list[dict[str, Any
 
 def _job_view(job: dict[str, Any]) -> dict[str, Any]:
     session = Path(job["session_dir"])
+    _manifest_path, manifest = decision_map_module.active_manifest_for_session(
+        session
+    )
+    stale_final_output = (
+        decision_map_module.final_artifact_staleness(session, manifest) is not None
+    )
+    report_available = _fresh_report_snapshot(session) is not None
+    decision_map_available = _read_verified_decision_map(session) is not None
     artifacts = {}
     for name, filename in (
         ("report", "report.html"),
+        ("decision_map", "decision-map.json"),
         ("final_plan", "final-plan.md"),
         ("manifest", "manifest.json"),
         ("synthesis", "synthesis-input.md"),
     ):
+        if name == "report" and not report_available:
+            continue
+        if name == "decision_map" and not decision_map_available:
+            continue
+        if name == "final_plan" and stale_final_output:
+            continue
         if (session / filename).exists():
             artifacts[name] = f"/api/jobs/{job['id']}/artifacts/{filename}"
     job["artifacts"] = artifacts
@@ -1140,6 +1302,17 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         target = Path(source["workspace"]) / ".moa" / redispatch_id
         if agents:
             shutil.copytree(source["session_dir"], target)
+            # Retain validated checkpoints for a targeted retry, but never
+            # advertise the copied run's derived/final outputs as belonging
+            # to the new job before the retried phases replace them.
+            for stale_name in (
+                "decision-map.json",
+                "final-plan.json",
+                "final-plan.md",
+                "report.html",
+                "synthesis-input.md",
+            ):
+                (target / stale_name).unlink(missing_ok=True)
         else:
             target.mkdir(parents=True)
             source_inputs = Path(source["session_dir"]) / "inputs"
@@ -1246,6 +1419,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             return _error("job not found", 404)
         if filename not in {
             "report.html",
+            "decision-map.json",
             "final-plan.md",
             "final-plan.json",
             "manifest.json",
@@ -1253,7 +1427,25 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         }:
             abort(404)
         path = Path(job["session_dir"]) / filename
+        session = Path(job["session_dir"])
+        if filename == "report.html":
+            payload = _read_fresh_report(session)
+            if payload is None:
+                abort(404)
+            return Response(payload, mimetype="text/html")
+        if filename == "decision-map.json":
+            payload = _read_verified_decision_map(session)
+            if payload is None:
+                abort(404)
+            return Response(payload, mimetype="application/json")
         if not path.is_file():
+            abort(404)
+        if filename in {"final-plan.md", "final-plan.json"} and (
+            decision_map_module.final_artifact_staleness(
+                Path(job["session_dir"])
+            )
+            is not None
+        ):
             abort(404)
         return send_file(path)
 
@@ -1261,8 +1453,8 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     @require_profile
     def create_report_share(profile: dict[str, Any], job_id: str):
         job = owned_job(profile, job_id)
-        report = Path(job["session_dir"]) / "report.html" if job else None
-        if not job or job.get("status") != "completed" or not report.is_file():
+        report = _read_fresh_report(Path(job["session_dir"])) if job else None
+        if not job or job.get("status") != "completed" or report is None:
             return _error(
                 "a completed report is required before it can be shared", 409
             )
@@ -1290,10 +1482,10 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
         share = store.get_active_report_share(digest)
         job = store.get_job(share["job_id"]) if share else None
-        report = Path(job["session_dir"]) / "report.html" if job else None
-        if not job or job.get("status") != "completed" or not report.is_file():
+        report = _read_fresh_report(Path(job["session_dir"])) if job else None
+        if not job or job.get("status") != "completed" or report is None:
             abort(404)
-        response = send_file(report, mimetype="text/html", conditional=True)
+        response = Response(report, mimetype="text/html")
         response.headers["Cache-Control"] = "private, no-store"
         response.headers["X-Robots-Tag"] = "noindex, nofollow"
         return response

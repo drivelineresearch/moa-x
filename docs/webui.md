@@ -2,7 +2,8 @@
 
 The Flask control room is a local-first interface over the existing
 `run_moa.py` phases. It queues one run at a time, streams lifecycle events,
-shows provider health, and indexes completed and historical `.moa` sessions.
+shows an evidence-weighted living decision map, reports provider health, and
+indexes completed and historical `.moa` sessions.
 The CLI remains the execution source of truth.
 
 ## Start it
@@ -266,6 +267,27 @@ Attachment contents can flow into provider prompts, local logs, and the
 self-contained report. Credentials and data the selected providers are not
 permitted to process do not belong in uploaded files.
 
+## Living decision map
+
+The setup and run pages share one decision-map vocabulary. Before a checkpoint
+exists, the map shows the configured model-lab lanes and pending evidence,
+claim, and decision stages. Retained Layer 1, Layer 2, and Layer 3 artifacts
+then replace that preview with the orchestrator-derived `decision-map.json`;
+browser events may update lane status, but never manufacture evidence or
+quality scores.
+
+The map connects evidence receipts to atomic claims, independent reviewer
+findings, and final decisions. Its quality panel separates model-stated
+confidence from the deterministic evidence ceiling and exposes receipt,
+coverage, contradiction, reviewer-independence, source-diversity, lineage, and
+pointer-integrity gates. Selectable nodes have a detail panel, and the ledger
+below provides the same claim status and decision use in a table. Evidence debt
+remains visible instead of being averaged into a single consensus grade.
+
+Reloads use retained artifacts as truth. Legacy sessions can still build a map,
+but unavailable repository receipts and later repository drift remain explicit
+rather than being silently recaptured from current files.
+
 ## Run monitoring and recovery
 
 The run page shows one provider character card per configured lane. During an
@@ -274,8 +296,8 @@ state immediately; persisted manifests become the source of truth once a
 checkpoint exists, so completed, failed, and downstream-blocked lanes remain
 accurate after reloads. Running characters use a small work animation and
 completed characters switch to a brief victory flourish. These are authored
-eight-frame animated WebP sequences for each provider character—not transform
-effects applied to a still image. Both work and victory sequences loop while
+animated WebP sequences for each provider character—not transform effects
+applied to a still image. Both work and victory sequences loop while
 their card remains in that state. Reduced-motion browser preferences replace
 both with the provider's static portrait.
 

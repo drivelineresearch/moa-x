@@ -143,6 +143,10 @@ export async function getJob(id) {
   return normalizeJob(await request(`/api/jobs/${encodeURIComponent(id)}`));
 }
 
+export async function getDecisionMap(id) {
+  return request(`/api/jobs/${encodeURIComponent(id)}/artifacts/decision-map.json`);
+}
+
 export async function getWorkspaces() {
   try {
     const payload = await request("/api/workspaces");

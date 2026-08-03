@@ -7,6 +7,7 @@
   <meta name="theme-color" content="#FFFFFF">
   <title>{% block title %}MoA-X Control Room{% endblock %}</title>
   <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="stylesheet" href="/static/css/decision-map.css">
   {% if local_font_stylesheet %}
   <link rel="stylesheet" href="/local-assets/fonts.css">
   <script>
@@ -39,6 +40,7 @@
   <script>
     window.MOAX_BOOTSTRAP = {{ bootstrap|default({})|tojson }};
   </script>
+  <script src="/static/js/decision-map.js"></script>
   <script type="module" src="/static/js/app.js"></script>
 </body>
 </html>

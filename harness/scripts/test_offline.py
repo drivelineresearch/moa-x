@@ -21,6 +21,7 @@ sys.path.insert(0, str(SCRIPT_DIR))
 
 import run_moa  # noqa: E402
 import report as report_module  # noqa: E402
+import decision_map as decision_map_module  # noqa: E402
 from adapters import codex as codex_adapter  # noqa: E402
 from adapters import claude as claude_adapter  # noqa: E402
 
@@ -426,6 +427,1238 @@ def test_final_plan_schema_resolves_local_refs() -> bool:
     invalid_errors = run_moa._validate_against_schema(invalid, schema)
     ok = not valid_errors and any("minimum" in e for e in invalid_errors)
     return _check("local $refs enforced", ok, f"valid={valid_errors}, invalid={invalid_errors[:2]}")
+
+
+def test_proposer_schema_rejects_empty_step_evidence() -> bool:
+    print("\n[4cd] Proposer schema rejects a plan step with no evidence")
+    schema = run_moa._load_schema(run_moa.PROPOSER_SCHEMA_PATH)
+    payload = json.loads(json.dumps(VALID_PROPOSER_CODEX))
+    payload["plan"][0]["evidence"] = []
+    errors = run_moa._validate_against_schema(payload, schema)
+    ok = any("$.plan[0].evidence" in error and "at least 1" in error for error in errors)
+    return _check("empty evidence fails closed", ok, f"errors={errors[:3]}")
+
+
+def test_refiner_schema_rejects_empty_verifications() -> bool:
+    print("\n[4ce] Refiner schema rejects an empty verification pass")
+    schema = run_moa._load_schema(run_moa.REFINER_SCHEMA_PATH)
+    payload = _make_valid_broadcast_refiner("kimi")
+    payload["verifications"] = []
+    errors = run_moa._validate_against_schema(payload, schema)
+    ok = any("$.verifications" in error and "at least 1" in error for error in errors)
+    return _check("empty verifications fail closed", ok, f"errors={errors[:3]}")
+
+
+def test_refiner_schema_rejects_malformed_claim_pointer() -> bool:
+    print("\n[4cf] Refiner schema requires an exact evidence pointer")
+    schema = run_moa._load_schema(run_moa.REFINER_SCHEMA_PATH)
+    payload = _make_valid_broadcast_refiner("kimi")
+    payload["verifications"][0]["claim_index_path"] = "plan[0].step"
+    errors = run_moa._validate_against_schema(payload, schema)
+    ok = any("claim_index_path" in error and "pattern" in error for error in errors)
+    return _check("malformed historical pointer is rejected for new runs", ok, f"errors={errors[:3]}")
+
+
+def _write_decision_map_contract_session(
+    root: Path,
+    *,
+    verification_specs: list[dict] | None = None,
+    link_verifications: bool = True,
+) -> Path:
+    """Write a compact retained session for deterministic decision-map tests."""
+    session = root / "decision-map-contract"
+    (session / "layer1").mkdir(parents=True, exist_ok=True)
+    (session / "layer2").mkdir(parents=True, exist_ok=True)
+
+    proposer_specs = [
+        (
+            "codex",
+            "Redis keys are namespaced.",
+            "https://redis.io/docs/latest/develop/use/keyspace/",
+        ),
+        (
+            "sonnet",
+            "  REDIS—keys are   namespaced! ",
+            "https://example.com/cache/namespaces",
+        ),
+        (
+            "grok",
+            "Each cache key should include a namespace.",
+            "https://example.org/cache-key-design",
+        ),
+    ]
+    layer1 = []
+    for agent_id, claim, url in proposer_specs:
+        payload = _make_valid_proposer(agent_id)
+        payload["plan"][0]["evidence"] = [
+            {
+                "type": "external",
+                "file": None,
+                "line": None,
+                "url": url,
+                "snippet": "Use a stable namespace prefix for related cache keys.",
+                "claim": claim,
+            }
+        ]
+        json_path = f"layer1/{agent_id}-proposer.json"
+        (session / json_path).write_text(json.dumps(payload), encoding="utf-8")
+        layer1.append(
+            {
+                "agent_id": agent_id,
+                "layer": 1,
+                "role": "proposer",
+                "success": True,
+                "schema_valid": True,
+                "json_path": json_path,
+            }
+        )
+
+    grouped: dict[str, list[dict]] = {}
+    for spec in verification_specs or []:
+        grouped.setdefault(str(spec["reviewer_id"]), []).append(spec)
+    layer2 = []
+    refiner_refs = []
+    reviewer_models = {
+        "kimi": "moonshotai/kimi-k2.5",
+        "opus": "claude-opus-5",
+    }
+    for reviewer_id in sorted(grouped):
+        payload = _make_valid_broadcast_refiner(reviewer_id)
+        payload["reviewing"] = ["codex", "sonnet", "grok"]
+        payload["per_proposer_verdicts"] = [
+            {
+                "proposer": agent_id,
+                "verdict": "accept_with_changes",
+                "summary": "The proposal is useful and has a concrete evidence trail.",
+            }
+            for agent_id, _, _ in proposer_specs
+        ]
+        payload["verifications"] = []
+        for index, spec in enumerate(grouped[reviewer_id]):
+            payload["verifications"].append(
+                {
+                    "proposer": str(spec.get("proposer") or "codex"),
+                    "claim_index_path": str(
+                        spec.get("claim_index_path") or "plan[0].evidence[0]"
+                    ),
+                    "status": str(spec.get("status") or "verified"),
+                    "actual_finding": str(
+                        spec.get("actual_finding")
+                        or "The cited source directly supports the atomic claim."
+                    ),
+                    "source_url": (
+                        spec["source_url"]
+                        if "source_url" in spec
+                        else "https://example.net/independent-verification"
+                    ),
+                }
+            )
+            if link_verifications and decision_map_module.CLAIM_PATH_RE.fullmatch(
+                payload["verifications"][-1]["claim_index_path"]
+            ):
+                refiner_refs.append(
+                    {
+                        "agent_id": reviewer_id,
+                        "kind": "verification",
+                        "index": index,
+                        "note": "This verification materially affected the final step.",
+                    }
+                )
+        json_path = f"layer2/{reviewer_id}-refiner-broadcast.json"
+        (session / json_path).write_text(json.dumps(payload), encoding="utf-8")
+        layer2.append(
+            {
+                "agent_id": reviewer_id,
+                "layer": 2,
+                "role": "refiner-broadcast",
+                "reviewing": ["codex", "sonnet", "grok"],
+                "success": True,
+                "schema_valid": True,
+                "json_path": json_path,
+            }
+        )
+
+    manifest = {
+        "session_id": "decision-map-contract",
+        "architecture_version": "v3-named-roster",
+        "layer2_mode": "broadcast",
+        "started_at": 100.0,
+        "finished_at": 200.0,
+        "duration_seconds": 100.0,
+        "config": {
+            "proposers": [
+                {"name": "codex", "model": "gpt-5.6-terra"},
+                {"name": "sonnet", "model": "claude-sonnet-4-6"},
+                {"name": "grok", "model": "xai/grok-4.5"},
+            ],
+            "refiners": [
+                {"name": reviewer_id, "model": reviewer_models.get(reviewer_id, reviewer_id)}
+                for reviewer_id in sorted(grouped)
+            ],
+            "aggregator": {"name": "codex-sol", "model": "gpt-5.6-sol"},
+        },
+        "layer1": layer1,
+        "layer2": layer2,
+        "layer3": [],
+        "summary": {},
+    }
+    (session / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    (session / "scout-brief.json").write_text(
+        json.dumps(
+            {
+                "session_id": "decision-map-contract",
+                "frozen_spec": "Add a safely namespaced cache.",
+            }
+        ),
+        encoding="utf-8",
+    )
+    lineage = {
+        "version": 1,
+        "title": "Add a safely namespaced cache",
+        "summary": "Use a stable cache namespace backed by retained evidence.",
+        "confidence": {"level": "high", "rationale": "The reviewers checked it."},
+        "steps": [
+            {
+                "id": "add-cache-namespace",
+                "title": "Add the cache namespace",
+                "description": "Prefix every cache key with a stable namespace.",
+                "files_touched": ["app/cache.py"],
+                "decision": "accepted",
+                "adjudication": "The evidence and reviews support the selected design.",
+                "proposer_refs": [
+                    {
+                        "agent_id": "codex",
+                        "step_index": 0,
+                        "relationship": "adopted",
+                        "note": "Supplied the selected design.",
+                    }
+                ],
+                "refiner_refs": refiner_refs,
+            }
+        ],
+        "rejected_inputs": [],
+    }
+    (session / "final-plan.json").write_text(json.dumps(lineage), encoding="utf-8")
+    (session / "final-plan.md").write_text(
+        "# Final Plan: Add a safely namespaced cache\n\n## Plan\n\n1. Add the cache namespace.\n",
+        encoding="utf-8",
+    )
+    return session
+
+
+def _fixed_repository_receipt() -> dict:
+    return {
+        "commit": None,
+        "tree": None,
+        "dirty": None,
+        "status_sha256": None,
+        "diff_sha256": None,
+        "captured_at": None,
+        "capture_status": "fixture",
+    }
+
+
+def test_decision_map_ids_digest_and_exact_claim_merging_are_deterministic() -> bool:
+    print("\n[4cg] Decision map IDs/digest are stable and only exact-normalized claims merge")
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        session = _write_decision_map_contract_session(Path(td))
+        manifest_path = session / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["layer3"] = [
+            {
+                "agent_id": "codex-sol",
+                "layer": 3,
+                "role": "aggregator",
+                "success": True,
+                "schema_valid": True,
+            }
+        ]
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        first = decision_map_module.build_decision_map(
+            session, repository_state=_fixed_repository_receipt()
+        )
+        second = decision_map_module.build_decision_map(
+            session, repository_state=_fixed_repository_receipt()
+        )
+        merged = next(
+            (claim for claim in first["claims"] if set(claim["proposer_ids"]) == {"codex", "sonnet"}),
+            None,
+        )
+        paraphrase = next(
+            (claim for claim in first["claims"] if claim["proposer_ids"] == ["grok"]),
+            None,
+        )
+        stable_projection = lambda value: {
+            "input_digest": value["input_digest"],
+            "claim_ids": [item["id"] for item in value["claims"]],
+            "evidence_ids": [item["id"] for item in value["evidence"]],
+            "edge_ids": [item["id"] for item in value["edges"]],
+        }
+        contributes = {
+            (edge["from"], edge["to"])
+            for edge in first["edges"]
+            if edge["kind"] == "contributes"
+        }
+        synthesizes = {
+            (edge["from"], edge["to"])
+            for edge in first["edges"]
+            if edge["kind"] == "synthesizes"
+        }
+        completed_aggregators = {
+            f"agent:{agent['id']}"
+            for agent in first["agents"]
+            if agent["role"] == "aggregator" and agent["status"] == "completed"
+        }
+        ok = (
+            stable_projection(first) == stable_projection(second)
+            and len(first["claims"]) == 2
+            and merged is not None
+            and paraphrase is not None
+            and merged["id"] != paraphrase["id"]
+            and first["decisions"][0]["id"].startswith("decision-")
+            and first["decisions"][0]["id"] != "add-cache-namespace"
+            and any(source == "agent:codex" for source, _target in contributes)
+            and any(
+                source in completed_aggregators
+                and target == first["decisions"][0]["id"]
+                for source, target in synthesizes
+            )
+            and decision_map_module._portable_verification_source("app/cache.py:1")
+            == "app/cache.py:1"
+            and decision_map_module._portable_verification_source("app/cache.py:0") is None
+        )
+        return _check(
+            "stable IDs preserve exact merge and distinct paraphrase",
+            ok,
+            f"claims={[(c['text'], c['proposer_ids']) for c in first['claims']]}",
+        )
+
+
+def test_decision_map_preserves_historical_orphan_pointer_as_warning() -> bool:
+    print("\n[4ch] Historical noncanonical verification pointers remain inspectable")
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        session = _write_decision_map_contract_session(
+            Path(td),
+            verification_specs=[
+                {
+                    "reviewer_id": "kimi",
+                    "proposer": "codex",
+                    "claim_index_path": "plan[0].step",
+                    "status": "unverified",
+                    "actual_finding": "Legacy review targeted the whole step.",
+                    "source_url": None,
+                }
+            ],
+            link_verifications=False,
+        )
+        decision_map = decision_map_module.build_decision_map(
+            session, repository_state=_fixed_repository_receipt()
+        )
+        pointer_gate = next(
+            gate for gate in decision_map["quality"]["gates"] if gate["id"] == "pointer-integrity"
+        )
+        ok = (
+            len(decision_map["verifications"]) == 1
+            and decision_map["verifications"][0]["claim_id"] is None
+            and pointer_gate["status"] == "warn"
+            and any("plan[0].step" in warning for warning in decision_map["warnings"])
+        )
+        return _check("orphan retained as a warning node", ok, f"warnings={decision_map['warnings']}")
+
+
+def test_decision_map_contradiction_caps_high_confidence_to_low() -> bool:
+    print("\n[4ci] Contradicted critical evidence caps model-reported high confidence")
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        session = _write_decision_map_contract_session(
+            Path(td),
+            verification_specs=[
+                {
+                    "reviewer_id": "kimi",
+                    "proposer": "codex",
+                    "status": "verified",
+                    "source_url": "https://redis.io/docs/latest/develop/use/keyspace/",
+                },
+                {
+                    "reviewer_id": "opus",
+                    "proposer": "codex",
+                    "status": "contradicted",
+                    "actual_finding": "The cited source does not support the proposed guarantee.",
+                    "source_url": "https://redis.io/docs/latest/develop/use/keyspace/",
+                },
+            ],
+        )
+        decision_map = decision_map_module.build_decision_map(
+            session, repository_state=_fixed_repository_receipt()
+        )
+        critical = next(claim for claim in decision_map["claims"] if claim["critical"])
+        contradiction_gate = next(
+            gate for gate in decision_map["quality"]["gates"] if gate["id"] == "contradiction"
+        )
+        quality = decision_map["quality"]
+        ok = (
+            critical["status"] == "disputed"
+            and contradiction_gate["status"] == "fail"
+            and quality["stated_confidence"] == "high"
+            and quality["evidence_ceiling"] == "low"
+            and quality["effective_confidence"] == "low"
+            and quality["contradicted_critical_claims"] == 1
+        )
+        return _check("contradiction is visible and confidence is capped", ok, f"quality={quality}")
+
+
+def test_decision_map_schema_and_report_embedding_contract() -> bool:
+    print("\n[4cj] Decision map validates and survives the self-contained report data path")
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        session = _write_decision_map_contract_session(
+            Path(td),
+            verification_specs=[
+                {"reviewer_id": "kimi", "proposer": "codex", "status": "verified"},
+                {"reviewer_id": "opus", "proposer": "codex", "status": "verified"},
+            ],
+        )
+        decision_map = decision_map_module.build_decision_map(
+            session, repository_state=_fixed_repository_receipt()
+        )
+        schema = run_moa._load_schema(decision_map_module.DECISION_MAP_SCHEMA_PATH)
+        errors = run_moa._validate_against_schema(decision_map, schema)
+        report_data = report_module.load_session(session)
+        report_data["decision_map"] = decision_map
+        embedded = _extract_embedded_data(report_module.render_html(report_data))
+        embedded_map = embedded.get("decision_map") or {}
+        ok = (
+            not errors
+            and embedded_map.get("input_digest") == decision_map["input_digest"]
+            and isinstance(embedded_map.get("claims"), list)
+            and isinstance(embedded_map.get("evidence"), list)
+            and isinstance(embedded_map.get("edges"), list)
+            and isinstance((embedded_map.get("quality") or {}).get("gates"), list)
+        )
+        return _check("schema-valid map is report-portable", ok, f"errors={errors[:3]}")
+
+
+def test_decision_map_failed_latest_layer3_excludes_stale_final_plan() -> bool:
+    print("\n[4ck] Failed latest Layer 3 excludes stale final decisions")
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        session = _write_decision_map_contract_session(
+            Path(td),
+            verification_specs=[
+                {"reviewer_id": "kimi", "proposer": "codex", "status": "verified"}
+            ],
+        )
+        manifest_path = session / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["layer3"] = [
+            {
+                "agent_id": "codex-sol",
+                "layer": 3,
+                "role": "aggregator",
+                "success": True,
+                "schema_valid": True,
+            },
+            {
+                "agent_id": "codex-sol",
+                "layer": 3,
+                "role": "aggregator",
+                "success": False,
+                "schema_valid": False,
+                "error": "latest synthesis failed validation",
+            },
+        ]
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+        decision_map = decision_map_module.build_decision_map(
+            session, repository_state=_fixed_repository_receipt()
+        )
+        ok = (
+            decision_map["stage"] == "review"
+            and decision_map["decisions"] == []
+            and decision_map["quality"]["critical_claims"] == 0
+            and decision_map["quality"]["effective_confidence"] == "pending"
+            and any(
+                "latest Layer 3 attempt failed" in warning
+                for warning in decision_map["warnings"]
+            )
+        )
+        return _check(
+            "stale final-plan.json is not presented as the active decision",
+            ok,
+            f"stage={decision_map['stage']} decisions={len(decision_map['decisions'])} "
+            f"warnings={decision_map['warnings']}",
+        )
+
+
+def test_decision_map_bad_final_proposer_refs_fail_pointer_gate_without_type_error() -> bool:
+    print("\n[4cl] Stale and malformed final proposer refs fail pointer integrity safely")
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        session = _write_decision_map_contract_session(Path(td))
+        lineage_path = session / "final-plan.json"
+        lineage = json.loads(lineage_path.read_text(encoding="utf-8"))
+        lineage["steps"][0]["proposer_refs"] = [
+            {
+                "agent_id": "codex",
+                "step_index": 99,
+                "relationship": "adopted",
+                "note": "Stale pointer retained from an older proposal.",
+            },
+            {
+                "agent_id": "sonnet",
+                "step_index": "not-an-index",
+                "relationship": "adapted",
+                "note": "Malformed historical pointer.",
+            },
+        ]
+        lineage_path.write_text(json.dumps(lineage), encoding="utf-8")
+
+        decision_map = decision_map_module.build_decision_map(
+            session, repository_state=_fixed_repository_receipt()
+        )
+        pointer_gate = next(
+            gate for gate in decision_map["quality"]["gates"] if gate["id"] == "pointer-integrity"
+        )
+        ok = (
+            pointer_gate["status"] == "fail"
+            and decision_map["quality"]["evidence_ceiling"] == "low"
+            and any("codex:99" in warning for warning in decision_map["warnings"])
+            and any("sonnet:not-an-index" in warning for warning in decision_map["warnings"])
+        )
+        return _check(
+            "bad refs become deterministic gate failures instead of exceptions",
+            ok,
+            f"gate={pointer_gate} warnings={decision_map['warnings']}",
+        )
+
+
+def test_decision_map_single_source_critical_claim_cannot_reach_high_ceiling() -> bool:
+    print("\n[4cm] A single-source critical claim cannot receive a high evidence ceiling")
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        session = _write_decision_map_contract_session(
+            Path(td),
+            verification_specs=[
+                {"reviewer_id": "kimi", "proposer": "codex", "status": "verified"},
+                {"reviewer_id": "opus", "proposer": "codex", "status": "verified"},
+            ],
+        )
+        sonnet_path = session / "layer1" / "sonnet-proposer.json"
+        sonnet = json.loads(sonnet_path.read_text(encoding="utf-8"))
+        sonnet["plan"][0]["evidence"][0]["claim"] = (
+            "A separate cache observation that does not corroborate the critical claim."
+        )
+        sonnet_path.write_text(json.dumps(sonnet), encoding="utf-8")
+
+        decision_map = decision_map_module.build_decision_map(
+            session, repository_state=_fixed_repository_receipt()
+        )
+        critical = next(claim for claim in decision_map["claims"] if claim["critical"])
+        diversity_gate = next(
+            gate for gate in decision_map["quality"]["gates"] if gate["id"] == "source-diversity"
+        )
+        ok = (
+            critical["independent_sources"] == 1
+            and diversity_gate["status"] == "warn"
+            and decision_map["quality"]["evidence_ceiling"] == "medium"
+            and decision_map["quality"]["effective_confidence"] == "medium"
+        )
+        return _check(
+            "single-source evidence caps otherwise verified confidence",
+            ok,
+            f"sources={critical['independent_sources']} gate={diversity_gate} "
+            f"ceiling={decision_map['quality']['evidence_ceiling']}",
+        )
+
+
+def test_decision_map_detects_untracked_cited_file_drift_with_same_git_porcelain() -> bool:
+    print("\n[4cn] Untracked cited-file drift is detected beyond Git porcelain")
+    import subprocess
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        repo = root / "repo"
+        repo.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+        (repo / "tracked.txt").write_text("baseline\n", encoding="utf-8")
+        subprocess.run(["git", "add", "tracked.txt"], cwd=repo, check=True)
+        subprocess.run(
+            [
+                "git",
+                "-c",
+                "user.name=MoA Test",
+                "-c",
+                "user.email=moa@example.invalid",
+                "commit",
+                "-qm",
+                "fixture",
+            ],
+            cwd=repo,
+            check=True,
+        )
+        cited = repo / "untracked-evidence.txt"
+        cited.write_text("before\n", encoding="utf-8")
+
+        session = _write_decision_map_contract_session(root)
+        scout_path = session / "scout-brief.json"
+        scout = json.loads(scout_path.read_text(encoding="utf-8"))
+        scout["repo_path"] = str(repo)
+        scout_path.write_text(json.dumps(scout), encoding="utf-8")
+        proposer_path = session / "layer1" / "codex-proposer.json"
+        proposer = json.loads(proposer_path.read_text(encoding="utf-8"))
+        proposer["plan"][0]["evidence"] = [
+            {
+                "type": "code",
+                "file": "untracked-evidence.txt",
+                "line": 1,
+                "url": None,
+                "snippet": None,
+                "claim": "Redis keys are namespaced.",
+            }
+        ]
+        proposer_path.write_text(json.dumps(proposer), encoding="utf-8")
+
+        before = decision_map_module.capture_repository_state(repo)
+        first = decision_map_module.build_decision_map(
+            session, repository_state=before
+        )
+        first_code = next(item for item in first["evidence"] if item["type"] == "code")
+        cited.write_text("after\n", encoding="utf-8")
+        after = decision_map_module.capture_repository_state(repo)
+        second = decision_map_module.build_decision_map(
+            session, repository_state=before, prior_map=first
+        )
+        second_code = next(item for item in second["evidence"] if item["type"] == "code")
+        freshness_gate = next(
+            gate for gate in second["quality"]["gates"] if gate["id"] == "freshness"
+        )
+        git_receipt_unchanged = all(
+            before[key] == after[key]
+            for key in ("commit", "tree", "status_sha256", "diff_sha256")
+        )
+        ok = (
+            first_code["capture_status"] == "captured"
+            and git_receipt_unchanged
+            and second_code["capture_status"] == "repository_drift"
+            and freshness_gate["status"] == "fail"
+            and second["quality"]["evidence_ceiling"] == "low"
+        )
+        return _check(
+            "file-level receipt catches content drift with unchanged Git status",
+            ok,
+            f"git_same={git_receipt_unchanged} first={first_code['capture_status']} "
+            f"second={second_code['capture_status']} gate={freshness_gate}",
+        )
+
+
+def test_decision_map_oversized_receipt_is_rejected_before_read() -> bool:
+    print("\n[4co] Oversized evidence files are rejected before content is read")
+    import tempfile
+    from unittest import mock
+
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td)
+        oversized = repo / "oversized-evidence.txt"
+        with oversized.open("wb") as handle:
+            handle.seek(2 * 1024 * 1024)
+            handle.write(b"x")
+        with mock.patch.object(
+            Path,
+            "read_bytes",
+            side_effect=AssertionError("oversized file should not be read"),
+        ) as read_bytes:
+            file_hash, line_hash, status = decision_map_module._repo_file_receipt(
+                repo, oversized.name, 1
+            )
+        ok = (
+            status == "oversized"
+            and file_hash is None
+            and line_hash is None
+            and not read_bytes.called
+        )
+        return _check(
+            "stat-size gate runs before read_bytes",
+            ok,
+            f"status={status} read_called={read_bytes.called}",
+        )
+
+
+def test_decision_map_validator_rejection_preserves_existing_artifact() -> bool:
+    print("\n[4cp] Validator rejection cannot replace an existing decision map")
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        session = _write_decision_map_contract_session(Path(td))
+        output = session / decision_map_module.DECISION_MAP_FILENAME
+        original = b'{"existing":"keep-this-artifact"}\n'
+        output.write_bytes(original)
+        rejecting_schema = {
+            "type": "object",
+            "required": ["production_validator_must_reject"],
+            "properties": {
+                "production_validator_must_reject": {"type": "boolean"}
+            },
+        }
+        error = None
+        try:
+            decision_map_module.write_decision_map(
+                session,
+                validator=lambda payload: run_moa._validate_against_schema(
+                    payload, rejecting_schema
+                ),
+            )
+        except ValueError as exc:
+            error = str(exc)
+        temporary = session / f".{decision_map_module.DECISION_MAP_FILENAME}.tmp"
+        ok = (
+            error is not None
+            and "production_validator_must_reject" in error
+            and output.read_bytes() == original
+            and not temporary.exists()
+        )
+        return _check(
+            "validation happens before atomic replacement",
+            ok,
+            f"error={error!r} preserved={output.read_bytes() == original}",
+        )
+
+
+def test_report_failed_latest_layer3_suppresses_stale_final_artifacts() -> bool:
+    print("\n[4cq] Report data suppresses stale final artifacts after a failed Layer 3 retry")
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        session = _write_decision_map_contract_session(
+            Path(td),
+            verification_specs=[
+                {"reviewer_id": "kimi", "proposer": "codex", "status": "verified"}
+            ],
+        )
+        manifest_path = session / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["layer3"] = [
+            {
+                "agent_id": "codex-sol",
+                "layer": 3,
+                "role": "aggregator",
+                "success": True,
+                "schema_valid": True,
+            },
+            {
+                "agent_id": "codex-sol",
+                "layer": 3,
+                "role": "aggregator",
+                "success": False,
+                "schema_valid": False,
+                "error": "latest synthesis failed validation",
+            },
+        ]
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+        data = report_module.load_session(session)
+        decision_map = data.get("decision_map") or {}
+        ok = (
+            data.get("final_plan_markdown") is None
+            and data.get("final_plan_html") is None
+            and data.get("final_plan_lineage") is None
+            and decision_map.get("stage") == "review"
+            and decision_map.get("decisions") == []
+        )
+        return _check(
+            "failed latest synthesis cannot leak an older final plan into report data",
+            ok,
+            f"markdown={data.get('final_plan_markdown') is not None} "
+            f"lineage={data.get('final_plan_lineage') is not None} "
+            f"map_stage={decision_map.get('stage')}",
+        )
+
+
+def test_report_suppresses_final_artifacts_that_predate_active_manifest() -> bool:
+    print("\n[4cq2] Report and map share final-artifact freshness truth")
+    import os
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        session = _write_decision_map_contract_session(
+            Path(td),
+            verification_specs=[
+                {"reviewer_id": "kimi", "proposer": "codex", "status": "verified"}
+            ],
+        )
+        manifest_path = session / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["finished_at"] = 400.0
+        manifest["layer3"] = []
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        os.utime(session / "final-plan.md", (300.0, 300.0))
+        os.utime(session / "final-plan.json", (300.0, 300.0))
+
+        data = report_module.load_session(session)
+        decision_map = data.get("decision_map") or {}
+        ok = (
+            data.get("final_plan_markdown") is None
+            and data.get("final_plan_html") is None
+            and data.get("final_plan_lineage") is None
+            and decision_map.get("stage") == "review"
+            and decision_map.get("decisions") == []
+            and any(
+                "predate the active manifest" in warning
+                for warning in data.get("lineage_warnings", [])
+            )
+        )
+        return _check(
+            "an older final cannot disagree with the active report decision map",
+            ok,
+            f"warnings={data.get('lineage_warnings')} map_stage={decision_map.get('stage')}",
+        )
+
+
+def test_decision_map_invalid_receipts_do_not_inflate_critical_source_diversity() -> bool:
+    print("\n[4cr] Invalid and unavailable receipts do not inflate critical source diversity")
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        session = _write_decision_map_contract_session(
+            Path(td),
+            verification_specs=[
+                {"reviewer_id": "kimi", "proposer": "codex", "status": "verified"},
+                {"reviewer_id": "opus", "proposer": "codex", "status": "verified"},
+            ],
+        )
+        proposer_path = session / "layer1" / "codex-proposer.json"
+        proposer = json.loads(proposer_path.read_text(encoding="utf-8"))
+        proposer["plan"][0]["evidence"] = [
+            {
+                "type": "external",
+                "file": None,
+                "line": None,
+                "url": "not a valid source URL",
+                "snippet": "A declared excerpt with no valid locator.",
+                "claim": "Only invalid evidence supports this critical claim.",
+            },
+            {
+                "type": "code",
+                "file": "missing/evidence.py",
+                "line": 1,
+                "url": None,
+                "snippet": "A file that was never captured.",
+                "claim": "Only invalid evidence supports this critical claim.",
+            },
+        ]
+        proposer_path.write_text(json.dumps(proposer), encoding="utf-8")
+
+        decision_map = decision_map_module.build_decision_map(
+            session, repository_state=_fixed_repository_receipt()
+        )
+        critical = next(claim for claim in decision_map["claims"] if claim["critical"])
+        critical_receipts = [
+            receipt
+            for receipt in decision_map["evidence"]
+            if receipt["id"] in critical["evidence_ids"]
+        ]
+        diversity_gate = next(
+            gate
+            for gate in decision_map["quality"]["gates"]
+            if gate["id"] == "source-diversity"
+        )
+        statuses = sorted(receipt["capture_status"] for receipt in critical_receipts)
+        ok = (
+            statuses == ["invalid_locator", "unavailable_legacy"]
+            and critical["status"] == "verified"
+            and len(critical["verified_reviewer_labs"]) == 2
+            and critical["independent_sources"] == 0
+            and decision_map["quality"]["supported_critical_claims"] == 0
+            and decision_map["quality"]["source_concentration"] == 0
+            and diversity_gate["status"] != "pass"
+            and decision_map["quality"]["evidence_ceiling"] == "low"
+        )
+        return _check(
+            "unusable locators cannot manufacture diversity or a high confidence ceiling",
+            ok,
+            f"statuses={statuses} sources={critical['independent_sources']} "
+            f"quality={decision_map['quality']}",
+        )
+
+
+def test_decision_map_does_not_amplify_sensitive_code_snippets() -> bool:
+    print("\n[4cr2] Sensitive or unvalidated code locators do not copy snippets into the map")
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        session = _write_decision_map_contract_session(Path(td))
+        proposer_path = session / "layer1" / "codex-proposer.json"
+        proposer = json.loads(proposer_path.read_text(encoding="utf-8"))
+        proposer["plan"][0]["evidence"] = [{
+            "type": "code",
+            "file": ".env",
+            "line": 1,
+            "url": None,
+            "snippet": "API_KEY=top-secret",
+            "claim": "Redis keys are namespaced.",
+        }]
+        proposer_path.write_text(json.dumps(proposer), encoding="utf-8")
+
+        decision_map = decision_map_module.build_decision_map(
+            session, repository_state=_fixed_repository_receipt()
+        )
+        receipt = next(
+            item
+            for item in decision_map["evidence"]
+            if "codex" in item["proposer_ids"]
+        )
+        serialized = json.dumps(decision_map)
+        ok = (
+            receipt["file"] is None
+            and receipt["snippet"] is None
+            and receipt["snippet_sha256"] is None
+            and "top-secret" not in serialized
+            and "API_KEY" not in serialized
+            and '".env"' not in serialized
+        )
+        return _check(
+            "blocked code evidence retains status without copying sensitive text",
+            ok,
+            f"status={receipt['capture_status']} file={receipt['file']} ",
+        )
+
+
+def test_unsourced_or_missing_verification_receipts_cannot_raise_confidence() -> bool:
+    print("\n[4cr3] Positive reviewer verdicts require usable source receipts")
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        session = _write_decision_map_contract_session(
+            root,
+            verification_specs=[
+                {
+                    "reviewer_id": "kimi",
+                    "proposer": "codex",
+                    "status": "verified",
+                    "source_url": None,
+                },
+                {
+                    "reviewer_id": "opus",
+                    "proposer": "codex",
+                    "status": "verified",
+                    "source_url": None,
+                },
+            ],
+        )
+        decision_map = decision_map_module.build_decision_map(
+            session, repository_state=_fixed_repository_receipt()
+        )
+        critical = next(claim for claim in decision_map["claims"] if claim["critical"])
+
+        payload = _make_valid_broadcast_refiner("kimi")
+        payload["verifications"][0]["source_url"] = "missing.py:999999"
+        local_errors = run_moa._validate_refiner_verification_cross_fields(
+            payload, root
+        )
+        ok = (
+            {item["declared_status"] for item in decision_map["verifications"]}
+            == {"verified"}
+            and {item["status"] for item in decision_map["verifications"]}
+            == {"unverified"}
+            and {
+                item["source_capture_status"]
+                for item in decision_map["verifications"]
+            }
+            == {"missing_locator"}
+            and critical["status"] == "unverified"
+            and critical["verified_reviewer_labs"] == []
+            and decision_map["quality"]["evidence_ceiling"] != "high"
+            and any("treated as unverified" in warning for warning in decision_map["warnings"])
+            and any("missing.py:999999 is unreadable" in error for error in local_errors)
+        )
+        return _check(
+            "unsourced and nonexistent local checks cannot manufacture independent review",
+            ok,
+            f"quality={decision_map['quality']} errors={local_errors}",
+        )
+
+
+def test_http_verification_locators_require_valid_hosts() -> bool:
+    print("\n[4cr4] HTTP verification locators require canonical valid hosts")
+    import tempfile
+
+    invalid_urls = [
+        "https://:443/a",
+        "https://exa mple.com/a",
+        "https://example.com:not-a-port/a",
+        "https://example.com:65536/a",
+        "https://example.com:/a",
+        "https://2130706433/a",
+        "https://127.1/a",
+        "https://0x7f000001/a",
+        "https://0177.0.0.1/a",
+    ]
+    canonical_ipv4 = decision_map_module._canonical_url(
+        "https://127.0.0.1:443/a"
+    )
+    canonical_ipv6 = decision_map_module._canonical_url(
+        "https://user:secret@[2001:0DB8:0:0:0:0:0:1]:443/a/"
+        "?utm_source=campaign&b=2&token=secret&a=1#fragment"
+    )
+    nondefault_ipv6 = decision_map_module._canonical_url(
+        "http://[2001:db8::1]:8080/a"
+    )
+
+    with tempfile.TemporaryDirectory() as td:
+        session = _write_decision_map_contract_session(
+            Path(td),
+            verification_specs=[
+                {
+                    "reviewer_id": "kimi",
+                    "proposer": "codex",
+                    "status": "verified",
+                    "source_url": invalid_urls[0],
+                },
+                {
+                    "reviewer_id": "opus",
+                    "proposer": "codex",
+                    "status": "verified",
+                    "source_url": invalid_urls[1],
+                },
+                {
+                    "reviewer_id": "opus",
+                    "proposer": "codex",
+                    "status": "verified",
+                    "source_url": invalid_urls[5],
+                },
+            ],
+        )
+        decision_map = decision_map_module.build_decision_map(
+            session, repository_state=_fixed_repository_receipt()
+        )
+        critical = next(claim for claim in decision_map["claims"] if claim["critical"])
+        verification_statuses = {
+            item["source_capture_status"] for item in decision_map["verifications"]
+        }
+        ok = (
+            all(decision_map_module._canonical_url(url) is None for url in invalid_urls)
+            and canonical_ipv4 == "https://127.0.0.1/a"
+            and canonical_ipv6 == "https://[2001:db8::1]/a?a=1&b=2"
+            and nondefault_ipv6 == "http://[2001:db8::1]:8080/a"
+            and verification_statuses == {"invalid_locator"}
+            and {item["source_url"] for item in decision_map["verifications"]}
+            == {None}
+            and {item["status"] for item in decision_map["verifications"]}
+            == {"unverified"}
+            and critical["status"] == "unverified"
+            and critical["verified_reviewer_labs"] == []
+        )
+        return _check(
+            "malformed authorities cannot become usable reviewer receipts",
+            ok,
+            f"canonical_ipv4={canonical_ipv4!r} "
+            f"canonical_ipv6={canonical_ipv6!r} "
+            f"nondefault_ipv6={nondefault_ipv6!r} "
+            f"verification_statuses={verification_statuses}",
+        )
+
+
+def test_legacy_report_generation_does_not_claim_live_repository_capture() -> bool:
+    print("\n[4cs] Post-hoc legacy reports do not claim historical live repository capture")
+    import subprocess
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        repo = root / "repository"
+        source = repo / "app" / "cache.py"
+        source.parent.mkdir(parents=True)
+        source.write_text("CACHE_NAMESPACE = 'legacy'\n", encoding="utf-8")
+        subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+        subprocess.run(["git", "add", "app/cache.py"], cwd=repo, check=True)
+        subprocess.run(
+            [
+                "git",
+                "-c",
+                "user.name=MoA Test",
+                "-c",
+                "user.email=moa@example.invalid",
+                "commit",
+                "-qm",
+                "legacy fixture",
+            ],
+            cwd=repo,
+            check=True,
+        )
+
+        session = _write_decision_map_contract_session(root)
+        scout_path = session / "scout-brief.json"
+        scout = json.loads(scout_path.read_text(encoding="utf-8"))
+        scout["repo_path"] = str(repo)
+        scout_path.write_text(json.dumps(scout), encoding="utf-8")
+        proposer_path = session / "layer1" / "codex-proposer.json"
+        proposer = json.loads(proposer_path.read_text(encoding="utf-8"))
+        proposer["plan"][0]["evidence"] = [
+            {
+                "type": "code",
+                "file": "app/cache.py",
+                "line": 1,
+                "url": None,
+                "snippet": "CACHE_NAMESPACE = 'legacy'",
+                "claim": "Redis keys are namespaced.",
+            }
+        ]
+        proposer_path.write_text(json.dumps(proposer), encoding="utf-8")
+
+        html = report_module.generate(session, session / "report.html").read_text(
+            encoding="utf-8"
+        )
+        decision_map = _extract_embedded_data(html).get("decision_map") or {}
+        repository = decision_map.get("repository") or {}
+        code_receipt = next(
+            (item for item in decision_map.get("evidence", []) if item.get("type") == "code"),
+            {},
+        )
+        ok = (
+            repository.get("capture_status") == "unavailable_legacy"
+            and repository.get("captured_at") is None
+            and code_receipt.get("capture_status") == "unavailable_legacy"
+            and code_receipt.get("file_sha256") is None
+            and code_receipt.get("line_sha256") is None
+        )
+        return _check(
+            "a report-time rebuild cannot backdate a live evidence receipt",
+            ok,
+            f"repository={repository} code_status={code_receipt.get('capture_status')}",
+        )
+
+
+def test_newer_layer1_retry_manifest_supersedes_copied_stale_full_run() -> bool:
+    print("\n[4ct] A newer Layer 1 retry supersedes copied full-run and final-plan artifacts")
+    import os
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        session = _write_decision_map_contract_session(Path(td))
+        full_manifest_path = session / "manifest.json"
+        full_manifest = json.loads(full_manifest_path.read_text(encoding="utf-8"))
+
+        retry_dir = session / "retry-layer1"
+        retry_dir.mkdir()
+        retry_payload = _make_valid_proposer("codex")
+        retry_evidence = retry_payload["plan"][0]["evidence"][0]
+        retry_evidence["claim"] = "The newer retry is the only active proposal evidence."
+        retry_payload["plan"][0]["evidence"] = [retry_evidence]
+        retry_payload_path = retry_dir / "codex-proposer.json"
+        retry_payload_path.write_text(json.dumps(retry_payload), encoding="utf-8")
+        retry_manifest = {
+            "session_id": full_manifest["session_id"],
+            "architecture_version": full_manifest["architecture_version"],
+            "phase": "layer1",
+            "layer2_mode": "broadcast",
+            "started_at": 300.0,
+            "finished_at": 400.0,
+            "duration_seconds": 100.0,
+            "config": full_manifest["config"],
+            "layer1": [
+                {
+                    "agent_id": "codex",
+                    "layer": 1,
+                    "role": "proposer",
+                    "success": True,
+                    "schema_valid": True,
+                    "json_path": "retry-layer1/codex-proposer.json",
+                }
+            ],
+            "layer2": [],
+            "layer3": [],
+            "summary": {},
+        }
+        retry_manifest_path = session / "layer1-manifest.json"
+        retry_manifest_path.write_text(json.dumps(retry_manifest), encoding="utf-8")
+        os.utime(full_manifest_path, (200, 200))
+        os.utime(retry_manifest_path, (400, 400))
+
+        decision_map = decision_map_module.build_decision_map(
+            session, repository_state=_fixed_repository_receipt()
+        )
+        report_data = report_module.load_session(session)
+        claim_texts = {claim["text"] for claim in decision_map["claims"]}
+        ok = (
+            decision_map["stage"] == "proposals"
+            and decision_map["decisions"] == []
+            and claim_texts == {"The newer retry is the only active proposal evidence."}
+            and report_data["partial"] is True
+            and report_data["final_plan_markdown"] is None
+            and report_data["final_plan_html"] is None
+            and report_data["final_plan_lineage"] is None
+            and (report_data.get("decision_map") or {}).get("stage") == "proposals"
+        )
+        return _check(
+            "copied stale synthesis cannot outrank the newer retry checkpoint",
+            ok,
+            f"map_stage={decision_map['stage']} claims={claim_texts} "
+            f"partial={report_data['partial']} "
+            f"report_final={report_data['final_plan_markdown'] is not None}",
+        )
+
+
+def test_decision_map_fifo_receipt_is_rejected_without_reading() -> bool:
+    print("\n[4cu] FIFO evidence is rejected as non-regular without opening it")
+    import os
+    import tempfile
+    from unittest import mock
+
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td)
+        fifo = repo / "evidence.pipe"
+        os.mkfifo(fifo)
+        with mock.patch.object(
+            Path,
+            "read_bytes",
+            side_effect=AssertionError("a FIFO must never be opened for evidence capture"),
+        ) as read_bytes:
+            file_hash, line_hash, status = decision_map_module._repo_file_receipt(
+                repo, fifo.name, 1
+            )
+        ok = (
+            status == "non_regular"
+            and file_hash is None
+            and line_hash is None
+            and not read_bytes.called
+        )
+        return _check(
+            "non-regular evidence is rejected before any potentially blocking read",
+            ok,
+            f"status={status} read_called={read_bytes.called}",
+        )
+
+
+def test_webui_retained_decision_map_stage_is_artifact_owned() -> bool:
+    print("\n[4cv] A retained decision-map stage is not overwritten by live job status")
+    app_source = (
+        SCRIPT_DIR.parent / "webui" / "static" / "js" / "app.js"
+    ).read_text(encoding="utf-8")
+    map_source = (
+        SCRIPT_DIR.parent / "webui" / "static" / "js" / "decision-map.js"
+    ).read_text(encoding="utf-8")
+    ok = (
+        "const retained = state.decisionMapJobId === job.id ? state.decisionMap : null;"
+        in app_source
+        and "const base = retained || window.MoaDecisionMap.createSetupMap({"
+        in app_source
+        and "retained ? undefined : decisionMapStage(job)," in app_source
+        and "if (stage) output.stage = stage;" in map_source
+    )
+    return _check(
+        "job-derived stage is used only before a retained artifact exists",
+        ok,
+    )
 
 
 def test_strict_mode_lint_catches_violation() -> bool:
@@ -2870,6 +4103,29 @@ def main() -> int:
         test_schema_validator_rejects_missing_evidence_key,
         test_strict_mode_lint_clean_on_current_schemas,
         test_final_plan_schema_resolves_local_refs,
+        test_proposer_schema_rejects_empty_step_evidence,
+        test_refiner_schema_rejects_empty_verifications,
+        test_refiner_schema_rejects_malformed_claim_pointer,
+        test_decision_map_ids_digest_and_exact_claim_merging_are_deterministic,
+        test_decision_map_preserves_historical_orphan_pointer_as_warning,
+        test_decision_map_contradiction_caps_high_confidence_to_low,
+        test_decision_map_schema_and_report_embedding_contract,
+        test_decision_map_failed_latest_layer3_excludes_stale_final_plan,
+        test_decision_map_bad_final_proposer_refs_fail_pointer_gate_without_type_error,
+        test_decision_map_single_source_critical_claim_cannot_reach_high_ceiling,
+        test_decision_map_detects_untracked_cited_file_drift_with_same_git_porcelain,
+        test_decision_map_oversized_receipt_is_rejected_before_read,
+        test_decision_map_validator_rejection_preserves_existing_artifact,
+        test_report_failed_latest_layer3_suppresses_stale_final_artifacts,
+        test_report_suppresses_final_artifacts_that_predate_active_manifest,
+        test_decision_map_invalid_receipts_do_not_inflate_critical_source_diversity,
+        test_decision_map_does_not_amplify_sensitive_code_snippets,
+        test_unsourced_or_missing_verification_receipts_cannot_raise_confidence,
+        test_http_verification_locators_require_valid_hosts,
+        test_legacy_report_generation_does_not_claim_live_repository_capture,
+        test_newer_layer1_retry_manifest_supersedes_copied_stale_full_run,
+        test_decision_map_fifo_receipt_is_rejected_without_reading,
+        test_webui_retained_decision_map_stage_is_artifact_owned,
         test_strict_mode_lint_catches_violation,
         test_codex_extractor_finds_payload_in_framed_output,
         test_claude_extractor_finds_structured_output,
