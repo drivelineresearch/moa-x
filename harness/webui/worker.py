@@ -528,6 +528,15 @@ class JobWorker:
                                 job_id, summary=diagnostic["message"]
                             )
                             break
+                decision_map_path = Path(job["session_dir"]) / "decision-map.json"
+                if decision_map_path.is_file():
+                    self._event(
+                        job_id,
+                        "artifact",
+                        "Evidence-weighted decision map updated",
+                        path="decision-map.json",
+                        phase=phase,
+                    )
             if self.store.cancel_requested(job_id):
                 raise InterruptedError
             if code == 0:

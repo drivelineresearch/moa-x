@@ -96,7 +96,8 @@ Layer 3 — Aggregation                      (recorded GPT-5.6 Sol @ xhigh)
    ├─ honor every refiner contradiction + synthesis_recommendation
    ├─ surface disagreements explicitly (proposer↔proposer AND refiner↔refiner)
    ├─ write .moa/<session>/final-plan.md + final-plan.json decision lineage
-   ├─ (re-render .moa/<session>/report.html so the plan + lineage show:
+   ├─ derive .moa/<session>/decision-map.json and its evidence gates
+   ├─ (re-render .moa/<session>/report.html so the plan + map + lineage show:
    │   python3 harness/scripts/report.py --session .moa/<session>)
    └─ present to user, ask if ready to execute (offer to open report.html)
 ```
@@ -105,8 +106,9 @@ The orchestrator already wrote `.moa/<session>/report.html` — a single
 self-contained visual post-mortem of the run (3D pipeline, Gantt, proposer
 plans, refiner verdict matrix, logs). After you write `final-plan.md` and its
 schema-validated `final-plan.json` provenance companion, re-run
-`report.py --session .moa/<session>` so the aggregated plan and interactive
-decision lineage are embedded too, then point the user at the file. See
+`report.py --session .moa/<session>` so the orchestrator-derived evidence map,
+aggregated plan, and exact decision lineage are embedded too, then point the
+user at the file. See
 `docs/report.md`.
 
 Layer 0 happens in this Claude Code session. Layers 1 and 2 are spawned as
@@ -308,7 +310,9 @@ python3 ~/.claude/skills/mixture-of-agents/scripts/run_moa.py \
 This does not rerun Layers 1 or 2. It asks the configured Codex model for one
 strict JSON bundle, validates the Markdown and every lineage pointer before
 writing either final artifact, records Layer 3 in `manifest.json`, and
-regenerates `report.html`. If it fails validation, surface the Layer 3 log and
+derives `decision-map.json` before regenerating `report.html`. The map owns its
+content-addressed IDs and quality gates; never ask the aggregator to invent
+them. If Layer 3 fails validation, surface the log and
 do not hand-edit the invalid bundle into a passing result.
 
 ### Step 4 — Present to the user
@@ -344,7 +348,7 @@ the whole point of the planning phase was deliberation.
    are signal, not noise.
 
 6. **Save all artifacts.** `.moa/<session_id>/` keeps the scout brief, all
-   layer outputs, the synthesis input, and the final plan. The user should
+   layer outputs, the synthesis input, derived decision map, and final plan. The user should
    be able to re-aggregate from the artifacts later or audit any run.
 
 7. **No built-in dollar caps.** The orchestrator doesn't normalize usage or
@@ -372,6 +376,7 @@ the whole point of the planning phase was deliberation.
 - `prompts/refiner.md` — Layer 2 prompt template (sent to every broadcast refiner)
 - `prompts/aggregator.md` — Layer 3 detailed protocol
 - `scripts/run_moa.py` — Python orchestrator (Layers 1 + 2, plus recorded Layer 3)
+- `scripts/decision_map.py` — deterministic evidence/claim/review/decision graph builder
 - `scripts/install_deps.py` — dependency check / bootstrap
 - `scripts/test_offline.py` — offline smoke test for parsing + schema layers
 - `scripts/adapters/codex.py` — codex CLI subprocess wrapper
@@ -381,6 +386,7 @@ the whole point of the planning phase was deliberation.
 - `scripts/schemas/proposer.schema.json` — JSON Schema for Layer 1 outputs
 - `scripts/schemas/refiner.schema.json` — JSON Schema for Layer 2 outputs
 - `scripts/schemas/final-plan.schema.json` — JSON Schema for Layer 3 decision lineage
+- `scripts/schemas/decision-map.schema.json` — JSON Schema for the derived evidence-weighted map
 
 ## Background
 

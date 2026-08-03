@@ -268,6 +268,7 @@ def _check_assets(failures: list[str]) -> None:
     required = [
         skill_dir / "SKILL.md",
         skill_dir / "scripts" / "run_moa.py",
+        skill_dir / "scripts" / "decision_map.py",
         skill_dir / "scripts" / "adapters" / "codex.py",
         skill_dir / "scripts" / "adapters" / "opencode.py",
         skill_dir / "scripts" / "adapters" / "claude.py",
@@ -276,10 +277,13 @@ def _check_assets(failures: list[str]) -> None:
         skill_dir / "scripts" / "schemas" / "proposer.schema.json",
         skill_dir / "scripts" / "schemas" / "refiner.schema.json",
         skill_dir / "scripts" / "schemas" / "final-plan.schema.json",
+        skill_dir / "scripts" / "schemas" / "decision-map.schema.json",
         skill_dir / "prompts" / "scout.md",
         skill_dir / "prompts" / "proposer.md",
         skill_dir / "prompts" / "refiner.md",
         skill_dir / "prompts" / "aggregator.md",
+        skill_dir / "webui" / "static" / "css" / "decision-map.css",
+        skill_dir / "webui" / "static" / "js" / "decision-map.js",
     ]
     print("")
     print("  skill assets:")

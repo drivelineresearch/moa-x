@@ -254,7 +254,8 @@ table.dl th { font-family: var(--font-head); text-transform: uppercase; font-siz
 .verif-row .vlabel .name { font-family: var(--font-head); font-weight: 800; text-transform: uppercase; font-size: 0.8rem; }
 .verif-row .vlabel .counts { font-size: 0.78rem; color: var(--secondary); }
 .dots { display: flex; flex-wrap: wrap; gap: 6px; }
-.vdot { width: 15px; height: 15px; border-radius: 4px; cursor: pointer; }
+.vdot { width: 28px; height: 28px; padding: 6px; border: 6px solid var(--white); border-radius: 8px; cursor: pointer; box-shadow: inset 0 0 0 2px currentColor; }
+.vdot:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
 .vdot.verified { background: var(--green); }
 .vdot.unverified { background: var(--track); }
 .vdot.contradicted { background: var(--red); }
@@ -451,6 +452,7 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
   .collapse > .c-body { max-height: none !important; }
   section.block { padding: 20px 0; }
 }
+__DECISION_MAP_STYLE__
 </style>
 </head>
 <body>
@@ -464,6 +466,9 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
 
 <div id="tooltip"></div>
 
+<script>
+__DECISION_MAP_SCRIPT__
+</script>
 <script>
 "use strict";
 (function () {
@@ -925,7 +930,7 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
     var dots = el("div", { class: "dots" });
     var detail = el("div", { class: "vdetail" });
     vs.forEach(function (v) {
-      var dot = el("div", { class: "vdot " + v.status, "data-tip": v.actual_finding || "", "data-tiph": v.proposer + " " + v.claim_index_path + " — " + v.status });
+      var dot = el("button", { type: "button", class: "vdot " + v.status, "aria-label": v.proposer + " " + v.claim_index_path + " — " + v.status, "data-tip": v.actual_finding || "", "data-tiph": v.proposer + " " + v.claim_index_path + " — " + v.status });
       dot.addEventListener("click", function () {
         detail.className = "vdetail show";
         detail.innerHTML = "";
@@ -975,18 +980,34 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
     return collapsible(r.agent_id + " review — full findings", statusPip(r), [["reviewed", reviewed || "—"], ["final", finalUses + " cited"], ["dur", fmtDur(r.duration_seconds)]], body, false, r);
   }
 
-  // Decision lineage — why each step survived (legacy report label).
-  // ---------------------------------------------------------------- Decision trail
+  // Evidence-weighted living decision map with legacy-lineage fallback.
+  // Decision lineage — why each step survived (retained exact-reference view).
+  // ---------------------------------------------------------------- Decision map
   (function () {
     var sec = el("section", { class: "block", id: "lineage" });
-    sec.appendChild(el("div", { class: "section-kicker", text: "Decision trail" }));
-    sec.appendChild(el("h2", { class: "section-title", text: "Why the final steps were chosen" }));
-    sec.appendChild(el("p", { class: "section-note", text: "Choose a final step to see which earlier recommendations and review findings shaped it. Solid lines mean used as written, dashed lines mean revised, and dotted lines show reviewer influence." }));
-    sec.appendChild(reportArt("lineage", "Archivist tracing evidence and review findings into a final architecture decision", "Follow each accepted decision back to its proposal evidence and refiner signal."));
+    sec.appendChild(el("div", { class: "section-kicker", text: "Evidence quality" }));
+    sec.appendChild(el("h2", { class: "section-title", text: "Living decision map" }));
+    sec.appendChild(el("p", { class: "section-note", text: "Inspect evidence receipts, atomic claims, independent review, and final decisions as one trace. Confidence is capped by deterministic quality gates, not model agreement alone." }));
+    sec.appendChild(reportArt("lineage", "Archivist tracing evidence and review findings into a final architecture decision", "Follow each accepted decision back to its evidence receipt and independent reviewer signal."));
+    if (DATA.decision_map && window.MoaDecisionMap) {
+      var mapHost = el("div", { class: "report-decision-map" });
+      sec.appendChild(mapHost);
+      window.MoaDecisionMap.render(mapHost, DATA.decision_map, { mode: "report", maxClaims: 16 });
+    }
     if (DATA.final_plan_lineage) {
+      if (DATA.decision_map) {
+        sec.appendChild(el("h3", { class: "subhead", text: "Exact final-step lineage" }));
+        sec.appendChild(el("p", { class: "section-note", text: "Use the detailed explorer below when you need the exact proposer step and refiner finding indexes retained by the final-plan contract." }));
+      }
       sec.appendChild(buildLineageExplorer(DATA.final_plan_lineage));
-    } else {
-      sec.appendChild(el("div", { class: "notice info", text: "This run does not include a traceable decision file. The written recommendation is still shown below when available; finish the final synthesis and regenerate the report to add its decision trail." }));
+    } else if (!DATA.decision_map) {
+      sec.appendChild(el("div", { class: "notice info", text: "This run does not yet include enough retained evidence to build a decision map. Finish the proposal stage and regenerate the report." }));
+    }
+    if (DATA.decision_map_warnings && DATA.decision_map_warnings.length) {
+      var mapWarn = el("div", { class: "notice lineage-warning" });
+      mapWarn.appendChild(el("b", { text: "Decision-map validation warnings (" + DATA.decision_map_warnings.length + ")" }));
+      mapWarn.appendChild(ul(DATA.decision_map_warnings));
+      sec.appendChild(mapWarn);
     }
     if (DATA.lineage_warnings && DATA.lineage_warnings.length) {
       var warn = el("div", { class: "notice lineage-warning" });
@@ -994,7 +1015,7 @@ footer.foot { border-top: 1px solid var(--track); padding: 30px 0 60px; color: v
       warn.appendChild(ul(DATA.lineage_warnings));
       sec.appendChild(warn);
     }
-    addSection("lineage", "Why these choices", sec);
+    addSection("lineage", "Decision map", sec);
   })();
 
   function buildLineageExplorer(lineage) {

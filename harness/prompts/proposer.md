@@ -82,6 +82,10 @@ wall doing ~50 web searches and produced no output. Don't be that run.
   cites either a specific local file:line OR an external URL with a verbatim
   snippet. Refiners will verify these. Unsupported claims get marked
   `contradicted` and weaken your proposal.
+- Keep every evidence `claim` atomic: one proposition that can be verified or
+  contradicted on its own. Split compound claims into separate evidence
+  records, even when they cite the same source. Every plan step needs at least
+  one evidence record.
 - **Schema rule for evidence items**: every evidence entry must include ALL
   of these keys: `type`, `file`, `line`, `url`, `snippet`, `claim`. Use
   `null` for the keys that do not apply to your evidence type:

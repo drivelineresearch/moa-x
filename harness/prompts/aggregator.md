@@ -61,7 +61,7 @@ Internalize this mindset before writing your final plan:
 
 Adapt that mindset to our repo-grounded context: the "responses" are plans
 with file-path evidence, the "critical evaluation" has been partially done
-for you by the two broadcast refiners, and the "synthesis" must be
+for you by the successful broadcast refiners, and the "synthesis" must be
 actionable code-level steps, not prose.
 
 ## Your job
@@ -124,7 +124,7 @@ plan. Anything marked `unverified` appears with a flag noting the gap.
 Anything `verified` is solid.
 
 #### Step 4: Pull in missing steps
-Both refiners produced `missing_steps` arrays. Walk those. Anything that is
+Every successful refiner produced a `missing_steps` array. Walk them. Anything that is
 genuinely missing from all proposals goes into your final plan as a step.
 Deduplicate where the refiners independently flagged the same gap.
 
@@ -166,7 +166,7 @@ Save the human-readable plan to `.moa/<session>/final-plan.md`. Structure:
    - Evidence: <key citations from proposers/refiners that support this>
    - Risks: <known risks>
    - Proposer attribution: <which proposer(s) surfaced this step; note if
-     all three agreed>
+     all successful proposers agreed>
    - [If applicable] Disagreement note: <if proposers or refiners disagreed
      on this, who and why, and how you adjudicated>
 
@@ -196,7 +196,7 @@ with your adjudication based on evidence weight from the refiner verifications>
 you chose>
 
 ## Sources consulted
-<the 10-15 most relevant of the 25+ external sources, with one-line notes
+<the 10-15 most relevant sources from the combined proposer/refiner set, with one-line notes
 and a tag like [codex-proposer], [qwen-refiner] indicating who cited it>
 
 ## Confidence
@@ -204,7 +204,7 @@ and a tag like [codex-proposer], [qwen-refiner] indicating who cited it>
 Calibrate based on:
 - Convergence: if all successful proposers agreed on the approach, +confidence.
 - Refiner verdicts: if all successful refiners said `accept_with_changes` on the
-  winning plan, +confidence. If either said `reject`, -confidence.
+  winning plan, +confidence. If any said `reject`, -confidence.
 - Verification rate: what fraction of evidence claims were `verified` vs
   `unverified` vs `contradicted`.
 - Open questions: more unresolved questions means lower confidence.>
@@ -237,10 +237,20 @@ inside the installed skill). It must contain:
 
 Do not invent lineage to make the graph look complete. Every pointer must
 resolve to the exact proposer/refiner payload in `synthesis-input.md`. If a
-final step combines multiple proposals, cite all material source steps. If a
-refiner changed the decision, cite that precise finding. In the both-refiners-
-reject case, write an empty `steps` array, put the rejected source steps in
+final step combines multiple proposals, cite all and only materially relevant
+source steps; every evidence claim on a referenced step will become part of
+the deterministic decision map. If a refiner changed the decision, cite that
+precise finding. A genuinely new step may use an empty `proposer_refs` array,
+but its lack of upstream evidence will visibly lower the evidence ceiling. In
+the all-refiners-reject case, write an empty `steps` array, put the rejected source steps in
 `rejected_inputs`, and set confidence to `low`.
+
+The orchestrator derives `decision-map.json` and its quality gates from these
+exact pointers after you finish. Do not invent graph IDs, quality scores, or a
+confidence ceiling. Report your honest model confidence; the report will show
+it separately from the deterministic evidence ceiling and cap the effective
+confidence when receipts, review coverage, independence, or pointer integrity
+are incomplete.
 
 Example shape (illustrative values only):
 
@@ -297,7 +307,7 @@ Do not start executing without explicit user approval.
 
 ## What good aggregation looks like
 
-- You read all 5 external outputs (3 proposals + 2 refinements) end to end
+- You read every successful proposer and refiner output end to end
 - You took the strongest ideas from each proposer, not just one of them
 - You honored every refiner contradiction and every `synthesis_recommendation`
 - You named the disagreements explicitly so the user can see them
@@ -312,5 +322,5 @@ Do not start executing without explicit user approval.
 - You ignored refiner findings
 - You buried disagreements instead of surfacing them
 - You handed back generic prose instead of an actionable plan
-- You overstated confidence ("all three agreed!" when actually 2/3 did)
+- You overstated confidence ("everyone agreed" when the retained outputs did not)
 - You started executing without approval

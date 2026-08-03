@@ -21,6 +21,13 @@ versioning.
 - Interactive decision-lineage explorer in `report.html`, backed by a new
   schema-validated `final-plan.json` companion that links every aggregated
   step to exact proposer steps and refiner findings.
+- Evidence-weighted living decision map shared by the Web UI and self-contained
+  report. The orchestrator derives content-addressed evidence, claims,
+  verifications, decisions, and quality gates into `decision-map.json`; the
+  manifest records its digest and evidence-quality summary.
+- Repository, file, cited-line, and declared-snippet integrity receipts for the
+  decision map. Repository snapshots and diffs are hashed rather than
+  copied into the derived artifact, and repository drift stays visible.
 - Visible, non-fatal lineage validation warnings and a legacy-session fallback
   when structured lineage is unavailable.
 - Optional recorded Layer 3 aggregation through Codex or Claude. The
@@ -58,6 +65,9 @@ versioning.
   600-second timeout instead of inheriting the OpenCode harness timeout.
 - The report now includes recorded Layer 3 status, timing, logs, and run-health
   visibility throughout its overview, pipeline, and Gantt views.
+- Proposer steps now require atomic evidence claims, while refiner verification
+  pointers use one canonical path syntax so the deterministic map can resolve
+  them without model-authored graph identifiers.
 
 ### Fixed
 
@@ -89,6 +99,8 @@ versioning.
   instead of conflating a transport harness with a model provider.
 - Report disclosures and lineage tabs now expose consistent keyboard and ARIA
   behavior.
+- Aggregation guidance now follows the successful dynamic roster instead of
+  assuming exactly three proposers and two refiners.
 
 ### Validation
 

@@ -113,8 +113,9 @@ of the CLI used to execute them.
 
 Every run also writes a self-contained `.moa/<session>/report.html` — a
 zero-network visual post-mortem (3D pipeline, per-agent Gantt, proposer
-plans, refiner verdict matrix, interactive final-step decision lineage,
-aggregated plan, raw logs). Open it in a browser; details in
+plans, refiner verdict matrix, an evidence-weighted living decision map,
+interactive final-step lineage, aggregated plan, and raw logs). Open it in a
+browser; details in
 [`docs/report.md`](docs/report.md).
 
 Typical wall-clock is roughly 12–25 minutes for research-heavy work, with
@@ -129,7 +130,7 @@ architecture work, not one-line fixes. Background in
 - [`docs/webui.md`](docs/webui.md): local control-room setup, persistence, uploads, GitHub workspaces, security
 - [`docs/config.md`](docs/config.md): `.env` + `harness/config.yaml`, MOA_\* knob table, precedence, roster swaps
 - [`docs/architecture.md`](docs/architecture.md): the four layers, why broadcast, why this roster
-- [`docs/report.md`](docs/report.md): the self-contained HTML run report (`report.html`) — 3D pipeline, Gantt, verdict matrix, decision lineage
+- [`docs/report.md`](docs/report.md): the self-contained HTML run report (`report.html`) — timeline, verdicts, evidence-weighted decision map, and exact lineage
 - [`docs/assets.md`](docs/assets.md): asset provenance, font policy, animation sources, and contribution rules
 - [`CONTRIBUTING.md`](CONTRIBUTING.md): dev setup, PR protocol, where help is welcome
 - [`SECURITY.md`](SECURITY.md): private vulnerability reports
@@ -153,7 +154,7 @@ harness/               orchestrator, adapters, prompts, schemas
   config.example.yaml  copy to harness/config.yaml to override defaults
   prompts/             scout / proposer / refiner / aggregator
   report/              HTML report template + embedded illustration assets
-  scripts/             orchestrator + adapters + config + report + tests
+  scripts/             orchestrator + adapters + deterministic decision map + report + tests
   webui/               Flask control plane, SQLite store, worker, and frontend
 requirements-cli.txt   install/auth notes for the provider CLIs
 requirements-web.txt   optional Flask control-room dependencies

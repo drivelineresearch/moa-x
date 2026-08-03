@@ -59,6 +59,15 @@ for the aggregator. Walk each plan top to bottom. For each claim:
   claim? Mark accordingly. Generic "AI blog post that sort of agrees" is
   `unverified`, not `verified`.
 
+`verified` means you independently checked the repository line or external
+source. Repeating the proposer's declared snippet is not verification. Every
+`verified` or `contradicted` finding must name the external URL or local
+`file:line` receipt you actually checked; `source_url = null` is valid only
+for an `unverified` finding.
+`claim_index_path` must use the exact canonical syntax
+`plan[<zero-based step>].evidence[<zero-based evidence>]`; prose suffixes,
+`.step`, and approximate paths are invalid.
+
 For every step in every plan, ask: did the proposer provide enough evidence
 to justify it? If a step has zero evidence, treat it as `unverified` and
 call out the gap. You do not need to verify every single claim if there are
@@ -144,8 +153,8 @@ A refiner JSON conforming to the refiner schema. Key fields:
 - **verifications** — per-claim with `proposer` field indicating whose
   claim it is. Every entry MUST include ALL keys: `proposer`,
   `claim_index_path`, `status`, `actual_finding`, `source_url`. Use
-  `source_url = null` when no external source applies (e.g. status is
-  `unverified` and you could not check). Missing a key fails strict-mode
+  `source_url = null` only when status is `unverified` and you could not
+  check the source. Missing a key fails strict-mode
   validation and the whole refinement is rejected.
 - **agreements** — specific points across the proposals you endorse. Name
   which proposer(s) made each point.

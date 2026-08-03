@@ -45,6 +45,7 @@ class EffortControlsBrowserTest(unittest.TestCase):
                     "BRIEF_WORKSPACE_DIR": str(root / "brief"),
                     "LOCAL_FONT_DIR": str(root / "fonts"),
                     "WORKSPACE_ROOTS": [root],
+                    "SSE_POLL_SECONDS": 0.05,
                 }
             )
             session = root / "brief" / "lab-audit"
@@ -268,13 +269,11 @@ class EffortControlsBrowserTest(unittest.TestCase):
                   const fixture = document.createElement("div");
                   fixture.innerHTML = `
                     <div class="loading-stage"><picture><img></picture></div>
-                    <span class="network-avatar"><img></span>
                     <figure class="agent-pixel-stage"><picture><img></picture></figure>
                   `;
                   document.body.append(fixture);
                   const styles = [
                     ".loading-stage picture img",
-                    ".network-avatar img",
                     ".agent-pixel-stage img",
                   ].map((selector) => {
                     const style = getComputedStyle(fixture.querySelector(selector));
@@ -291,7 +290,7 @@ class EffortControlsBrowserTest(unittest.TestCase):
             )
             for portrait_style, expected_scale in zip(
                 portrait_styles,
-                ("matrix(3.25", "matrix(6", "matrix(3"),
+                ("matrix(3.25", "matrix(3"),
                 strict=True,
             ):
                 self.assertEqual(portrait_style["objectFit"], "cover")
@@ -370,6 +369,14 @@ class EffortControlsBrowserTest(unittest.TestCase):
                         label,
                     )
             self.assertEqual(console_errors, [])
+            store.update_job(
+                "lab-audit",
+                status="completed",
+                phase="complete",
+                progress=1,
+            )
+            page.goto("about:blank")
+            page.wait_for_timeout(150)
             browser.close()
 
 

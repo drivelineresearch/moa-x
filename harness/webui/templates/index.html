@@ -317,7 +317,7 @@
                 <p>Review the ensemble network. The job can keep running if this tab closes.</p>
               </div>
             </div>
-            <div class="review-network" id="review-network" aria-label="Selected ensemble network"></div>
+            <div class="review-decision-map" id="review-network" aria-label="Selected evidence-weighted ensemble map"></div>
             <div class="review-sheet" id="review-sheet"></div>
             <div class="step-actions">
               <button class="secondary-button" type="button" data-prev-step>Back to aggregator</button>
@@ -421,6 +421,15 @@
       <div class="phase-rail" id="phase-rail" aria-label="Run progress" aria-busy="true">
         <div class="loading-bar" role="status"><span></span><b>Loading run state…</b></div>
       </div>
+      <section class="live-decision-map-section" aria-labelledby="living-map-title">
+        <div class="section-heading">
+          <div><p class="eyebrow">EVIDENCE QUALITY</p><h2 id="living-map-title">Living decision map</h2></div>
+          <p>Receipts become claims, independent reviews, and final decisions as the run advances.</p>
+        </div>
+        <div id="live-decision-map" aria-busy="true">
+          <div class="loading-stage compact" role="status"><span class="run-spinner" aria-hidden="true"></span><div><h3>Building evidence map</h3><p>Reading the latest retained run artifacts…</p></div></div>
+        </div>
+      </section>
       <div class="run-detail-grid">
         <section>
           <div class="section-heading">

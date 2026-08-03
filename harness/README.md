@@ -32,8 +32,8 @@ The skill will:
    each sees all proposals.
 6. Synthesize the proposals + refinements into `final-plan.md` and the
    structured `final-plan.json` decision lineage.
-7. Re-render the interactive report, present the plan, and ask whether to
-   start executing.
+7. Derive `decision-map.json`, re-render the interactive report, present the
+   plan, and ask whether to start executing.
 
 ## Architecture
 
@@ -145,10 +145,18 @@ working directory by default):
 │   └── codex-sol-aggregator.{json,log}
 ├── synthesis-input.md     # what the parent aggregator reads
 ├── manifest.json          # timing, success/failure per layer
-├── report.html            # self-contained charts, plans, verdicts, and logs
+├── decision-map.json      # derived evidence, claims, reviews, gates, decisions
+├── report.html            # self-contained map, charts, plans, verdicts, logs
 ├── final-plan.md          # written by parent or subprocess aggregator
 └── final-plan.json        # exact proposer/refiner lineage for every final step
 ```
+
+`decision-map.json` is deterministic and orchestrator-owned. It evolves at
+retained checkpoints, hashes repository and local-code evidence without copying
+repository contents, and caps effective confidence with explicit evidence,
+review, independence, diversity, lineage, and pointer-integrity gates. Models
+continue to author the source plans, reviews, and final lineage—not the map IDs
+or scores.
 
 `.moa/` should be in your repo's `.gitignore`. Sessions are kept locally
 for audit/debug; prune old ones manually if they accumulate.
@@ -170,6 +178,8 @@ The orchestrator keeps going under partial failure:
   what's left.
 - **Workspace mutation is detected:** the agent is marked unsuccessful and
   the changed Git-visible paths are recorded in the manifest/report.
+- **Decision-map generation fails:** the run keeps its usable source artifacts
+  and emits a warning; the map is a derived presentation and audit artifact.
 - **CLI not authenticated in preflight:** that CLI is skipped with
   a warning. If every needed harness fails preflight, the orchestrator
   exits with code 3.

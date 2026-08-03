@@ -100,6 +100,7 @@ from adapters import gemini as gemini_adapter  # noqa: E402
 from adapters.claude import TEMPERATURE_DIVERSITY_SHIM  # noqa: E402
 from attachments import AttachmentError, prepare_attachment_context  # noqa: E402
 import config as harness_config  # noqa: E402
+import decision_map as decision_map_module  # noqa: E402
 from model_labs import route_lab_id  # noqa: E402
 
 VENV_PYTHON = SCRIPT_DIR.parent / ".venv" / "bin" / "python"
@@ -111,6 +112,7 @@ PROMPTS_DIR = SCRIPT_DIR.parent / "prompts"
 PROPOSER_SCHEMA_PATH = SCHEMAS_DIR / "proposer.schema.json"
 REFINER_SCHEMA_PATH = SCHEMAS_DIR / "refiner.schema.json"
 FINAL_PLAN_SCHEMA_PATH = SCHEMAS_DIR / "final-plan.schema.json"
+DECISION_MAP_SCHEMA_PATH = SCHEMAS_DIR / "decision-map.schema.json"
 
 PROPOSER_PROMPT_PATH = PROMPTS_DIR / "proposer.md"
 REFINER_PROMPT_PATH = PROMPTS_DIR / "refiner.md"
@@ -433,6 +435,49 @@ def _validate_evidence_cross_fields(payload: dict) -> list[str]:
     return errors
 
 
+def _validate_refiner_verification_cross_fields(
+    payload: dict,
+    repo_path: Optional[Path] = None,
+) -> list[str]:
+    """Require an inspectable source for positive or negative fact claims."""
+    errors: list[str] = []
+    verifications = payload.get("verifications")
+    if not isinstance(verifications, list):
+        return errors
+    for index, verification in enumerate(verifications):
+        if not isinstance(verification, dict):
+            continue
+        source = verification.get("source_url")
+        portable_source = decision_map_module._portable_verification_source(source)
+        if verification.get("status") in {"verified", "contradicted"} and not portable_source:
+            errors.append(
+                f"verifications[{index}]: status={verification.get('status')} "
+                "requires a safe http(s) source_url or relative local file:line receipt"
+            )
+        elif source is not None and not portable_source:
+            errors.append(
+                f"verifications[{index}]: source_url is not a safe http(s) URL "
+                "or relative local file:line receipt"
+            )
+        elif (
+            portable_source
+            and not portable_source.startswith(("http://", "https://"))
+            and repo_path is not None
+        ):
+            file_name, line_text = portable_source.rsplit(":", 1)
+            _file_hash, _line_hash, capture_status = (
+                decision_map_module._repo_file_receipt(
+                    repo_path, file_name, int(line_text)
+                )
+            )
+            if capture_status != "captured":
+                errors.append(
+                    f"verifications[{index}]: local source receipt "
+                    f"{portable_source} is {capture_status}"
+                )
+    return errors
+
+
 # ---------------------------------------------------------------------------
 # Prompt construction
 # ---------------------------------------------------------------------------
@@ -537,6 +582,7 @@ def _finalize_result(
     adapter_payload: Optional[dict],
     schema_path: Path,
     session_dir: Path,
+    repo_path: Optional[Path] = None,
 ) -> None:
     """Validate payload against schema and persist to disk if valid.
 
@@ -667,6 +713,27 @@ def _finalize_result(
             layer_result.success = False
             return
 
+    if layer_result.role == "refiner-broadcast":
+        verification_errors = _validate_refiner_verification_cross_fields(
+            adapter_payload, repo_path
+        )
+        if verification_errors:
+            verification_msg = (
+                f"verification cross-field violations ({len(verification_errors)}): "
+                + "; ".join(verification_errors[:5])
+            )
+            print(
+                f"[orchestrator WARNING] {layer_result.agent_id}: "
+                f"{verification_msg}",
+                file=sys.stderr,
+                flush=True,
+            )
+            layer_result.error = verification_msg
+            json_file.unlink(missing_ok=True)
+            layer_result.schema_valid = False
+            layer_result.success = False
+            return
+
     # Persist validated payload to its own file
     json_file.parent.mkdir(parents=True, exist_ok=True)
     json_file.write_text(json.dumps(adapter_payload, indent=2), encoding="utf-8")
@@ -710,7 +777,9 @@ def _run_codex(
         error=result.error_message,
         log_path=str(log_file.relative_to(session_dir)),
     )
-    _finalize_result(layer_result, result.payload, schema_path, session_dir)
+    _finalize_result(
+        layer_result, result.payload, schema_path, session_dir, repo_path
+    )
     return layer_result
 
 
@@ -760,7 +829,9 @@ def _run_sonnet(
         error=result.error_message,
         log_path=str(log_file.relative_to(session_dir)),
     )
-    _finalize_result(layer_result, result.payload, schema_path, session_dir)
+    _finalize_result(
+        layer_result, result.payload, schema_path, session_dir, repo_path
+    )
     if _is_schema_repairable(result.payload, layer_result):
         original_error = str(layer_result.error)
         repair_log = session_dir / f"layer{layer}" / f"{agent_id}-{role}.repair.log"
@@ -782,6 +853,7 @@ def _run_sonnet(
             original_error=original_error,
             schema_path=schema_path,
             session_dir=session_dir,
+            repo_path=repo_path,
             harness_label="Claude",
         )
     return layer_result
@@ -835,6 +907,7 @@ def _apply_bounded_repair(
     original_error: str,
     schema_path: Path,
     session_dir: Path,
+    repo_path: Path,
     harness_label: str,
 ) -> None:
     """Validate one repair result without permitting a recursive retry."""
@@ -846,7 +919,7 @@ def _apply_bounded_repair(
         layer_result.schema_valid = None
         layer_result.transient_empty = False
         _finalize_result(
-            layer_result, repair.payload, schema_path, session_dir
+            layer_result, repair.payload, schema_path, session_dir, repo_path
         )
         if layer_result.success:
             print(
@@ -903,7 +976,9 @@ def _run_opencode(
         log_path=str(log_file.relative_to(session_dir)),
         transient_empty=_has_transient_empty(result),
     )
-    _finalize_result(layer_result, result.payload, schema_path, session_dir)
+    _finalize_result(
+        layer_result, result.payload, schema_path, session_dir, repo_path
+    )
     if _is_schema_repairable(result.payload, layer_result):
         original_error = str(layer_result.error)
         repair_log = session_dir / f"layer{layer}" / f"{agent_id}-{role}.repair.log"
@@ -928,6 +1003,7 @@ def _run_opencode(
             original_error=original_error,
             schema_path=schema_path,
             session_dir=session_dir,
+            repo_path=repo_path,
             harness_label="OpenCode",
         )
     return layer_result
@@ -974,7 +1050,9 @@ def _run_agy(
         log_path=str(log_file.relative_to(session_dir)),
         transient_empty=_has_transient_empty(result),
     )
-    _finalize_result(layer_result, result.payload, schema_path, session_dir)
+    _finalize_result(
+        layer_result, result.payload, schema_path, session_dir, repo_path
+    )
     return layer_result
 
 
@@ -1015,7 +1093,9 @@ def _run_gemini(
         log_path=str(log_file.relative_to(session_dir)),
         transient_empty=_has_transient_empty(result),
     )
-    _finalize_result(layer_result, result.payload, schema_path, session_dir)
+    _finalize_result(
+        layer_result, result.payload, schema_path, session_dir, repo_path
+    )
     return layer_result
 
 
@@ -1259,7 +1339,9 @@ def _run_sonnet_instance(
         error=result.error_message,
         log_path=str(log_file.relative_to(session_dir)),
     )
-    _finalize_result(layer_result, result.payload, schema_path, session_dir)
+    _finalize_result(
+        layer_result, result.payload, schema_path, session_dir, repo_path
+    )
     after = _workspace_snapshot(repo_path, session_dir)
     return _apply_workspace_guard(layer_result, before, after)
 
@@ -1890,6 +1972,7 @@ def update_manifest_layer3(
     started_at = float(manifest.get("started_at", finished_at) or finished_at)
     manifest["duration_seconds"] = max(0.0, finished_at - started_at)
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    _refresh_decision_map(session_dir, manifest_path)
     return manifest_path
 
 
@@ -1961,7 +2044,79 @@ def write_manifest(
         for entry in layer_arr:
             entry.pop("payload", None)
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    _refresh_decision_map(session_dir, manifest_path)
     return manifest_path
+
+
+def _refresh_decision_map(
+    session_dir: Path,
+    manifest_path: Path,
+    *,
+    capture_repository: bool = True,
+) -> Optional[Path]:
+    """Refresh the deterministic map and record its integrity receipt.
+
+    The map is a derived presentation artifact, so a failure is visible but
+    does not invalidate otherwise usable proposer/refiner/final-plan output.
+    """
+    try:
+        output = decision_map_module.write_decision_map(
+            session_dir,
+            capture_repository=capture_repository,
+            validator=lambda payload: _validate_against_schema(
+                payload, _load_schema(DECISION_MAP_SCHEMA_PATH)
+            ),
+        )
+        payload = json.loads(output.read_text(encoding="utf-8"))
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest.setdefault("artifacts", {})["decision_map"] = {
+            "path": output.name,
+            "version": payload.get("version"),
+            "sha256": hashlib.sha256(output.read_bytes()).hexdigest(),
+        }
+        quality = payload.get("quality") if isinstance(payload, dict) else {}
+        manifest.setdefault("summary", {})["evidence_quality"] = {
+            "level": quality.get("level"),
+            "evidence_ceiling": quality.get("evidence_ceiling"),
+            "critical_claims": quality.get("critical_claims", 0),
+            "verified_critical_claims": quality.get("verified_critical_claims", 0),
+            "contradicted_critical_claims": quality.get("contradicted_critical_claims", 0),
+        }
+        manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        return output
+    except Exception as exc:  # noqa: BLE001
+        output = session_dir / decision_map_module.DECISION_MAP_FILENAME
+        if output.is_file():
+            stale = session_dir / "decision-map.stale.json"
+            counter = 2
+            while stale.exists():
+                stale = session_dir / f"decision-map.stale-{counter}.json"
+                counter += 1
+            try:
+                output.replace(stale)
+            except OSError:
+                pass
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            artifacts = manifest.get("artifacts")
+            if isinstance(artifacts, dict):
+                artifacts.pop("decision_map", None)
+            manifest.setdefault("summary", {})["evidence_quality"] = {
+                "level": "unavailable",
+                "evidence_ceiling": None,
+                "critical_claims": 0,
+                "verified_critical_claims": 0,
+                "contradicted_critical_claims": 0,
+            }
+            manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        except (OSError, json.JSONDecodeError, TypeError):
+            pass
+        print(
+            f"[orchestrator] WARN: decision-map generation failed: {exc}",
+            file=sys.stderr,
+            flush=True,
+        )
+        return None
 
 
 def maybe_write_report(session_dir: Path, enabled: bool) -> None:
@@ -2032,6 +2187,7 @@ def write_layer1_manifest(
     for entry in manifest["layer1"]:
         entry.pop("payload", None)
     path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    _refresh_decision_map(session_dir, path)
     return path
 
 

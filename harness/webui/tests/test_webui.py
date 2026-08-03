@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import os
@@ -317,7 +318,13 @@ class WebUITest(unittest.TestCase):
         self.assertIn('state.loading[key] = false', app_source)
         self.assertIn("setButtonLoading", app_source)
         self.assertIn("applyOptimizedRole", app_source)
-        self.assertIn("renderNetworkLayer", app_source)
+        self.assertIn("window.MoaDecisionMap.render", app_source)
+        self.assertIn(
+            "if (!force && !state.detailJob?.artifacts?.decision_map) return;",
+            app_source,
+        )
+        self.assertIn("if (state.detailJob?.id === jobId) {", app_source)
+        self.assertIn("state.decisionMap = null;", app_source)
         self.assertIn(b'id="prompt-coach-button"', page.data)
         self.assertIn(b'id="prompt-coach-dialog"', page.data)
         self.assertIn(b"prompt-coach-teacher.webp", page.data)
@@ -612,6 +619,10 @@ class WebUITest(unittest.TestCase):
         self.assertEqual(created.status_code, 201)
         job = created.get_json()
         session = Path(job["session_dir"])
+        (session / "manifest.json").write_text(
+            json.dumps({"session_id": job["id"], "layer1": [], "layer2": []}),
+            encoding="utf-8",
+        )
         (session / "report.html").write_text(
             "<h1>Shared report</h1>", encoding="utf-8"
         )
@@ -636,6 +647,272 @@ class WebUITest(unittest.TestCase):
         self.assertEqual(revoked.status_code, 200)
         self.assertEqual(revoked.get_json()["revoked"], 1)
         self.assertEqual(anonymous.get(link).status_code, 404)
+
+    def test_report_requires_active_manifest_freshness_everywhere(self):
+        created = self.client.post(
+            "/api/jobs",
+            json={
+                "source_mode": "brief",
+                "goal": "Do not expose an absent or stale report.",
+                "proposers": ["codex"],
+            },
+        )
+        self.assertEqual(created.status_code, 201)
+        job = created.get_json()
+        session = Path(job["session_dir"])
+        manifest_path = session / "manifest.json"
+        report_path = session / "report.html"
+        manifest = {
+            "session_id": job["id"],
+            "layer1": [],
+            "layer2": [],
+            "summary": {},
+        }
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        self.app.extensions["moa_store"].update_job(
+            job["id"], status="completed", phase="complete", progress=1
+        )
+
+        no_report = self.client.get(f"/api/jobs/{job['id']}").get_json()
+        self.assertNotIn("report", no_report["artifacts"])
+        self.assertEqual(
+            self.client.get(
+                f"/api/jobs/{job['id']}/artifacts/report.html"
+            ).status_code,
+            404,
+        )
+        self.assertEqual(
+            self.client.post(f"/api/jobs/{job['id']}/share").status_code, 409
+        )
+
+        report_path.write_text("<h1>Fresh report</h1>", encoding="utf-8")
+        manifest_ns = manifest_path.stat().st_mtime_ns
+        fresh_ns = manifest_ns + 1_000_000
+        os.utime(report_path, ns=(fresh_ns, fresh_ns))
+        fresh = self.client.get(f"/api/jobs/{job['id']}").get_json()
+        self.assertIn("report", fresh["artifacts"])
+        served = self.client.get(
+            f"/api/jobs/{job['id']}/artifacts/report.html"
+        )
+        self.assertEqual(served.status_code, 200)
+        self.assertEqual(served.data, b"<h1>Fresh report</h1>")
+
+        shared = self.client.post(f"/api/jobs/{job['id']}/share")
+        self.assertEqual(shared.status_code, 201)
+        public_link = shared.get_json()["url"]
+        anonymous = self.app.test_client()
+        self.assertEqual(anonymous.get(public_link).status_code, 200)
+
+        manifest["summary"] = {"report_regeneration": "failed"}
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        stale_ns = fresh_ns + 1_000_000
+        os.utime(manifest_path, ns=(stale_ns, stale_ns))
+        stale = self.client.get(f"/api/jobs/{job['id']}").get_json()
+        self.assertNotIn("report", stale["artifacts"])
+        self.assertEqual(
+            self.client.get(
+                f"/api/jobs/{job['id']}/artifacts/report.html"
+            ).status_code,
+            404,
+        )
+        self.assertEqual(
+            self.client.post(f"/api/jobs/{job['id']}/share").status_code, 409
+        )
+        self.assertEqual(anonymous.get(public_link).status_code, 404)
+
+    def test_report_requires_rerender_after_newer_active_final_inputs(self):
+        created = self.client.post(
+            "/api/jobs",
+            json={
+                "source_mode": "brief",
+                "goal": "Keep the rendered report behind every active input.",
+                "proposers": ["codex"],
+            },
+        )
+        self.assertEqual(created.status_code, 201)
+        job = created.get_json()
+        session = Path(job["session_dir"])
+        manifest_path = session / "manifest.json"
+        report_path = session / "report.html"
+        final_md_path = session / "final-plan.md"
+        final_json_path = session / "final-plan.json"
+        map_path = session / "decision-map.json"
+        map_payload = b'{"version":1,"stage":"final"}'
+        manifest = {
+            "session_id": job["id"],
+            "layer1": [],
+            "layer2": [],
+            "summary": {},
+            "artifacts": {
+                "decision_map": {
+                    "path": "decision-map.json",
+                    "version": 1,
+                    "sha256": hashlib.sha256(map_payload).hexdigest(),
+                }
+            },
+        }
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        map_path.write_bytes(map_payload)
+        manifest_ns = manifest_path.stat().st_mtime_ns
+        report_ns = manifest_ns + 1_000_000
+        inputs_ns = report_ns + 1_000_000
+        rerender_ns = inputs_ns + 1_000_000
+        os.utime(map_path, ns=(manifest_ns, manifest_ns))
+        report_path.write_text("<h1>Initial report</h1>", encoding="utf-8")
+        os.utime(report_path, ns=(report_ns, report_ns))
+        self.app.extensions["moa_store"].update_job(
+            job["id"], status="completed", phase="complete", progress=1
+        )
+
+        endpoint = f"/api/jobs/{job['id']}/artifacts/report.html"
+        initial = self.client.get(f"/api/jobs/{job['id']}").get_json()
+        self.assertIn("report", initial["artifacts"])
+        self.assertEqual(self.client.get(endpoint).status_code, 200)
+        shared = self.client.post(f"/api/jobs/{job['id']}/share")
+        self.assertEqual(shared.status_code, 201)
+        public_link = shared.get_json()["url"]
+        anonymous = self.app.test_client()
+        self.assertEqual(anonymous.get(public_link).status_code, 200)
+
+        final_md_path.write_text("# New final plan", encoding="utf-8")
+        final_json_path.write_text('{"steps":[]}', encoding="utf-8")
+        map_path.write_bytes(map_payload)
+        for path in (final_md_path, final_json_path, map_path):
+            os.utime(path, ns=(inputs_ns, inputs_ns))
+
+        stale = self.client.get(f"/api/jobs/{job['id']}").get_json()
+        self.assertNotIn("report", stale["artifacts"])
+        self.assertEqual(self.client.get(endpoint).status_code, 404)
+        self.assertEqual(
+            self.client.post(f"/api/jobs/{job['id']}/share").status_code, 409
+        )
+        self.assertEqual(anonymous.get(public_link).status_code, 404)
+
+        report_path.write_text("<h1>Rerendered report</h1>", encoding="utf-8")
+        os.utime(report_path, ns=(rerender_ns, rerender_ns))
+        recovered = self.client.get(f"/api/jobs/{job['id']}").get_json()
+        self.assertIn("report", recovered["artifacts"])
+        served = self.client.get(endpoint)
+        self.assertEqual(served.status_code, 200)
+        self.assertEqual(served.data, b"<h1>Rerendered report</h1>")
+        self.assertEqual(anonymous.get(public_link).status_code, 200)
+        self.assertEqual(
+            self.client.post(f"/api/jobs/{job['id']}/share").status_code, 201
+        )
+
+        map_path.unlink()
+        missing_map = self.client.get(f"/api/jobs/{job['id']}").get_json()
+        self.assertNotIn("report", missing_map["artifacts"])
+        self.assertEqual(self.client.get(endpoint).status_code, 404)
+        self.assertEqual(anonymous.get(public_link).status_code, 404)
+
+    def test_report_ignores_final_inputs_rejected_by_shared_staleness_predicate(self):
+        created = self.client.post(
+            "/api/jobs",
+            json={
+                "source_mode": "brief",
+                "goal": "Exclude copied final output after a failed retry.",
+                "proposers": ["codex"],
+            },
+        )
+        self.assertEqual(created.status_code, 201)
+        job = created.get_json()
+        session = Path(job["session_dir"])
+        manifest_path = session / "manifest.json"
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "session_id": job["id"],
+                    "layer1": [],
+                    "layer2": [],
+                    "layer3": [{"success": False}],
+                    "summary": {},
+                }
+            ),
+            encoding="utf-8",
+        )
+        manifest_ns = manifest_path.stat().st_mtime_ns
+        report_ns = manifest_ns + 1_000_000
+        stale_final_ns = report_ns + 1_000_000
+        report_path = session / "report.html"
+        report_path.write_text("<h1>Partial report</h1>", encoding="utf-8")
+        os.utime(report_path, ns=(report_ns, report_ns))
+        for filename in ("final-plan.md", "final-plan.json"):
+            path = session / filename
+            path.write_text("copied stale output", encoding="utf-8")
+            os.utime(path, ns=(stale_final_ns, stale_final_ns))
+        self.app.extensions["moa_store"].update_job(
+            job["id"], status="completed", phase="complete", progress=1
+        )
+
+        view = self.client.get(f"/api/jobs/{job['id']}").get_json()
+        self.assertIn("report", view["artifacts"])
+        self.assertNotIn("final_plan", view["artifacts"])
+        served = self.client.get(
+            f"/api/jobs/{job['id']}/artifacts/report.html"
+        )
+        self.assertEqual(served.status_code, 200)
+        self.assertEqual(served.data, b"<h1>Partial report</h1>")
+        self.assertEqual(
+            self.client.post(f"/api/jobs/{job['id']}/share").status_code, 201
+        )
+
+    def test_decision_map_requires_matching_active_manifest_receipt(self):
+        created = self.client.post(
+            "/api/jobs",
+            json={
+                "source_mode": "brief",
+                "goal": "Verify the decision-map receipt before exposure.",
+                "proposers": ["codex"],
+            },
+        )
+        self.assertEqual(created.status_code, 201)
+        job = created.get_json()
+        session = Path(job["session_dir"])
+        manifest_path = session / "manifest.json"
+        map_path = session / "decision-map.json"
+        payload = b'{"version":1,"stage":"review"}'
+        map_path.write_bytes(payload)
+        manifest = {
+            "session_id": job["id"],
+            "layer1": [],
+            "layer2": [],
+            "summary": {"evidence_quality": {"level": "strong"}},
+        }
+
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        missing = self.client.get(f"/api/jobs/{job['id']}").get_json()
+        self.assertNotIn("decision_map", missing["artifacts"])
+        endpoint = f"/api/jobs/{job['id']}/artifacts/decision-map.json"
+        self.assertEqual(self.client.get(endpoint).status_code, 404)
+
+        manifest["artifacts"] = {
+            "decision_map": {
+                "path": "decision-map.json",
+                "version": 1,
+                "sha256": "0" * 64,
+            }
+        }
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        mismatch = self.client.get(f"/api/jobs/{job['id']}").get_json()
+        self.assertNotIn("decision_map", mismatch["artifacts"])
+        self.assertEqual(self.client.get(endpoint).status_code, 404)
+
+        manifest["artifacts"]["decision_map"]["sha256"] = hashlib.sha256(
+            payload
+        ).hexdigest()
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        verified = self.client.get(f"/api/jobs/{job['id']}").get_json()
+        self.assertIn("decision_map", verified["artifacts"])
+        served = self.client.get(endpoint)
+        self.assertEqual(served.status_code, 200)
+        self.assertEqual(served.mimetype, "application/json")
+        self.assertEqual(served.data, payload)
+
+        map_path.write_bytes(b'{"version":1,"stage":"tampered"}')
+        tampered = self.client.get(f"/api/jobs/{job['id']}").get_json()
+        self.assertNotIn("decision_map", tampered["artifacts"])
+        self.assertEqual(self.client.get(endpoint).status_code, 404)
 
     def test_brief_only_job_uses_an_isolated_managed_workspace(self):
         created = self.client.post(
@@ -1435,6 +1712,112 @@ class WebUITest(unittest.TestCase):
         job = self.client.get("/api/jobs/targeted-retry").get_json()
         self.assertEqual(job["agents"][0]["status"], "running")
         self.assertNotIn("summary", job["agents"][0])
+
+    def test_targeted_redispatch_drops_copied_final_artifacts(self):
+        store = self.app.extensions["moa_store"]
+        session = self.root / ".moa" / "retry-source"
+        session.mkdir(parents=True)
+        (session / "scout-brief.json").write_text(
+            json.dumps({
+                "session_id": "retry-source",
+                "repo_path": str(self.root),
+                "frozen_spec": "Retry one failed lane.",
+            }),
+            encoding="utf-8",
+        )
+        checkpoint = {
+            "session_id": "retry-source",
+            "config": {"proposers": ["codex"]},
+            "layer1": [],
+            "layer2": [],
+            "layer3": [],
+            "summary": {},
+        }
+        for name in ("manifest.json", "layer1-manifest.json"):
+            (session / name).write_text(json.dumps(checkpoint), encoding="utf-8")
+        stale_names = (
+            "decision-map.json",
+            "final-plan.json",
+            "final-plan.md",
+            "report.html",
+            "synthesis-input.md",
+        )
+        for name in stale_names:
+            (session / name).write_text("stale source output", encoding="utf-8")
+        store.insert_job({
+            "id": "retry-source",
+            "profile_id": "browser_123",
+            "title": "Retry source",
+            "workspace": str(self.root),
+            "session_dir": str(session),
+            "goal": "Retry one failed lane.",
+            "status": "failed",
+            "phase": "layer1",
+            "config": {
+                "proposers": ["codex"],
+                "refiners": ["qwen"],
+                "aggregator": "codex-sol",
+            },
+            "created_at": 1,
+        })
+
+        response = self.client.post(
+            "/api/jobs/retry-source/redispatch",
+            json={"phase": "layer1", "agents": ["codex"]},
+        )
+        self.assertEqual(response.status_code, 201)
+        target = Path(response.get_json()["session_dir"])
+        self.assertTrue((target / "manifest.json").is_file())
+        self.assertTrue((target / "layer1-manifest.json").is_file())
+        for name in stale_names:
+            with self.subTest(name=name):
+                self.assertFalse((target / name).exists())
+
+    def test_failed_latest_layer3_hides_and_blocks_stale_final_artifacts(self):
+        store = self.app.extensions["moa_store"]
+        session = self.root / ".moa" / "failed-layer3-final"
+        session.mkdir(parents=True)
+        manifest = {
+            "session_id": "failed-layer3-final",
+            "finished_at": 200.0,
+            "config": {},
+            "layer1": [],
+            "layer2": [],
+            "layer3": [
+                {"agent_id": "codex-sol", "success": True},
+                {"agent_id": "codex-sol", "success": False},
+            ],
+            "summary": {},
+        }
+        (session / "manifest.json").write_text(
+            json.dumps(manifest), encoding="utf-8"
+        )
+        (session / "final-plan.md").write_text(
+            "# Stale final plan", encoding="utf-8"
+        )
+        (session / "final-plan.json").write_text(
+            json.dumps({"version": 1}), encoding="utf-8"
+        )
+        store.insert_job({
+            "id": "failed-layer3-final",
+            "profile_id": "browser_123",
+            "title": "Failed synthesis retry",
+            "workspace": str(self.root),
+            "session_dir": str(session),
+            "goal": "Do not expose stale final output.",
+            "status": "failed",
+            "phase": "layer3",
+            "config": {},
+            "created_at": 1,
+        })
+
+        job = self.client.get("/api/jobs/failed-layer3-final").get_json()
+        self.assertNotIn("final_plan", job["artifacts"])
+        for filename in ("final-plan.md", "final-plan.json"):
+            response = self.client.get(
+                f"/api/jobs/failed-layer3-final/artifacts/{filename}"
+            )
+            self.assertEqual(response.status_code, 404, filename)
 
     def test_restart_reconciles_an_orphaned_active_job(self):
         store = self.app.extensions["moa_store"]

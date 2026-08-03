@@ -3,6 +3,7 @@ import {
   cancelJob,
   createReportShare,
   createJob,
+  getDecisionMap,
   getJob,
   getJobs,
   getGithubRepos,
@@ -112,6 +113,11 @@ const state = {
   depthPreset: "balanced",
   route: "overview",
   detailJob: null,
+  decisionMap: null,
+  decisionMapJobId: null,
+  decisionMapView: null,
+  decisionMapRefreshAt: 0,
+  reviewMapView: null,
   events: [],
   eventStop: null,
   promptCoach: { original: "", analysis: null, answers: [], index: 0, result: null, undo: "" },
@@ -1171,31 +1177,26 @@ function renderReview() {
       image: route?.labPixel || visual.pixel,
     };
   });
-  const renderNetworkLayer = (label, title, nodes) => `
-    <section class="network-layer">
-      <header><span>${escapeHtml(label)}</span><strong>${escapeHtml(title)}</strong></header>
-      <div class="network-node-list">${nodes.map((node) => `
-        <article class="network-node">
-          <span class="network-avatar accent-${escapeHtml(labVisual(node.labId).accent)}" data-lab-id="${escapeHtml(node.labId)}"><img src="${escapeHtml(node.image)}" alt="${escapeHtml(node.lab)} model-lab pixel character"></span>
-          <div><strong title="${escapeHtml(node.name)}">${escapeHtml(node.name)}</strong><small title="${escapeHtml(node.model)}">${escapeHtml(node.model)}</small></div>
-        </article>
-      `).join("")}</div>
-    </section>
-  `;
   const proposersNetwork = networkNodes("proposer");
   const refinersNetwork = networkNodes("refiner");
   const aggregatorNetwork = networkNodes("aggregator");
-  $("#review-network").innerHTML = `
-    ${renderNetworkLayer("Layer 1", "Proposers", proposersNetwork)}
-    <div class="network-bridge" aria-hidden="true"><span>Share</span></div>
-    ${renderNetworkLayer("Layer 2", "Refiners", refinersNetwork)}
-    <div class="network-bridge" aria-hidden="true"><span>Unify</span></div>
-    ${renderNetworkLayer("Layer 3", "Aggregator", aggregatorNetwork)}
-    <div class="network-context">
-      <img src="/static/images/context-roster.webp" alt="">
-      <div><strong>${escapeHtml(titleCase(state.depthPreset))} ensemble · ${proposersNetwork.length + refinersNetwork.length + aggregatorNetwork.length} agents</strong><p>${escapeHtml(source)} flows through independent proposals, broadcast review, and one evidence-backed synthesis.</p></div>
-    </div>
-  `;
+  const mapAgents = [
+    ...proposersNetwork.map((agent) => ({ ...agent, label: agent.name, role: "proposer", lab_id: agent.labId, status: "queued" })),
+    ...refinersNetwork.map((agent) => ({ ...agent, label: agent.name, role: "refiner", lab_id: agent.labId, status: "queued" })),
+    ...aggregatorNetwork.map((agent) => ({ ...agent, label: agent.name, role: "aggregator", lab_id: agent.labId, status: "queued" })),
+  ];
+  const reviewHost = $("#review-network");
+  state.reviewMapView?.destroy();
+  if (window.MoaDecisionMap) {
+    const preview = window.MoaDecisionMap.createSetupMap({
+      title: goal || "Evidence-weighted implementation decision",
+      summary: `${titleCase(state.depthPreset)} ensemble · ${mapAgents.length} agents · ${source}. Evidence gates begin when validated proposal receipts arrive.`,
+      agents: mapAgents,
+    });
+    state.reviewMapView = window.MoaDecisionMap.render(reviewHost, preview, { mode: "setup", maxClaims: 6 });
+  } else {
+    reviewHost.textContent = "The ensemble is ready; the evidence map will appear when the run begins.";
+  }
   $("#review-sheet").innerHTML = `
     <dl>
       <div class="review-row"><dt>Goal</dt><dd>${escapeHtml(goal || "Add a task")}</dd></div>
@@ -1227,7 +1228,9 @@ function setStep(step) {
     if (active) node.setAttribute("aria-current", "step"); else node.removeAttribute("aria-current");
   });
   if (state.step === 5) renderReview();
-  $(".wizard-step.is-active h2")?.focus?.({ preventScroll: true });
+  const activeHeading = $(".wizard-step.is-active h2");
+  activeHeading?.setAttribute("tabindex", "-1");
+  activeHeading?.focus?.({ preventScroll: true });
   const behavior = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
   requestAnimationFrame(() => window.scrollTo({ top: 0, behavior }));
 }
@@ -1608,10 +1611,67 @@ function phaseIndex(phase) {
   return 0;
 }
 
+function decisionMapStage(job) {
+  if (job?.artifacts?.final_plan) return "complete";
+  const current = phaseIndex(job?.phase);
+  if (current >= 2) return "review";
+  if (current >= 1) return "proposals";
+  return "setup";
+}
+
+function renderLivingDecisionMap(job) {
+  const host = $("#live-decision-map");
+  if (!host || !job) return;
+  state.decisionMapView?.destroy();
+  if (!window.MoaDecisionMap) {
+    host.textContent = "The evidence map renderer is unavailable.";
+    host.setAttribute("aria-busy", "false");
+    return;
+  }
+  const agents = agentsFromJob(job);
+  const retained = state.decisionMapJobId === job.id ? state.decisionMap : null;
+  const base = retained || window.MoaDecisionMap.createSetupMap({
+    title: job.title || "Evidence-weighted implementation decision",
+    summary: "The map updates at each retained orchestration checkpoint.",
+    agents,
+    stage: decisionMapStage(job),
+  });
+  const live = window.MoaDecisionMap.mergeAgentState(
+    base,
+    agents,
+    retained ? undefined : decisionMapStage(job),
+  );
+  state.decisionMapView = window.MoaDecisionMap.render(host, live, { mode: "app", maxClaims: 10 });
+  host.setAttribute("aria-busy", "false");
+}
+
+async function refreshDecisionMap(jobId, force = false) {
+  const now = Date.now();
+  if (!force && !state.detailJob?.artifacts?.decision_map) return;
+  if (!force && now - state.decisionMapRefreshAt < 1200) return;
+  state.decisionMapRefreshAt = now;
+  try {
+    const map = await getDecisionMap(jobId);
+    if (state.detailJob?.id !== jobId) return;
+    state.decisionMap = map;
+    state.decisionMapJobId = jobId;
+    renderLivingDecisionMap(state.detailJob);
+  } catch (error) {
+    if (error.status !== 404) throw error;
+    if (state.detailJob?.id === jobId) {
+      state.decisionMap = null;
+      renderLivingDecisionMap(state.detailJob);
+    }
+  }
+}
+
 function renderRunDetail(job = state.detailJob) {
   if (!job) return;
   state.detailJob = { ...(state.detailJob || {}), ...job };
   job = state.detailJob;
+  if (state.decisionMapJobId === job.id && !job.artifacts?.decision_map) {
+    state.decisionMap = null;
+  }
   $("#run-detail-kicker").textContent = `RUN ${job.id.slice(0, 12).toUpperCase()}`;
   $("#run-detail-title").textContent = job.title;
   $("#run-detail-meta").textContent = `${jobContext(job)} · Started ${formatTime(job.startedAt || job.createdAt)} · ${jobRosterText(job)}`;
@@ -1634,6 +1694,7 @@ function renderRunDetail(job = state.detailJob) {
     </div>
   `).join("");
   $("#phase-rail").setAttribute("aria-busy", "false");
+  renderLivingDecisionMap(job);
   const actions = $("#run-actions");
   if (["running", "queued", "cancelling"].includes(job.status)) {
     actions.innerHTML = `<button class="danger-button" type="button" data-cancel-run="${escapeHtml(job.id)}">Cancel run</button>`;
@@ -1964,13 +2025,14 @@ function artifactEntries(artifacts) {
   const entries = Array.isArray(artifacts)
     ? artifacts.map((item) => typeof item === "string" ? [item.split("/").pop(), item] : [item.name || item.label, item.url || item.path])
     : Object.entries(artifacts || {}).map(([name, value]) => [name, typeof value === "string" ? value : value?.url || value?.path]);
-  const priority = { report: 0, final_plan: 1, synthesis: 2, manifest: 3 };
+  const priority = { report: 0, decision_map: 1, final_plan: 2, synthesis: 3, manifest: 4 };
   return entries.sort(([left], [right]) => (priority[left] ?? 20) - (priority[right] ?? 20));
 }
 
 function artifactLabel(name, prominent = false) {
   const labels = {
     report: prominent ? "View final report" : "Report",
+    decision_map: prominent ? "Inspect decision map JSON" : "Decision map JSON",
     final_plan: prominent ? "Read final plan" : "Final plan",
     synthesis: prominent ? "Read synthesis notes" : "Synthesis notes",
     manifest: prominent ? "View run data" : "Run data",
@@ -2083,9 +2145,14 @@ async function loadRunDetail(id) {
   $("#event-feed").setAttribute("aria-busy", "true");
   $("#event-feed").innerHTML = `<div class="loading-stage compact" role="status"><span class="run-spinner" aria-hidden="true"></span><div><h3>Connecting to live trace</h3><p>Waiting for the latest worker event…</p></div></div>`;
   state.events = [];
+  state.decisionMap = null;
+  state.decisionMapJobId = id;
+  state.decisionMapRefreshAt = 0;
+  state.decisionMapView?.destroy();
   try {
     const job = await getJob(id);
     renderRunDetail(job);
+    await refreshDecisionMap(id, Boolean(job.artifacts?.decision_map));
     const live = $("#live-label");
     state.eventStop = subscribeToJob(id, {
       onEvent: (event) => {
@@ -2106,6 +2173,9 @@ async function loadRunDetail(id) {
           state.detailRefreshAt = now;
           getJob(id).then(renderRunDetail).catch(() => {});
         }
+        if (event.type === "artifact" || event.type === "phase" || event.type === "complete") {
+          refreshDecisionMap(id, event.path === "decision-map.json").catch(() => {});
+        }
       },
       onState: (update) => {
         if (update.connection) {
@@ -2115,7 +2185,10 @@ async function loadRunDetail(id) {
               ? (state.detailJob?.status === "completed" ? "Complete" : "Closed")
               : "Polling";
           live.classList.toggle("is-live", update.connection === "live");
-        } else if (update.id) renderRunDetail(update);
+        } else if (update.id) {
+          renderRunDetail(update);
+          refreshDecisionMap(id).catch(() => {});
+        }
       },
       onError: () => {
         live.textContent = "Reconnecting";
@@ -2125,10 +2198,11 @@ async function loadRunDetail(id) {
   } catch (error) {
     $("#run-detail-title").textContent = "Run unavailable";
     $("#run-detail-meta").textContent = error.message;
-    ["#phase-rail", "#agent-grid", "#event-feed"].forEach((selector) => {
+    ["#phase-rail", "#live-decision-map", "#agent-grid", "#event-feed"].forEach((selector) => {
       $(selector).setAttribute("aria-busy", "false");
     });
     $("#phase-rail").innerHTML = "";
+    $("#live-decision-map").innerHTML = `<div class="empty-state"><span class="empty-number">!</span><div><h3>Decision map unavailable</h3><p>The run could not be loaded.</p></div></div>`;
     $("#agent-grid").innerHTML = `<div class="empty-state"><span class="empty-number">!</span><div><h3>Agent lanes unavailable</h3><p>${escapeHtml(error.message)}</p></div></div>`;
     $("#event-feed").innerHTML = `<div class="empty-state"><span class="empty-number">!</span><div><h3>Trace unavailable</h3><p>Return to the archive and try opening this run again.</p></div></div>`;
     showToast(error.message, "error");

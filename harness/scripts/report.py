@@ -28,16 +28,20 @@ from typing import Any, Optional
 
 from run_moa import (
     FINAL_PLAN_SCHEMA_PATH,
+    _refresh_decision_map,
     _load_schema,
     _validate_against_schema,
 )
 from model_labs import MODEL_LABS, ROUTE_META, model_lab, route_lab_id
+import decision_map as decision_map_module
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPORT_DIR = SCRIPT_DIR.parent / "report"
 TEMPLATE_PATH = REPORT_DIR / "template.html"
 REPORT_ASSET_DIR = REPORT_DIR / "assets"
 LAB_ASSET_DIR = SCRIPT_DIR.parent / "webui" / "static" / "images"
+DECISION_MAP_SCRIPT_PATH = SCRIPT_DIR.parent / "webui" / "static" / "js" / "decision-map.js"
+DECISION_MAP_STYLE_PATH = SCRIPT_DIR.parent / "webui" / "static" / "css" / "decision-map.css"
 REPORT_ASSETS = {
     "hero": "report-hero.webp",
     "scout": "report-scout.webp",
@@ -302,6 +306,16 @@ def _validate_final_plan_lineage(
     return warnings_out
 
 
+def _active_manifest_path(session_dir: Path) -> tuple[Path, bool]:
+    """Use the same active-manifest arbitration as the decision map."""
+    path, _manifest = decision_map_module.active_manifest_for_session(session_dir)
+    if path is not None:
+        return path, path.name == "layer1-manifest.json"
+    raise FileNotFoundError(
+        f"no manifest.json or layer1-manifest.json in {session_dir}"
+    )
+
+
 def load_session(session_dir: Path) -> dict:
     """Assemble the data object the template consumes from a session directory.
 
@@ -309,19 +323,8 @@ def load_session(session_dir: Path) -> dict:
     phase-split (Layer 1 only) run, marking the result `partial`. Raises
     FileNotFoundError when neither manifest exists.
     """
-    full = session_dir / "manifest.json"
-    layer1_only = session_dir / "layer1-manifest.json"
-
-    if full.exists():
-        manifest = _read_json(full)
-        partial = False
-    elif layer1_only.exists():
-        manifest = _read_json(layer1_only)
-        partial = True
-    else:
-        raise FileNotFoundError(
-            f"no manifest.json or layer1-manifest.json in {session_dir}"
-        )
+    manifest_path, partial = _active_manifest_path(session_dir)
+    manifest = _read_json(manifest_path)
 
     scout = _read_json(session_dir / "scout-brief.json") or {}
     layer1 = [_load_agent(e, session_dir) for e in manifest.get("layer1", [])]
@@ -335,15 +338,36 @@ def load_session(session_dir: Path) -> dict:
     if len(title) > 96:
         title = title[:95].rstrip() + "…"
 
+    stale_final_reason = decision_map_module.final_artifact_staleness(
+        session_dir, manifest
+    )
+    stale_final_output = stale_final_reason is not None
+    stale_final_warning = {
+        "layer1_retry": (
+            "A newer Layer 1 retry checkpoint is active; copied final-plan Markdown "
+            "and exact lineage were excluded from the active report output"
+        ),
+        "layer3_failed": (
+            "The latest retained Layer 3 attempt failed; older final-plan Markdown "
+            "and exact lineage were excluded from the active report output"
+        ),
+        "predates_manifest": (
+            "Final-plan Markdown and exact lineage predate the active manifest and "
+            "were excluded from the active report output"
+        ),
+    }.get(stale_final_reason, "")
+
     final_plan_md = ""
     fp = session_dir / "final-plan.md"
-    if fp.exists():
+    if fp.exists() and not stale_final_output:
         final_plan_md = fp.read_text(encoding="utf-8")
 
     final_plan_lineage = None
-    lineage_warnings: list[str] = []
+    lineage_warnings: list[str] = (
+        [stale_final_warning] if stale_final_output else []
+    )
     lineage_path = session_dir / "final-plan.json"
-    if lineage_path.exists():
+    if lineage_path.exists() and not stale_final_output:
         try:
             final_plan_lineage = _read_json(lineage_path)
             if not isinstance(final_plan_lineage, dict):
@@ -358,6 +382,19 @@ def load_session(session_dir: Path) -> dict:
                     final_plan_lineage = None
         except (OSError, json.JSONDecodeError) as exc:
             lineage_warnings.append(f"could not read final-plan.json: {exc}")
+
+    decision_map = None
+    decision_map_warnings: list[str] = []
+    try:
+        candidate = decision_map_module.load_or_build_decision_map(session_dir)
+        map_schema = _load_schema(decision_map_module.DECISION_MAP_SCHEMA_PATH)
+        validation_warnings = _validate_against_schema(candidate, map_schema)
+        if validation_warnings:
+            decision_map_warnings.extend(validation_warnings)
+        else:
+            decision_map = candidate
+    except Exception as exc:  # noqa: BLE001 - optional derived map boundary
+        decision_map_warnings.append(f"could not derive decision-map.json: {exc}")
 
     return {
         "session_id": manifest.get("session_id", session_dir.name),
@@ -378,6 +415,8 @@ def load_session(session_dir: Path) -> dict:
         "final_plan_html": render_markdown(final_plan_md) if final_plan_md else None,
         "final_plan_lineage": final_plan_lineage,
         "lineage_warnings": lineage_warnings,
+        "decision_map": decision_map,
+        "decision_map_warnings": decision_map_warnings,
         "model_labs": {
             lab_id: {
                 "label": values["label"],
@@ -685,6 +724,8 @@ def render_html(data: dict) -> str:
         raise FileNotFoundError(f"template missing: {TEMPLATE_PATH}")
 
     template = TEMPLATE_PATH.read_text(encoding="utf-8")
+    decision_map_script = DECISION_MAP_SCRIPT_PATH.read_text(encoding="utf-8")
+    decision_map_style = DECISION_MAP_STYLE_PATH.read_text(encoding="utf-8")
 
     # Embed the data as raw text inside <script type="application/json">.
     # Escaping "</" as "<\/" keeps any "</script>" in a log or plan from
@@ -710,6 +751,8 @@ def render_html(data: dict) -> str:
     # that happens to contain a later token string can't have that token
     # expanded into the embedded JSON.
     out = template.replace("__PAGE_TITLE__", "MoA-X — " + _esc(data.get("session_id", "run")))
+    out = out.replace("__DECISION_MAP_STYLE__", decision_map_style)
+    out = out.replace("__DECISION_MAP_SCRIPT__", decision_map_script)
     out = out.replace("__REPORT_ASSET_JSON__", asset_json)
     out = out.replace("__MOA_DATA_JSON__", data_json)
     return out
@@ -740,7 +783,25 @@ def find_latest_session(moa_dir: Path) -> Optional[Path]:
 
 def generate(session_dir: Path, out_path: Path) -> Path:
     """Load a session and write its report. Returns the written path."""
+    map_write_warning = None
+    try:
+        manifest_path, _ = _active_manifest_path(session_dir)
+        if _refresh_decision_map(
+            session_dir,
+            manifest_path,
+            capture_repository=False,
+        ) is None:
+            map_write_warning = (
+                "could not refresh decision-map.json and its manifest receipt"
+            )
+    except Exception as exc:  # noqa: BLE001 - report generation is best-effort
+        map_write_warning = (
+            "could not refresh decision-map.json and its manifest receipt: "
+            f"{exc}"
+        )
     data = load_session(session_dir)
+    if map_write_warning:
+        data.setdefault("decision_map_warnings", []).insert(0, map_write_warning)
     out_path.write_text(render_html(data), encoding="utf-8")
     return out_path
 
