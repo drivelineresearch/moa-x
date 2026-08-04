@@ -1797,6 +1797,7 @@ def test_layer1_manifest_round_trip_via_load() -> bool:
                 agent_id="custom-grok", layer=1, role="proposer", success=False,
                 duration_seconds=4.5, transient_empty=True,
                 error="opencode returned empty result text under a success envelope",
+                validation_failure="schema",
             ),
         ]
         manifest_path = run_moa.write_layer1_manifest(
@@ -1813,6 +1814,7 @@ def test_layer1_manifest_round_trip_via_load() -> bool:
             codex.success and codex.payload is not None and codex.payload.get("agent_id") == "codex"
             and custom_grok.transient_empty is True
             and custom_grok.payload is None
+            and custom_grok.validation_failure == "schema"
         )
         return _ok(ok, f"codex.payload={codex.payload!r}, "
                        f"custom_grok.transient_empty={custom_grok.transient_empty}")
@@ -3033,6 +3035,115 @@ def test_claude_schema_repair_is_bounded_and_tool_free() -> bool:
         return _ok(ok, f"success={result.success} calls={adapter_run.call_count}")
 
 
+def test_refiner_verification_repair_is_harness_independent() -> bool:
+    print("\n[N] refiner cross-field failures trigger bounded repair on both harnesses")
+    import tempfile
+    from unittest import mock
+    from adapters.claude import ClaudeResult
+    from adapters.opencode import OpenCodeResult
+
+    invalid = _make_valid_broadcast_refiner("fixture")
+    invalid["verifications"][0]["source_url"] = None
+    repaired = _make_valid_broadcast_refiner("fixture")
+    repaired["verifications"][0]["source_url"] = (
+        "https://example.net/independent-verification"
+    )
+    cases = [
+        (
+            run_moa.opencode_adapter,
+            run_moa._run_opencode,
+            OpenCodeResult,
+            {"model": "opencode-go/deepseek-v4-flash", "reasoning_effort": "high"},
+        ),
+        (
+            run_moa.claude_adapter,
+            run_moa._run_sonnet,
+            ClaudeResult,
+            {"model": "claude-opus-5", "reasoning_effort": "high"},
+        ),
+    ]
+    outcomes = []
+    with tempfile.TemporaryDirectory() as raw:
+        root = Path(raw)
+        for index, (adapter, runner, result_type, extra) in enumerate(cases):
+            session = root / ".moa" / f"repair-{index}"
+            (session / "layer2").mkdir(parents=True)
+            first = result_type(
+                success=True,
+                payload=json.loads(json.dumps(invalid)),
+                raw_stdout=json.dumps(invalid),
+                raw_stderr="",
+                exit_code=0,
+                duration_seconds=1.0,
+            )
+            second = result_type(
+                success=True,
+                payload=json.loads(json.dumps(repaired)),
+                raw_stdout=json.dumps(repaired),
+                raw_stderr="",
+                exit_code=0,
+                duration_seconds=0.5,
+            )
+            with mock.patch.object(adapter, "run", side_effect=[first, second]) as call:
+                result = runner(
+                    layer=2,
+                    role="refiner-broadcast",
+                    prompt="fixture",
+                    schema_path=run_moa.REFINER_SCHEMA_PATH,
+                    repo_path=root,
+                    session_dir=session,
+                    timeout=900,
+                    agent_id="fixture",
+                    reviewing=["codex"],
+                    **extra,
+                )
+            outcomes.append(
+                result.success
+                and result.schema_valid
+                and result.validation_failure is None
+                and call.call_count == 2
+            )
+    return _ok(all(outcomes), f"outcomes={outcomes}")
+
+
+def test_absolute_repo_refiner_receipts_are_normalized() -> bool:
+    print("\n[N] absolute repository receipts become portable before validation")
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as raw:
+        repo = Path(raw)
+        source = repo / "services" / "review.py"
+        source.parent.mkdir()
+        source.write_text("first\nsecond\n", encoding="utf-8")
+        session = repo / ".moa" / "receipt"
+        (session / "layer2").mkdir(parents=True)
+        payload = _make_valid_broadcast_refiner("deepseek-flash")
+        payload["verifications"][0]["source_url"] = f"{source}:1-2"
+        result = run_moa.LayerResult(
+            agent_id="deepseek-flash",
+            layer=2,
+            role="refiner-broadcast",
+            reviewing=["codex"],
+            success=True,
+            payload=payload,
+        )
+        run_moa._finalize_result(
+            result,
+            payload,
+            run_moa.REFINER_SCHEMA_PATH,
+            session,
+            repo,
+        )
+        normalized = payload["verifications"][0]["source_url"]
+        ok = (
+            result.success
+            and result.schema_valid
+            and normalized == "services/review.py:1-2"
+            and result.validation_failure is None
+        )
+        return _ok(ok, f"normalized={normalized} error={result.error}")
+
+
 def test_model_lab_assets_and_catalog_contract() -> bool:
     print("\n[N] every current/archived model lab has both visual assets")
     import re
@@ -3322,6 +3433,106 @@ def test_agy_cmd_is_fail_closed() -> bool:
         and "--effort" not in cmd
     )
     return _ok(ok, f"cmd={cmd}")
+
+
+def test_agy_uses_disposable_dirty_state_mirror() -> bool:
+    print("\n[N] AGY side effects stay inside a disposable mirrored worktree")
+    import subprocess as _subprocess
+    import tempfile
+    from adapters import agy as agy_adapter
+
+    with tempfile.TemporaryDirectory() as raw:
+        repo = Path(raw)
+        _subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+        tracked = repo / "tracked.txt"
+        tracked.write_text("committed\n", encoding="utf-8")
+        _subprocess.run(["git", "add", "tracked.txt"], cwd=repo, check=True)
+        _subprocess.run(
+            [
+                "git", "-c", "user.name=MoA Test",
+                "-c", "user.email=moa@example.invalid",
+                "commit", "-qm", "fixture",
+            ],
+            cwd=repo,
+            check=True,
+        )
+        tracked.write_text("operator dirty state\n", encoding="utf-8")
+        untracked = repo / "notes.txt"
+        untracked.write_text("untracked context\n", encoding="utf-8")
+        session = repo / ".moa" / "fixture"
+        session.mkdir(parents=True)
+        (session / "private.txt").write_text("session-only\n", encoding="utf-8")
+        old_session = repo / ".moa" / "older-run"
+        old_session.mkdir()
+        (old_session / "artifact.json").write_text("{}\n", encoding="utf-8")
+
+        with agy_adapter._isolated_git_workspace(repo, session) as isolated:
+            mirrored = (
+                (isolated / "tracked.txt").read_text(encoding="utf-8")
+                == "operator dirty state\n"
+                and (isolated / "notes.txt").read_text(encoding="utf-8")
+                == "untracked context\n"
+                and not (isolated / ".moa" / "fixture" / "private.txt").exists()
+                and not (isolated / ".moa" / "older-run" / "artifact.json").exists()
+            )
+            (isolated / "uv.lock").write_text("generated\n", encoding="utf-8")
+            (isolated / ".venv").mkdir()
+
+        ok = (
+            mirrored
+            and tracked.read_text(encoding="utf-8") == "operator dirty state\n"
+            and untracked.read_text(encoding="utf-8") == "untracked context\n"
+            and not (repo / "uv.lock").exists()
+            and not (repo / ".venv").exists()
+        )
+        return _ok(ok, f"mirrored={mirrored}")
+
+
+def test_agy_run_uses_isolated_prompt_and_disables_uv_sync() -> bool:
+    print("\n[N] AGY reads its prompt inside the mirror with uv sync disabled")
+    import contextlib
+    import tempfile
+    from unittest import mock
+    from adapters import agy as agy_adapter
+
+    with tempfile.TemporaryDirectory() as raw:
+        root = Path(raw)
+        repo = root / "repo"
+        isolated = root / "isolated"
+        session = repo / ".moa" / "fixture"
+        (session / "layer1").mkdir(parents=True)
+        isolated.mkdir()
+        log_file = session / "layer1" / "agy-gemini-pro-proposer.log"
+        process = mock.Mock(returncode=0)
+        process.communicate.return_value = ('{"agent_id":"agy-gemini-pro"}', "")
+        with (
+            mock.patch.object(
+                agy_adapter,
+                "_isolated_git_workspace",
+                return_value=contextlib.nullcontext(isolated),
+            ),
+            mock.patch.object(agy_adapter.subprocess, "Popen", return_value=process) as popen,
+        ):
+            result = agy_adapter.run(
+                prompt="fixture prompt",
+                repo_path=repo,
+                model="gemini-3.1-pro-high",
+                timeout_seconds=60,
+                log_file=log_file,
+            )
+        call = popen.call_args
+        cmd = call.args[0]
+        instruction = cmd[cmd.index("--print") + 1]
+        copied_candidates = list((isolated / ".moa-agent-input").glob("*.md"))
+        ok = (
+            result.success
+            and call.kwargs["cwd"] == str(isolated)
+            and call.kwargs["env"].get("UV_NO_SYNC") == "1"
+            and len(copied_candidates) == 1
+            and str(copied_candidates[0].resolve()) in instruction
+            and "fixture prompt" in copied_candidates[0].read_text(encoding="utf-8")
+        )
+        return _ok(ok, f"cwd={call.kwargs['cwd']} prompts={copied_candidates}")
 
 
 def test_gemini_cmd_is_fail_closed() -> bool:
@@ -3891,6 +4102,45 @@ def test_workspace_guard_detects_git_mutation() -> bool:
         return _ok(ok, f"mutations={result.workspace_mutations}")
 
 
+def test_workspace_guard_reports_only_newly_changed_paths() -> bool:
+    print("\n[N] workspace guard does not blame pre-existing dirty paths")
+    import subprocess as _subprocess
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td)
+        _subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+        first = repo / "operator.txt"
+        second = repo / "provider.txt"
+        first.write_text("committed\n", encoding="utf-8")
+        second.write_text("committed\n", encoding="utf-8")
+        _subprocess.run(["git", "add", "."], cwd=repo, check=True)
+        _subprocess.run(
+            [
+                "git", "-c", "user.name=MoA Test",
+                "-c", "user.email=moa@example.invalid",
+                "commit", "-qm", "fixture",
+            ],
+            cwd=repo,
+            check=True,
+        )
+        first.write_text("operator dirty\n", encoding="utf-8")
+        session = repo / ".moa" / "fixture"
+        session.mkdir(parents=True)
+        before = run_moa._workspace_snapshot(repo, session)
+        second.write_text("changed while provider ran\n", encoding="utf-8")
+        after = run_moa._workspace_snapshot(repo, session)
+        result = run_moa.LayerResult(
+            agent_id="fixture", layer=1, role="proposer", success=True
+        )
+        run_moa._apply_workspace_guard(result, before, after)
+        ok = (
+            not result.success
+            and result.workspace_mutations == ["provider.txt"]
+            and "workspace changed while this provider ran" in str(result.error)
+        )
+        return _ok(ok, f"mutations={result.workspace_mutations}")
+
+
 def test_report_template_accessibility_contracts() -> bool:
     print("\n[N] report template has accessible disclosures, copy status, and compact stages")
     template = report_module.TEMPLATE_PATH.read_text(encoding="utf-8")
@@ -4189,11 +4439,15 @@ def main() -> int:
         test_finalize_restores_proposer_step_emitted_at_root,
         test_opencode_repair_prompt_is_inline_and_tool_free,
         test_claude_schema_repair_is_bounded_and_tool_free,
+        test_refiner_verification_repair_is_harness_independent,
+        test_absolute_repo_refiner_receipts_are_normalized,
         test_model_lab_assets_and_catalog_contract,
         test_webui_model_catalog_is_provider_grouped_and_current,
         test_finalize_moves_misplaced_refiner_verification,
         test_google_provider_builtins_are_default_and_resolve,
         test_agy_cmd_is_fail_closed,
+        test_agy_uses_disposable_dirty_state_mirror,
+        test_agy_run_uses_isolated_prompt_and_disables_uv_sync,
         test_gemini_cmd_is_fail_closed,
         test_gemini_stream_json_extracts_payload,
         test_gemini_tier_ineligible_detection,
@@ -4225,6 +4479,7 @@ def main() -> int:
         test_refiner_prompt_escapes_model_controlled_close_tag,
         test_finalizer_normalizes_identity_and_deduplicates_recovery,
         test_workspace_guard_detects_git_mutation,
+        test_workspace_guard_reports_only_newly_changed_paths,
         test_report_template_accessibility_contracts,
         test_webui_effort_copy_and_control_contract,
         test_layer3_aggregation_schema_and_prompt_contract,

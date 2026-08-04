@@ -31,6 +31,10 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 DECISION_MAP_SCHEMA_PATH = SCRIPT_DIR / "schemas" / "decision-map.schema.json"
 DECISION_MAP_FILENAME = "decision-map.json"
 CLAIM_PATH_RE = re.compile(r"^plan\[(\d+)]\.evidence\[(\d+)]$")
+LOCAL_VERIFICATION_SOURCE_RE = re.compile(
+    r"^(.+):([1-9]\d*)(?:-([1-9]\d*))?$"
+)
+MAX_VERIFICATION_LINE_RANGE = 200
 CONFIDENCE_RANK = {"low": 0, "medium": 1, "high": 2}
 USABLE_RECEIPT_STATES = {"captured", "declared_excerpt", "repository_drift"}
 USABLE_VERIFICATION_SOURCE_STATES = {"captured", "declared_locator"}
@@ -89,11 +93,32 @@ def _portable_verification_source(value: Any) -> Optional[str]:
         return None
     if source.startswith(("http://", "https://")):
         return _canonical_url(source)
-    match = re.fullmatch(r"(.+):([1-9]\d*)", source)
+    match = LOCAL_VERIFICATION_SOURCE_RE.fullmatch(source)
     if not match:
         return None
+    start = int(match.group(2))
+    end = int(match.group(3) or start)
+    if end < start or end - start + 1 > MAX_VERIFICATION_LINE_RANGE:
+        return None
     locator = _portable_code_locator(match.group(1))
-    return f"{locator}:{match.group(2)}" if locator else None
+    if locator is None:
+        return None
+    line_span = str(start) if end == start else f"{start}-{end}"
+    return f"{locator}:{line_span}"
+
+
+def _local_verification_source_parts(
+    value: Any,
+) -> Optional[tuple[str, int, int]]:
+    """Return a canonical repository path and bounded inclusive line range."""
+    canonical = _portable_verification_source(value)
+    if canonical is None or canonical.startswith(("http://", "https://")):
+        return None
+    match = LOCAL_VERIFICATION_SOURCE_RE.fullmatch(canonical)
+    if match is None:
+        return None
+    start = int(match.group(2))
+    return match.group(1), start, int(match.group(3) or start)
 
 
 def _read_json(path: Path) -> Optional[dict[str, Any]]:
@@ -291,9 +316,12 @@ def _safe_session_path(session_dir: Path, relative: Any) -> Optional[Path]:
 
 
 def _repo_file_receipt(
-    repo_path: Optional[Path], relative: Any, line_number: Any
+    repo_path: Optional[Path],
+    relative: Any,
+    line_number: Any,
+    line_end: Any = None,
 ) -> tuple[Optional[str], Optional[str], str]:
-    """Return file and cited-line hashes without copying repository text."""
+    """Return file and cited-line-range hashes without copying repository text."""
     if repo_path is None or not relative:
         return None, None, "unavailable"
     portable = _portable_code_locator(relative)
@@ -350,9 +378,14 @@ def _repo_file_receipt(
     file_hash = hashlib.sha256(payload).hexdigest()
     line_hash = None
     if isinstance(line_number, int) and line_number > 0:
+        end = line_end if isinstance(line_end, int) else line_number
         lines = payload.splitlines()
-        if line_number <= len(lines):
-            line_hash = hashlib.sha256(lines[line_number - 1]).hexdigest()
+        if (
+            line_number <= end <= len(lines)
+            and end - line_number + 1 <= MAX_VERIFICATION_LINE_RANGE
+        ):
+            cited_lines = b"\n".join(lines[line_number - 1:end])
+            line_hash = hashlib.sha256(cited_lines).hexdigest()
     if line_hash is None:
         return file_hash, None, "line_out_of_range"
     return file_hash, line_hash, "captured"
@@ -387,7 +420,16 @@ def _verification_source_receipt(
             "line_sha256": None,
         }
 
-    file_name, line_text = canonical.rsplit(":", 1)
+    local_source = _local_verification_source_parts(canonical)
+    if local_source is None:
+        return {
+            "source_url": None,
+            "source_type": None,
+            "source_capture_status": "invalid_locator",
+            "file_sha256": None,
+            "line_sha256": None,
+        }
+    file_name, line_start, line_end = local_source
     previous = previous if isinstance(previous, dict) else {}
     previous_captured = (
         previous.get("source_capture_status") in {"captured", "repository_drift"}
@@ -396,7 +438,7 @@ def _verification_source_receipt(
     )
     if repository_matches:
         file_hash, line_hash, capture_status = _repo_file_receipt(
-            repo_path, file_name, int(line_text)
+            repo_path, file_name, line_start, line_end
         )
         if (
             previous.get("file_sha256")

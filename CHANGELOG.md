@@ -71,6 +71,13 @@ versioning.
 
 ### Fixed
 
+- AGY now runs Git repositories from disposable worktrees with `UV_NO_SYNC`,
+  preventing command bootstrap from leaking `uv.lock` or `.venv` into managed
+  repositories. Workspace guards fingerprint changed paths so concurrent lanes
+  do not inherit blame for pre-existing dirty files.
+- Refiner repair eligibility now uses typed validation failures rather than
+  matching error prose. Valid absolute repo-local receipts are normalized to
+  portable `file:line` or bounded `file:start-end` locators before validation.
 - Phase-split and redispatched runs now preserve the original session start in
   their manifests. Reports also repair v0.4.1-and-older phase-local timing from
   retained agent timestamps, fixing truncated wall-clock totals and Layer 1
