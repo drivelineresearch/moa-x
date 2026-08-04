@@ -158,9 +158,12 @@ class LayerResult:
     # agent id. Persist provenance without letting a hallucinated id corrupt
     # attribution in downstream lineage.
     reported_agent_id: Optional[str] = None
-    # Paths observed after a provider changed the repository outside the
-    # active .moa session. Any non-empty value forces success=False.
+    # Paths whose fingerprints changed while the provider was running outside
+    # the active .moa session. Any non-empty value forces success=False.
     workspace_mutations: Optional[list[str]] = None
+    # Machine-readable output validation category. Repair eligibility must
+    # never depend on matching human-readable error text.
+    validation_failure: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -464,10 +467,19 @@ def _validate_refiner_verification_cross_fields(
             and not portable_source.startswith(("http://", "https://"))
             and repo_path is not None
         ):
-            file_name, line_text = portable_source.rsplit(":", 1)
+            local_source = decision_map_module._local_verification_source_parts(
+                portable_source
+            )
+            if local_source is None:
+                errors.append(
+                    f"verifications[{index}]: local source receipt "
+                    f"{portable_source} is invalid_locator"
+                )
+                continue
+            file_name, line_start, line_end = local_source
             _file_hash, _line_hash, capture_status = (
                 decision_map_module._repo_file_receipt(
-                    repo_path, file_name, int(line_text)
+                    repo_path, file_name, line_start, line_end
                 )
             )
             if capture_status != "captured":
@@ -476,6 +488,52 @@ def _validate_refiner_verification_cross_fields(
                     f"{portable_source} is {capture_status}"
                 )
     return errors
+
+
+_LOCAL_RECEIPT_RE = re.compile(
+    r"^(?P<file>.+):(?P<start>[1-9]\d*)(?:-(?P<end>[1-9]\d*))?$"
+)
+
+
+def _normalize_refiner_verification_sources(
+    payload: dict,
+    repo_path: Optional[Path],
+) -> int:
+    """Make absolute receipts inside the repository portable.
+
+    Tool output commonly gives models an absolute repository path. Converting
+    that exact path to a relative receipt is deterministic and preserves the
+    cited file and line range; paths outside the repository remain invalid.
+    """
+    if repo_path is None:
+        return 0
+    repo_root = repo_path.resolve()
+    verifications = payload.get("verifications")
+    if not isinstance(verifications, list):
+        return 0
+    normalized = 0
+    for verification in verifications:
+        if not isinstance(verification, dict):
+            continue
+        source = verification.get("source_url")
+        if not isinstance(source, str) or source.startswith(("http://", "https://")):
+            continue
+        match = _LOCAL_RECEIPT_RE.fullmatch(source.strip())
+        if not match:
+            continue
+        absolute_file = Path(match.group("file"))
+        if not absolute_file.is_absolute():
+            continue
+        try:
+            relative = absolute_file.resolve().relative_to(repo_root).as_posix()
+        except (OSError, ValueError):
+            continue
+        suffix = match.group("start")
+        if match.group("end") is not None:
+            suffix += f"-{match.group('end')}"
+        verification["source_url"] = f"{relative}:{suffix}"
+        normalized += 1
+    return normalized
 
 
 # ---------------------------------------------------------------------------
@@ -671,6 +729,7 @@ def _finalize_result(
         layer_result.error = (
             "schema validation failed: " + "; ".join(validation_errors[:5])
         )
+        layer_result.validation_failure = "schema"
         layer_result.success = False
         return
 
@@ -710,10 +769,21 @@ def _finalize_result(
                 layer_result.error = evidence_msg
             json_file.unlink(missing_ok=True)
             layer_result.schema_valid = False
+            layer_result.validation_failure = "proposer_evidence"
             layer_result.success = False
             return
 
     if layer_result.role == "refiner-broadcast":
+        normalized_sources = _normalize_refiner_verification_sources(
+            adapter_payload, repo_path
+        )
+        if normalized_sources:
+            print(
+                f"[orchestrator WARNING] {layer_result.agent_id}: normalized "
+                f"{normalized_sources} absolute repository receipt(s) to portable paths",
+                file=sys.stderr,
+                flush=True,
+            )
         verification_errors = _validate_refiner_verification_cross_fields(
             adapter_payload, repo_path
         )
@@ -731,6 +801,7 @@ def _finalize_result(
             layer_result.error = verification_msg
             json_file.unlink(missing_ok=True)
             layer_result.schema_valid = False
+            layer_result.validation_failure = "refiner_verification"
             layer_result.success = False
             return
 
@@ -861,14 +932,11 @@ def _run_sonnet(
 
 def _is_schema_repairable(payload: Any, layer_result: LayerResult) -> bool:
     """Return whether one confined repair pass may fix a model response."""
-    error = str(layer_result.error or "")
     return (
         isinstance(payload, dict)
         and not layer_result.success
-        and (
-            error.startswith("schema validation failed:")
-            or "evidence cross-field violations" in error
-        )
+        and layer_result.validation_failure
+        in {"schema", "proposer_evidence", "refiner_verification"}
     )
 
 
@@ -917,6 +985,7 @@ def _apply_bounded_repair(
         layer_result.payload = repair.payload
         layer_result.error = None
         layer_result.schema_valid = None
+        layer_result.validation_failure = None
         layer_result.transient_empty = False
         _finalize_result(
             layer_result, repair.payload, schema_path, session_dir, repo_path
@@ -1103,6 +1172,25 @@ def _run_gemini(
 class WorkspaceSnapshot:
     digest: str
     paths: tuple[str, ...]
+    path_digests: tuple[tuple[str, str], ...]
+
+
+def _workspace_path_digest(path: Path) -> str:
+    digest = hashlib.sha256()
+    try:
+        stat_result = path.lstat()
+        digest.update(str(stat_result.st_mode).encode("ascii"))
+        if path.is_symlink():
+            digest.update(os.readlink(path).encode("utf-8", "surrogateescape"))
+        elif path.is_file():
+            digest.update(path.read_bytes())
+        elif path.is_dir():
+            digest.update(b"<directory>")
+        else:
+            digest.update(b"<special>")
+    except OSError:
+        digest.update(b"<missing-or-unreadable>")
+    return digest.hexdigest()
 
 
 def _workspace_snapshot(repo_path: Path, session_dir: Path) -> Optional[WorkspaceSnapshot]:
@@ -1176,15 +1264,30 @@ def _workspace_snapshot(repo_path: Path, session_dir: Path) -> Optional[Workspac
             except OSError:
                 digest.update(b"<unreadable-or-removed>")
 
-        visible_paths = []
-        for raw in status.stdout.split(b"\0"):
-            if not raw:
-                continue
-            entry = raw.decode("utf-8", "surrogateescape")
-            path = entry[3:] if len(entry) > 3 else entry
-            if allowed(path):
-                visible_paths.append(path)
-        return WorkspaceSnapshot(digest.hexdigest(), tuple(sorted(set(visible_paths))))
+        tracked_paths = subprocess.run(
+            ["git", "diff", "--name-only", "-z", "HEAD", "--", "."],
+            cwd=repo_path,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=30,
+            check=False,
+        )
+        if tracked_paths.returncode:
+            return None
+        visible_paths = {
+            raw.decode("utf-8", "surrogateescape")
+            for raw in tracked_paths.stdout.split(b"\0")
+            if raw
+        }
+        visible_paths.update(untracked_paths)
+        visible_paths = {path for path in visible_paths if allowed(path)}
+        path_digests = tuple(
+            (path, _workspace_path_digest(repo_path / path))
+            for path in sorted(visible_paths)
+        )
+        return WorkspaceSnapshot(
+            digest.hexdigest(), tuple(sorted(visible_paths)), path_digests
+        )
     except (OSError, subprocess.SubprocessError):
         return None
 
@@ -1196,11 +1299,17 @@ def _apply_workspace_guard(
 ) -> LayerResult:
     if before is None or after is None or before.digest == after.digest:
         return result
-    changed = sorted(set(before.paths) | set(after.paths))
+    before_by_path = dict(before.path_digests)
+    after_by_path = dict(after.path_digests)
+    changed = sorted(
+        path
+        for path in set(before_by_path) | set(after_by_path)
+        if before_by_path.get(path) != after_by_path.get(path)
+    )
     result.workspace_mutations = changed or ["<content changed in an already-dirty path>"]
     result.success = False
     message = (
-        "workspace immutability violation outside the active session: "
+        "workspace changed while this provider ran outside the active session: "
         + ", ".join(result.workspace_mutations[:20])
     )
     result.error = f"{result.error}; {message}" if result.error else message
@@ -2223,6 +2332,7 @@ def load_layer_results_from_manifest(
             previous_attempt=entry.get("previous_attempt"),
             reported_agent_id=entry.get("reported_agent_id"),
             workspace_mutations=entry.get("workspace_mutations"),
+            validation_failure=entry.get("validation_failure"),
         )
         if result.success and result.json_path:
             payload_file = session_dir / result.json_path

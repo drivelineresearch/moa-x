@@ -111,7 +111,8 @@ are treated differently:
 
 1. Empty or incomplete output with no quota/auth signal receives at most one
    full redispatch.
-2. Parseable JSON that fails schema or evidence cross-field validation
+2. Parseable JSON that fails schema, proposer-evidence, or refiner-verification
+   cross-field validation
    receives one bounded repair pass containing only the invalid object, exact
    error, and schema. The repair runs inside the session directory and must
    not repeat repository or web research.
@@ -120,6 +121,11 @@ If repair still fails, the lane fails closed and its invalid output never
 enters refinement. Provider quota/auth classification only considers precise
 billing signals when no model response was captured, so tool errors such as
 oversized grep records cannot masquerade as depleted account balance.
+
+Repair eligibility is carried as a typed validation category, independent of
+the human-readable error text. Repo-local absolute refiner receipts are
+normalized deterministically to portable relative locators before semantic
+validation; external absolute paths remain invalid.
 
 Claude's native schema output can still violate semantic cross-field rules
 that JSON Schema does not express. Claude therefore receives the same single
@@ -130,9 +136,13 @@ disabled during repair.
 
 Codex and Claude receive their native structured-output controls. OpenCode
 receives an isolated permission config that denies edits and shell access.
-AGY requires plan mode plus sandboxing. Every CLI call runs in its own process
-group and temporary directory, and the runner rejects workspace mutations
-outside the active `.moa` session.
+AGY requires plan mode plus sandboxing. For Git workspaces, MoA-X also mirrors
+tracked, staged, dirty, and untracked context into a disposable detached
+worktree below the active session and sets `UV_NO_SYNC=1`. This contains any
+pre-sandbox `uv` bootstrap files while keeping repository context accurate.
+Every CLI call runs in its own process group, and the runner compares per-path
+fingerprints so a concurrent lane is only associated with paths that actually
+changed during its interval.
 
 ## Why CLI, not SDK
 

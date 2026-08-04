@@ -18,9 +18,10 @@ import shutil
 import subprocess
 import tempfile
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Iterator, Optional
 
 from adapters import READ_ONLY_RULE, extract_json_from_text, kill_proc_tree
 
@@ -33,6 +34,10 @@ _REQUIRED_HELP_FLAGS = (
     "--model",
     "--dangerously-skip-permissions",
 )
+
+
+class AgyWorkspaceIsolationError(RuntimeError):
+    """Raised when a Git workspace cannot be mirrored safely for AGY."""
 
 
 @dataclass
@@ -162,6 +167,154 @@ def _write_capture(log_file: Optional[Path], stdout: str, stderr: str) -> None:
         pass
 
 
+def _copy_untracked_file(source: Path, target: Path) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if source.is_symlink():
+        target.symlink_to(os.readlink(source))
+    elif source.is_file():
+        shutil.copy2(source, target)
+
+
+@contextmanager
+def _isolated_git_workspace(
+    repo_path: Path,
+    session_dir: Path,
+) -> Iterator[Path]:
+    """Mirror Git-visible state into a disposable AGY worktree.
+
+    AGY's terminal sandbox can bootstrap commands through ``uv run``. In a
+    project without a lockfile, that bootstrap may create ``uv.lock`` and
+    ``.venv`` before the command sandbox is fully established. A detached
+    worktree contains those side effects while retaining tracked, staged,
+    dirty, and untracked context from the operator's working tree.
+    """
+    probe = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        cwd=repo_path,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+    if probe.returncode != 0:
+        # Task-only Web UI workspaces are intentionally not Git repositories.
+        # AGY still has plan mode, its native sandbox, and UV_NO_SYNC there.
+        yield repo_path
+        return
+
+    git_root = Path(probe.stdout.strip()).resolve()
+    try:
+        repo_relative = repo_path.resolve().relative_to(git_root)
+    except ValueError as exc:
+        raise AgyWorkspaceIsolationError(
+            f"repository path {repo_path} is outside Git root {git_root}"
+        ) from exc
+
+    sandbox_parent = session_dir / "sandboxes"
+    sandbox_parent.mkdir(parents=True, exist_ok=True)
+    sandbox = Path(tempfile.mkdtemp(prefix="agy-worktree-", dir=sandbox_parent))
+    # git worktree accepts a missing or empty target. Removing the empty
+    # mkdtemp directory lets Git own its complete lifecycle.
+    sandbox.rmdir()
+    registered = False
+    try:
+        add = subprocess.run(
+            [
+                "git", "worktree", "add", "--detach", "--force",
+                str(sandbox), "HEAD",
+            ],
+            cwd=git_root,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=120,
+            check=False,
+        )
+        if add.returncode != 0:
+            detail = (add.stderr or add.stdout).decode("utf-8", "replace").strip()
+            raise AgyWorkspaceIsolationError(
+                f"could not create disposable AGY worktree: {detail[:300]}"
+            )
+        registered = True
+
+        diff = subprocess.run(
+            ["git", "diff", "--binary", "--full-index", "HEAD", "--", "."],
+            cwd=git_root,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=120,
+            check=False,
+        )
+        if diff.returncode != 0:
+            raise AgyWorkspaceIsolationError(
+                "could not capture dirty tracked state for AGY isolation"
+            )
+        if diff.stdout:
+            apply = subprocess.run(
+                ["git", "apply", "--binary", "--whitespace=nowarn", "-"],
+                cwd=sandbox,
+                input=diff.stdout,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=120,
+                check=False,
+            )
+            if apply.returncode != 0:
+                detail = apply.stderr.decode("utf-8", "replace").strip()
+                raise AgyWorkspaceIsolationError(
+                    f"could not mirror dirty tracked state for AGY: {detail[:300]}"
+                )
+
+        untracked = subprocess.run(
+            ["git", "ls-files", "--others", "--exclude-standard", "-z"],
+            cwd=git_root,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=120,
+            check=False,
+        )
+        if untracked.returncode != 0:
+            raise AgyWorkspaceIsolationError(
+                "could not enumerate untracked state for AGY isolation"
+            )
+        try:
+            session_relative = session_dir.resolve().relative_to(git_root).as_posix()
+        except ValueError:
+            session_relative = ""
+        for raw in untracked.stdout.split(b"\0"):
+            if not raw:
+                continue
+            relative = raw.decode("utf-8", "surrogateescape")
+            if ".moa" in Path(relative).parts:
+                continue
+            if session_relative and (
+                relative == session_relative
+                or relative.startswith(session_relative.rstrip("/") + "/")
+            ):
+                continue
+            _copy_untracked_file(git_root / relative, sandbox / relative)
+
+        yield sandbox / repo_relative
+    finally:
+        if registered:
+            subprocess.run(
+                ["git", "worktree", "remove", "--force", str(sandbox)],
+                cwd=git_root,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=120,
+                check=False,
+            )
+            subprocess.run(
+                ["git", "worktree", "prune"],
+                cwd=git_root,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=30,
+                check=False,
+            )
+
+
 def run(
     *,
     prompt: str,
@@ -194,45 +347,57 @@ def run(
             else prompt_file.with_suffix(".agy.log")
         )
         internal_log.parent.mkdir(parents=True, exist_ok=True)
-        instruction = (
-            f"Read the complete task from {prompt_file.resolve()}. Treat that file "
-            "as instructions, inspect the current repository read-only, and return "
-            "only the requested JSON object. Do not modify files."
-        )
-        cmd = _build_cmd(
-            _agy_bin(),
-            instruction=instruction,
-            model=model,
-            timeout_seconds=timeout_seconds,
-            internal_log=internal_log,
-            reasoning_effort=reasoning_effort,
-        )
         try:
-            proc = subprocess.Popen(
-                cmd,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                cwd=str(repo_path),
-                env=os.environ.copy(),
-                start_new_session=True,
-            )
-            try:
-                stdout, stderr = proc.communicate(timeout=timeout_seconds + 15)
-            except subprocess.TimeoutExpired:
-                kill_proc_tree(proc)
-                try:
-                    stdout, stderr = proc.communicate(timeout=5)
-                except Exception:
-                    stdout, stderr = "", ""
-                stderr = (stderr or "") + f"\n[orchestrator] timeout after {timeout_seconds}s"
-                return AgyResult(
-                    False, None, stdout or "", stderr, -1,
-                    time.monotonic() - started,
-                    f"timeout after {timeout_seconds}s",
+            session_dir = log_file.parents[1] if log_file is not None else prompt_file.parent
+            with _isolated_git_workspace(repo_path, session_dir) as isolated_repo:
+                active_prompt = prompt_file
+                if isolated_repo.resolve() != repo_path.resolve():
+                    active_prompt = isolated_repo / ".moa-agent-input" / prompt_file.name
+                    active_prompt.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(prompt_file, active_prompt)
+                instruction = (
+                    f"Read the complete task from {active_prompt.resolve()}. "
+                    "Treat that file as instructions, inspect the current "
+                    "repository read-only, and return only the requested JSON "
+                    "object. Do not modify files."
                 )
-        except (FileNotFoundError, OSError) as exc:
+                cmd = _build_cmd(
+                    _agy_bin(),
+                    instruction=instruction,
+                    model=model,
+                    timeout_seconds=timeout_seconds,
+                    internal_log=internal_log,
+                    reasoning_effort=reasoning_effort,
+                )
+                child_env = os.environ.copy()
+                # Defense in depth for AGY's terminal sandbox bootstrap. The
+                # disposable worktree is the primary containment boundary.
+                child_env["UV_NO_SYNC"] = "1"
+                proc = subprocess.Popen(
+                    cmd,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    cwd=str(isolated_repo),
+                    env=child_env,
+                    start_new_session=True,
+                )
+                try:
+                    stdout, stderr = proc.communicate(timeout=timeout_seconds + 15)
+                except subprocess.TimeoutExpired:
+                    kill_proc_tree(proc)
+                    try:
+                        stdout, stderr = proc.communicate(timeout=5)
+                    except Exception:
+                        stdout, stderr = "", ""
+                    stderr = (stderr or "") + f"\n[orchestrator] timeout after {timeout_seconds}s"
+                    return AgyResult(
+                        False, None, stdout or "", stderr, -1,
+                        time.monotonic() - started,
+                        f"timeout after {timeout_seconds}s",
+                    )
+        except (AgyWorkspaceIsolationError, FileNotFoundError, OSError) as exc:
             return AgyResult(
                 False, None, "", str(exc), -1, time.monotonic() - started,
                 f"could not launch agy: {exc}",

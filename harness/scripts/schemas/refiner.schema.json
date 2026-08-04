@@ -102,7 +102,7 @@
           },
           "source_url": {
             "type": ["string", "null"],
-            "description": "External URL or local file:line reference that supports your finding. Required and non-empty for verified or contradicted findings; null only when status is unverified and you could not check."
+            "description": "External URL or local file:line or file:start-end reference that supports your finding. Local ranges are inclusive and may span at most 200 lines. Required and non-empty for verified or contradicted findings; null only when status is unverified and you could not check."
           }
         }
       }
