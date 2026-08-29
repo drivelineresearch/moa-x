@@ -16,6 +16,9 @@ venv/
 # MoA session artifacts
 .moa/
 
+# graphify pipeline outputs (local knowledge graph)
+graphify-out/
+
 # Optional Web UI state (normally stored outside the repository via XDG)
 *.sqlite
 *.sqlite3
