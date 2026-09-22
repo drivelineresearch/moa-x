@@ -3488,6 +3488,40 @@ def test_agy_uses_disposable_dirty_state_mirror() -> bool:
         return _ok(ok, f"mirrored={mirrored}")
 
 
+def test_agy_list_models_returns_slugs_without_display_names() -> bool:
+    print("\n[N] agy list_models keeps the slug from '<slug>\\t<Display Name>' rows")
+    from unittest import mock
+    from adapters import agy as agy_adapter
+
+    stdout = (
+        "gemini-3.1-pro-high\tGemini 3.1 Pro (High)\n"
+        "gemini-3.1-pro-low\tGemini 3.1 Pro (Low)\n"
+        "claude-opus-4-6-thinking\tClaude Opus 4.6 (Thinking)\n"
+        "gpt-oss-120b-medium\n"
+        "\n"
+    )
+    proc = mock.Mock(returncode=0, stdout=stdout, stderr="")
+    with (
+        mock.patch.object(agy_adapter.shutil, "which", return_value="/usr/bin/agy"),
+        mock.patch.object(agy_adapter.subprocess, "run", return_value=proc),
+    ):
+        ok_flag, models, detail = agy_adapter.list_models()
+    # A configured model id must be findable; comparing whole lines fails every
+    # membership check and preflight rejects the account's own models.
+    ok = (
+        ok_flag
+        and models == [
+            "gemini-3.1-pro-high",
+            "gemini-3.1-pro-low",
+            "claude-opus-4-6-thinking",
+            "gpt-oss-120b-medium",
+        ]
+        and "gemini-3.1-pro-high" in models
+        and detail == "4 models available"
+    )
+    return _ok(ok, f"models={models} detail={detail}")
+
+
 def test_agy_run_uses_isolated_prompt_and_disables_uv_sync() -> bool:
     print("\n[N] AGY reads its prompt inside the mirror with uv sync disabled")
     import contextlib
@@ -4447,6 +4481,7 @@ def main() -> int:
         test_google_provider_builtins_are_default_and_resolve,
         test_agy_cmd_is_fail_closed,
         test_agy_uses_disposable_dirty_state_mirror,
+        test_agy_list_models_returns_slugs_without_display_names,
         test_agy_run_uses_isolated_prompt_and_disables_uv_sync,
         test_gemini_cmd_is_fail_closed,
         test_gemini_stream_json_extracts_payload,
