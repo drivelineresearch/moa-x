@@ -197,7 +197,7 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the PR protocol.
 
 ## Status
 
-Active reference implementation, currently v0.4.1. The default six-lab roster
+Active reference implementation, currently v0.5.0. The default six-lab roster
 and Qwen Token Plan route have been exercised end to end; offline CI covers
 configuration, schemas, adapters, checkpoint recovery, recorded Layer 3, and
 self-contained HTML report generation. Contributions are welcome; see

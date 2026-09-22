@@ -5,6 +5,10 @@ versioning.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.5.0] — 2026-09-21
+
 ### Added
 
 - Local-first Flask control room with a persistent SQLite run archive,
@@ -108,11 +112,15 @@ versioning.
   behavior.
 - Aggregation guidance now follows the successful dynamic roster instead of
   assuming exactly three proposers and two refiners.
+- `agy models` output is parsed by slug. Rows print as `<slug>\t<Display Name>`,
+  so whole-line comparison failed every membership check and preflight rejected
+  models the signed-in account could actually see, including the default
+  `agy-gemini-pro` route.
 
 ### Validation
 
-- Offline and focused Flask/browser suite counts are refreshed at release
-  time after the model-lab migration.
+- Offline suite: 140 tests, credential-free. Focused Flask and browser suites
+  pass alongside it.
 - Live route requalification accepted DeepSeek V4 Pro on its first
   schema-valid response and accepted GLM 5.2 plus DeepSeek V4 Flash on the
   single redispatch allowed after an incomplete first response.
