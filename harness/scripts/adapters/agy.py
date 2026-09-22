@@ -75,8 +75,10 @@ def list_models(*, timeout_seconds: int = 20) -> tuple[bool, list[str], str]:
         )
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
         return False, [], f"agy models probe failed: {exc}"
+    # `agy models` prints "<slug>\t<Display Name>" per line; keep only the slug
+    # so membership checks against a configured model id actually match.
     models = [
-        line.strip()
+        line.strip().split("\t")[0].split()[0]
         for line in (proc.stdout or "").splitlines()
         if line.strip() and not line.lstrip().startswith(("#", "Usage:"))
     ]
