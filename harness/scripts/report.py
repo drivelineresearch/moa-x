@@ -439,7 +439,8 @@ def load_session(session_dir: Path) -> dict:
 # ---------------------------------------------------------------------------
 
 def _esc(s: str) -> str:
-    return (s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+    # Quotes too: link URLs land inside href="...".
+    return (s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;"))
 
 
 def _inline(text: str) -> str:

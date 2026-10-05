@@ -381,3 +381,8 @@ explicit opt-in for a trusted LAN: plain HTTP can expose cookies to network
 observers and the application does not provide passwords, account recovery,
 administrator roles, or OS-level tenant isolation. For remote access, use
 TLS plus an authenticated reverse proxy or private overlay network.
+
+To serve the UI under a path such as `/moa-x/`, have the proxy strip the
+prefix and send `X-Forwarded-Prefix: /moa-x` (overwrite, never pass through a
+client value). Pages, assets, API calls, SSE, deep links, and the profile
+cookie path all follow it; without the header the app serves from `/`.

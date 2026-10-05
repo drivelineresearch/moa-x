@@ -3953,7 +3953,10 @@ def test_report_markdown_subset_renders() -> bool:
           and "<code>code</code>" in html and "<li>one" in html
           and "&lt;b&gt;" in html  # code fence content HTML-escaped
           and '<a href="https://example.com"' in html)
-    return _ok(ok, f"html={html[:80]!r}")
+    # A quote in a link URL must not close the href and open an event-handler attribute.
+    evil = report_module.render_markdown('[x](https://x"onmouseover="alert(1))\n')
+    ok = ok and '"onmouseover' not in evil and "&quot;onmouseover" in evil
+    return _ok(ok, f"html={html[:80]!r} evil={evil!r}")
 
 
 def test_report_markdown_code_span_shields_bold() -> bool:
