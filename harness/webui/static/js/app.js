@@ -20,6 +20,7 @@ import {
   subscribeToJob,
   uploadFiles,
   finalizePrompt,
+  BASE,
 } from "./api.js";
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -63,8 +64,8 @@ function labVisual(labId, label) {
     id,
     label: label || configured.label,
     accent: configured.accent,
-    avatar: `/static/images/lab-${id}-avatar.webp`,
-    pixel: `/static/images/lab-${id}-pixel.webp`,
+    avatar: `${BASE}/static/images/lab-${id}-avatar.webp`,
+    pixel: `${BASE}/static/images/lab-${id}-pixel.webp`,
   };
 }
 
@@ -83,17 +84,17 @@ function inferLabId(routeId, model = "", label = "") {
 const DEPTH_PRESENTATION = Object.freeze({
   quick: {
     value: 0,
-    image: "/static/images/context-brief.webp",
+    image: `${BASE}/static/images/context-brief.webp`,
     caption: "Two proposers and one refiner for a focused first pass.",
   },
   balanced: {
     value: 1,
-    image: "/static/images/context-effort.webp",
+    image: `${BASE}/static/images/context-effort.webp`,
     caption: "Three proposers and three refiners with each route’s configured effort.",
   },
   thorough: {
     value: 2,
-    image: "/static/images/context-roster.webp",
+    image: `${BASE}/static/images/context-roster.webp`,
     caption: "Four proposers, three refiners, and high effort where supported.",
   },
 });
@@ -181,7 +182,7 @@ function installBrandAssets() {
     document.head.append(favicon);
   }
   favicon.type = "image/png";
-  favicon.href = "/static/images/favicon.png";
+  favicon.href = `${BASE}/static/images/favicon.png`;
 }
 
 function updateProfileChrome() {
@@ -296,7 +297,7 @@ function toggleInfoPopover(button) {
   popover.style.top = `${top}px`;
 }
 
-function routeFromPath(pathname = location.pathname) {
+function routeFromPath(pathname = location.pathname.slice(BASE.length) || "/") {
   const match = pathname.match(/^\/runs\/([^/]+)\/?$/);
   if (match) return { route: "run-detail", id: decodeURIComponent(match[1]) };
   if (pathname.startsWith("/providers")) return { route: "providers" };
@@ -306,9 +307,9 @@ function routeFromPath(pathname = location.pathname) {
 }
 
 function pathForRoute(route, id) {
-  return route === "overview" ? "/"
+  return BASE + (route === "overview" ? "/"
     : route === "run-detail" ? `/runs/${encodeURIComponent(id)}`
-    : `/${route}`;
+    : `/${route}`);
 }
 
 async function navigate(route, id, push = true) {
@@ -503,7 +504,7 @@ function renderActiveJob() {
   target.className = "active-card";
   target.innerHTML = `
     <div class="active-card-head">
-      <img class="active-state-art" src="/static/images/state-${visual.key}.webp" alt="">
+      <img class="active-state-art" src="${BASE}/static/images/state-${visual.key}.webp" alt="">
       <div><p class="eyebrow">${escapeHtml(String(job.phase).toUpperCase())}</p><h3>${escapeHtml(job.title)}</h3></div>
       <span class="status-tag ${jobStatus(job)}">${escapeHtml(titleCase(job.status))}</span>
     </div>
@@ -531,8 +532,8 @@ function renderRecentRuns() {
     return;
   }
   target.innerHTML = recent.map((job) => `
-    <a class="run-row" href="/runs/${encodeURIComponent(job.id)}" data-open-run="${escapeHtml(job.id)}">
-      <img class="run-state-thumb" src="/static/images/state-${stateVisual(job).key}.webp" alt="">
+    <a class="run-row" href="${BASE}/runs/${encodeURIComponent(job.id)}" data-open-run="${escapeHtml(job.id)}">
+      <img class="run-state-thumb" src="${BASE}/static/images/state-${stateVisual(job).key}.webp" alt="">
       <div><h3>${escapeHtml(job.title)}</h3><p>${escapeHtml(jobContext(job))} · ${escapeHtml(jobRosterText(job))}</p></div>
       <time datetime="${escapeHtml(job.finishedAt || job.createdAt || "")}">${escapeHtml(formatTime(job.finishedAt || job.createdAt))}</time>
       <span class="status-tag ${jobStatus(job)}">${escapeHtml(titleCase(job.status))}</span>
@@ -556,12 +557,12 @@ function renderArchive() {
   $("#run-result-count").textContent = `${jobs.length} run${jobs.length === 1 ? "" : "s"}`;
   $("#run-archive").innerHTML = jobs.length ? jobs.map((job) => `
     <tr>
-      <td><div class="archive-run-cell"><img src="/static/images/state-${stateVisual(job).key}.webp" alt=""><div><span class="archive-title">${escapeHtml(job.title)}</span><span class="archive-id">${escapeHtml(job.id.slice(0, 12))}</span></div></div></td>
+      <td><div class="archive-run-cell"><img src="${BASE}/static/images/state-${stateVisual(job).key}.webp" alt=""><div><span class="archive-title">${escapeHtml(job.title)}</span><span class="archive-id">${escapeHtml(job.id.slice(0, 12))}</span></div></div></td>
       <td>${escapeHtml(jobContext(job))}</td>
       <td>${escapeHtml(jobRosterText(job))}</td>
       <td>${escapeHtml(formatTime(job.startedAt || job.createdAt))}</td>
       <td><span class="status-tag ${jobStatus(job)}">${escapeHtml(titleCase(job.status))}</span></td>
-      <td><a class="table-link" href="/runs/${encodeURIComponent(job.id)}" data-open-run="${escapeHtml(job.id)}">Open →</a></td>
+      <td><a class="table-link" href="${BASE}/runs/${encodeURIComponent(job.id)}" data-open-run="${escapeHtml(job.id)}">Open →</a></td>
     </tr>
   `).join("") : `<tr><td colspan="6">No runs match this view.</td></tr>`;
 }
@@ -592,8 +593,8 @@ function modelsForRole(role) {
       effortControl: model.effort_control || model.effortControl || "model_id",
       lab: model.lab || model.vendor || model.providerId || model.provider_id || model.provider || model.id,
       labId: normalizeLabId(model.lab_id || inferLabId(model.id, model.model, model.lab)),
-      labAvatar: model.lab_avatar,
-      labPixel: model.lab_pixel,
+      labAvatar: model.lab_avatar && BASE + model.lab_avatar,
+      labPixel: model.lab_pixel && BASE + model.lab_pixel,
       labAccent: model.lab_accent,
       harness,
       available: model.available ?? model.ready ?? providerReady(provider || {}),
@@ -615,8 +616,8 @@ function modelsForRole(role) {
       effortControl: route.effort_control || "flag",
       lab: route.lab || "OpenAI",
       labId: normalizeLabId(route.lab_id || "openai"),
-      labAvatar: route.lab_avatar,
-      labPixel: route.lab_pixel,
+      labAvatar: route.lab_avatar && BASE + route.lab_avatar,
+      labPixel: route.lab_pixel && BASE + route.lab_pixel,
       labAccent: route.lab_accent,
       harness: "codex",
       available: providerReady(provider),
@@ -1679,7 +1680,7 @@ function renderRunDetail(job = state.detailJob) {
   const done = job.status === "completed" ? 4 : current;
   const runArt = $("#run-detail-art");
   const visual = stateVisual(job);
-  runArt.src = `/static/images/state-${visual.key}.webp`;
+  runArt.src = `${BASE}/static/images/state-${visual.key}.webp`;
   $("#run-detail-art-caption").textContent = visual.label;
   renderResultShortcuts(job);
   const phases = [

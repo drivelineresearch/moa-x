@@ -1,3 +1,4 @@
+export const BASE = window.MOAX_BOOTSTRAP?.base_path || "";
 const JSON_HEADERS = { "Content-Type": "application/json", "Accept": "application/json" };
 
 function csrfToken() {
@@ -13,7 +14,7 @@ async function request(path, options = {}) {
   if (token && !["GET", "HEAD"].includes(options.method || "GET")) {
     headers["X-CSRF-Token"] = token;
   }
-  const response = await fetch(path, { ...options, headers, credentials: "same-origin" });
+  const response = await fetch(BASE + path, { ...options, headers, credentials: "same-origin" });
   const contentType = response.headers.get("content-type") || "";
   const payload = contentType.includes("application/json")
     ? await response.json()
@@ -230,7 +231,7 @@ export async function uploadFiles(files, metadata = {}) {
   const headers = { "Accept": "application/json" };
   const token = csrfToken();
   if (token) headers["X-CSRF-Token"] = token;
-  const response = await fetch("/api/uploads", {
+  const response = await fetch(`${BASE}/api/uploads`, {
     method: "POST",
     headers,
     body,
@@ -313,7 +314,7 @@ export function subscribeToJob(id, { onEvent, onState, onError } = {}) {
 
   if ("EventSource" in window) {
     const query = lastEventId ? `?after=${encodeURIComponent(lastEventId)}` : "";
-    source = new EventSource(`/api/jobs/${encodeURIComponent(id)}/events${query}`, { withCredentials: true });
+    source = new EventSource(`${BASE}/api/jobs/${encodeURIComponent(id)}/events${query}`, { withCredentials: true });
     const consume = (message) => {
       // Native EventSource connection failures also use the "error" event
       // name, but do not carry SSE data. Never turn that transport signal

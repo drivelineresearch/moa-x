@@ -380,8 +380,8 @@ def _agent_views(job: dict[str, Any], session: Path) -> tuple[list[dict[str, Any
             "role": role,
             "lab_id": lab_id,
             "lab": lab["label"],
-            "lab_avatar": f"/static/images/{lab['avatar']}",
-            "lab_pixel": f"/static/images/{lab['pixel']}",
+            "lab_avatar": f"{request.script_root}/static/images/{lab['avatar']}",
+            "lab_pixel": f"{request.script_root}/static/images/{lab['pixel']}",
             "lab_accent": lab["accent"],
             "harness": route_config.get("harness"),
         }
@@ -461,7 +461,7 @@ def _job_view(job: dict[str, Any]) -> dict[str, Any]:
         if name == "final_plan" and stale_final_output:
             continue
         if (session / filename).exists():
-            artifacts[name] = f"/api/jobs/{job['id']}/artifacts/{filename}"
+            artifacts[name] = f"{request.script_root}/api/jobs/{job['id']}/artifacts/{filename}"
     job["artifacts"] = artifacts
     job["active"] = job["status"] in ACTIVE_STATES
     config = job.get("config") or {}
@@ -515,7 +515,7 @@ def _dated_view(record: dict[str, Any]) -> dict[str, Any]:
 def _upload_view(upload: dict[str, Any]) -> dict[str, Any]:
     upload = _dated_view(dict(upload))
     upload.pop("stored_path", None)
-    upload["url"] = f"/api/uploads/{upload['id']}/content"
+    upload["url"] = f"{request.script_root}/api/uploads/{upload['id']}/content"
     return upload
 
 
@@ -539,7 +539,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     data_dir = _default_data_dir()
     app = Flask(__name__, template_folder="templates", static_folder="static")
     app.config["PREFERRED_URL_SCHEME"] = "https"
-    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1)
     app.config.from_mapping(
         DATABASE=str(data_dir / "webui.sqlite3"),
         UPLOAD_DIR=str(data_dir / "uploads"),
@@ -650,6 +650,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             bootstrap={
                 "workspace": str(REPO_ROOT),
                 "github_owner": app.config["GITHUB_OWNER"],
+                "base_path": request.script_root,
             },
             local_font_stylesheet=_local_fonts_ready(local_font_dir),
         )
@@ -789,7 +790,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                 httponly=True,
                 secure=bool(app.config["PROFILE_COOKIE_SECURE"]),
                 samesite="Strict",
-                path="/",
+                path=request.script_root or "/",
             )
         return response
 
@@ -1463,7 +1464,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         store.create_report_share(
             job_id=job_id, profile_id=profile["id"], token_hash=digest
         )
-        return jsonify({"url": f"/shared/reports/{token}"}), 201
+        return jsonify({"url": f"{request.script_root}/shared/reports/{token}"}), 201
 
     @app.delete("/api/jobs/<job_id>/share")
     @require_profile

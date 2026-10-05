@@ -2,22 +2,22 @@
 {% block body %}
 <div class="app-shell">
   <aside class="sidebar" id="sidebar" aria-label="Primary">
-    <a class="brand" href="/" data-route="overview" aria-label="MoA-X overview">
-      <img class="brand-image" src="/static/images/moax-mark.webp" alt="">
+    <a class="brand" href="{{ request.script_root }}/" data-route="overview" aria-label="MoA-X overview">
+      <img class="brand-image" src="{{ request.script_root }}/static/images/moax-mark.webp" alt="">
       <span class="brand-name">MOA–X</span>
     </a>
 
     <nav class="primary-nav">
-      <a class="nav-item is-active" href="/" data-route="overview">
+      <a class="nav-item is-active" href="{{ request.script_root }}/" data-route="overview">
         <span class="nav-index">01</span>Overview
       </a>
-      <a class="nav-item" href="/new" data-route="new">
+      <a class="nav-item" href="{{ request.script_root }}/new" data-route="new">
         <span class="nav-index">02</span>New run
       </a>
-      <a class="nav-item" href="/runs" data-route="runs">
+      <a class="nav-item" href="{{ request.script_root }}/runs" data-route="runs">
         <span class="nav-index">03</span>Run archive
       </a>
-      <a class="nav-item" href="/providers" data-route="providers">
+      <a class="nav-item" href="{{ request.script_root }}/providers" data-route="providers">
         <span class="nav-index">04</span>Providers
       </a>
     </nav>
@@ -39,8 +39,8 @@
   </aside>
 
   <header class="mobile-header">
-    <a class="brand brand-mobile" href="/" data-route="overview">
-      <img class="brand-image" src="/static/images/moax-mark.webp" alt="">
+    <a class="brand brand-mobile" href="{{ request.script_root }}/" data-route="overview">
+      <img class="brand-image" src="{{ request.script_root }}/static/images/moax-mark.webp" alt="">
       <span class="brand-name">MOA–X</span>
     </a>
     <button class="menu-button" id="menu-button" type="button" aria-expanded="false" aria-controls="sidebar">Menu</button>
@@ -61,15 +61,15 @@
       </header>
 
       <figure class="hero-visual">
-        <img src="/static/images/control-room-hero.webp" alt="Illustrated MoA-X control room where parallel research lanes converge into one decision">
+        <img src="{{ request.script_root }}/static/images/control-room-hero.webp" alt="Illustrated MoA-X control room where parallel research lanes converge into one decision">
         <figcaption><b>THE CONTROL ROOM</b><span>One local surface for every model, run, and decision trail</span></figcaption>
       </figure>
 
       <div class="health-ribbon" id="health-ribbon" aria-label="Provider health" aria-busy="true">
         <div class="loading-stage loading-stage-inline" role="status">
           <picture>
-            <source media="(prefers-reduced-motion: reduce)" srcset="/static/images/lab-google-pixel.webp">
-            <img src="/static/images/lab-google-pixel.webp" alt="">
+            <source media="(prefers-reduced-motion: reduce)" srcset="{{ request.script_root }}/static/images/lab-google-pixel.webp">
+            <img src="{{ request.script_root }}/static/images/lab-google-pixel.webp" alt="">
           </picture>
           <div><strong>Checking the machine</strong><span>Finding authenticated provider accounts…</span></div>
         </div>
@@ -81,12 +81,12 @@
             <p class="eyebrow">ON THE MACHINE</p>
             <h2 id="active-run-title">Active work</h2>
           </div>
-          <a class="quiet-link" href="/runs" data-route="runs">View the archive →</a>
+          <a class="quiet-link" href="{{ request.script_root }}/runs" data-route="runs">View the archive →</a>
         </div>
         <div id="active-run-card" class="loading-stage compact" role="status" aria-busy="true">
           <picture>
-            <source media="(prefers-reduced-motion: reduce)" srcset="/static/images/lab-moonshot-pixel.webp">
-            <img src="/static/images/lab-moonshot-pixel.webp" alt="">
+            <source media="(prefers-reduced-motion: reduce)" srcset="{{ request.script_root }}/static/images/lab-moonshot-pixel.webp">
+            <img src="{{ request.script_root }}/static/images/lab-moonshot-pixel.webp" alt="">
           </picture>
           <div><h3>Checking active work</h3><p>Looking for queued and running jobs…</p></div>
         </div>
@@ -103,8 +103,8 @@
           <div class="run-list" id="recent-runs" aria-live="polite" aria-busy="true">
             <div class="loading-stage compact" role="status">
               <picture>
-                <source media="(prefers-reduced-motion: reduce)" srcset="/static/images/lab-openai-pixel.webp">
-                <img src="/static/images/lab-openai-pixel.webp" alt="">
+                <source media="(prefers-reduced-motion: reduce)" srcset="{{ request.script_root }}/static/images/lab-openai-pixel.webp">
+                <img src="{{ request.script_root }}/static/images/lab-openai-pixel.webp" alt="">
               </picture>
               <div><h3>Loading latest runs</h3><p>Checking the local archive…</p></div>
             </div>
@@ -156,7 +156,7 @@
                   <small><span id="goal-count">0</span> characters · Draft saves in this browser</small>
                 </div>
                 <div class="task-prompt-tip">
-                  <img src="/static/images/prompt-coach-teacher.webp" alt="" class="prompt-coach-thumb">
+                  <img src="{{ request.script_root }}/static/images/prompt-coach-teacher.webp" alt="" class="prompt-coach-thumb">
                   <div>
                     <span>STRONG BRIEF</span>
                     <p>Describe the outcome, constraints, and what a useful final plan must decide. The ensemble will inspect the selected context.</p>
@@ -179,7 +179,7 @@
                   <legend>Planning depth</legend>
                   <div class="depth-layout">
                     <figure class="depth-visual">
-                      <img id="depth-illustration" src="/static/images/context-effort.webp" alt="">
+                      <img id="depth-illustration" src="{{ request.script_root }}/static/images/context-effort.webp" alt="">
                       <figcaption id="depth-caption">Three proposers and three refiners with each route’s configured effort.</figcaption>
                     </figure>
                     <div class="depth-control">
@@ -204,11 +204,11 @@
                     </div>
                   </div>
                   <div class="source-context-panel" id="brief-source">
-                    <img src="/static/images/context-brief.webp" alt="">
+                    <img src="{{ request.script_root }}/static/images/context-brief.webp" alt="">
                     <div><strong>No repository needed</strong><p>Plan from your task and reference files.</p></div>
                   </div>
                   <div class="source-context-panel github-source" id="github-source" hidden>
-                    <img src="/static/images/context-github.webp" alt="">
+                    <img src="{{ request.script_root }}/static/images/context-github.webp" alt="">
                     <div class="field">
                       <label for="github-repo"><span id="github-owner-label">{{ bootstrap.github_owner }}</span> repository</label>
                       <select id="github-repo" name="github_repo">
@@ -221,7 +221,7 @@
 
                 <section class="attachment-picker" aria-labelledby="attachment-title">
                   <div class="attachment-intro">
-                    <img src="/static/images/context-upload.webp" alt="">
+                    <img src="{{ request.script_root }}/static/images/context-upload.webp" alt="">
                     <div>
                       <h3 id="attachment-title">Reference files <span>Optional</span></h3>
                       <p>Attach specs, notes, diagrams, or exported issue context.</p>
@@ -361,8 +361,8 @@
               <td colspan="6">
                 <div class="loading-stage compact" role="status">
                   <picture>
-                    <source media="(prefers-reduced-motion: reduce)" srcset="/static/images/lab-anthropic-pixel.webp">
-                    <img src="/static/images/lab-anthropic-pixel.webp" alt="">
+                    <source media="(prefers-reduced-motion: reduce)" srcset="{{ request.script_root }}/static/images/lab-anthropic-pixel.webp">
+                    <img src="{{ request.script_root }}/static/images/lab-anthropic-pixel.webp" alt="">
                   </picture>
                   <div><h3>Loading run archive</h3><p>Indexing saved plans, reports, and traces…</p></div>
                 </div>
@@ -388,8 +388,8 @@
       <div class="provider-grid" id="provider-grid" aria-busy="true">
         <div class="loading-stage" role="status">
           <picture>
-            <source media="(prefers-reduced-motion: reduce)" srcset="/static/images/lab-independent-pixel.webp">
-            <img src="/static/images/lab-independent-pixel.webp" alt="">
+            <source media="(prefers-reduced-motion: reduce)" srcset="{{ request.script_root }}/static/images/lab-independent-pixel.webp">
+            <img src="{{ request.script_root }}/static/images/lab-independent-pixel.webp" alt="">
           </picture>
           <div><h3>Checking provider accounts</h3><p>Reading CLI versions, authentication, and available model routes from this machine…</p></div>
         </div>
@@ -412,7 +412,7 @@
             <div class="run-result-shortcuts" id="run-result-shortcuts" hidden></div>
           </div>
           <figure class="run-detail-visual">
-            <img id="run-detail-art" src="/static/images/state-queued.webp" alt="">
+            <img id="run-detail-art" src="{{ request.script_root }}/static/images/state-queued.webp" alt="">
             <figcaption id="run-detail-art-caption">Queued</figcaption>
           </figure>
           <div class="run-actions" id="run-actions"></div>
@@ -504,7 +504,7 @@
   <div class="prompt-coach-shell">
     <header class="prompt-coach-head">
       <div class="prompt-coach-portrait">
-        <img src="/static/images/prompt-coach-teacher.webp" alt="Anime-style prompt teacher guiding ideas into a clear brief">
+        <img src="{{ request.script_root }}/static/images/prompt-coach-teacher.webp" alt="Anime-style prompt teacher guiding ideas into a clear brief">
       </div>
       <div>
         <p class="eyebrow">PROMPT STUDIO</p>
@@ -520,7 +520,7 @@
 
 <dialog class="attachment-progress-dialog" id="attachment-progress-dialog" aria-labelledby="attachment-progress-title">
   <div class="attachment-progress-shell">
-    <img src="/static/images/prompt-coach-teacher.webp" alt="Anime-style research guide preparing reference material" class="attachment-progress-art">
+    <img src="{{ request.script_root }}/static/images/prompt-coach-teacher.webp" alt="Anime-style research guide preparing reference material" class="attachment-progress-art">
     <section class="attachment-progress-copy" aria-live="polite">
       <p class="eyebrow">REFERENCE PREP</p>
       <h2 id="attachment-progress-title">Preparing your references</h2>
