@@ -1,4 +1,4 @@
-export const BASE = window.MOAX_BOOTSTRAP?.base_path || "";
+export const BASE = window.MOAX_BOOTSTRAP.base_path;
 const JSON_HEADERS = { "Content-Type": "application/json", "Accept": "application/json" };
 
 function csrfToken() {
