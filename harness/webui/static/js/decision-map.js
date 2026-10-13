@@ -352,6 +352,73 @@
     return { claims, evidence, decisions, hiddenClaims: Math.max(0, (critical.length || allClaims.length) - claims.length) };
   }
 
+  function renderSetupPreview(host, map, options = {}) {
+    host.replaceChildren();
+    host.classList.add("decision-map-host");
+    host.dataset.stage = "setup";
+
+    const shell = element("section", {
+      class: `dm-shell dm-mode-${options.mode || "setup"} dm-setup-shell`,
+      "aria-label": "Selected ensemble routing preview",
+    });
+    shell.append(element("header", { class: "dm-header" }, [
+      element("div", { class: "dm-header-copy" }, [
+        element("span", { class: "dm-eyebrow", text: "RUN ROSTER" }),
+        element("h3", { text: "Ensemble routing preview" }),
+        element("p", { text: map.summary || "Review the selected agents before dispatch." }),
+      ]),
+      element("span", { class: "dm-stage is-setup", text: STAGE_LABELS.setup }),
+    ]));
+
+    const flow = element("div", { class: "dm-setup-flow" });
+    const layers = [
+      {
+        role: "proposer",
+        kicker: "Layer 1",
+        title: "Propose",
+        description: "Independent first passes establish candidate approaches and evidence.",
+      },
+      {
+        role: "refiner",
+        kicker: "Layer 2",
+        title: "Review",
+        description: "Independent reviewers pressure-test every retained proposal.",
+      },
+      {
+        role: "aggregator",
+        kicker: "Layer 3",
+        title: "Synthesize",
+        description: "One final editor reconciles the strongest supported decisions.",
+      },
+    ];
+    layers.forEach((layer, index) => {
+      if (index) flow.append(element("span", { class: "dm-setup-arrow", "aria-hidden": "true", text: "→" }));
+      const agents = (map.agents || []).filter((agent) => agent.role === layer.role);
+      const card = element("section", { class: `dm-setup-layer is-${layer.role}`, "aria-label": `${layer.title} agents` }, [
+        element("header", { class: "dm-setup-layer-head" }, [
+          element("span", { class: "dm-lane-title", text: layer.kicker }),
+          element("h4", { text: layer.title }),
+          element("p", { text: layer.description }),
+        ]),
+      ]);
+      const list = element("div", { class: "dm-setup-agents" });
+      agents.forEach((agent) => list.append(element("article", { class: "dm-setup-agent" }, [
+        element("span", { class: "dm-node-kicker", text: agent.lab || titleCase(agent.lab_id) || "Independent lab" }),
+        element("strong", { text: agent.label }),
+        element("small", { text: agent.model || "Configured model" }),
+      ])));
+      if (!agents.length) list.append(element("p", { class: "dm-empty", text: `Choose a ${layer.role} before dispatch.` }));
+      card.append(list);
+      flow.append(card);
+    });
+    shell.append(flow, element("p", {
+      class: "dm-setup-note",
+      text: "Evidence quality, claim verification, and decision lineage appear here after the run produces validated receipts.",
+    }));
+    host.append(shell);
+    return { destroy() {} };
+  }
+
   function drawEdges(network, svg, map, visibleIds) {
     const bounds = network.getBoundingClientRect();
     if (!bounds.width || !bounds.height) return;
@@ -399,6 +466,7 @@
   function render(host, rawMap, options = {}) {
     if (!host) return { destroy() {} };
     const map = copy(rawMap) || createSetupMap();
+    if (map.stage === "setup") return renderSetupPreview(host, map, options);
     const maxClaims = Number(options.maxClaims) || (options.mode === "report" ? 16 : 10);
     const graph = visibleGraph(map, maxClaims);
     const index = nodeIndex(map);

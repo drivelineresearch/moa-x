@@ -35,18 +35,18 @@ What happens:
    permission-deny policy for OpenCode), does web research, and writes an independent plan to
    `.moa/<session>/layer1/`.
 4. **Broadcast refiners (Layer 2, parallel).** Three more subprocesses,
-   `qwen` (`qwen3.8-max-preview`), `deepseek` (`deepseek-v4-pro`), and `opus`
-   (`claude-opus-5`, high), each
+   `qwen` (`qwen3.8-max`), `deepseek-flash` (`deepseek-v4.1-flash`), and `opus`
+   (`claude-opus-5-5`, high), each
    receive every valid proposal and
    produce verification output in `.moa/<session>/layer2/`.
    "Broadcast" means every refiner sees every proposal, per the MoA
    paper.
-5. **Aggregator (Layer 3).** By default GPT-5.6 Sol at `xhigh` reads the
+5. **Aggregator (Layer 3).** By default GPT-6.1 Sol at `xhigh` reads the
    retained `.moa/<session>/synthesis-input.md` through the recorded Codex
    phase, synthesizes, honors refiner contradictions, and writes
    `.moa/<session>/final-plan.md` plus the structured `final-plan.json`
    decision lineage.
-   The Web UI also exposes Claude Opus 5 and Fable 5 1M at `xhigh` as
+   The Web UI also exposes Claude Opus 5.5 and Fable 5.1 1M at `xhigh` as
    alternative Claude aggregators. Fable selection is guarded by a
    warning/password modal because it can consume very large quotas; Fable is
    not available in either upstream layer.

@@ -14,33 +14,31 @@ Never commit `.env`, provider keys, or generated `harness/config.yaml`.
 
 | Route | Execution harness | Model | Roles | Effort |
 |---|---|---|---|---|
-| `agy-gemini-pro` | AGY | `gemini-3.1-pro-high` | proposer, refiner | model-depth selector |
-| `grok` | OpenCode | `opencode-go/grok-4.5` | proposer, refiner | provider-managed |
-| `codex-luna` | Codex | `gpt-5.6-luna` | proposer, refiner | adjustable; medium default |
-| `codex` | Codex | `gpt-5.6-terra` | proposer, refiner | adjustable; high default |
-| `qwen` | OpenCode | `qwen-token-plan/qwen3.8-max-preview` | proposer, refiner | configured variant |
-| `qwen-opencode` | OpenCode | `opencode-go/qwen3.7-max` | proposer, refiner | provider-managed |
+| `agy-gemini-pro` | AGY | `gemini-4-argon-high` | proposer, refiner | model-depth selector |
+| `grok` | OpenCode | `opencode-go/grok-4.7` | proposer, refiner | provider-managed |
+| `codex-luna` | Codex | `gpt-6-luna` | proposer, refiner | adjustable; medium default |
+| `codex` | Codex | `gpt-6-astra` | proposer, refiner | adjustable; high default |
+| `qwen` | OpenCode | `opencode-go/qwen3.8-max` | proposer, refiner | provider-managed |
+| `qwen-opencode` | OpenCode | `opencode-go/qwen3.8-max` | proposer, refiner | provider-managed |
 | `kimi` | OpenCode | `opencode-go/kimi-k3` | disabled; archived provenance only | provider-managed |
-| `glm` | OpenCode | `opencode-go/glm-5.2` | proposer, refiner | provider-managed |
-| `deepseek` | OpenCode | `opencode-go/deepseek-v4-pro` | proposer, refiner | provider-managed |
-| `deepseek-flash` | OpenCode | `opencode-go/deepseek-v4-flash` | proposer, refiner | provider-managed |
-| `sonnet` | Claude Code | `claude-sonnet-5` | proposer, refiner | adjustable; high default |
-| `opus` | Claude Code | `claude-opus-5` | proposer, refiner, aggregator | adjustable; high default |
-| `codex-sol` | Codex | `gpt-5.6-sol` | proposer, refiner, aggregator | adjustable; xhigh default |
-| `fable` | Claude Code | `claude-fable-5` | aggregator only | fixed xhigh |
+| `glm` | OpenCode | `opencode-go/glm-5.3` | proposer, refiner | provider-managed |
+| `deepseek-flash` | OpenCode | `opencode-go/deepseek-v4.1-flash` | proposer, refiner | provider-managed |
+| `sonnet` | Claude Code | `claude-sonnet-5-5` | proposer, refiner | adjustable; high default |
+| `opus` | Claude Code | `claude-opus-5-5` | proposer, refiner, aggregator | adjustable; high default |
+| `codex-sol` | Codex | `gpt-6.1-sol` | proposer, refiner, aggregator | adjustable; xhigh default |
+| `fable` | Claude Code | `claude-fable-5-1` | aggregator only | fixed xhigh |
 
-Cursor is not a supported harness. GLM 5.2 is the fourth proposer in the
-Thorough Web UI preset. DeepSeek V4 Pro is a recommended refiner; Flash remains
-an optional curated route. Kimi K3 remains cataloged for archived provenance
-but is blocked from new Web UI runs because OpenCode Go rejects it before
-inference. Archived manifests preserve every original model-lab identity.
+Cursor is not a supported harness. GLM 5.3 is the fourth proposer in the
+Thorough Web UI preset. DeepSeek V4.1 Flash is the sole curated DeepSeek route and the default refiner. Kimi K3 remains cataloged for archived provenance
+but remains blocked from new Web UI runs pending full requalification after
+prior pre-inference rate-limit failures. Archived manifests preserve every original model-lab identity.
 
 ## Default ensemble
 
 ```yaml
 layers:
   proposers: [agy-gemini-pro, grok, codex-luna]
-  refiners: [qwen, deepseek, opus]
+  refiners: [qwen, deepseek-flash, opus]
   aggregator: codex-sol
   skip_refinement: false
 ```
@@ -49,26 +47,26 @@ The Web UI's optimized profiles use:
 
 | Mode | Proposers | Refiners | Aggregator |
 |---|---|---|---|
-| Quick | Gemini Pro `low`; Grok 4.5 | DeepSeek V4 Pro | GPT-5.6 Sol `xhigh` |
-| Balanced | Gemini Pro `high`; Grok 4.5; GPT-5.6 Luna `medium` | Qwen 3.8; DeepSeek V4 Pro; Opus `high` | GPT-5.6 Sol `xhigh` |
-| Thorough | Gemini Pro `high`; Grok 4.5; GPT-5.6 Terra `high`; GLM 5.2 | Qwen 3.8; DeepSeek V4 Pro; Opus `max` | GPT-5.6 Sol `xhigh` |
+| Quick | Gemini Pro `low`; Grok 4.7 | DeepSeek V4.1 Flash | GPT-6.1 Sol `xhigh` |
+| Balanced | Gemini Pro `high`; Grok 4.7; GPT-6 Luna `medium` | Qwen 3.8; DeepSeek V4.1 Flash; Opus `high` | GPT-6.1 Sol `xhigh` |
+| Thorough | Gemini Pro `high`; Grok 4.7; GPT-6 Astra `high`; GLM 5.3 | Qwen 3.8; DeepSeek V4.1 Flash; Opus `max` | GPT-6.1 Sol `xhigh` |
 
 Gemini Pro enters every mode for early web evidence. Grok enters every mode as
-an independent xAI proposer. DeepSeek V4 Pro is always a refiner; Opus joins
+an independent xAI proposer. DeepSeek V4.1 Flash is always a refiner; Opus joins
 Balanced and Thorough. The default OpenAI aggregator stays lab-independent
 from all recommended refiners.
 
 Kimi K3 is disabled for new Web UI runs. Its OpenCode Go route repeatedly
 returned `Provider rate limit exceeded` before inference or billing even with
-**Use balance** enabled. Increasing the lane timeout only prolongs that retry
-loop; use DeepSeek V4 Pro instead.
+**Use balance** enabled. A fresh synthetic response is insufficient to requalify that research lane;
+use DeepSeek V4.1 Flash until a full run is validated.
 
 ## Environment variables
 
 | Variable | Default | Purpose |
 |---|---|---|
 | `MOA_PROPOSERS` | `agy-gemini-pro,grok,codex-luna` | comma-separated proposer route ids |
-| `MOA_REFINERS` | `qwen,deepseek,opus` | comma-separated refiner route ids |
+| `MOA_REFINERS` | `qwen,deepseek-flash,opus` | comma-separated refiner route ids |
 | `MOA_AGGREGATOR` | `codex-sol` | aggregator route id |
 | `MOA_SKIP_LAYER2` | false | skip broadcast refinement |
 | `MOA_<NAME>_MODEL` | route default | per-route model override |
@@ -82,10 +80,10 @@ loop; use DeepSeek V4 Pro instead.
 | `MOA_SONNET_TIMEOUT` | `1200` | Claude wall-clock cap |
 | `MOA_OPENCODE_TIMEOUT` | Claude timeout | OpenCode wall-clock cap |
 | `MOA_AGY_TIMEOUT` | Claude timeout | AGY wall-clock cap |
-| `QWEN_TOKEN_PLAN_API_KEY` | none | required dedicated `sk-sp-...` Qwen key |
+| `QWEN_TOKEN_PLAN_API_KEY` | none | optional dedicated key for custom Token Plan routes; unused by defaults |
 
 AGY encodes depth in the model slug. MoA-X therefore changes
-`gemini-3.1-pro-low` / `gemini-3.1-pro-high` and never sends a conflicting
+`gemini-4-argon-low` / `gemini-4-argon-high` and never sends a conflicting
 effort flag.
 
 ## User-defined routes
@@ -103,7 +101,7 @@ providers:
 
 layers:
   proposers: [agy-gemini-pro, grok, codex-luna]
-  refiners: [qwen, deepseek, opus, custom-reviewer]
+  refiners: [qwen, deepseek-flash, opus, custom-reviewer]
   aggregator: codex-sol
 ```
 
@@ -111,7 +109,7 @@ The shell shorthand is:
 
 ```bash
 MOA_PROVIDER_CUSTOM_REVIEWER=opencode:provider/model-id
-MOA_REFINERS=qwen,deepseek,opus,custom-reviewer
+MOA_REFINERS=qwen,deepseek-flash,opus,custom-reviewer
 ```
 
 Names must be lowercase, dash-separated, and at most 32 characters so they fit

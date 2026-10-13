@@ -6,9 +6,9 @@ repo-grounded implementation planning.
 
 ```mermaid
 flowchart LR
-  S["Scout brief"] --> P["Proposers: Gemini Pro + Grok 4.5 + GPT-5.6 Luna"]
-  P --> R["Broadcast refiners: Qwen 3.8 + DeepSeek V4 Pro + Claude Opus 5"]
-  R --> A["Aggregator: GPT-5.6 Sol xhigh default; Opus or gated Fable alternatives"]
+  S["Scout brief"] --> P["Proposers: Gemini Pro + Grok 4.7 + GPT-6 Luna"]
+  P --> R["Broadcast refiners: Qwen 3.8 + DeepSeek V4.1 Flash + Claude Opus 5.5"]
+  R --> A["Aggregator: GPT-6.1 Sol xhigh default; Opus or gated Fable alternatives"]
   A --> O["Final plan + evidence-weighted decision map + report"]
 ```
 
@@ -18,15 +18,15 @@ flowchart LR
 brief with focus files, explicit scope, and shared attachment context.
 
 **Layer 1: independent proposals.** Gemini Pro contributes Google-backed web
-research, Grok contributes an xAI lane, and GPT-5.6 Luna contributes an
+research, Grok contributes an xAI lane, and GPT-6 Luna contributes an
 OpenAI planning lane. They run in parallel and cannot see each other's work.
 
-**Layer 2: broadcast refinement.** Qwen, DeepSeek V4 Pro, and Claude Opus each receive
+**Layer 2: broadcast refinement.** Qwen, DeepSeek V4.1 Flash, and Claude Opus each receive
 every surviving proposal. They verify claims, identify disagreements, add
 missing evidence, and produce structured review output. Broadcast refinement
 is paper-faithful and gives every reviewer the same comparison surface.
 
-**Layer 3: decision.** GPT-5.6 Sol at xhigh is the default recorded aggregator.
+**Layer 3: decision.** GPT-6.1 Sol at xhigh is the default recorded aggregator.
 It consumes only validated upstream artifacts, resolves disagreements without
 hiding them, and writes the final Markdown plan plus exact JSON decision
 lineage. Claude Opus is an alternative aggregator. Fable is aggregator-only
@@ -75,31 +75,26 @@ reach those labs. The canonical mapping and asset names live in
 
 Unknown custom routes receive an `independent` lab identity until their model
 prefix can be mapped explicitly. Historical Moonshot, GLM, DeepSeek, Composer,
-and Cursor-Grok manifests remain attributable for archive rendering. GLM 5.2
-and DeepSeek V4 Pro/Flash are available after live full-schema qualification;
-GLM is a Thorough proposer and DeepSeek V4 Pro is a recommended refiner.
+and Cursor-Grok manifests remain attributable for archive rendering. GLM 5.3
+and DeepSeek V4.1 Flash are available after live full-schema qualification;
+GLM is a Thorough proposer and DeepSeek V4.1 Flash is a recommended refiner.
 
 ## Why this roster
 
 - Gemini Pro enters every recommended mode because its Google-backed web
   search is valuable before refinement.
 - Grok enters every mode as an independent xAI proposal lane.
-- Balanced adds GPT-5.6 Luna; Thorough adds GPT-5.6 Terra for a deeper OpenAI
+- Balanced adds GPT-6 Luna; Thorough adds GPT-6 Astra for a deeper OpenAI
   proposer pass without relying on the less reliable retired routes.
-- DeepSeek V4 Pro is present in every refinement profile.
+- DeepSeek V4.1 Flash is present in every refinement profile.
 - Qwen and Opus join Balanced and Thorough; Opus uses high and max effort,
   respectively.
 - The recommended refiners remain lab-independent from the OpenAI aggregator.
 
-The default is intentionally a reliability-weighted ensemble, not a claim
-that more lanes are always better. Retained-run evidence showed repeated
-incomplete GLM output and schema-invalid DeepSeek output, so both were removed
-from the curated surface. DeepSeek V4 Pro later passed the repaired adapter's
-full proposer contract on its first attempt. GLM and DeepSeek Flash each
-truncated once and passed the single redispatch allowed by the real pipeline.
-DeepSeek V4 Pro is now a reliability-weighted default refiner. Kimi K3 remains
-attributable in archives but is disabled for new runs after its OpenCode Go
-route repeatedly failed before inference.
+The default keeps one model from each lab in a layer. DeepSeek Pro was removed
+from the active catalog during the October 2026 refresh; old manifests retain
+its original identity. Kimi K3 remains attributable in archives and disabled
+for new runs pending a real broadcast-review requalification.
 
 ## OpenCode output handling
 
@@ -157,3 +152,20 @@ accounting remains a future improvement.
 - forcing a failed route to pass by weakening schemas;
 - treating an execution harness as a model lab;
 - committing `.moa` session artifacts.
+
+### OpenCode V2 isolation
+
+The adapter detects V1/V2 before dispatch. V2 runs a private server with a
+custom primary read-only agent in a disposable repository snapshot. The
+snapshot mirrors dirty Git-visible state, receives a private `.opencode`
+configuration, and is removed after the subprocess ends. Task-only workspaces
+are copied; tool-free repair calls use an empty scratch workspace. Both cwd
+and PWD point to the snapshot because the V2 CLI resolves PWD first.
+
+Only read, glob, grep, and optional web fetch/search are allowed. Edit, shell,
+subagents, questions, MCP tools, and credential-file reads remain denied.
+The private configuration home prevents unrelated user plugins and MCP
+servers from loading while account state stays in the default data directory.
+Web search chooses an available provider automatically instead of opening a
+headless selection prompt. V2 emits NDJSON: only text parts feed JSON extraction, and typed error events
+fail closed. V1 retains its original invocation and policy contract.

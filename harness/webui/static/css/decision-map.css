@@ -56,6 +56,42 @@
 .dm-stage.is-review,
 .dm-stage.is-proposals { color: #946000; border-color: color-mix(in srgb, var(--dm-accent) 55%, var(--dm-line)); }
 
+.dm-setup-flow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px minmax(0, 1fr) 34px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  padding: 24px;
+  background-image: radial-gradient(color-mix(in srgb, var(--dm-line) 65%, transparent) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+.dm-setup-layer {
+  min-width: 0;
+  align-self: stretch;
+  padding: 18px;
+  border: 1px solid var(--dm-line);
+  border-top: 4px solid var(--dm-accent);
+  background: var(--dm-paper);
+}
+.dm-setup-layer-head { min-height: 92px; padding-bottom: 14px; border-bottom: 1px solid var(--dm-line); }
+.dm-setup-layer-head .dm-lane-title { margin-bottom: 6px; }
+.dm-setup-layer-head h4 { margin: 0; font-size: 17px; line-height: 1.2; text-transform: none; }
+.dm-setup-layer-head p { margin: 7px 0 0; color: var(--dm-muted); font-size: 11px; line-height: 1.45; }
+.dm-setup-agents { display: grid; gap: 8px; padding-top: 14px; }
+.dm-setup-agent {
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid var(--dm-line);
+  border-left: 4px solid var(--dm-accent);
+  background: color-mix(in srgb, var(--dm-panel) 52%, var(--dm-paper));
+}
+.dm-setup-agent strong,
+.dm-setup-agent small { display: block; overflow-wrap: anywhere; }
+.dm-setup-agent strong { font-size: 12px; line-height: 1.35; }
+.dm-setup-agent small { margin-top: 4px; color: var(--dm-muted); font-size: 10px; line-height: 1.35; }
+.dm-setup-arrow { color: var(--dm-accent); font: 700 28px/1 var(--font-display, ui-monospace, monospace); text-align: center; }
+.dm-setup-note { margin: 0; padding: 14px 24px; border-top: 1px solid var(--dm-line); color: var(--dm-muted); background: var(--dm-panel); font-size: 11px; line-height: 1.45; }
+
 .dm-quality {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -197,6 +233,9 @@
 
 @media (max-width: 760px) {
   .dm-header { flex-direction: column; gap: 12px; padding: 18px; }
+  .dm-setup-flow { grid-template-columns: 1fr; padding: 18px; }
+  .dm-setup-layer-head { min-height: 0; }
+  .dm-setup-arrow { transform: rotate(90deg); }
   .dm-quality { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .dm-metric:nth-child(2),
   .dm-metric:nth-child(4) { border-right: 0; }

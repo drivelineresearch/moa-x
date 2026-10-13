@@ -70,27 +70,27 @@ MODEL_LABS: dict[str, dict[str, str]] = {
 
 ROUTE_META: dict[str, dict[str, Any]] = {
     "codex": {
-        "label": "GPT-5.6 Terra",
+        "label": "GPT-6 Astra",
         "lab_id": "openai",
         "roles": ["proposer", "refiner"],
     },
     "codex-sol": {
-        "label": "GPT-5.6 Sol",
+        "label": "GPT-6.1 Sol",
         "lab_id": "openai",
         "roles": ["proposer", "refiner", "aggregator"],
     },
     "codex-luna": {
-        "label": "GPT-5.6 Luna",
+        "label": "GPT-6 Luna",
         "lab_id": "openai",
         "roles": ["proposer", "refiner"],
     },
     "sonnet": {
-        "label": "Claude Sonnet 5",
+        "label": "Claude Sonnet 5.5",
         "lab_id": "anthropic",
         "roles": ["proposer", "refiner"],
     },
     "opus": {
-        "label": "Claude Opus 5",
+        "label": "Claude Opus 5.5",
         "lab_id": "anthropic",
         "roles": ["proposer", "refiner", "aggregator"],
     },
@@ -103,42 +103,42 @@ ROUTE_META: dict[str, dict[str, Any]] = {
         "roles": [],
     },
     "qwen": {
-        "label": "Qwen 3.8 Max Preview · Token Plan",
+        "label": "Qwen 3.8 Max · Go",
         "lab_id": "alibaba",
         "roles": ["proposer", "refiner"],
     },
     "qwen-opencode": {
-        "label": "Qwen 3.7 Max",
+        "label": "Qwen 3.8 Max · Go",
         "lab_id": "alibaba",
         "roles": ["proposer", "refiner"],
     },
     "grok": {
-        "label": "Grok 4.5",
+        "label": "Grok 4.7",
         "lab_id": "xai",
         "roles": ["proposer", "refiner"],
     },
     "agy-gemini-pro": {
-        "label": "Gemini 3.1 Pro",
+        "label": "Gemini 4 Argon",
         "lab_id": "google",
         "roles": ["proposer", "refiner"],
     },
     "fable": {
-        "label": "Fable 5 1M Thinking",
+        "label": "Fable 5.1 1M Thinking",
         "lab_id": "anthropic",
         "roles": ["aggregator"],
     },
     "glm": {
-        "label": "GLM-5.2",
+        "label": "GLM-5.3",
         "lab_id": "zhipu",
         "roles": ["proposer", "refiner"],
     },
     "deepseek": {
         "label": "DeepSeek V4 Pro",
         "lab_id": "deepseek",
-        "roles": ["proposer", "refiner"],
+        "roles": [],
     },
     "deepseek-flash": {
-        "label": "DeepSeek V4 Flash",
+        "label": "DeepSeek V4.1 Flash",
         "lab_id": "deepseek",
         "roles": ["proposer", "refiner"],
     },

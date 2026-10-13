@@ -324,10 +324,9 @@ class DecisionMapBrowserTest(unittest.TestCase):
                 page.locator(f'.wizard-step[data-step="{step}"].is-active [data-next-step]').click()
             page.locator("#review-network .dm-shell").wait_for()
             self.assertEqual(page.locator("#review-network .dm-stage").text_content(), "Ready for dispatch")
-            self.assertGreaterEqual(page.locator("#review-network .dm-node-agent").count(), 3)
-            page.locator("#review-network .dm-node-claim").focus()
-            page.keyboard.press("Enter")
-            self.assertIn("Evidence receipts", page.locator("#review-network .dm-detail-title").inner_text())
+            self.assertGreaterEqual(page.locator("#review-network .dm-setup-agent").count(), 3)
+            self.assertEqual(page.locator("#review-network .dm-node-claim").count(), 0)
+            self.assertIn("validated receipts", page.locator("#review-network .dm-setup-note").inner_text())
             self._assert_no_body_overflow(page)
             self._capture(page, capture_dir, "01-setup-review.png")
 

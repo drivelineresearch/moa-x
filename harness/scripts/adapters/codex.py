@@ -81,7 +81,7 @@ def run(
     prompt: str,
     schema_path: Path,
     repo_path: Path,
-    model: str = "gpt-5.6-terra",
+    model: str = "gpt-6-astra",
     reasoning_effort: str = "high",
     timeout_seconds: int = 900,
     log_file: Optional[Path] = None,
@@ -92,7 +92,7 @@ def run(
         prompt: The full prompt text. Sent via stdin to codex exec.
         schema_path: Path to JSON Schema file. Codex enforces it via --output-schema.
         repo_path: Working directory for codex (--cd). Codex can read repo from here.
-        model: Codex model id. Default gpt-5.6-terra.
+        model: Codex model id. Default gpt-6-astra.
         reasoning_effort: low | medium | high | xhigh. Default high. Dropped from
             xhigh in v0.2.2 after the first dogfood run showed xhigh + aggressive
             web research blew past 900s. xhigh is still available via the

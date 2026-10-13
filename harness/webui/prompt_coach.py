@@ -2,7 +2,7 @@
 
 The coach deliberately runs outside the selected repository. It sees the
 user's draft plus coarse context metadata, never repository or attachment
-contents. Codex Luna is primary; Gemini Pro through AGY is the fallback.
+contents. Codex Luna is primary; Gemini Flash through AGY is the fallback.
 """
 
 from __future__ import annotations
@@ -23,8 +23,8 @@ from adapters import agy, codex  # noqa: E402
 from run_moa import _validate_against_schema  # noqa: E402
 
 
-PRIMARY_MODEL = "gpt-5.6-luna"
-FALLBACK_MODEL = "gemini-3.1-pro-high"
+PRIMARY_MODEL = "gpt-6-luna"
+FALLBACK_MODEL = "gemini-3.8-flash-low"
 MAX_BRIEF_CHARS = 20_000
 MAX_QUESTIONS = 3
 
@@ -150,10 +150,10 @@ def _run(prompt: str, schema: dict[str, Any]) -> tuple[dict[str, Any], dict[str,
                     "model": FALLBACK_MODEL,
                     "fallback": True,
                 }
-            errors.append(f"Gemini Pro: invalid response ({validation[0]})")
+            errors.append(f"Gemini Flash: invalid response ({validation[0]})")
         else:
             errors.append(
-                f"Gemini Pro: {fallback.error_message or 'invalid response'}"
+                f"Gemini Flash: {fallback.error_message or 'invalid response'}"
             )
     raise PromptCoachError("Prompt coach unavailable. " + " · ".join(errors))
 

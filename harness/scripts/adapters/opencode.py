@@ -1,39 +1,9 @@
-"""OpenCode CLI adapter (multi-lab via `opencode run`).
+"""Version-aware OpenCode CLI adapter.
 
-Invokes `opencode run` headlessly. OpenCode is transport for several unrelated
-model labs; the curated roster currently uses DeepSeek, Qwen (Alibaba), and
-Grok (xAI). Kimi remains resolvable only for archived provenance. User-defined
-routes may target other OpenCode providers. Model ids are `provider/model`
-strings, e.g. `opencode-go/deepseek-v4-pro`, `opencode-go/grok-4.5`, or
-`qwen-token-plan/qwen3.8-max-preview`.
-
-OpenCode has no JSON envelope in default text mode — the model's final
-text goes straight to stdout, so we pull the inner JSON payload with the
-shared `extract_json_from_text` helper (fenced or bare top-level object,
-longest-first) and validate it orchestrator-side. There is no
-`--output-schema` equivalent, so this adapter is schema-unenforced like
-the other schema-unenforced adapters used by older MoA-X releases.
-
-Prompt delivery: OpenCode does NOT read stdin (the feature request was
-declined upstream) and a single argv entry is capped at MAX_ARG_STRLEN
-(128 KB on Linux). Normal prompts — especially broadcast refiners — are
-therefore written to a file and passed with `-f`. Bounded repair prompts
-that fit safely below that limit are passed inline so the model receives
-the malformed JSON directly instead of trying to read a long JSON line
-through OpenCode's truncated file-view tool.
-
-Read-only discipline is enforced two ways: the shared READ_ONLY_RULE is
-prepended to the prompt, and a `permission` block that denies `edit` and
-all `bash` (writes and reads alike — the model still has the native
-read/grep/glob/webfetch tools for repo grounding) is written to a temp
-config pointed at by OPENCODE_CONFIG (which opencode MERGES into its config
-chain, it does not replace the user's global config). Explicit `deny` is
-honored even under `--dangerously-skip-permissions`.
-
-Subprocess isolation: each call gets its own TMPDIR and config file via
-env override. OpenCode auth/session state lives under
-~/.local/share/opencode/ which is shared across calls; the orchestrator's
-flock prevents concurrent MoA invocations from racing on it.
+V2 uses a private server, a disposable repository snapshot, an explicit
+read-only agent, and NDJSON text/error events. V1 keeps its original flags and
+OPENCODE_CONFIG policy. Large prompts use files; bounded repairs are inline.
+Authentication remains in the underlying CLI's persisted account state.
 """
 from __future__ import annotations
 
@@ -44,11 +14,13 @@ import shutil
 import subprocess
 import tempfile
 import time
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Optional
 
 from adapters import READ_ONLY_RULE, extract_json_from_text, kill_proc_tree
+from adapters.agy import AgyWorkspaceIsolationError, _isolated_git_workspace
 
 # API-key env vars that authenticate at least one opencode provider without an
 # interactive `opencode auth login`. Presence of any one lets preflight pass
@@ -60,7 +32,7 @@ _PROVIDER_KEY_ENVS = (
     "OPENCODE_API_KEY",
     "OPENROUTER_API_KEY",
     "QWEN_TOKEN_PLAN_API_KEY",
-    "XAI_API_KEY",  # xAI Grok (built-in `grok` provider → xai/grok-4.5)
+    "XAI_API_KEY",  # xAI Grok (built-in `grok` provider → xai/grok-4.7)
 )
 
 # Read-only permission policy handed to opencode via OPENCODE_CONFIG. Denying
@@ -83,6 +55,120 @@ _QWEN_TOKEN_PLAN_BASE_URL = (
 
 
 _MAX_INLINE_PROMPT_BYTES = 96 * 1024
+
+
+def _cli_major_version() -> int:
+    """Fail closed when the invocation contract cannot be determined."""
+    proc = subprocess.run(
+        [_opencode_bin(), "--version"], capture_output=True, text=True, timeout=10
+    )
+    match = re.search(r"\bv?(\d+)\.\d+\.\d+\b", proc.stdout or "")
+    if proc.returncode != 0 or match is None or int(match.group(1)) not in {1, 2}:
+        raise RuntimeError("unsupported or unknown OpenCode CLI version")
+    return int(match.group(1))
+
+
+def _v2_config_for_model(model: str, *, allow_webfetch: bool, allow_tools: bool) -> dict:
+    rules = [{"action": "*", "resource": "*", "effect": "deny"}]
+    if allow_tools:
+        rules += [
+            {"action": action, "resource": "*", "effect": "allow"}
+            for action in ("read", "glob", "grep")
+        ]
+        if allow_webfetch:
+            rules += [
+                {"action": action, "resource": "*", "effect": "allow"}
+                for action in ("webfetch", "websearch")
+            ]
+        rules += [
+            {"action": "read", "resource": pattern, "effect": "deny"}
+            for pattern in ("*.env", "*.env.*")
+        ]
+    agent = {
+        "description": "MoA-X read-only planner",
+        "mode": "primary",
+        "system": READ_ONLY_RULE,
+        "permissions": rules,
+    }
+    if "qwen" in model.lower():
+        agent["steps"] = _QWEN_MAX_AGENT_STEPS
+    settings = {
+        "$schema": "https://opencode.ai/config.json",
+        "permissions": rules,
+        "agents": {"moa-reader": agent},
+        # Headless runs cannot complete the first-search provider chooser.
+        "websearch": {"provider": "random"} if allow_tools and allow_webfetch else False,
+    }
+    if model.split("#", 1)[0] == "opencode-go/qwen3.8-max":
+        # Preserve the deployed Qwen thinking budget when moving billing paths.
+        # Go uses the Anthropic-compatible protocol, whose native settings
+        # translate budgetTokens to the wire budget_tokens field.
+        settings["providers"] = {
+            "opencode-go": {"models": {
+                "qwen3.8-max": {"settings": {
+                    "thinking": {"type": "enabled", "budgetTokens": 8192}
+                }}
+            }}
+        }
+    if model.startswith(f"{_QWEN_TOKEN_PLAN_PROVIDER_ID}/"):
+        model_id = model.split("/", 1)[1]
+        settings["providers"] = {
+            _QWEN_TOKEN_PLAN_PROVIDER_ID: {
+                "name": "Qwen Cloud Token Plan",
+                "env": ["QWEN_TOKEN_PLAN_API_KEY"],
+                "package": "@opencode/ai/providers/openai-compatible",
+                "settings": {"baseURL": _QWEN_TOKEN_PLAN_BASE_URL},
+                "models": {model_id: {"name": model_id}},
+            }
+        }
+    return settings
+
+
+@contextmanager
+def _v2_workspace(repo_path: Path, scratch: Path, *, allow_tools: bool):
+    """V2 ignores OPENCODE_CONFIG: install policy only in a private workspace."""
+    if not allow_tools:
+        workspace = scratch / "workspace"
+        workspace.mkdir()
+        yield workspace
+        return
+    with _isolated_git_workspace(repo_path, scratch) as workspace:
+        if workspace.resolve() == repo_path.resolve():
+            workspace = scratch / "workspace"
+            shutil.copytree(
+                repo_path, workspace,
+                ignore=shutil.ignore_patterns(".moa", ".venv", "node_modules", "__pycache__"),
+                symlinks=True,
+            )
+        workspace.mkdir(parents=True, exist_ok=True)
+        yield workspace
+
+
+def _v2_response(stdout: str) -> tuple[str, str]:
+    """Keep final text separate from tools; surface typed error events."""
+    texts, errors = [], []
+    for line in stdout.splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        if event.get("type") == "text":
+            part = event.get("part") or {}
+            text = part.get("text")
+            if isinstance(text, str):
+                texts.append(text)
+        elif event.get("type") == "error":
+            error = event.get("error") or {}
+            errors.append(f"{error.get('type', 'error')}: {error.get('message', '')}")
+    return "\n".join(texts), "\n".join(errors)
+
+# Qwen 3.8 Max tends to issue one tool call per model turn. Without an
+# agent-step ceiling a broadcast review can consume the entire subprocess
+# timeout in repo reads and die before emitting its JSON. OpenCode's `steps`
+# limit converts the next turn to text-only, preserving a finalization pass.
+_QWEN_MAX_AGENT_STEPS = 14
 
 
 def _config_for_model(
@@ -108,6 +194,15 @@ def _config_for_model(
     prefix = f"{_QWEN_TOKEN_PLAN_PROVIDER_ID}/"
     if model.startswith(prefix):
         model_id = model[len(prefix):]
+        config["agent"] = {
+            "build": {
+                "steps": _QWEN_MAX_AGENT_STEPS,
+                # A nested agent has its own step budget and can outlive the
+                # parent call. Broadcast refiners already receive every
+                # proposal and can do the required checks directly.
+                "permission": {"task": "deny"},
+            }
+        }
         config["provider"] = {
             _QWEN_TOKEN_PLAN_PROVIDER_ID: {
                 # The Token Plan URL is explicitly OpenAI-compatible. Using
@@ -222,8 +317,24 @@ def check_models_available(models: Iterable[str]) -> dict[str, tuple[bool, str]]
     else:
         probe_error = ""
 
+    catalog: set[str] | None = None
+    try:
+        if _cli_major_version() == 2:
+            model_proc = subprocess.run(
+                [bin_name, "models", "--standalone"],
+                capture_output=True, text=True, timeout=25,
+            )
+            if model_proc.returncode != 0:
+                return {model: (False, "OpenCode model catalog probe failed") for model in requested}
+            catalog = {line.strip() for line in model_proc.stdout.splitlines() if "/" in line}
+    except (RuntimeError, OSError, subprocess.TimeoutExpired):
+        # V1 and mocked/older clients retain credential-specific checks.
+        pass
+
     def ready(model: str) -> tuple[bool, str]:
         provider = model.split("/", 1)[0].lower()
+        if catalog is not None and provider != _QWEN_TOKEN_PLAN_PROVIDER_ID and model.split("#", 1)[0] not in catalog:
+            return False, f"{model} is absent from the current OpenCode catalog"
         if provider == "opencode-go":
             ok = "opencode go" in listed or bool(os.environ.get("OPENCODE_API_KEY"))
             return ok, "OpenCode Go account ready" if ok else "OpenCode Go login required"
@@ -353,7 +464,7 @@ def run(
             attach it with `-f`; the READ_ONLY_RULE is prepended. Tool-free
             repair calls pass a safely bounded prompt inline.
         repo_path: Working directory, passed via `--dir` and Popen cwd.
-        model: `provider/model` id, e.g. "zhipuai/glm-5.2".
+        model: `provider/model` id, e.g. "zhipuai/glm-5.3".
         schema_path: Optional output schema. Its top-level required keys keep
             extraction from accepting a valid nested object when the model's
             surrounding root object is malformed.
@@ -377,8 +488,10 @@ def run(
     stdout_captured = ""
     stderr_captured = ""
     tmpdir: Optional[str] = None
+    workspace_stack = ExitStack()
 
     try:
+        major = _cli_major_version()
         tmpdir = tempfile.mkdtemp(prefix="moa-opencode-")
         env = os.environ.copy()
         env["TMPDIR"] = tmpdir
@@ -419,37 +532,47 @@ def run(
                 prompt_file = Path(tmpdir) / "opencode-prompt.md"
             prompt_file.write_text(full_prompt, encoding="utf-8")
 
-        # Arg order matters: `-f/--file` is a greedy yargs ARRAY option, so the
-        # positional message must come BEFORE it (or -f would swallow the
-        # message string as a second "file" and error "File not found"). Keep
-        # -f last with nothing after it. `--dangerously-skip-permissions`
-        # auto-approves any permission not explicitly denied by OPENCODE_CONFIG
-        # (which denies edit + bash), so reads/webfetch work but writes can't.
-        cmd = [
-            _opencode_bin(),
-            "run",
-            (
-                full_prompt
-                if inline_prompt
-                else "Read the attached file in full and follow its instructions "
-                "exactly. Output only the requested JSON object."
-            ),
-            "-m", model,
-            "--dir", str(repo_path),
-            "--dangerously-skip-permissions",
-            # --print-logs routes progress/logs to stderr. Without it, current
-            # opencode (>=1.18) buffers on a TTY-style renderer and hangs forever
-            # when stdout/stderr are pipes (headless subprocess), producing an
-            # empty-output timeout. Logs on stderr don't affect stdout payload
-            # extraction. --log-level ERROR keeps stderr quiet so failure
-            # diagnosis stays accurate.
-            "--print-logs", "--log-level", "ERROR",
-        ]
-        if reasoning_effort:
-            cmd.extend(["--variant", reasoning_effort])
-        if prompt_file is not None:
-            cmd.extend(["-f", str(prompt_file)])
+        active_repo = repo_path
+        if major == 2:
+            active_repo = workspace_stack.enter_context(
+                _v2_workspace(repo_path, Path(tmpdir), allow_tools=allow_tools)
+            )
+            private_config = active_repo / ".opencode" / "opencode.json"
+            private_config.parent.mkdir(parents=True, exist_ok=True)
+            private_config.write_text(json.dumps(_v2_config_for_model(
+                model, allow_webfetch=allow_webfetch, allow_tools=allow_tools
+            )), encoding="utf-8")
+            env.pop("OPENCODE_CONFIG", None)
+            env.pop("OPENCODE_CONFIG_CONTENT", None)
+            # Persisted account state stays in the default data directory;
+            # unrelated user plugins/MCP/config do not enter the private server.
+            env["XDG_CONFIG_HOME"] = str(Path(tmpdir) / "config")
+            selected_model = f"{model}#{reasoning_effort}" if reasoning_effort else model
+            cmd = [_opencode_bin(), "run", "--standalone", "--format", "json",
+                   "--model", selected_model, "--agent", "moa-reader", "--auto"]
+            cmd.append(full_prompt if inline_prompt else
+                       "Read the attached task completely. The active directory is a "
+                       "private repository snapshot. Cite repository-relative paths "
+                       "and return only the requested JSON object.")
+            if prompt_file is not None:
+                attached = active_repo / ".moa-agent-input" / "prompt.md"
+                attached.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(prompt_file, attached)
+                cmd.extend(["--file", str(attached)])
+        else:
+            # V1's file option is greedy: keep it last after the message.
+            cmd = [_opencode_bin(), "run", full_prompt if inline_prompt else
+                   "Read the attached file in full and return the requested JSON object.",
+                   "-m", model, "--dir", str(repo_path),
+                   "--dangerously-skip-permissions", "--print-logs", "--log-level", "ERROR"]
+            if reasoning_effort:
+                cmd.extend(["--variant", reasoning_effort])
+            if prompt_file is not None:
+                cmd.extend(["-f", str(prompt_file)])
 
+        # V2 chooses its root from PWD before process.cwd(). Updating cwd
+        # alone silently selects the caller's repository and skips our policy.
+        env["PWD"] = str(active_repo.resolve())
         try:
             proc = subprocess.Popen(
                 cmd,
@@ -458,7 +581,7 @@ def run(
                 stderr=subprocess.PIPE,
                 text=True,
                 env=env,
-                cwd=str(repo_path),
+                cwd=str(active_repo),
                 start_new_session=True,
             )
             try:
@@ -503,8 +626,19 @@ def run(
                 error_message=f"OSError launching opencode: {e}",
             )
 
+        model_stdout = stdout_captured
+        if major == 2:
+            model_stdout, event_errors = _v2_response(stdout_captured)
+            if event_errors:
+                stderr_captured += "\n" + event_errors
+                msg, _ = _diagnose_failure("", stderr_captured)
+                return OpenCodeResult(
+                    False, None, stdout_captured, stderr_captured,
+                    proc.returncode or 1, duration, msg, transient_empty=False,
+                )
+
         if proc.returncode != 0:
-            msg, transient = _diagnose_failure(stdout_captured, stderr_captured)
+            msg, transient = _diagnose_failure(model_stdout, stderr_captured)
             return OpenCodeResult(
                 success=False, payload=None, raw_stdout=stdout_captured,
                 raw_stderr=stderr_captured, exit_code=proc.returncode,
@@ -519,9 +653,9 @@ def run(
                 required_keys = set(json.loads(schema_path.read_text(encoding="utf-8")).get("required", []))
             except (OSError, json.JSONDecodeError):
                 required_keys = set()
-        payload = _extract_schema_candidate(stdout_captured, required_keys)
+        payload = _extract_schema_candidate(model_stdout, required_keys)
         if payload is None:
-            msg, transient = _diagnose_failure(stdout_captured, stderr_captured)
+            msg, transient = _diagnose_failure(model_stdout, stderr_captured)
             return OpenCodeResult(
                 success=False, payload=None, raw_stdout=stdout_captured,
                 raw_stderr=stderr_captured, exit_code=proc.returncode,
@@ -535,8 +669,12 @@ def run(
             raw_stderr=stderr_captured, exit_code=0,
             duration_seconds=duration,
         )
+    except (RuntimeError, OSError, AgyWorkspaceIsolationError, subprocess.TimeoutExpired) as exc:
+        return OpenCodeResult(False, None, stdout_captured, str(exc), -1,
+                              time.monotonic() - start, str(exc))
     finally:
         _write_log_file(log_file, stdout_captured, stderr_captured)
+        workspace_stack.close()
         if tmpdir is not None:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
@@ -552,6 +690,10 @@ def _diagnose_failure(stdout: str, stderr: str) -> tuple[str, bool]:
     non-transient.
     """
     stderr_lower = (stderr or "").lower()
+    if any(flag in stderr_lower for flag in ("unrecognized flag", "unexpected positional", "unknown flag", "unsupported or unknown opencode")):
+        return "opencode CLI invocation is incompatible with the installed version", False
+    if any(marker in stderr_lower for marker in ("provider.no-route", "model unavailable:")):
+        return "opencode model route is unavailable; refresh the configured model ID", False
     quota_hit = bool(
         re.search(
             r"\b(?:rate[ _-]*limit(?:ed)?|quota (?:exceeded|exhausted)|"
