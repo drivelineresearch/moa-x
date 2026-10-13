@@ -532,7 +532,7 @@ __DECISION_MAP_SCRIPT__
   // Only the authenticated Web UI artifact route has a job identity. Reports
   // opened from disk or through a public link remain portable and network-free.
   function currentArtifactJobId() {
-    var match = window.location.pathname.match(/^\/api\/jobs\/([^/]+)\/artifacts\/report\.html$/);
+    var match = window.location.pathname.match(/\/api\/jobs\/([^/]+)\/artifacts\/report\.html$/);
     return match ? decodeURIComponent(match[1]) : null;
   }
   function summarizeLineageFinding(value, maxLength) {
@@ -544,7 +544,7 @@ __DECISION_MAP_SCRIPT__
     button.disabled = true;
     status.textContent = "Creating a revocable link…";
     try {
-      var response = await fetch("/api/jobs/" + encodeURIComponent(jobId) + "/share", { method: "POST", credentials: "same-origin" });
+      var response = await fetch("../share", { method: "POST", credentials: "same-origin" });
       var payload = await response.json().catch(function () { return {}; });
       if (!response.ok || !payload.url) throw new Error(payload.error || "Could not create a share link.");
       var url = new URL(payload.url, window.location.origin).href;

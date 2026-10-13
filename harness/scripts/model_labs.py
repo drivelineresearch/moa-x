@@ -103,7 +103,7 @@ ROUTE_META: dict[str, dict[str, Any]] = {
         "roles": [],
     },
     "qwen": {
-        "label": "Qwen 3.8 Max Preview · Token Plan",
+        "label": "Qwen 3.8 Max · Token Plan",
         "lab_id": "alibaba",
         "roles": ["proposer", "refiner"],
     },

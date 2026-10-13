@@ -14,8 +14,8 @@ The roster is config-driven
     - codex-luna       (gpt-5.6-luna, OpenAI via Codex)
 
   Layer 2 (Refiners, parallel, broadcast):
-    - qwen (qwen3.8-max-preview, Alibaba via Qwen Token Plan; sees ALL outputs)
-    - deepseek (DeepSeek V4 Pro via OpenCode Go; sees ALL outputs)
+    - qwen (qwen3.8-max, Alibaba via Qwen Token Plan; sees ALL outputs)
+    - deepseek-flash (DeepSeek V4 Flash via OpenCode Go; sees ALL outputs)
     - opus (claude-opus-5 @ high, Anthropic; sees ALL proposer outputs)
 
   Layer 3 (Aggregator):

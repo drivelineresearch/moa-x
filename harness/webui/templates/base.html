@@ -6,22 +6,22 @@
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#FFFFFF">
   <title>{% block title %}MoA-X Control Room{% endblock %}</title>
-  <link rel="stylesheet" href="/static/css/app.css">
-  <link rel="stylesheet" href="/static/css/decision-map.css">
+  <link rel="stylesheet" href="{{ request.script_root }}/static/css/app.css">
+  <link rel="stylesheet" href="{{ request.script_root }}/static/css/decision-map.css">
   {% if local_font_stylesheet %}
-  <link rel="stylesheet" href="/local-assets/fonts.css">
+  <link rel="stylesheet" href="{{ request.script_root }}/local-assets/fonts.css">
   <script>
     (() => {
       if (!("FontFace" in window) || !document.fonts) return;
       const faces = [
         new FontFace(
           "MoAX Gotham Office",
-          'url("/local-assets/fonts/GothamOffice-Regular.woff2") format("woff2")',
+          'url("{{ request.script_root }}/local-assets/fonts/GothamOffice-Regular.woff2") format("woff2")',
           { style: "normal", weight: "400", display: "swap" }
         ),
         new FontFace(
           "MoAX Gotham Office",
-          'url("/local-assets/fonts/GothamOffice-Bold.woff2") format("woff2")',
+          'url("{{ request.script_root }}/local-assets/fonts/GothamOffice-Bold.woff2") format("woff2")',
           { style: "normal", weight: "700", display: "swap" }
         )
       ];
@@ -40,7 +40,7 @@
   <script>
     window.MOAX_BOOTSTRAP = {{ bootstrap|default({})|tojson }};
   </script>
-  <script src="/static/js/decision-map.js"></script>
-  <script type="module" src="/static/js/app.js"></script>
+  <script src="{{ request.script_root }}/static/js/decision-map.js"></script>
+  <script type="module" src="{{ request.script_root }}/static/js/app.js"></script>
 </body>
 </html>

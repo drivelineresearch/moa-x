@@ -96,8 +96,8 @@ class ResolvedProvider:
 # harness/config.yaml under `providers:` are layered on top in resolve_provider.
 # Most built-ins carry timeout=None so the existing CLI flag / harness-level
 # env path (MOA_CODEX_TIMEOUT etc.) continues to apply. Qwen has a bounded
-# 600-second default so a failed preview-model refinement cannot stall a run
-# for twenty minutes.
+# 900-second default: broadcast review can spend six minutes on research and
+# still needs time to serialize a large schema-valid response.
 BUILTIN_PROVIDERS: dict[str, ResolvedProvider] = {
     "codex":          ResolvedProvider(name="codex",          harness="codex",    model="gpt-5.6-terra", effort="high"),
     "codex-sol":      ResolvedProvider(name="codex-sol",      harness="codex",    model="gpt-5.6-sol", effort="xhigh"),
@@ -110,12 +110,12 @@ BUILTIN_PROVIDERS: dict[str, ResolvedProvider] = {
     "sonnet":         ResolvedProvider(name="sonnet",         harness="claude",   model="claude-sonnet-5", effort="high"),
     "opus":           ResolvedProvider(name="opus",           harness="claude",   model="claude-opus-5", effort="high"),
     "kimi":           ResolvedProvider(name="kimi",           harness="opencode", model="opencode-go/kimi-k3"),
-    "qwen":           ResolvedProvider(name="qwen",           harness="opencode", model="qwen-token-plan/qwen3.8-max-preview", timeout=600),
+    "qwen":           ResolvedProvider(name="qwen",           harness="opencode", model="qwen-token-plan/qwen3.8-max", timeout=900),
     "qwen-opencode":  ResolvedProvider(name="qwen-opencode",  harness="opencode", model="opencode-go/qwen3.7-max"),
     "grok":           ResolvedProvider(name="grok",           harness="opencode", model="opencode-go/grok-4.5"),
     "glm":            ResolvedProvider(name="glm",            harness="opencode", model="opencode-go/glm-5.2"),
-    "deepseek":       ResolvedProvider(name="deepseek",       harness="opencode", model="opencode-go/deepseek-v4-pro"),
     "deepseek-flash": ResolvedProvider(name="deepseek-flash", harness="opencode", model="opencode-go/deepseek-v4-flash"),
+    "deepseek":       ResolvedProvider(name="deepseek",       harness="opencode", model="opencode-go/deepseek-v4-pro"),
     # Google runs through AGY, which reuses the account signed into the local
     # Antigravity CLI. Gemini Pro is part of the shipped proposer defaults.
     # AGY selects depth in the model slug itself (for example
@@ -459,7 +459,7 @@ class LoadedConfig:
 
 # Default layer assignments when no YAML / env override is set.
 _DEFAULT_PROPOSERS = ["agy-gemini-pro", "grok", "codex-luna"]
-_DEFAULT_REFINERS = ["qwen", "deepseek", "opus"]
+_DEFAULT_REFINERS = ["qwen", "deepseek-flash", "opus"]
 _DEFAULT_AGGREGATOR = "codex-sol"
 
 

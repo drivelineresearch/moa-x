@@ -5,7 +5,7 @@ model labs; the curated roster currently uses DeepSeek, Qwen (Alibaba), and
 Grok (xAI). Kimi remains resolvable only for archived provenance. User-defined
 routes may target other OpenCode providers. Model ids are `provider/model`
 strings, e.g. `opencode-go/deepseek-v4-pro`, `opencode-go/grok-4.5`, or
-`qwen-token-plan/qwen3.8-max-preview`.
+`qwen-token-plan/qwen3.8-max`.
 
 OpenCode has no JSON envelope in default text mode — the model's final
 text goes straight to stdout, so we pull the inner JSON payload with the
@@ -84,6 +84,12 @@ _QWEN_TOKEN_PLAN_BASE_URL = (
 
 _MAX_INLINE_PROMPT_BYTES = 96 * 1024
 
+# Qwen 3.8 Max tends to issue one tool call per model turn. Without an
+# agent-step ceiling a broadcast review can consume the entire subprocess
+# timeout in repo reads and die before emitting its JSON. OpenCode's `steps`
+# limit converts the next turn to text-only, preserving a finalization pass.
+_QWEN_MAX_AGENT_STEPS = 14
+
 
 def _config_for_model(
     model: str,
@@ -108,6 +114,15 @@ def _config_for_model(
     prefix = f"{_QWEN_TOKEN_PLAN_PROVIDER_ID}/"
     if model.startswith(prefix):
         model_id = model[len(prefix):]
+        config["agent"] = {
+            "build": {
+                "steps": _QWEN_MAX_AGENT_STEPS,
+                # A nested agent has its own step budget and can outlive the
+                # parent call. Broadcast refiners already receive every
+                # proposal and can do the required checks directly.
+                "permission": {"task": "deny"},
+            }
+        }
         config["provider"] = {
             _QWEN_TOKEN_PLAN_PROVIDER_ID: {
                 # The Token Plan URL is explicitly OpenAI-compatible. Using
