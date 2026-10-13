@@ -22,6 +22,9 @@ class OpenCodeV2Test(unittest.TestCase):
         self.assertIn("provider.no-route", error)
         self.assertFalse(oc._diagnose_failure('', error)[1])
 
+    def test_disabled_model_access_is_not_transient(self):
+        message,transient=oc._diagnose_failure('', 'provider.auth: Upstream request failed: Model access is disabled')
+        self.assertFalse(transient);self.assertIn('auth',message.lower())
     def test_usage_errors_do_not_redispatch(self):
         self.assertFalse(oc._diagnose_failure('Usage: opencode run', 'Unrecognized flag: --dir')[1])
 

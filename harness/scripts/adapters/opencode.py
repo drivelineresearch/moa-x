@@ -709,7 +709,7 @@ def _diagnose_failure(stdout: str, stderr: str) -> tuple[str, bool]:
     )
     auth_hit = any(
         p in stderr_lower
-        for p in ("unauthorized", "401", "403", "invalid api key", "not authenticated", "no credentials")
+        for p in ("unauthorized", "401", "403", "provider.auth", "model access is disabled", "invalid api key", "not authenticated", "no credentials")
     )
     routing_hit = any(
         p in stderr_lower

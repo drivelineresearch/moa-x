@@ -296,6 +296,27 @@ class SlackTest(unittest.TestCase):
             c["data"]["roster"]["options"]["effort_overrides"]["codex-sol"], "high"
         )
 
+    def test_disabled_qwen_cannot_enter_new_rosters(self):
+        from harness.webui.launch import LaunchError
+
+        c = self.preview()
+        profile = self.store.get_profile(c["profile_id"])
+        with self.assertRaises(LaunchError):
+            self.bot.launcher.launch(
+                profile,
+                {
+                    "goal": "Test",
+                    "source_mode": "brief",
+                    "proposers": ["grok"],
+                    "refiners": ["qwen"],
+                    "aggregator": "codex-sol",
+                },
+            )
+        for depth in ("quick", "balanced", "thorough"):
+            chosen = resolve_roster(depth, catalog=catalog())
+            self.assertNotIn("qwen", chosen["refiners"])
+            self.assertNotIn("qwen-opencode", chosen["refiners"])
+
     def test_unavailable_lane_blocks_run_without_degrading(self):
         rows = catalog()
         next(x for x in rows if x["id"] == "opus")["available"] = False

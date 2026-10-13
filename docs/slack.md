@@ -38,6 +38,8 @@ Cached extraction is invalidated by changed input bytes or extraction settings.
 
 ```bash
 .venv/bin/pip install -r requirements-slack.txt
+# Linux restricted AGY gateway:
+# sudo apt install bubblewrap
 ```
 
 Provision a private environment file, outside the repository:
@@ -80,7 +82,9 @@ GitHub credential’s broader permissions. Local filesystem workspaces are not
 accepted through Slack. Codex lanes receive a bounded, line-numbered source
 packet rather than command access on this host. The packet omits symlinks,
 secrets and other sessions, records omitted content, and never implies unshown
-files were verified. Claude uses its native restricted file-tool mode; AGY disables broad auto-approval and
+files were verified. Claude uses its native restricted file-tool mode. On Linux, AGY uses
+a private CLI context and a read-only project mount through bubblewrap, with
+web reads allowed and shell, MCP, writes and private CLI-file reads denied.
 OpenCode retains its native read-only policy.
 
 Events and action submissions are deduplicated before processing. Draft
