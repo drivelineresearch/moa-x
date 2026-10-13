@@ -324,6 +324,32 @@ class SlackTest(unittest.TestCase):
         self.assertEqual(self.client.posts, 0)
         self.assertEqual(self.bot.db.get(c["id"])["message_ts"], "existing")
 
+    def test_concurrent_restart_recovery_runs_one_interview(self):
+        c = self.message()
+        c = self.bot.db.save(c, stage="coaching")
+        entered = threading.Event()
+        release = threading.Event()
+        response = self.finalize.return_value
+        self.finalize.side_effect = lambda *a, **k: (
+            entered.set(),
+            release.wait(2),
+            response,
+        )[-1]
+        self.analyze.return_value["questions"] = []
+        d = dict(c["data"])
+        d.pop("analysis", None)
+        c = self.bot.db.save(c, data=d)
+        first = threading.Thread(target=self.bot.coach, args=(c,))
+        second = threading.Thread(target=self.bot.coach, args=(c,))
+        first.start()
+        self.assertTrue(entered.wait(2))
+        second.start()
+        release.set()
+        first.join(3)
+        second.join(3)
+        self.assertEqual(self.finalize.call_count, 1)
+        self.assertEqual(self.bot.db.get(c["id"])["stage"], "preview")
+
     def test_progress_reports_finished_lanes_before_checkpoint(self):
         c = self.preview()
         self.bot.run(c)

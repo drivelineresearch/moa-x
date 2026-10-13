@@ -355,6 +355,13 @@ class Bot:
             self.coach(c)
 
     def coach(self, c):
+        with self.conversation_lock(c["id"]):
+            c = self.db.get(c["id"])
+            if c["stage"] not in ("collect", "coaching", "interview"):
+                return
+            return self._coach(c)
+
+    def _coach(self, c):
         d = copy.deepcopy(c["data"])
         c = self.db.save(c, stage="coaching", data=d)
         self.card(c)
