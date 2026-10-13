@@ -946,7 +946,7 @@ class SlackTest(unittest.TestCase):
         self.assertNotIn("profile_id", state)
         self.assertNotIn("workspace", state)
         self.store.update_job(c["job_id"], summary="Failure at /home/operator/work or /Users/operator/work; contact operator@example.test")
-        with patch("harness.webui.app.read_manifest", return_value=[{"summary": "Failure at /home/operator/work; operator@example.test"}]):
+        with patch("harness.webui.app._agent_views", return_value=([{"id": "fixture", "role": "proposer", "summary": "Failure at /home/operator/work; operator@example.test"}], None)):
             shared = client.get(path + "/status").get_data(as_text=True)
         for private in ("/home/operator", "/Users/operator", "operator@example.test"):
             self.assertNotIn(private, shared)

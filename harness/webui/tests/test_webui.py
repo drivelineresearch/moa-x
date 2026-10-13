@@ -275,6 +275,17 @@ class WebUITest(unittest.TestCase):
             404,
         )
 
+    def test_forwarded_prefix_mounts_every_page_url_under_the_proxy_path(self):
+        root = self.client.get("/runs/abc").get_data(as_text=True)
+        self.assertIn('src="/static/js/app.js"', root)
+        self.assertIn('"base_path": ""', root)
+        mounted = self.client.get(
+            "/runs/abc", headers={"X-Forwarded-Prefix": "/moa-x"}
+        ).get_data(as_text=True)
+        self.assertIn('src="/moa-x/static/js/app.js"', mounted)
+        self.assertIn('"base_path": "/moa-x"', mounted)
+        self.assertNotRegex(mounted, r'(href|src|srcset)="/(?!moa-x/)')
+
     def test_fable_warning_modal_is_present_without_exposing_a_server_secret(self):
         page = self.client.get("/")
         self.assertEqual(page.status_code, 200)
