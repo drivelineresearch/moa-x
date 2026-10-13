@@ -21,6 +21,19 @@ server-side model policy as the browser. Balanced uses three proposals, two revi
 synthesis lane; Qwen is excluded from new launches. Preview the optimized brief and actual
 models, adjust depth or individual supported effort levels, then press **Run**.
 
+You can also name a repository naturally: `Review sample-service for performance`,
+`repo example-org/sample-service`, or a full GitHub URL. Names resolve against
+the configured organization's accessible GitHub catalog, including names beyond
+the browser's default 200-row picker. Discovery caches for five minutes and
+requests up to 10,000 repositories. A plain one-word name can be selected with
+`repo name`; common task vocabulary such as “API” and “docs” requires that explicit
+marker. The selected repository appears in the card and remains bound to the
+run even if Luna rewrites the task text. Explicit pointers take precedence over
+incidental names; repository names supplied in interview answers are also resolved.
+Two candidate repositories require choosing one. Unauthorized
+private repositories fail before coaching instead of running with task-only
+context. The ensemble reads a managed clone; it does not modify the source repo.
+
 The request’s inputs and resolved model versions freeze at launch. The existing
 single-worker queue prepares references, runs proposals, broadcast review and
 synthesis. An external CLI ensemble causes the worker to wait for its lock
@@ -61,7 +74,32 @@ MOA_SLACK_BASE_URL=https://your-dashboard.example/moa-x
 MOA_WEBUI_GITHUB_OWNER=your-approved-github-organization
 # Optional explicitly approved private repositories (workspace members may use these):
 # MOA_SLACK_PRIVATE_REPOS=organization/repo-a,organization/repo-b
+# Optional private local JSON policy (authoritative when present):
+# MOA_SLACK_REPO_POLICY_FILE=/etc/moa-x/repositories.json
 ```
+
+Repository policy defaults to `$XDG_CONFIG_HOME/moa-x/repositories.json` (normally
+`~/.config/moa-x/repositories.json`). Keep this file outside Git, owned by the
+service user with mode `0600`; its parent should be `0700`. It contains deployment
+access decisions, not credentials. An explicit configured path must exist;
+malformed, unsafe-permission and conflicting-owner policies fail startup.
+Restart the Slack gateway after changing this policy.
+
+Example policy, using an example organization:
+
+```json
+{
+  "owner": "example-org",
+  "private_repositories": ["example-org/approved-service"]
+}
+```
+
+To explicitly allow every private repository that the service's GitHub credential
+can access under that owner, use `"example-org/*"` instead. The wildcard cannot
+grant another owner's repositories. A local policy replaces the legacy
+`MOA_SLACK_PRIVATE_REPOS` list; without a file, the existing environment settings
+continue to work. Only generic implementation and example policies belong in
+public contributions; real repository names and access lists remain local.
 
 Retain existing bot scopes and event subscriptions. Required bot scopes include
 `chat:write`, `im:read`, `im:history`, `reactions:write`, `users:read`,
@@ -156,6 +194,7 @@ the web contracts:
 python3 harness/scripts/test_offline.py
 python3 harness/scripts/test_opencode.py
 python3 -m unittest harness.slack.tests.test_slack harness.webui.tests.test_webui \
+  harness.slack.tests.test_repositories \
   harness.webui.tests.test_effort_controls_browser harness.webui.tests.test_decision_map_browser
 ```
 

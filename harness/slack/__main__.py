@@ -17,6 +17,7 @@ from harness.scripts.config import apply_config_to_env
 from .bot import Bot
 from .delivery import Delivery
 from .ingress import DMReconciler
+from .repositories import RepositoryPolicy
 
 log = logging.getLogger("moa.slack")
 
@@ -49,6 +50,7 @@ def main():
     bot_identity = client.bots_info(bot=identity["bot_id"])["bot"]
     if bot_identity.get("app_id") != app_token.split("-")[2]:
         raise ValueError("Socket Mode and bot tokens belong to different apps.")
+    repository_policy = RepositoryPolicy.from_environment()
     bot = Bot(
         Store(root / "webui.sqlite3"),
         root,
@@ -57,12 +59,8 @@ def main():
         bot_user=identity["user_id"],
         token=token,
         base_url=base_url,
-        github_owner=os.environ.get("MOA_WEBUI_GITHUB_OWNER", "drivelineresearch"),
-        private_repos=[
-            x.strip()
-            for x in os.environ.get("MOA_SLACK_PRIVATE_REPOS", "").split(",")
-            if x.strip()
-        ],
+        github_owner=repository_policy.owner,
+        private_repos=repository_policy.private_repositories,
     )
     bot.db.recover()
     delivery = Delivery(bot.db, client)

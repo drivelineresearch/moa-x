@@ -16,6 +16,8 @@ from harness.webui.rosters import resolve_roster
 from .cards import card, text
 from .files import Files, FileError
 from .store import SlackStore, StaleDraft
+from .repositories import RepositoryDirectory, RepositoryPolicy
+from .messages import message_content
 
 TERMINAL = {"completed", "failed", "cancelled"}
 
@@ -50,11 +52,14 @@ class Bot:
         roster_resolver=resolve_roster,
         files=None,
         launcher=None,
+        repository_directory=None,
     ):
         self.store, self.root, self.client = store, Path(root), client
         self.db = SlackStore(store)
         self.team, self.bot_user, self.base_url = team, bot_user, base_url.rstrip("/")
         self.github_owner, self.private_repos = github_owner, set(private_repos)
+        self.repository_policy = RepositoryPolicy(github_owner, frozenset(private_repos))
+        self.repositories = repository_directory or RepositoryDirectory(self.repository_policy)
         self.analyze, self.finalize, self.resolve = (
             coach_analyze,
             coach_finalize,
@@ -109,7 +114,7 @@ class Bot:
                 + ":"
                 + str(event.get("ts"))
             )
-            priority = re.sub(r"<@" + re.escape(self.bot_user) + r">", "", str(event.get("text", ""))).strip().lower() == "cancel"
+            priority = message_content(event, self.bot_user).lower() == "cancel"
             inserted = self.db.receive(key, {"kind": "message", "event": event, "priority": priority},
                 reaction={"channel": event["channel"], "timestamp": event["ts"], "name": "eyes"})
             if priority and fast_cancel:
@@ -271,9 +276,7 @@ class Bot:
 
     def message(self, event, key):
         channel, user = event.get("channel"), event.get("user")
-        content = re.sub(
-            r"<@" + re.escape(self.bot_user) + r">", "", str(event.get("text") or "")
-        ).strip()
+        content = message_content(event, self.bot_user)
         dm = event.get("channel_type") == "im" or str(channel).startswith("D")
         mention = event.get(
             "type"
@@ -424,14 +427,25 @@ class Bot:
         c = self.db.save(c, stage="coaching", data=d)
         self.card(c)
         try:
+            d["repository"] = None
+            repository_context = d["brief"] + "\n" + "\n".join(str(answer.get("answer") or "") for answer in d.get("answers", []))
+            pointer = self.repository(repository_context)
+            if pointer:
+                self.check_repository(pointer)
+            d["repository"] = pointer
+            d.pop("repository_error", None)
+            c = self.db.save(c, data=d)
+            self.card(c)
             references = self.files.context(c)
+            if pointer:
+                references += "\nSelected repository: " + pointer + ". The ensemble will inspect this repository; coaching does not have its source yet."
             if d.get("prior_summary"):
                 references += "\nPrior run:\n" + d["prior_summary"]
             if "analysis" not in d:
                 d["analysis"] = self.analyze(
                     d["brief"],
                     restricted=True,
-                    context_mode="github" if self.repository(d["brief"]) else "brief",
+                    context_mode="github" if pointer else "brief",
                     attachment_count=len(d["upload_ids"]),
                     planning_depth=d["depth"],
                     reference_summary=references[:8000],
@@ -453,7 +467,7 @@ class Bot:
                 restricted=True,
                 questions=d["analysis"]["questions"],
                 answers=d["answers"],
-                context_mode="github" if self.repository(d["brief"]) else "brief",
+                context_mode="github" if pointer else "brief",
                 attachment_count=len(d["upload_ids"]),
                 planning_depth=d["depth"],
                 reference_summary=references[:8000],
@@ -462,6 +476,11 @@ class Bot:
             self.preview(c)
         except StaleDraft:
             raise
+        except LaunchError as error:
+            d["repository_error"] = str(error)
+            c = self.db.save(c, stage="collect", data=d)
+            self.notice(c, str(error), c["id"] + ":repository-error:" + str(c["version"]))
+            self.card(c)
         except Exception:
             d["coach_error"] = True
             c = self.db.save(c, stage="collect", data=d)
@@ -542,18 +561,11 @@ class Bot:
             self.preview(self.db.save(c, data=d))
 
     def repository(self, brief):
-        matches = re.findall(
-            r"(?:https://github\.com/|\brepo\s+)("
-            + re.escape(self.github_owner)
-            + r"/[A-Za-z0-9_.-]+)",
-            brief,
-        )
-        matches = set(pointer.removesuffix(".git") for pointer in matches)
-        if len(matches) > 1:
-            raise LaunchError("Choose one repository per run; the brief names several repositories.")
-        return next(iter(matches)) if matches else None
+        return self.repositories.resolve(brief)
 
     def check_repository(self, pointer):
+        from harness.webui.github import parse_repo_pointer
+        parse_repo_pointer(pointer, self.github_owner)
         proc = subprocess.run(
             ["gh", "repo", "view", pointer, "--json", "isPrivate"],
             capture_output=True,
@@ -562,7 +574,7 @@ class Bot:
         )
         if proc.returncode:
             raise LaunchError("Could not validate this repository’s access.")
-        if json.loads(proc.stdout)["isPrivate"] and pointer not in self.private_repos:
+        if json.loads(proc.stdout)["isPrivate"] and not self.repository_policy.permits_private(pointer):
             raise LaunchError(
                 "This private repository needs explicit approval in the Slack bot’s repository allowlist. Task-only and uploaded-file runs are available."
             )
@@ -575,7 +587,7 @@ class Bot:
             roster = self.resolve(
                 d["depth"], effort_overrides=d.get("effort_overrides")
             )
-            pointer = self.repository(d["brief"])
+            pointer = d.get("repository") or self.repository(d["brief"])
             if pointer:
                 self.check_repository(pointer)
         except ValueError as error:

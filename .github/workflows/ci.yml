@@ -55,5 +55,6 @@ jobs:
           python3 -m unittest
           harness.webui.tests.test_webui
           harness.slack.tests.test_slack
+          harness.slack.tests.test_repositories
           harness.webui.tests.test_effort_controls_browser
           harness.webui.tests.test_decision_map_browser
