@@ -95,6 +95,10 @@ class RepositoryLookupTest(unittest.TestCase):
             config.write_text('{"owner":"example-org","unknown":true}')
             with self.assertRaises(ValueError):
                 RepositoryPolicy.from_environment(env)
+            config.unlink()
+            config.symlink_to(Path(raw) / "missing-policy.json")
+            with self.assertRaises(ValueError):
+                RepositoryPolicy.from_environment(env)
         with self.assertRaises(ValueError):
             RepositoryPolicy.from_environment({"MOA_SLACK_REPO_POLICY_FILE": "/nonexistent/policy.json"})
 

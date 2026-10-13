@@ -35,7 +35,7 @@ class RepositoryPolicy:
         configured = env.get("MOA_SLACK_REPO_POLICY_FILE")
         path = Path(configured).expanduser() if configured else (
             Path(env.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))) / "moa-x/repositories.json")
-        if not path.exists() and not configured:
+        if not path.exists() and not path.is_symlink() and not configured:
             return cls(env.get("MOA_WEBUI_GITHUB_OWNER") or github.DEFAULT_ALLOWED_OWNER,
                        frozenset(x.strip() for x in env.get("MOA_SLACK_PRIVATE_REPOS", "").split(",") if x.strip()))
         try:
