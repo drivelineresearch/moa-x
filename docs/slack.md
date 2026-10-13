@@ -97,8 +97,10 @@ are reconciled against thread metadata; file uploads retain their modern upload
 IDs across retries. Message/card delivery and file upload use separate delivery
 workers. SDK connection retries are disabled so the durable outbox owns write
 reconciliation. Incoming envelopes are acknowledged after local persistence,
-with model calls and downloads outside that callback. Cancellation has a fast
-path and the owning worker polls cancellation while waiting on silent children,
+with model calls and downloads outside that callback. Cancellation uses a
+reserved durable inbox partition after acknowledgment, independent of busy
+interviews. Progress reconciliation also runs independently of inbox dispatch.
+The owning worker polls cancellation while waiting on silent children,
 escalating from termination to forced shutdown after three seconds. Failed
 launches return to preview for correction instead of retrying indefinitely.
 Choose one repository per run.

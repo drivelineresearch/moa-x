@@ -326,6 +326,55 @@ class SlackTest(unittest.TestCase):
         self.assertEqual(self.store.get_job(c["job_id"])["status"], "cancelled")
         self.assertIsNone(self.store.claim_next_job())
 
+    def test_deferred_cancel_uses_reserved_durable_inbox_partition(self):
+        c = self.preview()
+        self.bot.run(c)
+        c = self.bot.db.get(c["id"])
+        self.bot.enqueue("interactive", {"type": "block_actions", "team": {"id": TEAM},
+            "user": {"id": USER}, "actions": [{"action_id": "moa_cancel", "action_ts": "cancel-priority",
+            "value": json.dumps({"id": c["id"], "v": 0})}]}, fast_cancel=False)
+        self.assertEqual(self.store.get_job(c["job_id"])["status"], "queued")
+        self.assertIsNone(self.bot.db.claim("slack_inbox", priority=False))
+        item = self.bot.db.claim("slack_inbox", priority=True)
+        self.bot.db.recover()
+        item = self.bot.db.claim("slack_inbox", priority=True)
+        self.bot.process_priority(item)
+        self.assertEqual(self.store.get_job(c["job_id"])["status"], "cancelled")
+        self.assertIsNone(self.bot.db.claim("slack_inbox", priority=True))
+
+    def test_cancel_without_request_never_uses_a_coach_slot(self):
+        self.bot.enqueue("events_api", {"team_id": TEAM, "event": {"type": "message",
+            "channel": "D_TEST", "channel_type": "im", "user": USER, "ts": "cancel-alone", "text": "cancel"}}, fast_cancel=False)
+        self.bot.process_priority(self.bot.db.claim("slack_inbox", priority=True))
+        self.analyze.assert_not_called()
+
+    def test_attachment_cancellation_is_not_reported_as_failure(self):
+        from harness.scripts.attachments import AttachmentError
+        c = self.preview()
+        self.bot.run(c)
+        job = self.store.claim_next_job()
+        worker = JobWorker(self.store, Path("unused"))
+        def prepare(job):
+            self.store.request_cancel(job["id"])
+            raise AttachmentError("Extraction cancelled")
+        worker._prepare_attachments = prepare
+        worker._run_job(job)
+        self.assertEqual(self.store.get_job(job["id"])["status"], "cancelled")
+
+    def test_missing_verification_companion_finishes_with_explicit_limitation(self):
+        c = self.preview()
+        self.bot.run(c)
+        c = self.bot.db.get(c["id"])
+        job = self.store.get_job(c["job_id"])
+        folder = Path(job["session_dir"])
+        (folder / "final-plan.md").write_text("## TL;DR\\nA retained plan\\n")
+        job = self.store.update_job(job["id"], status="completed")
+        self.bot.finish(c, job)
+        self.assertEqual(self.bot.db.get(c["id"])["stage"], "completed")
+        with self.store.connect() as conn:
+            payload = json.loads(conn.execute("SELECT payload FROM slack_outbox WHERE id=?", ("final:" + c["id"],)).fetchone()[0])
+        self.assertIn("Verification metadata is unavailable", payload["text"])
+
     def test_two_requests_in_one_dm_need_thread_selection(self):
         first = self.message()
         self.message(ts="2", text="new: Plan something else")
@@ -593,6 +642,35 @@ class SlackTest(unittest.TestCase):
         with patch.dict(os.environ, {"MOA_RESTRICT_WORKSPACE": "1"}), patch.object(codex, "_source_packet", side_effect=AssertionError("No repository research during repair")), patch.object(codex.subprocess, "Popen", return_value=process):
             self.assertTrue(codex.run(prompt="Repair this object", schema_path=schema, repo_path=self.root, allow_tools=False).success)
 
+    def test_agy_supplies_schema_to_model_not_only_parser(self):
+        import subprocess
+        from adapters import agy
+        schema = self.root / "schema.json"
+        schema.write_text(json.dumps({"type": "object", "properties": {"answer": {"type": "integer"}}, "required": ["answer"]}))
+        prompt_file = self.root / "prompt.md"
+        process = Mock(returncode=0)
+        process.communicate.return_value = ('{"answer":42}', "")
+        native_popen = subprocess.Popen
+        def popen(command, **kwargs):
+            if command[0] == "git":
+                return native_popen(command, **kwargs)
+            supplied = prompt_file.read_text()
+            self.assertIn("Required response JSON Schema", supplied)
+            self.assertIn('"answer": {"type": "integer"}', supplied)
+            return process
+        with patch.object(agy.subprocess, "Popen", side_effect=popen):
+            self.assertTrue(agy.run(prompt="Answer with JSON", schema_path=schema, repo_path=self.root, model="fixture-model", prompt_file=prompt_file).success)
+
+    def test_cancel_revokes_live_run_capability(self):
+        import hashlib
+        c = self.preview()
+        self.bot.run(c)
+        c = self.bot.db.get(c["id"])
+        digest = hashlib.sha256(c["data"]["share_token"].encode()).hexdigest()
+        self.assertTrue(self.store.get_run_share(digest))
+        self.bot.cancel(c, "cancel-share")
+        self.assertIsNone(self.store.get_run_share(digest))
+
     def test_cited_source_file_receipt_includes_lines_after_16kb(self):
         import subprocess
         from adapters.codex import _source_packet
@@ -608,6 +686,21 @@ class SlackTest(unittest.TestCase):
             connection.execute("SELECT 1")
         with self.assertRaises(sqlite3.ProgrammingError):
             connection.execute("SELECT 1")
+
+    def test_concurrent_inbox_claims_deliver_each_item_once(self):
+        from concurrent.futures import ThreadPoolExecutor
+        for index in range(40):
+            self.bot.db.receive("concurrent:" + str(index), {"kind": "fixture"})
+        def consume():
+            ids = []
+            while item := self.bot.db.claim("slack_inbox"):
+                ids.append(item["id"])
+                self.bot.db.done("slack_inbox", item)
+            return ids
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            ids = [ident for batch in pool.map(lambda _: consume(), range(8)) for ident in batch]
+        self.assertEqual(len(ids), 40)
+        self.assertEqual(len(set(ids)), 40)
 
     def test_final_delivery_survives_repeated_scheduling(self):
         c = self.preview()
@@ -713,6 +806,9 @@ class SlackTest(unittest.TestCase):
         self.assertEqual(state["id"], c["job_id"])
         self.assertNotIn("profile_id", state)
         self.assertNotIn("workspace", state)
+        self.assertEqual(result.headers["Referrer-Policy"], "no-referrer")
+        for artifact in ("manifest.json", "synthesis-input.md"):
+            self.assertEqual(client.get(path + "/artifacts/" + artifact).status_code, 404)
         self.assertEqual(
             client.post("/api/jobs/" + c["job_id"] + "/cancel").status_code, 401
         )

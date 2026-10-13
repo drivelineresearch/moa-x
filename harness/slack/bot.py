@@ -65,7 +65,7 @@ class Bot:
         self.locks = {}
         self.lock = threading.Lock()
 
-    def enqueue(self, kind, payload):
+    def enqueue(self, kind, payload, *, fast_cancel=True):
         if kind == "events_api":
             event = payload.get("event") or {}
             if payload.get("team_id") != self.team or event.get("type") not in (
@@ -101,8 +101,9 @@ class Bot:
                 + ":"
                 + str(event.get("ts"))
             )
-            inserted = self.db.receive(key, {"kind": "message", "event": event})
-            if str(event.get("text", "")).strip().lower() == "cancel":
+            priority = re.sub(r"<@" + re.escape(self.bot_user) + r">", "", str(event.get("text", ""))).strip().lower() == "cancel"
+            inserted = self.db.receive(key, {"kind": "message", "event": event, "priority": priority})
+            if priority and fast_cancel:
                 c = self.db.find(
                     self.team,
                     event.get("channel"),
@@ -149,15 +150,38 @@ class Bot:
                         "user": user,
                         "action": action_name,
                         "value": value,
+                        "priority": action_name == "moa_cancel",
                     },
                 )
-                if action_name == "moa_cancel":
+                if action_name == "moa_cancel" and fast_cancel:
                     c = self.db.get(value.get("id"))
                     if c and c["owner"] == user and c["team"] == self.team:
                         self.cancel(c, key)
                         self.db.done("slack_inbox", {"id": key})
             return True
         return False
+
+    def process_priority(self, item):
+        # Native Slack envelopes already identify the actor. Only an existing
+        # owned conversation can be cancelled; never start a model call here.
+        p = item["payload"]
+        try:
+            if p["kind"] == "action":
+                c = self.db.get(p["value"].get("id"))
+                user = p["user"]
+            else:
+                e = p["event"]
+                user = e.get("user")
+                c = self.db.find(self.team, e.get("channel"), e.get("thread_ts") or e["ts"], user)
+                if not c and str(e.get("channel", "")).startswith("D"):
+                    active = self.db.active(self.team, e["channel"], user)
+                    if len(active) == 1:
+                        c = active[0]
+            if c and c["owner"] == user and c["team"] == self.team:
+                self.cancel(c, item["id"])
+            self.db.done("slack_inbox", item)
+        except Exception as error:
+            self.db.retry("slack_inbox", item, type(error).__name__, delay=1)
 
     def member(self, user):
         if not user or user == self.bot_user:
@@ -315,6 +339,9 @@ class Bot:
             )
         with self.conversation_lock(c["id"]):
             c = self.db.get(c["id"])
+            if c["stage"] in ("coaching", "launching", "running"):
+                self.notice(c, "This request is still processing. Use the next card, or start another with “new: your task”.", key)
+                return
             d = copy.deepcopy(c["data"])
             if d.get("last_message") == key:
                 if c["stage"] == "coaching":
@@ -600,11 +627,11 @@ class Bot:
             self.card(c)
             return
         if c["job_id"]:
-            self.store.revoke_run_shares(c["job_id"], c["profile_id"])
             job = self.store.get_job(c["job_id"])
             if job and job["status"] in TERMINAL:
                 self.card(c)
                 return
+            self.store.revoke_run_shares(c["job_id"], c["profile_id"])
             if job and self.store.request_cancel(job["id"]):
                 self.store.append_event(
                     job["id"], "warning", "Cancellation requested from Slack"
@@ -721,24 +748,24 @@ class Bot:
         folder = Path(job["session_dir"])
         if job["status"] == "completed" and (folder / "final-plan.md").is_file():
             plan = (folder / "final-plan.md").read_text()
-            manifest = json.loads((folder / "manifest.json").read_text())
-            rows = [
-                r
-                for key in ("layer1", "layer2", "layer3")
-                for r in manifest.get(key, [])
-            ]
-            passed = sum(bool(r.get("success")) for r in rows)
-            lineage = json.loads((folder / "final-plan.json").read_text())
-            confidence = (lineage.get("confidence") or {}).get("level", "unrecorded")
+            try:
+                manifest = json.loads((folder / "manifest.json").read_text())
+                rows = [r for key in ("layer1", "layer2", "layer3") for r in manifest.get(key, [])]
+                passed = sum(bool(r.get("success")) for r in rows)
+                lineage = json.loads((folder / "final-plan.json").read_text())
+                confidence = (lineage.get("confidence") or {}).get("level", "unrecorded")
+                verification = f"{passed}/{len(rows)} lanes passed · Confidence: {confidence}."
+                if passed < len(rows):
+                    verification += " Some lanes failed; inspect the report’s limitations."
+            except (OSError, ValueError, TypeError, AttributeError):
+                verification = "Verification metadata is unavailable; inspect the retained plan and report before relying on the result."
             tldr = re.search(r"## TL;DR\s*(.*?)(?=\n## |\Z)", plan, re.S)
             summary = tldr.group(1).strip() if tldr else plan[:2200]
             reply = (
                 "*MoA-X finished*\n"
                 + text(summary[:2400])
-                + f"\n\n{passed}/{len(rows)} lanes passed · Confidence: {confidence}."
+                + "\n\n" + verification
             )
-            if passed < len(rows):
-                reply += " Some lanes failed; inspect the report’s limitations."
             reply += (
                 "\nThe complete plan and report follow as files.\n<"
                 + d["dashboard"]
@@ -749,6 +776,8 @@ class Bot:
                 ("final-plan.md", "Complete MoA-X plan"),
                 ("report.html", "MoA-X ensemble report"),
             ]:
+                if not (folder / name).is_file():
+                    continue
                 self.db.put(
                     "file:" + c["id"] + ":" + name,
                     c,

@@ -626,15 +626,17 @@ class JobWorker:
             )
             self._event(job_id, "job", "Job cancelled")
         except AttachmentError as exc:
+            cancelled = self.store.cancel_requested(job_id)
             self.store.update_job(
                 job_id,
-                status="failed",
-                phase="failed",
-                summary=str(exc),
-                exit_code=1,
+                status="cancelled" if cancelled else "failed",
+                phase="cancelled" if cancelled else "failed",
+                summary="Reference preparation cancelled" if cancelled else str(exc),
+                exit_code=-signal.SIGTERM if cancelled else 1,
                 finished_at=time.time(),
             )
-            self._event(job_id, "error", f"Reference preparation failed: {exc}")
+            self._event(job_id, "job" if cancelled else "error",
+                        "Job cancelled during reference preparation" if cancelled else f"Reference preparation failed: {exc}")
         except Exception as exc:
             self.store.update_job(
                 job_id,

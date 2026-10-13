@@ -122,12 +122,12 @@ class Store:
             pass
         self.initialize()
 
-    def connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.path, timeout=30, isolation_level=None, factory=_ClosingConnection)
+    def connect(self, *, timeout: float = 30) -> sqlite3.Connection:
+        conn = sqlite3.connect(self.path, timeout=timeout, isolation_level=None, factory=_ClosingConnection)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys=ON")
-        conn.execute("PRAGMA busy_timeout=30000")
+        conn.execute(f"PRAGMA busy_timeout={int(timeout * 1000)}")
         return conn
 
     def initialize(self) -> None:

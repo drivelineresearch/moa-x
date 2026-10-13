@@ -159,19 +159,22 @@ class SlackStore:
         return self.get(ident)
 
     def receive(self, key, payload):
-        with self.store.connect() as conn:
-            conn.execute("PRAGMA busy_timeout=1000")
+        with self.store.connect(timeout=1) as conn:
             cursor = conn.execute(
                 "INSERT OR IGNORE INTO slack_inbox(id,payload) VALUES (?,?)",
                 (key, json.dumps(payload)),
             )
         return bool(cursor.rowcount)
 
-    def claim(self, table, *, files=None):
+    def claim(self, table, *, files=None, priority=None):
         if table not in ("slack_inbox", "slack_outbox"):
             raise ValueError("invalid queue")
         processing = "processing" if table == "slack_inbox" else "sending"
         partition = ""
+        if priority is not None:
+            if table != "slack_inbox":
+                raise ValueError("priority partition requires inbox")
+            partition = " AND json_extract(payload,'$.priority')=1" if priority else " AND COALESCE(json_extract(payload,'$.priority'),0)=0"
         if files is not None:
             if table != "slack_outbox":
                 raise ValueError("file partition requires outbox")

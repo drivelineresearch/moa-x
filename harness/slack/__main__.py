@@ -67,7 +67,7 @@ def main():
 
     def receive(socket_client, request):
         try:
-            bot.enqueue(request.type, request.payload)
+            bot.enqueue(request.type, request.payload, fast_cancel=False)
             socket_client.send_socket_mode_response(
                 SocketModeResponse(envelope_id=request.envelope_id)
             )
@@ -97,6 +97,28 @@ def main():
                for files in (False, True)]
     for sender in senders:
         sender.start()
+
+    def cancel_requests():
+        while not stop.is_set():
+            item = bot.db.claim("slack_inbox", priority=True)
+            if item:
+                bot.process_priority(item)
+            else:
+                stop.wait(0.1)
+
+    canceller = threading.Thread(target=cancel_requests, daemon=True)
+    canceller.start()
+
+    def monitor_runs():
+        while not stop.is_set():
+            try:
+                bot.monitor()
+            except Exception:
+                log.warning("Progress reconciliation will retry")
+            stop.wait(3)
+
+    monitor = threading.Thread(target=monitor_runs, daemon=True)
+    monitor.start()
     with concurrent.futures.ThreadPoolExecutor(
         max_workers=4, thread_name_prefix="moa-slack"
     ) as pool:
@@ -110,17 +132,13 @@ def main():
         while not stop.is_set():
             futures = [f for f in futures if not f.done()]
             if len(futures) < 4:
-                item = bot.db.claim("slack_inbox")
+                item = bot.db.claim("slack_inbox", priority=False)
                 if item:
                     futures.append(pool.submit(bot.process, item))
             if time.time() - last_monitor >= 3:
                 for c in bot.db.live():
                     if c["stage"] == "launching" and len(futures) < 4:
                         futures.append(pool.submit(bot.resume_launch, c))
-                try:
-                    bot.monitor()
-                except Exception:
-                    log.warning("Progress reconciliation will retry")
                 status = {
                     "connected": socket.is_connected(),
                     "team": team,
@@ -135,6 +153,8 @@ def main():
     socket.close()
     for sender in senders:
         sender.join(timeout=3)
+    canceller.join(timeout=3)
+    monitor.join(timeout=3)
 
 
 if __name__ == "__main__":

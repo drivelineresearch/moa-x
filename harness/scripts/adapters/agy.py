@@ -352,6 +352,15 @@ def run(
             else:
                 scratch_dir = tempfile.TemporaryDirectory(prefix="moa-agy-")
                 prompt_file = Path(scratch_dir.name) / "prompt.md"
+        if schema_path is not None:
+            try:
+                schema = json.loads(schema_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError) as exc:
+                return AgyResult(False, None, "", str(exc), -1,
+                                 time.monotonic() - started, "invalid response schema")
+            # AGY has no native schema flag. The parser's required-key check
+            # cannot replace actually supplying the contract to the model.
+            prompt += "\n\nRequired response JSON Schema:\n" + json.dumps(schema)
         prompt_file.parent.mkdir(parents=True, exist_ok=True)
         prompt_file.write_text(READ_ONLY_RULE + "\n\n" + prompt, encoding="utf-8")
 
