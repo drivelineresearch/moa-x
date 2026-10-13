@@ -117,7 +117,7 @@ subprocess phase.
 
 ### Why every default stage uses different labs
 
-Gemini, Grok, and GPT-6 Luna propose; Qwen, DeepSeek, and Opus review; GPT-5.6
+Gemini, Grok, and GPT-6 Luna propose; Qwen, DeepSeek, and Opus review; GPT-6.1
 Sol aggregates at `xhigh`. The proposer and aggregator stages intentionally
 share OpenAI, but every recommended refiner remains independent of the
 aggregator. Fable is an optional quota-heavy Claude aggregator only and is

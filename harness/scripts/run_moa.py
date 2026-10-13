@@ -53,7 +53,7 @@ Timeout policy:
     Each external CLI has its own wall-clock cap. Defaults are tuned to the
     observed tail latency of each adapter: codex scales with reasoning
     effort; research-enabled calls can have a long tail. The default Qwen
-    preview refiner is explicitly capped at 600 seconds. Pass
+    Go refiner is explicitly capped at 900 seconds. Pass
     `--timeout` as a master override to set all at once; pass a specific
     `--<agent>-timeout` or MOA_<NAME>_TIMEOUT to bump just one.
 """

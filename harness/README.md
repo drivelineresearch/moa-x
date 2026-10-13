@@ -276,7 +276,7 @@ The live account catalog must expose the selected stable model slug.
   Sequential invocations are fine; parallel ones from the same user
   aren't.
 - **Wall-clock is typically 12-25 minutes for research-heavy work.** Provider
-  latency can extend the tail; Qwen's default refiner cap is 600 seconds. Don't run
+  latency can extend the tail; Qwen's default refiner cap is 900 seconds. Don't run
   this for trivial tasks.
 - **Web research is required, not optional.** All prompts insist on
   it. If a CLI is rate-limited on its web search tool, the proposal

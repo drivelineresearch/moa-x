@@ -1248,7 +1248,7 @@ __DECISION_MAP_SCRIPT__
     sec.appendChild(el("h2", { class: "section-title", text: "Final recommendation" }));
     sec.appendChild(reportArt("synthesis", "Lead architect combining proposal fragments into one coherent master plan", "The aggregator reconciles alternatives into one implementable plan."));
     var aggregator = DATA.config && DATA.config.aggregator, layer3 = DATA.layer3 || [];
-    var aggregatorLabel = aggregator ? esc(aggregator.name) + " / " + esc(aggregator.model) : "Codex / gpt-5.6-sol (xhigh)";
+    var aggregatorLabel = aggregator ? esc(aggregator.name) + " / " + esc(aggregator.model) : "Codex / gpt-6.1-sol (xhigh)";
     if (layer3.length) sec.appendChild(el("p", { class: "section-note", html: "The final recommendation was produced by <b>" + aggregatorLabel + "</b>. Its runtime appears in the timeline and its captured output is available in Technical logs." }));
     else sec.appendChild(el("p", { class: "section-note", html: "The final recommendation is produced in the configured parent session (" + aggregatorLabel + ")." }));
     if (DATA.final_plan_html) {

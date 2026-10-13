@@ -73,7 +73,7 @@ and the strongest synthesis route in every run:
 
 Gemini Pro stays in the proposal layer because it contributes a
 Google-native research lane before the ensemble converges. Grok contributes
-the xAI proposal lane, Luna joins at Balanced, and Terra joins at Thorough.
+the xAI proposal lane, Luna joins at Balanced, and Astra plus GLM join at Thorough.
 DeepSeek V4.1 Flash is the Quick reviewer and remains in the full broadcast-review
 set alongside Qwen and Opus at higher depths. Every named default lane comes
 from a distinct lab within its own layer, and all recommended refiners are
@@ -104,7 +104,7 @@ shown as execution metadata but never determines the character identity.
 
 The optional **Strengthen with AI** flow remains deliberately small rather
 than starting a second ensemble. GPT-6 Luna is the fast primary editor;
-Gemini 4 Argon is the bounded fallback. The coach sees only the user's draft,
+Gemini 3.8 Flash Low is the bounded fallback. The coach sees only the user's draft,
 source type, attachment count, and selected planning depth—not repository or
 attachment contents. It asks at most three material questions, then returns a
 preview that the user may apply or discard.

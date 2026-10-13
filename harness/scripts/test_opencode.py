@@ -41,6 +41,8 @@ class OpenCodeV2Test(unittest.TestCase):
         self.assertEqual(effect('read', 'config/.env.production'), 'deny')
         self.assertEqual(config['agents']['moa-reader']['steps'], oc._QWEN_MAX_AGENT_STEPS)
         self.assertEqual(config['websearch'], {'provider': 'random'})
+        self.assertEqual(config['providers']['opencode-go']['models']['qwen3.8-max']['settings']['thinking'],
+                         {'type': 'enabled', 'budgetTokens': 8192})
 
     def test_repair_policy_denies_every_tool(self):
         cfg = oc._v2_config_for_model('opencode-go/glm-5.3', allow_tools=False, allow_webfetch=False)

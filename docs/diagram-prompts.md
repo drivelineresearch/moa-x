@@ -1,14 +1,15 @@
 # Diagram & image prompts
 
-The brand images are current and live:
+The brand images are embedded in the README; model labels in the existing
+workflow image may predate the current roster:
 
 - `docs/moa-x-header.png` — the README hero banner (generated from Prompt 2).
-- `docs/moa-x-workflow.png` — the current four-stage workflow illustration
+- `docs/moa-x-workflow.png` — the four-stage workflow illustration
   (generated from Prompt 1), embedded in the README.
 
 The banner reflects the cross-lab ensemble theme. The next workflow image should
-show the current Balanced proposers (Gemini Pro, Grok 4.5, and GPT-5.6 Luna),
-current broadcast refiners (Qwen 3.8, DeepSeek V4 Pro, and Claude Opus 5), GPT-5.6 Sol
+show the current Balanced proposers (Gemini Pro, Grok 4.7, and GPT-6 Luna),
+current broadcast refiners (Qwen 3.8, DeepSeek V4.1 Flash, and Claude Opus 5.5), GPT-6.1 Sol
 `xhigh` default aggregation, the warning-gated optional Fable aggregator, and the
 generated plan/report artifacts. The prompts below are the source of truth for
 regenerating or tweaking them — keep the same style so the pair stays visually
@@ -49,24 +50,25 @@ Z-path exactly as written below.
 > plus one smaller dashed Thorough-only lane,
 > each with a monitor showing a globe icon (web research). Desk colors and
 > labels identify the default proposer roster: a BLUE desk labeled "Gemini
-> Pro", a VIOLET desk labeled "Grok 4.5", a GREEN desk labeled "GPT-5.6
-> Luna", and a smaller TEAL Thorough-only desk labeled "GPT-5.6 Terra".
+> Pro", a VIOLET desk labeled "Grok 4.7", a GREEN desk labeled "GPT-6
+> Luna", and a smaller TEAL Thorough-only desk labeled "GLM 5.3".
+> For Thorough, replace the Luna desk with "GPT-6 Astra" and include GLM.
 > A bold red ribbon reading "READ-ONLY" bands across all four desks,
 > with a padlock icon. JSON pages drop out of each output tray.
 >
 > ③ BROADCAST REFINERS (bottom-left quadrant): three people at desks reviewing
 > cork boards labeled "ALL VALID PROPOSALS" (every refiner receives the complete
 > surviving proposal set). A TEAL desk labeled "Qwen 3.8", a VIOLET desk
-> labeled "DeepSeek V4 Pro", and an ORANGE desk labeled "Opus 5". Add a "VERIFIED"
+> labeled "DeepSeek V4.1 Flash", and an ORANGE desk labeled "Opus 5.5". Add a "VERIFIED"
 > stamp on one desk.
 >
 > ④ AGGREGATOR (bottom-right quadrant): a pair of hands in orange sleeves
 > drawing on a drafting table, assembling a blueprint and three outputs: a
 > document labeled "final-plan.md", a small linked-node data card labeled
 > "final-plan.json", and a browser card labeled "report.html" containing tiny
-> bar-chart, timeline, and decision-lineage shapes. Add a primary "GPT-5.6 Sol
-> · xhigh · DEFAULT" label plus two smaller alternate cards: "Claude Opus 5"
-> and "Fable 5 1M · xhigh", with a warning triangle, lock, and "HIGH QUOTA"
+> bar-chart, timeline, and decision-lineage shapes. Add a primary "GPT-6.1 Sol
+> · xhigh · DEFAULT" label plus two smaller alternate cards: "Claude Opus 5.5"
+> and "Fable 5.1 · xhigh", with a warning triangle, lock, and "HIGH QUOTA"
 > badge on Fable.
 >
 > The connecting arrows are colored ribbon-pipes (blue, black, and purple
@@ -78,12 +80,12 @@ Z-path exactly as written below.
 
 Notes for whoever runs it:
 - Image models render obscure logos unreliably — the desk-front **text labels**
-  (`Gemini Pro`, `Grok 4.5`, `GPT-5.6 Luna`, `GPT-5.6 Terra`, `Qwen 3.8`, `DeepSeek V4 Pro`, `Opus 5`,
-  `GPT-5.6 Sol`, `Fable 5 1M`) carry
+  (`Gemini Pro`, `Grok 4.7`, `GPT-6 Luna`, `GLM 5.3`, `Qwen 3.8`, `DeepSeek V4.1 Flash`, `Opus 5.5`,
+  `GPT-6.1 Sol`, `Fable 5.1`) carry
   the identification; logo motifs are nice-to-have accents, not load-bearing.
 - Keep Qwen and DeepSeek in Layer 2. Keep Grok in Layer 1. Do not repeat the same
   route or model in multiple stages.
-- Keep the image focused on the default recorded GPT-5.6 Sol route.
+- Keep the image focused on the default recorded GPT-6.1 Sol route.
 
 ## Prompt 2 — hero/banner (`docs/moa-x-header.png`)
 

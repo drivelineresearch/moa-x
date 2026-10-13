@@ -99,6 +99,17 @@ def _v2_config_for_model(model: str, *, allow_webfetch: bool, allow_tools: bool)
         # Headless runs cannot complete the first-search provider chooser.
         "websearch": {"provider": "random"} if allow_tools and allow_webfetch else False,
     }
+    if model.split("#", 1)[0] == "opencode-go/qwen3.8-max":
+        # Preserve the deployed Qwen thinking budget when moving billing paths.
+        # Go uses the Anthropic-compatible protocol, whose native settings
+        # translate budgetTokens to the wire budget_tokens field.
+        settings["providers"] = {
+            "opencode-go": {"models": {
+                "qwen3.8-max": {"settings": {
+                    "thinking": {"type": "enabled", "budgetTokens": 8192}
+                }}
+            }}
+        }
     if model.startswith(f"{_QWEN_TOKEN_PLAN_PROVIDER_ID}/"):
         model_id = model.split("/", 1)[1]
         settings["providers"] = {
