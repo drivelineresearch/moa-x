@@ -3,7 +3,7 @@ name: mixture-of-agents
 description: |
   Run a non-trivial planning task through a layered ensemble of frontier models
   from distinct labs (proposers Gemini 4 Argon high + Grok 4.7 + GPT-6 Luna;
-  refiners qwen3.8-max + DeepSeek V4.1 Flash + Claude Opus 5.5 high) before producing a final implementation
+  refiners DeepSeek V4.1 Flash + Claude Opus 5.5 high) before producing a final implementation
   plan. The configured proposers run in parallel, broadcast refiners (each
   sees all proposals) verify and cross-check, then GPT-6.1 Sol at `xhigh`
   (stable provider name `codex-sol`) aggregates through the recorded Layer 3
@@ -35,7 +35,7 @@ frontier models from three different labs (Google's Gemini 4 Argon through
 AGY, xAI's Grok 4.7 through OpenCode, and OpenAI's GPT-6 Luna through
 Codex) — each produce an independent plan grounded in real repo
 code AND aggressive web research, then the refiners (default
-`qwen`/qwen3.8-max + `deepseek-flash`/deepseek-v4.1-flash + `opus`/claude-opus-5-5 high)
+`deepseek-flash`/deepseek-v4.1-flash + `opus`/claude-opus-5-5 high)
 broadcast-refine by reading all the proposals and producing cross-verifications,
 then `codex-sol`/gpt-6.1-sol at `xhigh` synthesizes everything into a final
 actionable plan through the recorded Layer 3 path.
@@ -80,9 +80,6 @@ Layer 1 — Proposers                        (3 parallel, headless, read-only)
                    ↓
 Layer 2 — Broadcast refiners               (3 parallel; each sees ALL valid proposals)
    │
-   ├─ qwen refines the broadcast (opencode @ qwen3.8-max; 600s cap)
-   │     └→ .moa/<session>/layer2/qwen-refiner-broadcast.json
-   │
    ├─ deepseek refines the broadcast (opencode @ deepseek-v4.1-flash)
    │     └→ .moa/<session>/layer2/deepseek-refiner-broadcast.json
    │
@@ -117,7 +114,7 @@ subprocess phase.
 
 ### Why every default stage uses different labs
 
-Gemini, Grok, and GPT-6 Luna propose; Qwen, DeepSeek, and Opus review; GPT-6.1
+Gemini, Grok, and GPT-6 Luna propose; DeepSeek Flash and Opus review; GPT-6.1
 Sol aggregates at `xhigh`. The proposer and aggregator stages intentionally
 share OpenAI, but every recommended refiner remains independent of the
 aggregator. Fable is an optional quota-heavy Claude aggregator only and is
@@ -195,7 +192,7 @@ them in this precedence
 
 1. `MOA_PROPOSERS` / `MOA_REFINERS` env vars (comma-separated names)
 2. `harness/config.yaml` → `layers.proposers` / `layers.refiners`
-3. Defaults: `[agy-gemini-pro, grok, codex-luna]`, `[qwen, deepseek-flash, opus]`,
+3. Defaults: `[agy-gemini-pro, grok, codex-luna]`, `[deepseek-flash, opus]`,
    aggregator `codex-sol` at `xhigh`
 
 User-defined provider names declared under `providers:` in
@@ -272,7 +269,7 @@ Layer 2 reads the Layer 1 outputs from disk, runs broadcast refiners in
 parallel, writes `.moa/<session_id>/synthesis-input.md` and the final
 `manifest.json`. Same progress lines as before:
 ```
-[orchestrator]   qwen refiner (saw agy-gemini-pro,codex,sonnet): OK (65.3s)
+[orchestrator]   deepseek-flash refiner (saw agy-gemini-pro,grok,codex-luna): OK (65.3s)
 [orchestrator]   opus refiner (saw agy-gemini-pro,codex,sonnet): OK (76.1s)
 ```
 
@@ -401,17 +398,17 @@ planning rather than chat-answer ensembling. Differences from the paper:
 - **Heterogeneous, not homogeneous.** The paper showed cross-lab beats
   same-model temperature sampling; we keep that result. The default roster
   spans Google (Gemini Pro) + xAI (Grok) + OpenAI (Luna) across the
-  proposers, with Alibaba (Qwen), DeepSeek, and Anthropic (Opus)
+  proposers, with DeepSeek and Anthropic (Opus)
   joining at the refiner layer and OpenAI (Sol) aggregating. Refiner
   independence from the aggregator is the protected boundary.
 - **Broadcast refinement, paper-faithful.** Every refiner sees every
   proposal, per the paper. v0.1 of this skill used cross-pair (each refiner
   saw only one other proposer), which was NOT paper-faithful; v0.2 corrected
   this.
-- **3 refiners for Balanced.** Each refiner sees every proposal, but the
-  three labs bring different review priors: Qwen for broad technical
-  validation, DeepSeek for an additional independent synthesis check, and Opus
-  for deeper adversarial critique.
+- **Two reviewers for Balanced.** Each sees every proposal. DeepSeek Flash
+  supplies an independent technical review and Opus supplies deeper adversarial
+  critique. Both are independent of the OpenAI aggregator. Qwen and Kimi remain
+  disabled for new launches; historical attribution is retained.
 - **Recorded synthesis by default.** GPT-6.1 Sol at `xhigh` produces the final
   phase through the Codex adapter, preserving schema validation, exact
   lineage, timing, and logs in the run artifacts.

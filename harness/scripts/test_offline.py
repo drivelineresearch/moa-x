@@ -3264,7 +3264,9 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
         by_id["agy-gemini-pro"]["default_roles"] == ["proposer"]
         and by_id["grok"]["default_roles"] == ["proposer"]
         and by_id["codex-luna"]["default_roles"] == ["proposer"]
-        and by_id["qwen"]["default_roles"] == ["refiner"]
+        and by_id["qwen"]["default_roles"] == []
+        and by_id["qwen"]["roles"] == []
+        and by_id["qwen-opencode"]["roles"] == []
         and by_id["deepseek-flash"]["default_roles"] == ["refiner"]
         and by_id["kimi"]["default_roles"] == []
         and by_id["kimi"]["roles"] == []
@@ -3288,7 +3290,7 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
         and profiles["quick"]["refiner"]["preferred"] == ["deepseek-flash"]
         and profiles["balanced"]["proposer"]["preferred"] == ["agy-gemini-pro", "grok", "codex-luna"]
         and profiles["thorough"]["proposer"]["preferred"] == ["agy-gemini-pro", "grok", "codex", "glm"]
-        and profiles["thorough"]["refiner"]["preferred"] == ["qwen", "deepseek-flash", "opus"]
+        and profiles["thorough"]["refiner"]["preferred"] == ["deepseek-flash", "opus"]
         and profiles["thorough"]["refiner"]["efforts"]["opus"] == "max"
         and all(profile["aggregator"]["preferred"] == ["codex-sol"] and profile["aggregator"]["efforts"]["codex-sol"] == "xhigh" for profile in profiles.values())
         and all(snippet in app_js for snippet in (
@@ -3383,7 +3385,7 @@ def test_google_provider_builtins_are_default_and_resolve() -> bool:
         and agy_effort_override.model == "gemini-4-argon-high"
         and agy_effort_override.effort == "high"
         and proposer_names == ["agy-gemini-pro", "grok", "codex-luna"]
-        and refiner_names == ["qwen", "deepseek-flash", "opus"]
+        and refiner_names == ["deepseek-flash", "opus"]
         and defaults.aggregator is not None
         and defaults.aggregator.name == "codex-sol"
         and fable.harness == "claude"

@@ -10,8 +10,8 @@
 #   agy-gemini-pro -> AGY / gemini-4-argon-high
 #   grok           -> OpenCode Go / grok-4.7
 #   kimi           -> OpenCode Go / kimi-k3 (disabled; archived provenance only)
-#   qwen           -> OpenCode Go / qwen3.8-max
-#   qwen-opencode  -> OpenCode Go / qwen3.8-max
+#   qwen           -> OpenCode Go / qwen3.8-max (disabled; archived provenance)
+#   qwen-opencode  -> OpenCode Go / qwen3.8-max (disabled; archived provenance)
 #   glm            -> OpenCode Go / glm-5.3 (Thorough proposer)
 #   deepseek-flash -> OpenCode Go / deepseek-v4.1-flash (default refiner)
 #
@@ -22,7 +22,7 @@
 # aggregator; Gemini Pro and Grok enter the evidence pipeline immediately.
 layers:
   proposers: [agy-gemini-pro, grok, codex-luna]
-  refiners: [qwen, deepseek-flash, opus]
+  refiners: [deepseek-flash, opus]
   aggregator: codex-sol
   skip_refinement: false
 
@@ -38,10 +38,10 @@ layers:
 #
 # layers:
 #   proposers: [agy-gemini-pro, grok, codex-luna]
-#   refiners: [qwen, deepseek-flash, opus, custom-reviewer]
+#   refiners: [deepseek-flash, opus, custom-reviewer]
 #   aggregator: codex-sol
 #
-# Secrets belong in .env or the shell, never in this file. Default Qwen uses
+# Secrets belong in .env or the shell, never in this file. Optional custom routes may use
 # the existing OpenCode Go account. Per-route overrides use:
 #   MOA_<NAME>_MODEL, MOA_<NAME>_TIMEOUT, MOA_<NAME>_EFFORT
 #

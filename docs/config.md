@@ -18,8 +18,8 @@ Never commit `.env`, provider keys, or generated `harness/config.yaml`.
 | `grok` | OpenCode | `opencode-go/grok-4.7` | proposer, refiner | provider-managed |
 | `codex-luna` | Codex | `gpt-6-luna` | proposer, refiner | adjustable; medium default |
 | `codex` | Codex | `gpt-6-astra` | proposer, refiner | adjustable; high default |
-| `qwen` | OpenCode | `opencode-go/qwen3.8-max` | proposer, refiner | provider-managed |
-| `qwen-opencode` | OpenCode | `opencode-go/qwen3.8-max` | proposer, refiner | provider-managed |
+| `qwen` | OpenCode | `opencode-go/qwen3.8-max` | disabled; archived provenance | provider-managed |
+| `qwen-opencode` | OpenCode | `opencode-go/qwen3.8-max` | disabled; archived provenance | provider-managed |
 | `kimi` | OpenCode | `opencode-go/kimi-k3` | disabled; archived provenance only | provider-managed |
 | `glm` | OpenCode | `opencode-go/glm-5.3` | proposer, refiner | provider-managed |
 | `deepseek-flash` | OpenCode | `opencode-go/deepseek-v4.1-flash` | proposer, refiner | provider-managed |
@@ -38,35 +38,34 @@ prior pre-inference rate-limit failures. Archived manifests preserve every origi
 ```yaml
 layers:
   proposers: [agy-gemini-pro, grok, codex-luna]
-  refiners: [qwen, deepseek-flash, opus]
+  refiners: [deepseek-flash, opus]
   aggregator: codex-sol
   skip_refinement: false
 ```
 
-The Web UI's optimized profiles use:
+The browser and Slack share these server-side profiles:
 
 | Mode | Proposers | Refiners | Aggregator |
 |---|---|---|---|
-| Quick | Gemini Pro `low`; Grok 4.7 | DeepSeek V4.1 Flash | GPT-6.1 Sol `xhigh` |
-| Balanced | Gemini Pro `high`; Grok 4.7; GPT-6 Luna `medium` | Qwen 3.8; DeepSeek V4.1 Flash; Opus `high` | GPT-6.1 Sol `xhigh` |
-| Thorough | Gemini Pro `high`; Grok 4.7; GPT-6 Astra `high`; GLM 5.3 | Qwen 3.8; DeepSeek V4.1 Flash; Opus `max` | GPT-6.1 Sol `xhigh` |
+| Quick | Gemini 4 Argon `low`; Grok 4.7 | DeepSeek V4.1 Flash | GPT-6.1 Sol `xhigh` |
+| Balanced | Gemini 4 Argon `high`; Grok 4.7; GPT-6 Luna `medium` | DeepSeek V4.1 Flash; Opus `high` | GPT-6.1 Sol `xhigh` |
+| Thorough | Gemini 4 Argon `high`; Grok 4.7; GPT-6 Astra `high`; GLM 5.3 | DeepSeek V4.1 Flash; Opus `max` | GPT-6.1 Sol `xhigh` |
 
 Gemini Pro enters every mode for early web evidence. Grok enters every mode as
 an independent xAI proposer. DeepSeek V4.1 Flash is always a refiner; Opus joins
 Balanced and Thorough. The default OpenAI aggregator stays lab-independent
 from all recommended refiners.
 
-Kimi K3 is disabled for new Web UI runs. Its OpenCode Go route repeatedly
-returned `Provider rate limit exceeded` before inference or billing even with
-**Use balance** enabled. A fresh synthetic response is insufficient to requalify that research lane;
-use DeepSeek V4.1 Flash until a full run is validated.
+Kimi K3 remains excluded from new launches until a complete research and
+broadcast-review run is qualified. A catalog listing or synthetic response
+alone is insufficient to restore a curated route.
 
 ## Environment variables
 
 | Variable | Default | Purpose |
 |---|---|---|
 | `MOA_PROPOSERS` | `agy-gemini-pro,grok,codex-luna` | comma-separated proposer route ids |
-| `MOA_REFINERS` | `qwen,deepseek-flash,opus` | comma-separated refiner route ids |
+| `MOA_REFINERS` | `deepseek-flash,opus` | comma-separated refiner route ids |
 | `MOA_AGGREGATOR` | `codex-sol` | aggregator route id |
 | `MOA_SKIP_LAYER2` | false | skip broadcast refinement |
 | `MOA_<NAME>_MODEL` | route default | per-route model override |
@@ -101,7 +100,7 @@ providers:
 
 layers:
   proposers: [agy-gemini-pro, grok, codex-luna]
-  refiners: [qwen, deepseek-flash, opus, custom-reviewer]
+  refiners: [deepseek-flash, opus, custom-reviewer]
   aggregator: codex-sol
 ```
 
@@ -109,7 +108,7 @@ The shell shorthand is:
 
 ```bash
 MOA_PROVIDER_CUSTOM_REVIEWER=opencode:provider/model-id
-MOA_REFINERS=qwen,deepseek-flash,opus,custom-reviewer
+MOA_REFINERS=deepseek-flash,opus,custom-reviewer
 ```
 
 Names must be lowercase, dash-separated, and at most 32 characters so they fit
@@ -131,3 +130,16 @@ when selecting it reveals an enabled slider. Fixed routes say
 `Fixed <level> effort`; routes without a controllable setting say
 `Provider-managed effort`. `test_effort_controls_browser.py` enforces this
 contract across all roles and optimized profiles.
+
+## Slack runtime configuration
+
+`SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN`, `MOA_SLACK_TEAM_ID`, and
+`MOA_SLACK_BASE_URL` belong in a private runtime environment file. The bot
+checks full membership in the configured workspace, freezes models and efforts
+at launch, and uses the existing queue. Optional `MOA_SLACK_PRIVATE_REPOS`
+explicitly grants repositories to workspace members; leave it empty to
+permit only public repositories under `MOA_WEBUI_GITHUB_OWNER`. See [Slack](slack.md).
+
+Qwen and Kimi are disabled for new curated launches. Model availability may
+change independently of CLI catalog listings; requalify a route with actual
+planning and broadcast-review requests before restoring it.

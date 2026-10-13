@@ -165,7 +165,7 @@ disk — and a warning is printed.
 
 ## Design
 
-The report follows the Driveline Baseball white-surface design language:
+The report uses a white-surface editorial design:
 pure white canvas, the signature 8px Mine Shaft top bar, goldenrod
 `#FFA300` as the sole accent, no shadows, and hand-crafted SVG charts
 (no chart library). Fonts use a system stack so the report stays
@@ -177,3 +177,11 @@ tab rail supports arrow, Home, and End keys.
 
 The template and embedded illustration assets live in `harness/report/`; the
 generator is `harness/scripts/report.py`.
+
+## Delivery through Slack
+
+Completed Slack runs receive a concise recommendation and lane/quality summary
+in their originating thread, with the Markdown plan and self-contained report
+as files. A run-specific read-only dashboard links to retained outputs. Failed
+or interrupted runs report their status explicitly; partial provider failures
+remain visible rather than being silently presented as a complete ensemble.

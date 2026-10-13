@@ -67,22 +67,22 @@ and the strongest synthesis route in every run:
 
 | Mode | Proposers | Broadcast refiners | Aggregator |
 |---|---|---|---|
-| Quick | Gemini Pro `low`; Grok 4.7 | DeepSeek V4.1 Flash | GPT-6.1 Sol `xhigh` |
-| Balanced | Gemini Pro `high`; Grok 4.7; GPT-6 Luna `medium` | Qwen 3.8; DeepSeek V4.1 Flash; Opus `high` | GPT-6.1 Sol `xhigh` |
-| Thorough | Gemini Pro `high`; Grok 4.7; GPT-6 Astra `high`; GLM 5.3 | Qwen 3.8; DeepSeek V4.1 Flash; Opus `max` | GPT-6.1 Sol `xhigh` |
+| Quick | Gemini 4 Argon `low`; Grok 4.7 | DeepSeek V4.1 Flash | GPT-6.1 Sol `xhigh` |
+| Balanced | Gemini 4 Argon `high`; Grok 4.7; GPT-6 Luna `medium` | DeepSeek V4.1 Flash; Opus `high` | GPT-6.1 Sol `xhigh` |
+| Thorough | Gemini 4 Argon `high`; Grok 4.7; GPT-6 Astra `high`; GLM 5.3 | DeepSeek V4.1 Flash; Opus `max` | GPT-6.1 Sol `xhigh` |
 
 Gemini Pro stays in the proposal layer because it contributes a
 Google-native research lane before the ensemble converges. Grok contributes
 the xAI proposal lane, Luna joins at Balanced, and Astra plus GLM join at Thorough.
 DeepSeek V4.1 Flash is the Quick reviewer and remains in the full broadcast-review
-set alongside Qwen and Opus at higher depths. Every named default lane comes
+set alongside Opus at higher depths. Every named default lane comes
 from a distinct lab within its own layer, and all recommended refiners are
 lab-independent from the OpenAI aggregator. GPT-6.1 Sol remains the selected
 `xhigh` aggregator in every recommended mode.
 
 Kimi K3 remains visible on the OpenCode provider page only for archived
-provenance. New launches remain disabled pending full requalification after prior
-pre-inference `Provider rate limit exceeded` failures. A successful synthetic
+provenance. New launches remain disabled pending complete research and broadcast-review
+qualification. A successful synthetic
 response does not establish reliable research or broadcast-review behavior.
 
 Claude Opus 5.5 is available as a normal aggregator alternative. Fable 5.1 is
@@ -102,8 +102,8 @@ shown as execution metadata but never determines the character identity.
 
 ### Prompt coach
 
-The optional **Strengthen with AI** flow remains deliberately small rather
-than starting a second ensemble. GPT-6 Luna is the fast primary editor;
+The optional **Strengthen with AI** flow prepares a bounded brief before an
+ensemble starts. GPT-6 Luna is the fast primary editor;
 Gemini 3.8 Flash Low is the bounded fallback. The coach sees only the user's draft,
 source type, attachment count, and selected planning depth—not repository or
 attachment contents. It asks at most three material questions, then returns a
@@ -381,3 +381,11 @@ explicit opt-in for a trusted LAN: plain HTTP can expose cookies to network
 observers and the application does not provide passwords, account recovery,
 administrator roles, or OS-level tenant isolation. For remote access, use
 TLS plus an authenticated reverse proxy or private overlay network.
+
+## Slack companion
+
+The optional [Slack gateway](slack.md) shares this database and worker. It adds
+Luna interviews, automatic depth/model choices, effort controls, owned uploads,
+threaded status and final delivery. The gateway is a separate process and must
+not create another queue worker. Browser and Slack launch policies share the
+same server-side presets; disabling a curated route excludes it from both.

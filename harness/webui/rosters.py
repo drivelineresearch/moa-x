@@ -23,8 +23,8 @@ DEPTH_PROFILES = {
             "efforts": {"agy-gemini-pro": "high"},
         },
         "refiner": {
-            "preferred": ["qwen", "deepseek-flash", "opus"],
-            "limit": 3,
+            "preferred": ["deepseek-flash", "opus"],
+            "limit": 2,
             "efforts": {"opus": "high"},
         },
         "aggregator": {
@@ -40,8 +40,8 @@ DEPTH_PROFILES = {
             "efforts": {"agy-gemini-pro": "high"},
         },
         "refiner": {
-            "preferred": ["qwen", "deepseek-flash", "opus"],
-            "limit": 3,
+            "preferred": ["deepseek-flash", "opus"],
+            "limit": 2,
             "efforts": {"opus": "max"},
         },
         "aggregator": {

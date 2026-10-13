@@ -11,7 +11,8 @@ Send a task, optionally with supported reference files or a public GitHub
 repository URL under the configured organization. Luna asks up to three material
 questions, offering buttons or typed answers. A complete brief skips questions.
 It recommends Quick, Balanced or Thorough depth; those presets share the same
-server-side model policy as the browser. Preview the optimized brief and actual
+server-side model policy as the browser. Balanced uses three proposals, two reviewers and one
+synthesis lane; Qwen is excluded from new launches. Preview the optimized brief and actual
 models, adjust depth or individual supported effort levels, then press **Run**.
 
 The request’s inputs and resolved model versions freeze at launch. The existing
@@ -45,7 +46,7 @@ Provision a private environment file, outside the repository:
 SLACK_BOT_TOKEN=xoxb-...
 SLACK_APP_TOKEN=xapp-...
 MOA_SLACK_TEAM_ID=T...
-MOA_SLACK_BASE_URL=https://your-internal-host/moa-x
+MOA_SLACK_BASE_URL=https://your-dashboard.example/moa-x
 MOA_WEBUI_GITHUB_OWNER=your-approved-github-organization
 # Optional explicitly approved private repositories (workspace members may use these):
 # MOA_SLACK_PRIVATE_REPOS=organization/repo-a,organization/repo-b
@@ -120,3 +121,7 @@ queue check before restarting the web worker.
 References: [Socket Mode](https://docs.slack.dev/tools/python-slack-sdk/socket-mode/),
 [file-share events](https://docs.slack.dev/reference/events/message/file_share/),
 [modern file completion](https://docs.slack.dev/reference/methods/files.completeUploadExternal/).
+
+Public contributions must use example workspace IDs, URLs and credentials.
+Keep deployment receipts, raw run reports and operational findings outside
+the repository; publish generic reproductions and code fixes only.

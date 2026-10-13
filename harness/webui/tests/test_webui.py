@@ -453,7 +453,7 @@ class WebUITest(unittest.TestCase):
                 "goal": "Review this repository and propose a concise plan.",
                 "profile_id": "browser_123",
                 "proposers": ["codex", "sonnet"],
-                "refiners": ["qwen"],
+                "refiners": ["deepseek-flash"],
                 "aggregator": "opus",
             },
         )
@@ -479,7 +479,7 @@ class WebUITest(unittest.TestCase):
                 "workspace": str(self.root),
                 "goal": "Verify the curated aggregation default.",
                 "proposers": ["agy-gemini-pro", "sonnet"],
-                "refiners": ["qwen"],
+                "refiners": ["deepseek-flash"],
             },
         )
         self.assertEqual(created.status_code, 201)
@@ -551,7 +551,7 @@ class WebUITest(unittest.TestCase):
                 "goal": "Keep this run private to its submitting browser.",
                 "profile_id": "spoofed_owner",
                 "proposers": ["codex"],
-                "refiners": ["qwen"],
+                "refiners": ["deepseek-flash"],
                 "aggregator": "opus",
             },
         )
@@ -591,7 +591,7 @@ class WebUITest(unittest.TestCase):
                 "goal": "This belongs to the second browser.",
                 "profile_id": "browser_123",
                 "proposers": ["codex"],
-                "refiners": ["qwen"],
+                "refiners": ["deepseek-flash"],
                 "aggregator": "opus",
             },
         )
@@ -931,7 +931,7 @@ class WebUITest(unittest.TestCase):
                 "source_mode": "brief",
                 "goal": "Research this brief without a repository.",
                 "proposers": ["codex"],
-                "refiners": ["qwen"],
+                "refiners": ["deepseek-flash"],
                 "aggregator": "opus",
             },
         )
@@ -983,7 +983,7 @@ class WebUITest(unittest.TestCase):
                 "goal": "Use the attached research notes.",
                 "profile_id": "browser_123",
                 "proposers": ["codex"],
-                "refiners": ["qwen"],
+                "refiners": ["deepseek-flash"],
                 "aggregator": "opus",
                 "attachments": [upload["id"]],
             },
@@ -1026,7 +1026,7 @@ class WebUITest(unittest.TestCase):
                 "source_mode": "brief",
                 "goal": "Review the attached agreement.",
                 "proposers": ["codex"],
-                "refiners": ["qwen"],
+                "refiners": ["deepseek-flash"],
                 "aggregator": "opus",
                 "attachments": [upload_id],
             },
@@ -1370,7 +1370,7 @@ class WebUITest(unittest.TestCase):
                     "github_repository": "drivelineresearch/player-benchmark",
                     "github_ref": "main",
                     "proposers": ["codex"],
-                    "refiners": ["qwen"],
+                    "refiners": ["deepseek-flash"],
                     "aggregator": "opus",
                 },
             )

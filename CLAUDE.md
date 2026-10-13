@@ -5,7 +5,8 @@
 MoA-X is a Mixture-of-Agents reference harness. `harness/scripts/run_moa.py`
 orchestrates a config-driven roster of CLI proposers and broadcast
 refiners; the shipped default is Gemini Pro + Grok 4.7 + GPT-6 Luna proposers
-and Qwen + DeepSeek V4.1 Flash + Claude Opus refiners (Qwen uses OpenCode Go).
+and DeepSeek V4.1 Flash + Claude Opus reviewers. Qwen routes retain archived
+identity but are disabled for new launches.
 Layer 0 (scout) is handled by the parent agent. Layer 3 defaults to a recorded
 Codex subprocess on `gpt-6.1-sol` at `xhigh` reasoning (stable provider name
 `codex-sol`) through `--phase layer3`. Layer 3 adds `final-plan.md` plus a
@@ -56,8 +57,8 @@ tests must run offline so CI stays credential-free.
 Rule 2 is non-negotiable. Rule 1 is a strong recommendation.
 
 1. **Recommend lab-independent refiners.** Layer 2 defaults to
-   `{qwen, deepseek-flash, opus}` and the default aggregator uses GPT-6.1 Sol at `xhigh`
-   under the stable `codex-sol` provider name. All three reviewers are
+   `{deepseek-flash, opus}` and the default aggregator uses GPT-6.1 Sol at `xhigh`
+   under the stable `codex-sol` provider name. Both reviewers are
    independent of the OpenAI aggregator and of the default proposer labs.
    If changing the aggregator, reconsider
    the reviewer roster so no refiner shares its harness/lab.
@@ -78,13 +79,12 @@ Rule 2 is non-negotiable. Rule 1 is a strong recommendation.
   normalized usage/cost telemetry and safe pre-dispatch budget controls, not
   basic API-key authentication.
 - **Default CLI roster is `[agy-gemini-pro, grok, codex-luna]` proposers,
-  `[qwen, deepseek-flash, opus]` refiners, and `codex-sol` aggregator at `xhigh`** using the
+  `[deepseek-flash, opus]` refiners, and `codex-sol` aggregator at `xhigh`** using the
   `{agy, codex, claude, opencode}` harnesses. The Web UI Thorough preset replaces
   Luna with GLM 5.3 beside Astra so all four proposer lanes come from independent
   labs. Cursor is unsupported. DeepSeek V4.1 Flash is the sole curated DeepSeek route and is included
   in every refinement preset. The model defaults are
-  Gemini 4 Argon High, Grok 4.7, GPT-6 Luna, Qwen
-  `qwen3.8-max`, DeepSeek V4.1 Flash, Claude Opus 5.5 (`claude-opus-5-5`),
+  Gemini 4 Argon High, Grok 4.7, GPT-6 Luna, DeepSeek V4.1 Flash, Claude Opus 5.5 (`claude-opus-5-5`),
   and `gpt-6.1-sol` at `xhigh` for synthesis. Fable 5.1 is an
   aggregator-only, warning-gated alternative and is never a proposer or
   refiner. It is a default, not a cap—the roster is pure config (built-in names,

@@ -178,7 +178,7 @@ class Bot:
             )
         ):
             raise AccessDenied(
-                "MoA-X is available to full Driveline workspace members."
+                "MoA-X is available to full members of the configured workspace."
             )
         self.members[user] = (time.time() + 300, info)
         return info

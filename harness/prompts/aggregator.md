@@ -4,7 +4,7 @@ This prompt is for the configured Layer 3 aggregator. It can run in the
 interactive parent agent or as the optional `run_moa.py --phase layer3`
 Codex/Claude subprocess. It runs AFTER the orchestrator has finished Layer 1
 (the configured proposers, by default Gemini Pro + Grok + GPT-6 Luna) and Layer 2 (the
-configured broadcast refiners, by default Qwen + DeepSeek + Opus). The
+configured broadcast refiners, by default DeepSeek V4.1 Flash + Opus). The
 orchestrator has written `.moa/<session>/synthesis-input.md` containing
 everything you need.
 
@@ -153,7 +153,7 @@ Save the human-readable plan to `.moa/<session>/final-plan.md`. Structure:
 **Session**: <session_id>
 **Spec**: <one-line summary>
 **Proposers**: <the resolved proposer roster, e.g. agy-gemini-pro (gemini-4-argon-high), grok (grok-4.7), codex-luna (gpt-6-luna)>
-**Refiners**: <the resolved refiner roster, e.g. qwen (qwen3.8-max; broadcast), deepseek-flash (deepseek-v4.1-flash; broadcast), opus (claude-opus-5-5 high; broadcast)>
+**Refiners**: <the resolved refiner roster, e.g. deepseek-flash (deepseek-v4.1-flash; broadcast), opus (claude-opus-5-5 high; broadcast)>
 **Aggregator**: <the actual harness/provider/model used for this aggregation>
 
 ## TL;DR
@@ -197,7 +197,7 @@ you chose>
 
 ## Sources consulted
 <the 10-15 most relevant sources from the combined proposer/refiner set, with one-line notes
-and a tag like [codex-proposer], [qwen-refiner] indicating who cited it>
+and a tag like [codex-proposer], [deepseek-flash-refiner] indicating who cited it>
 
 ## Confidence
 <your honest read of how confident this plan should make the user.

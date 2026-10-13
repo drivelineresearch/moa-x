@@ -50,3 +50,13 @@ When contributing new assets:
   information;
 - never commit screenshots containing private repositories, prompts, reports,
   account names, email addresses, API keys, or local file paths.
+
+## README header
+
+`docs/moa-x-header.png` is the public product banner. It shows Slack/web/CLI
+input, the Luna interview, three default proposer routes, two broadcast
+reviewers, and GPT-6.1 Sol synthesis. Model/version labels are descriptive;
+provider logos and claims of endorsement are absent. Keep the README's alt
+text and the text roster accurate when replacing the image. The generation
+brief lives in [diagram-prompts.md](diagram-prompts.md). Generated imagery
+must contain no deployment URLs, accounts, workspace IDs or internal findings.

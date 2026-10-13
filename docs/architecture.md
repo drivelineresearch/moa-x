@@ -7,7 +7,7 @@ repo-grounded implementation planning.
 ```mermaid
 flowchart LR
   S["Scout brief"] --> P["Proposers: Gemini Pro + Grok 4.7 + GPT-6 Luna"]
-  P --> R["Broadcast refiners: Qwen 3.8 + DeepSeek V4.1 Flash + Claude Opus 5.5"]
+  P --> R["Broadcast refiners: DeepSeek V4.1 Flash + Claude Opus 5.5"]
   R --> A["Aggregator: GPT-6.1 Sol xhigh default; Opus or gated Fable alternatives"]
   A --> O["Final plan + evidence-weighted decision map + report"]
 ```
@@ -21,7 +21,7 @@ brief with focus files, explicit scope, and shared attachment context.
 research, Grok contributes an xAI lane, and GPT-6 Luna contributes an
 OpenAI planning lane. They run in parallel and cannot see each other's work.
 
-**Layer 2: broadcast refinement.** Qwen, DeepSeek V4.1 Flash, and Claude Opus each receive
+**Layer 2: broadcast refinement.** DeepSeek V4.1 Flash and Claude Opus each receive
 every surviving proposal. They verify claims, identify disagreements, add
 missing evidence, and produce structured review output. Broadcast refinement
 is paper-faithful and gives every reviewer the same comparison surface.
@@ -87,7 +87,7 @@ GLM is a Thorough proposer and DeepSeek V4.1 Flash is a recommended refiner.
 - Balanced adds GPT-6 Luna; Thorough adds GPT-6 Astra for a deeper OpenAI
   proposer pass without relying on the less reliable retired routes.
 - DeepSeek V4.1 Flash is present in every refinement profile.
-- Qwen and Opus join Balanced and Thorough; Opus uses high and max effort,
+- Opus joins Balanced and Thorough, using high and max effort,
   respectively.
 - The recommended refiners remain lab-independent from the OpenAI aggregator.
 
@@ -169,3 +169,17 @@ servers from loading while account state stays in the default data directory.
 Web search chooses an available provider automatically instead of opening a
 headless selection prompt. V2 emits NDJSON: only text parts feed JSON extraction, and typed error events
 fail closed. V1 retains its original invocation and policy contract.
+
+## Conversation transport
+
+The Slack gateway persists envelopes before acknowledgement, conducts bounded
+Luna interviews outside callbacks, and launches through the same service as
+the browser. Both entry points use `harness/webui/rosters.py`. Slack adds
+workspace membership and request ownership, durable event/action deduplication,
+draft versions, stable launch IDs and a reconciled message/file outbox. It
+does not construct Flask or start a second ensemble worker.
+
+Read-only run capabilities expose one job's status and retained artifacts for
+30 days, without browser-profile or mutation access. Local filesystem roots
+are not accepted through Slack. Uploaded references are bounded and owned by
+the caller; private repositories require a separate explicit allowlist.

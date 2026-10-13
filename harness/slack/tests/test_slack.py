@@ -298,7 +298,7 @@ class SlackTest(unittest.TestCase):
 
     def test_unavailable_lane_blocks_run_without_degrading(self):
         rows = catalog()
-        next(x for x in rows if x["id"] == "qwen")["available"] = False
+        next(x for x in rows if x["id"] == "opus")["available"] = False
         with self.assertRaises(ValueError):
             resolve_roster("balanced", catalog=rows)
 
