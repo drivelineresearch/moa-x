@@ -30,6 +30,8 @@ versioning.
 
 ### Fixed
 
+- Recover late-visible Slack history messages with a bounded overlap and
+  persistent deduplication instead of skipping them after a cursor advance.
 - Keep Slack connector attribution out of brief text and typed command parsing.
 - Dispatch OpenCode V2 with a private server, explicit read-only agent,
   disposable repository snapshot, matching PWD/cwd, and NDJSON text/error

@@ -128,6 +128,10 @@ the Web API. It discovers DMs every 20 seconds and rotates one history request
 per 1.25 seconds (at most 48 per minute); larger DM catalogs take longer to
 cover. It honors `Retry-After` and persists watermarks across restarts. The first
 discovery reads only the previous minute, never the full historical backlog.
+Subsequent reads overlap the previous five minutes to recover messages that
+become visible after the cursor advances. The inbox deduplicates repeated reads;
+the first-discovery boundary is retained across restarts. Existing cursors gain
+only this bounded overlap when upgraded.
 Socket events and recovered messages share one deduplicated inbox. This fallback
 does not recover channel mentions or interactive button clicks: enable and save
 event subscriptions and interactivity for those. Typed answers, `quick`,
