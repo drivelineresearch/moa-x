@@ -79,6 +79,20 @@ class Bot:
                 or event.get("subtype") not in (None, "file_share")
             ):
                 return False
+            dm = event.get("channel_type") == "im" or str(
+                event.get("channel", "")
+            ).startswith("D")
+            mention = event.get(
+                "type"
+            ) == "app_mention" or "<@" + self.bot_user + ">" in str(
+                event.get("text", "")
+            )
+            if not dm and not mention:
+                thread = event.get("thread_ts")
+                if not thread or not self.db.find(
+                    self.team, event.get("channel"), thread, event.get("user")
+                ):
+                    return False
             key = (
                 "msg:"
                 + self.team

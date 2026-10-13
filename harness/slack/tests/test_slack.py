@@ -268,6 +268,10 @@ class SlackTest(unittest.TestCase):
     def test_unrelated_channel_messages_and_bots_are_ignored(self):
         self.message(channel="C_TEST", text="Normal conversation")
         self.assertEqual(self.analyze.call_count, 0)
+        with self.store.connect() as conn:
+            self.assertEqual(
+                conn.execute("SELECT count(*) FROM slack_inbox").fetchone()[0], 0
+            )
         self.message(ts="2", user=BOT)
         self.assertEqual(self.analyze.call_count, 0)
 
