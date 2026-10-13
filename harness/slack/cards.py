@@ -42,6 +42,11 @@ def card(conversation):
     emoji = {"collect": "👋", "coaching": "🧠", "interview": "💬", "preview": "📋",
              "launching": "🚀", "running": "⏳", "completed": "✅", "failed": "❌", "cancelled": "🛑"}.get(stage, "🧠")
     blocks = [section(emoji + " *MoA-X · " + text(stage.title()) + "*")]
+    if d.get("repository"):
+        pointer = text(d["repository"])
+        blocks.append(section("📂 Repository: <https://github.com/" + pointer + "|" + pointer + "> · read-only context"))
+    if d.get("repository_error"):
+        blocks.append(section("⚠️ " + text(d["repository_error"])))
     if stage == "collect":
         blocks.append(
             section(

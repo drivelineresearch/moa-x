@@ -7,6 +7,9 @@ versioning.
 
 ### Added
 
+- Slack repository-name lookup with cached GitHub discovery, visible/frozen
+  repository context, and a private local policy supporting exact repositories
+  or an explicitly approved organization wildcard.
 - Optional Socket Mode Slack gateway with Luna interviews, shared depth/effort
   presets, owned reference uploads, durable queue launch, progress, cancellation,
   expiring read-only dashboard links and final plan/report delivery.
@@ -27,6 +30,7 @@ versioning.
 
 ### Fixed
 
+- Keep Slack connector attribution out of brief text and typed command parsing.
 - Dispatch OpenCode V2 with a private server, explicit read-only agent,
   disposable repository snapshot, matching PWD/cwd, and NDJSON text/error
   extraction. V1 keeps its original invocation contract.

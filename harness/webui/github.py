@@ -14,7 +14,7 @@ from typing import Any
 
 DEFAULT_ALLOWED_OWNER = "drivelineresearch"
 OWNER_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$")
-REPO_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$")
+REPO_RE = re.compile(r"^(?!\.{1,2}$)[A-Za-z0-9_.-]{1,100}$")
 REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$")
 
 
@@ -97,19 +97,21 @@ def _run_gh(args: list[str], *, timeout: int) -> subprocess.CompletedProcess[str
         raise GitHubWorkspaceError(f"Could not launch GitHub CLI: {exc}") from exc
 
 
-def list_repositories(owner_allowlist: str | None = None) -> list[dict[str, Any]]:
+def list_repositories(owner_allowlist: str | None = None, *, limit: int = 200) -> list[dict[str, Any]]:
     owner = (
         _validate_owner(owner_allowlist)
         if owner_allowlist is not None
         else allowed_owner()
     )
+    if not isinstance(limit, int) or not 1 <= limit <= 10000:
+        raise ValueError("repository discovery limit must be between 1 and 10000")
     proc = _run_gh(
         [
             "repo",
             "list",
             owner,
             "--limit",
-            "200",
+            str(limit),
             "--json",
             "name,nameWithOwner,description,isPrivate,url,pushedAt,defaultBranchRef",
         ],

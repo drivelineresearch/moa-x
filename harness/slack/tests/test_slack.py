@@ -9,6 +9,7 @@ from unittest.mock import Mock, patch
 from harness.slack.bot import Bot, AccessDenied
 from harness.slack.delivery import Delivery
 from harness.slack.files import Files, FileError, download_private
+from harness.slack.repositories import RepositoryDirectory, RepositoryPolicy
 from harness.webui.app import create_app
 from harness.webui.store import Store
 from harness.webui.rosters import resolve_roster
@@ -135,6 +136,7 @@ class SlackTest(unittest.TestCase):
             token="test",
             base_url="https://example.test/moa-x",
             files=FilesStub(),
+            repository_directory=RepositoryDirectory(RepositoryPolicy("drivelineresearch"), listing=lambda: []),
             coach_analyze=self.analyze,
             coach_finalize=self.finalize,
             roster_resolver=lambda depth, **kw: resolve_roster(
