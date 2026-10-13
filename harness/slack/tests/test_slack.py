@@ -956,6 +956,28 @@ class SlackTest(unittest.TestCase):
     def test_cross_process_cancel_terminates_silent_worker(self):
         self._check_cancel('import time\nprint("starting",flush=True)\ntime.sleep(30)\n')
 
+    def test_external_cli_lock_wait_is_cancellable_without_starting_a_model(self):
+        import fcntl,os
+        session = self.root / "waiting-session"
+        session.mkdir()
+        job = self.store.insert_job({"id": "waiting-job", "profile_id": "user",
+            "title": "Waiting", "workspace": str(self.root), "session_dir": str(session),
+            "goal": "test", "config": {}, "status": "running"})
+        worker = JobWorker(self.store, Path("run_moa.py"))
+        done = []
+        with (self.root / f"moa-{os.getuid()}.lock").open("a+") as lock, patch("harness.webui.worker.tempfile.gettempdir", return_value=str(self.root)):
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            thread = threading.Thread(target=lambda: done.append(worker._run_phase(job, "layer1")))
+            thread.start()
+            deadline = time.monotonic()+3
+            while self.store.get_job(job["id"])["phase"] != "waiting" and time.monotonic()<deadline:
+                time.sleep(0.02)
+            self.assertEqual(self.store.get_job(job["id"])["phase"], "waiting")
+            self.store.request_cancel(job["id"])
+            thread.join(timeout=2)
+            self.assertFalse(thread.is_alive())
+            self.assertLess(done[0], 0)
+
     def test_cancel_escalates_when_process_ignores_sigterm(self):
         self._check_cancel('import signal,time\nsignal.signal(signal.SIGTERM,signal.SIG_IGN)\nprint("starting",flush=True)\ntime.sleep(30)\n')
 

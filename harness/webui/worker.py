@@ -10,6 +10,7 @@ import signal
 import subprocess
 import sys
 import threading
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,20 @@ from .store import Store
 
 ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 PHASE_PROGRESS = {"layer1": 0.08, "layer2": 0.43, "layer3": 0.78}
+
+
+def _native_run_busy() -> bool:
+    if not hasattr(os, "getuid"):
+        return False
+    import fcntl
+    path = Path(tempfile.gettempdir()) / f"moa-{os.getuid()}.lock"
+    with path.open("a+") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return True
+        fcntl.flock(lock, fcntl.LOCK_UN)
+    return False
 
 
 def _process_tree(root_pid: int) -> list[int]:
@@ -196,6 +211,16 @@ class JobWorker:
 
     def _run_phase(self, job: dict[str, Any], phase: str) -> int:
         job_id = job["id"]
+        waiting = False
+        while self.runner.name == "run_moa.py" and _native_run_busy():
+            if not waiting:
+                self.store.update_job(job_id, phase="waiting")
+                self._event(job_id, "phase", "Waiting for the active ensemble to finish")
+                waiting = True
+            if self.store.cancel_requested(job_id):
+                return -signal.SIGTERM
+            self._wake.wait(0.5)
+            self._wake.clear()
         config = job["config"]
         log_path = Path(job["session_dir"]) / "webui.log"
         cmd = self._command(job, phase)
