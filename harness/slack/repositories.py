@@ -27,7 +27,8 @@ class RepositoryPolicy:
 
     def permits_private(self, pointer):
         github.parse_repo_pointer(pointer, self.owner)
-        return pointer in self.private_repositories or self.owner + "/*" in self.private_repositories
+        approved = {entry.casefold() for entry in self.private_repositories}
+        return pointer.casefold() in approved or (self.owner + "/*").casefold() in approved
 
     @classmethod
     def from_environment(cls, env=None):
@@ -106,7 +107,7 @@ class RepositoryDirectory:
             name = match.group(1).rstrip(".")
             prefix = brief[max(0, match.start() - 60):match.start()]
             distinctive = "-" in name or "_" in name or "." in name
-            contextual = bool(re.search(r"(?:review|audit|inspect|analy[sz]e|look (?:at|into)|check|in|for)\s+(?:the\s+)?[`\"']?$", prefix, re.I))
+            contextual = bool(re.search(r"(?:review|audit|inspect|analy[sz]e|look (?:at|into)|check)\s+(?:the\s+)?[`\"']?$", prefix, re.I))
             quoted = match.start() > 0 and brief[match.start() - 1] in "`\"'"
             # Do not turn everyday task vocabulary into implicit repository access.
             if name.lower() in {"api", "data", "docs", "tests", "test", "config", "examples", "research"} and name not in marked:

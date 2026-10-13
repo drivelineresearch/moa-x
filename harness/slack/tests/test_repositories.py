@@ -78,6 +78,18 @@ class RepositoryLookupTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 RepositoryPolicy("example-org", frozenset({value}))
 
+    def test_explicit_private_approval_ignores_repository_name_casing(self):
+        policy = RepositoryPolicy("example-org", frozenset({"example-org/Sample-Service"}))
+        for pointer in ("example-org/sample-service", "example-org/SAMPLE-SERVICE"):
+            self.assertTrue(policy.permits_private(pointer))
+        self.assertFalse(policy.permits_private("example-org/other-service"))
+
+    def test_purpose_words_do_not_add_a_second_repository(self):
+        self.listing.return_value += [{"name": name, "nameWithOwner": "example-org/" + name}
+                                     for name in ("performance", "production")]
+        self.assertEqual(self.directory.resolve("Review sample-service for performance in production"), "example-org/sample-service")
+        self.assertEqual(self.directory.resolve("Review repo performance"), "example-org/performance")
+
     def test_private_config_is_authoritative_and_fails_closed(self):
         with tempfile.TemporaryDirectory() as raw:
             config = Path(raw) / "moa-x/repositories.json"
