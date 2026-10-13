@@ -81,9 +81,9 @@ lab-independent from the OpenAI aggregator. GPT-6.1 Sol remains the selected
 `xhigh` aggregator in every recommended mode.
 
 Kimi K3 remains visible on the OpenCode provider page only for archived
-provenance. New launches are disabled because OpenCode Go repeatedly rejects
-the route before inference with `Provider rate limit exceeded`, including when
-balance fallback is enabled.
+provenance. New launches remain disabled pending full requalification after prior
+pre-inference `Provider rate limit exceeded` failures. A successful synthetic
+response does not establish reliable research or broadcast-review behavior.
 
 Claude Opus 5.5 is available as a normal aggregator alternative. Fable 5.1 is
 available as an aggregator-only alternative. Selecting Fable opens a

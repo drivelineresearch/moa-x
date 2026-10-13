@@ -18,7 +18,7 @@ Never commit `.env`, provider keys, or generated `harness/config.yaml`.
 | `grok` | OpenCode | `opencode-go/grok-4.7` | proposer, refiner | provider-managed |
 | `codex-luna` | Codex | `gpt-6-luna` | proposer, refiner | adjustable; medium default |
 | `codex` | Codex | `gpt-6-astra` | proposer, refiner | adjustable; high default |
-| `qwen` | OpenCode | `opencode-go/qwen3.8-max` | proposer, refiner | configured variant |
+| `qwen` | OpenCode | `opencode-go/qwen3.8-max` | proposer, refiner | provider-managed |
 | `qwen-opencode` | OpenCode | `opencode-go/qwen3.8-max` | proposer, refiner | provider-managed |
 | `kimi` | OpenCode | `opencode-go/kimi-k3` | disabled; archived provenance only | provider-managed |
 | `glm` | OpenCode | `opencode-go/glm-5.3` | proposer, refiner | provider-managed |
@@ -30,8 +30,8 @@ Never commit `.env`, provider keys, or generated `harness/config.yaml`.
 
 Cursor is not a supported harness. GLM 5.3 is the fourth proposer in the
 Thorough Web UI preset. DeepSeek V4.1 Flash is the sole curated DeepSeek route and the default refiner. Kimi K3 remains cataloged for archived provenance
-but is blocked from new Web UI runs because OpenCode Go rejects it before
-inference. Archived manifests preserve every original model-lab identity.
+but remains blocked from new Web UI runs pending full requalification after
+prior pre-inference rate-limit failures. Archived manifests preserve every original model-lab identity.
 
 ## Default ensemble
 
@@ -58,8 +58,8 @@ from all recommended refiners.
 
 Kimi K3 is disabled for new Web UI runs. Its OpenCode Go route repeatedly
 returned `Provider rate limit exceeded` before inference or billing even with
-**Use balance** enabled. Increasing the lane timeout only prolongs that retry
-loop; use DeepSeek V4.1 Flash instead.
+**Use balance** enabled. A fresh synthetic response is insufficient to requalify that research lane;
+use DeepSeek V4.1 Flash until a full run is validated.
 
 ## Environment variables
 
