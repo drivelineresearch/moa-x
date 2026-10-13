@@ -182,6 +182,23 @@ class SlackStore:
         with self.store.connect() as conn:
             conn.execute("UPDATE slack_poll_cursors SET watermark=? WHERE target=?", (value, target))
 
+    def poll_window(self, target, default, floor, *, overlap=300):
+        with self.store.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("SELECT watermark FROM slack_poll_cursors WHERE target=?", (target,)).fetchone()
+            if row:
+                watermark = row[0]
+                # Existing cursors predate overlap tracking. Recover only the
+                # bounded recent window, never the historical backlog.
+                initial = str(max(float(floor), float(watermark) - overlap))
+            else:
+                watermark = initial = default
+                conn.execute("INSERT INTO slack_poll_cursors VALUES (?,?)", (target, watermark))
+            origin = "origin:" + target
+            conn.execute("INSERT OR IGNORE INTO slack_poll_cursors VALUES (?,?)", (origin, initial))
+            initial = conn.execute("SELECT watermark FROM slack_poll_cursors WHERE target=?", (origin,)).fetchone()[0]
+            return str(max(float(initial), float(watermark) - overlap))
+
     def dm_threads(self, team):
         with self.store.connect() as conn:
             return [self.decode(row) for row in conn.execute(

@@ -230,7 +230,36 @@ class SlackTest(unittest.TestCase):
         restarted = DMReconciler(self.bot, client, now=lambda: 1020)
         restarted.tick()
         self.assertEqual(restarted.received, 0)
-        self.assertEqual(client.conversations_history.call_args.kwargs["oldest"], "1000")
+        self.assertEqual(float(client.conversations_history.call_args.kwargs["oldest"]), 940)
+
+    def test_late_history_visibility_is_recovered_without_duplicate_processing(self):
+        from harness.slack.ingress import DMReconciler
+        client = Mock()
+        client.conversations_list.return_value = {"channels": [{"id": "D_TEST"}]}
+        clock = Mock(return_value=1000)
+        client.conversations_history.return_value = {"messages": []}
+        reconciler = DMReconciler(self.bot, client, now=clock)
+        reconciler.tick()
+        self.assertEqual(self.bot.db.watermark("D_TEST", "0"), "1000")
+        clock.return_value = 1010
+        client.conversations_history.return_value = {"messages": [
+            {"type": "message", "user": USER, "ts": "990", "text": "help"}]}
+        reconciler.tick()
+        self.assertEqual(reconciler.received, 1)
+        item = self.bot.db.claim("slack_inbox")
+        self.bot.db.done("slack_inbox", item)
+        clock.return_value = 1020
+        reconciler.tick()
+        self.assertEqual(reconciler.received, 1)
+        self.assertIsNone(self.bot.db.claim("slack_inbox"))
+
+    def test_overlap_migration_is_bounded_and_first_discovery_stays_recent(self):
+        db = self.bot.db
+        self.assertEqual(float(db.poll_window("new", "940", "0")), 940)
+        db.watermark("legacy", "1000")
+        self.assertEqual(float(db.poll_window("legacy", "940", "0")), 700)
+        db.advance_watermark("new", "1010")
+        self.assertEqual(float(db.poll_window("new", "0", "0")), 940)
 
     def test_history_pages_are_persisted_in_time_order_before_cursor_advances(self):
         from harness.slack.ingress import DMReconciler

@@ -33,7 +33,7 @@ class DMReconciler:
     def _read(self, channel, thread=None):
         target = channel + (":" + thread if thread else "")
         page = self.pages.setdefault(target, {
-            "oldest": self.bot.db.watermark(target, str(max(float(self.floor), self.now() - 60))),
+            "oldest": self.bot.db.poll_window(target, str(max(float(self.floor), self.now() - 60)), self.floor),
             "latest": str(self.now()), "messages": [], "cursor": None,
         })
         args = {"channel": channel, "oldest": page["oldest"], "latest": page["latest"], "limit": 200}
