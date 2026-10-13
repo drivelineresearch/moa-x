@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import queue
 import re
 import signal
 import subprocess
@@ -160,6 +161,9 @@ class JobWorker:
         config = job["config"]
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"
+        if config.get("transport") == "slack":
+            env["MOA_RESTRICT_WORKSPACE"] = "1"
+            env["MOA_JOB_SESSION_DIR"] = job["session_dir"]
         provider_catalog = harness_config.load_provider_catalog()
         for provider_name, model in (
             config.get("options", {}).get("model_overrides") or {}
@@ -210,15 +214,32 @@ class JobWorker:
                 self._processes[job_id] = proc
             self.store.update_job(job_id, pid=proc.pid)
             assert proc.stdout is not None
-            for line in iter(proc.stdout.readline, ""):
+            lines = queue.Queue()
+            def read_output():
+                try:
+                    for line in iter(proc.stdout.readline, ""):
+                        lines.put(line)
+                finally:
+                    lines.put(None)
+            reader = threading.Thread(target=read_output, daemon=True)
+            reader.start()
+            while True:
+                if self.store.cancel_requested(job_id) and proc.poll() is None:
+                    _terminate_tree(proc.pid)
+                try:
+                    line = lines.get(timeout=0.25)
+                except queue.Empty:
+                    continue
+                if line is None:
+                    break
                 clean = ANSI_RE.sub("", line.rstrip())
                 log.write(clean + "\n")
                 log.flush()
                 if clean:
                     self._event(job_id, "log", clean, phase=phase)
-                if self.store.cancel_requested(job_id) and proc.poll() is None:
-                    _terminate_tree(proc.pid)
+            reader.join(timeout=3)
             code = proc.wait()
+            proc.stdout.close()
             with self._lock:
                 self._processes.pop(job_id, None)
             self.store.update_job(job_id, pid=None)

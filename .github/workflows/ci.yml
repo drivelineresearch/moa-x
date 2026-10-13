@@ -47,12 +47,13 @@ jobs:
 
       - name: Install Web UI test dependencies
         run: |
-          pip install -r requirements-web-dev.txt
+          pip install -r requirements-web-dev.txt -r requirements-slack.txt
           playwright install --with-deps chromium
 
       - name: Run Web UI browser contracts
         run: >-
           python3 -m unittest
           harness.webui.tests.test_webui
+          harness.slack.tests.test_slack
           harness.webui.tests.test_effort_controls_browser
           harness.webui.tests.test_decision_map_browser

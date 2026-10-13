@@ -202,7 +202,15 @@ def _isolated_git_workspace(
     if probe.returncode != 0:
         # Task-only Web UI workspaces are intentionally not Git repositories.
         # AGY still has plan mode, its native sandbox, and UV_NO_SYNC there.
-        yield repo_path
+        if os.environ.get("MOA_RESTRICT_WORKSPACE") == "1":
+            with tempfile.TemporaryDirectory(prefix="moa-agy-workspace-") as scratch:
+                copied = Path(scratch) / "workspace"
+                shutil.copytree(repo_path, copied,
+                                ignore=shutil.ignore_patterns(".moa", ".venv", "node_modules", "__pycache__"),
+                                symlinks=True)
+                yield copied
+        else:
+            yield repo_path
         return
 
     git_root = Path(probe.stdout.strip()).resolve()
@@ -327,8 +335,10 @@ def run(
     prompt_file: Optional[Path] = None,
     schema_path: Optional[Path] = None,
     reasoning_effort: Optional[str] = None,
+    restricted: bool = False,
 ) -> AgyResult:
     """Run AGY headlessly using the CLI's already-authenticated local account."""
+    restricted = restricted or os.environ.get("MOA_RESTRICT_WORKSPACE") == "1"
     started = time.monotonic()
     stdout = ""
     stderr = ""
@@ -353,7 +363,7 @@ def run(
             session_dir = log_file.parents[1] if log_file is not None else prompt_file.parent
             with _isolated_git_workspace(repo_path, session_dir) as isolated_repo:
                 active_prompt = prompt_file
-                if isolated_repo.resolve() != repo_path.resolve():
+                if isolated_repo.resolve() != repo_path.resolve() or restricted:
                     active_prompt = isolated_repo / ".moa-agent-input" / prompt_file.name
                     active_prompt.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(prompt_file, active_prompt)
@@ -371,7 +381,24 @@ def run(
                     internal_log=internal_log,
                     reasoning_effort=reasoning_effort,
                 )
-                child_env = os.environ.copy()
+                if restricted:
+                    # Headless mode rejects unapproved outside-workspace reads.
+                    # Broad auto-approval would bypass that file-tool boundary.
+                    cmd.remove("--dangerously-skip-permissions")
+                    cmd += ["--disable-slash-commands"]
+                    # Native headless approval failures end the turn. Give the
+                    # planner a usable file-tool path instead of prompting for
+                    # shell commands or outside-workspace reads.
+                    index = cmd.index("--print") + 1
+                    cmd[index] += (
+                        " For this Slack request, use only built-in file tools "
+                        "inside the current repository and web search. Do not "
+                        "call RunCommand, terminal/shell tools, subagents or "
+                        "MCP. Do not read outside the project or seek approvals. "
+                        "If a fact needs unavailable tools, record that limitation "
+                        "and still return the requested complete JSON."
+                    )
+                child_env = {k: v for k, v in os.environ.items() if not k.startswith("SLACK_")}
                 # Defense in depth for AGY's terminal sandbox bootstrap. The
                 # disposable worktree is the primary containment boundary.
                 child_env["UV_NO_SYNC"] = "1"

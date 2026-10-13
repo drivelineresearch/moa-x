@@ -1,0 +1,131 @@
+"""Socket Mode listener; expensive operations run outside envelope callbacks."""
+
+import concurrent.futures
+import fcntl
+import json
+import logging
+import os
+import signal
+import threading
+import time
+from pathlib import Path
+from slack_sdk import WebClient
+from slack_sdk.socket_mode import SocketModeClient
+from slack_sdk.socket_mode.response import SocketModeResponse
+from harness.webui.store import Store
+from harness.scripts.config import apply_config_to_env
+from .bot import Bot
+from .delivery import Delivery
+
+log = logging.getLogger("moa.slack")
+
+
+def main():
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+    )
+    logging.getLogger("slack_sdk").setLevel(logging.CRITICAL)
+    apply_config_to_env()
+    token = os.environ["SLACK_BOT_TOKEN"]
+    app_token = os.environ["SLACK_APP_TOKEN"]
+    team = os.environ["MOA_SLACK_TEAM_ID"]
+    base_url = os.environ["MOA_SLACK_BASE_URL"]
+    if not base_url.startswith("https://"):
+        raise ValueError("Use an HTTPS dashboard base URL.")
+    root = (
+        Path(os.environ.get("XDG_DATA_HOME", str(Path.home() / ".local/share")))
+        / "moa-x"
+    )
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    lock_file = (root / "slack.lock").open("a")
+    fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    client = WebClient(token=token, timeout=20)
+    identity = client.auth_test()
+    if identity["team_id"] != team:
+        raise ValueError("Bot token belongs to another workspace.")
+    bot = Bot(
+        Store(root / "webui.sqlite3"),
+        root,
+        client,
+        team=team,
+        bot_user=identity["user_id"],
+        token=token,
+        base_url=base_url,
+        github_owner=os.environ.get("MOA_WEBUI_GITHUB_OWNER", "drivelineresearch"),
+        private_repos=[
+            x.strip()
+            for x in os.environ.get("MOA_SLACK_PRIVATE_REPOS", "").split(",")
+            if x.strip()
+        ],
+    )
+    bot.db.recover()
+    delivery = Delivery(bot.db, client)
+    stop = threading.Event()
+    socket = SocketModeClient(app_token=app_token, web_client=client)
+
+    def receive(socket_client, request):
+        try:
+            bot.enqueue(request.type, request.payload)
+            socket_client.send_socket_mode_response(
+                SocketModeResponse(envelope_id=request.envelope_id)
+            )
+        except Exception:
+            # No acknowledgment on persistence failure: Slack retries the envelope.
+            log.error("Could not persist incoming Slack envelope")
+
+    socket.socket_mode_request_listeners.append(receive)
+
+    def shutdown(*_):
+        stop.set()
+
+    signal.signal(signal.SIGTERM, shutdown)
+    signal.signal(signal.SIGINT, shutdown)
+    socket.connect()
+    log.info("Slack listener started for workspace %s", team)
+
+    def send():
+        while not stop.is_set():
+            item = bot.db.claim("slack_outbox")
+            if item:
+                delivery.deliver(item)
+            else:
+                stop.wait(0.4)
+
+    sender = threading.Thread(target=send, daemon=True)
+    sender.start()
+    with concurrent.futures.ThreadPoolExecutor(
+        max_workers=4, thread_name_prefix="moa-slack"
+    ) as pool:
+        futures = []
+        for c in bot.db.live():
+            if c["stage"] == "coaching":
+                futures.append(pool.submit(bot.coach, c))
+        last_monitor = 0
+        while not stop.is_set():
+            futures = [f for f in futures if not f.done()]
+            if len(futures) < 4:
+                item = bot.db.claim("slack_inbox")
+                if item:
+                    futures.append(pool.submit(bot.process, item))
+            if time.time() - last_monitor >= 3:
+                try:
+                    bot.monitor()
+                except Exception:
+                    log.warning("Progress reconciliation will retry")
+                status = {
+                    "connected": socket.is_connected(),
+                    "team": team,
+                    "updated_at": time.time(),
+                    "interviews_in_progress": len(futures),
+                }
+                p = root / "slack-status.json"
+                p.write_text(json.dumps(status))
+                p.chmod(0o600)
+                last_monitor = time.time()
+            stop.wait(0.2)
+    socket.close()
+    sender.join(timeout=3)
+
+
+if __name__ == "__main__":
+    main()

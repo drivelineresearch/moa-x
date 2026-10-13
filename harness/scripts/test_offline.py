@@ -3277,21 +3277,23 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
         if repo_provider.exists()
         else SCRIPT_DIR.parent / "webui" / "static" / "js" / "app.js"
     ).read_text(encoding="utf-8")
-    preset_ok = all(
-        snippet in app_js
-        for snippet in (
-            'preferred: ["agy-gemini-pro", "grok"]',
-            'refiner: { preferred: ["deepseek-flash"], limit: 1 }',
-            'preferred: ["agy-gemini-pro", "grok", "codex-luna"]',
-            'preferred: ["agy-gemini-pro", "grok", "codex", "glm"]',
-            'preferred: ["qwen", "deepseek-flash", "opus"]',
-            'efforts: { opus: "max" }',
-            'preferred: ["codex-sol"]',
-            'efforts: { "codex-sol": "xhigh" }',
-            '["codex-sol", "opus", FABLE_ROUTE_ID].includes(id)',
-            'const FABLE_WARNING_PASSWORD = "driveline11";',
-            "syncSelectedProviderGroups();",
-        )
+    import ast
+    roster_path = (repo_root / "harness" / "webui" / "rosters.py" if repo_provider.exists()
+                   else SCRIPT_DIR.parent / "webui" / "rosters.py")
+    tree = ast.parse(roster_path.read_text(encoding="utf-8"))
+    profiles = next(ast.literal_eval(node.value) for node in tree.body
+                    if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == "DEPTH_PROFILES" for target in node.targets))
+    preset_ok = (
+        profiles["quick"]["proposer"]["preferred"] == ["agy-gemini-pro", "grok"]
+        and profiles["quick"]["refiner"]["preferred"] == ["deepseek-flash"]
+        and profiles["balanced"]["proposer"]["preferred"] == ["agy-gemini-pro", "grok", "codex-luna"]
+        and profiles["thorough"]["proposer"]["preferred"] == ["agy-gemini-pro", "grok", "codex", "glm"]
+        and profiles["thorough"]["refiner"]["preferred"] == ["qwen", "deepseek-flash", "opus"]
+        and profiles["thorough"]["refiner"]["efforts"]["opus"] == "max"
+        and all(profile["aggregator"]["preferred"] == ["codex-sol"] and profile["aggregator"]["efforts"]["codex-sol"] == "xhigh" for profile in profiles.values())
+        and all(snippet in app_js for snippet in (
+            "bootstrap.depth_profiles", '["codex-sol", "opus", FABLE_ROUTE_ID].includes(id)',
+            'const FABLE_WARNING_PASSWORD = "driveline11";', "syncSelectedProviderGroups();"))
     )
     route_labels_ok = all(
         suffix not in item["name"]

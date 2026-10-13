@@ -89,6 +89,10 @@ CREATE TABLE IF NOT EXISTS github_workspaces (
 );
 CREATE INDEX IF NOT EXISTS github_workspaces_checked_idx
 ON github_workspaces(last_checked_at DESC);
+CREATE TABLE IF NOT EXISTS run_shares (
+    token_hash TEXT PRIMARY KEY, job_id TEXT NOT NULL, profile_id TEXT NOT NULL,
+    created_at REAL NOT NULL, expires_at REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS report_shares (
     token_hash TEXT PRIMARY KEY,
     job_id TEXT NOT NULL,
@@ -377,6 +381,19 @@ class Store:
                     (token_hash,),
                 ).fetchone()
             )
+
+    def create_run_share(self, job_id, profile_id, token_hash, *, lifetime=30*86400):
+        job = self.get_job(job_id)
+        if not job or job['profile_id'] != profile_id:
+            raise ValueError('job does not belong to this principal')
+        with self.connect() as conn:
+            conn.execute('INSERT INTO run_shares VALUES (?,?,?,?,?)',
+                         (token_hash,job_id,profile_id,time.time(),time.time()+lifetime))
+
+    def get_run_share(self, token_hash):
+        with self.connect() as conn:
+            return self._decode(conn.execute('SELECT * FROM run_shares WHERE token_hash=? AND expires_at>?',
+                                             (token_hash,time.time())).fetchone())
 
     def insert_job(self, job: dict[str, Any]) -> dict[str, Any]:
         with self.connect() as conn:

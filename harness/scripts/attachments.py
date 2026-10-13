@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 import os
+import hashlib
+import json
 import re
 import shutil
 import subprocess
@@ -405,6 +407,26 @@ def prepare_attachment_context(
     max_total_chars = _positive_limit(
         "MOA_ATTACHMENT_MAX_TOTAL_CHARS", DEFAULT_MAX_TOTAL_CHARS
     )
+    fingerprints = []
+    for index, upload in enumerate(uploads, 1):
+        if not isinstance(upload, dict):
+            raise AttachmentError(f"attachment {index} metadata is invalid")
+        source = (session_dir / str(upload.get("path") or "")).resolve()
+        if inputs_dir not in source.parents or not source.is_file():
+            raise AttachmentError(f"attachment is unavailable: {upload.get('name', index)}")
+        digest = hashlib.sha256()
+        with source.open('rb') as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+                digest.update(chunk)
+        fingerprints.append((upload.get('name'), upload.get('path'), digest.hexdigest()))
+    signature = hashlib.sha256(json.dumps([1, fingerprints, max_file_chars, max_total_chars,
+        os.environ.get('MOA_ATTACHMENT_OCR_LANG', 'eng')]).encode()).hexdigest()
+    cached = scout_brief.get('attachment_context') or {}
+    context_file = session_dir / 'attachment-context.md'
+    if cached.get('signature') == signature and context_file.is_file() and context_file.read_text(encoding='utf-8') == cached.get('markdown'):
+        if progress:
+            progress({'file_index': len(uploads), 'file_count': len(uploads), 'stage': 'complete', 'file_name': 'cached references'})
+        return scout_brief
     remaining = max_total_chars
     sections: list[str] = [
         "# Attached reference material",
@@ -523,6 +545,7 @@ def prepare_attachment_context(
     context_path.write_text(markdown, encoding="utf-8")
     scout_brief["attachment_context"] = {
         "status": "ready",
+        "signature": signature,
         "path": context_path.name,
         "source_count": len(sources),
         "characters": len(markdown),

@@ -221,3 +221,9 @@ Kyle Boddy.
   <a href="https://github.com/mjfork"><img src="https://github.com/mjfork.png?size=64" width="64" height="64" alt="@mjfork" title="@mjfork"></a>
   <a href="https://github.com/joewilsonai"><img src="https://github.com/joewilsonai.png?size=64" width="64" height="64" alt="@joewilsonai" title="@joewilsonai"></a>
 </p>
+
+### Slack
+
+Chat with the ensemble through an existing Slack bot: Luna interview, automatic
+model/depth selection, reference uploads, progress, cancellation and final results
+in the same thread. Setup and access rules: [docs/slack.md](docs/slack.md).

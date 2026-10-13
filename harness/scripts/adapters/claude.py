@@ -274,6 +274,12 @@ def run(
             tools=SONNET_READONLY_TOOLS if allow_research else "",
         )
 
+        if os.environ.get("MOA_RESTRICT_WORKSPACE") == "1":
+            cmd.remove(CLAUDE_ISOLATION_FLAG)
+            cmd.remove("--dangerously-skip-permissions")
+            cmd += ["--restricted", "--strict-mcp-config"]
+            env = {k: v for k, v in env.items() if not k.startswith("SLACK_")}
+
         try:
             # Use explicit Popen + killpg on timeout so we can tear down the
             # ENTIRE process group on timeout, not just the top-level claude

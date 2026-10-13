@@ -975,55 +975,7 @@ function syncDepthPresentation(preset) {
 }
 
 function optimizedProfile(preset) {
-  const profiles = {
-    quick: {
-      proposer: {
-        preferred: ["agy-gemini-pro", "grok"],
-        limit: 2,
-        efforts: { "agy-gemini-pro": "low" },
-      },
-      refiner: { preferred: ["deepseek-flash"], limit: 1 },
-      aggregator: {
-        preferred: ["codex-sol"],
-        limit: 1,
-        efforts: { "codex-sol": "xhigh" },
-      },
-    },
-    balanced: {
-      proposer: {
-        preferred: ["agy-gemini-pro", "grok", "codex-luna"],
-        limit: 3,
-        efforts: { "agy-gemini-pro": "high" },
-      },
-      refiner: {
-        preferred: ["qwen", "deepseek-flash", "opus"],
-        limit: 3,
-        efforts: { opus: "high" },
-      },
-      aggregator: {
-        preferred: ["codex-sol"],
-        limit: 1,
-        efforts: { "codex-sol": "xhigh" },
-      },
-    },
-    thorough: {
-      proposer: {
-        preferred: ["agy-gemini-pro", "grok", "codex", "glm"],
-        limit: 4,
-        efforts: { "agy-gemini-pro": "high" },
-      },
-      refiner: {
-        preferred: ["qwen", "deepseek-flash", "opus"],
-        limit: 3,
-        efforts: { opus: "max" },
-      },
-      aggregator: {
-        preferred: ["codex-sol"],
-        limit: 1,
-        efforts: { "codex-sol": "xhigh" },
-      },
-    },
-  };
+  const profiles = bootstrap.depth_profiles;
   return profiles[preset] || profiles.balanced;
 }
 
