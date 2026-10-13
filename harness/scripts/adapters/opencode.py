@@ -62,7 +62,7 @@ def _cli_major_version() -> int:
     proc = subprocess.run(
         [_opencode_bin(), "--version"], capture_output=True, text=True, timeout=10
     )
-    match = re.search(r"\bv?(\d+)\.\d+\.\d+\b", proc.stdout or "")
+    match = re.search(r"\bv?(\d+)\.\d+\.\d+\b", (proc.stdout or "") + "\n" + (proc.stderr or ""))
     if proc.returncode != 0 or match is None or int(match.group(1)) not in {1, 2}:
         raise RuntimeError("unsupported or unknown OpenCode CLI version")
     return int(match.group(1))
@@ -92,6 +92,10 @@ def _v2_config_for_model(model: str, *, allow_webfetch: bool, allow_tools: bool)
     }
     if "qwen" in model.lower():
         agent["steps"] = _QWEN_MAX_AGENT_STEPS
+    elif os.environ.get("MOA_RESTRICT_WORKSPACE") == "1":
+        # Workspace-wide chat requests need a bounded research turn budget.
+        # The CLI reserves its final turn for the requested structured output.
+        agent["steps"] = 20
     settings = {
         "$schema": "https://opencode.ai/config.json",
         "permissions": rules,
@@ -326,10 +330,9 @@ def check_models_available(models: Iterable[str]) -> dict[str, tuple[bool, str]]
             )
             if model_proc.returncode != 0:
                 return {model: (False, "OpenCode model catalog probe failed") for model in requested}
-            catalog = {line.strip() for line in model_proc.stdout.splitlines() if "/" in line}
+            catalog = {line.split()[0] for line in model_proc.stdout.splitlines() if "/" in line}
     except (RuntimeError, OSError, subprocess.TimeoutExpired):
-        # V1 and mocked/older clients retain credential-specific checks.
-        pass
+        return {model: (False, "OpenCode version/model catalog probe failed") for model in requested}
 
     def ready(model: str) -> tuple[bool, str]:
         provider = model.split("/", 1)[0].lower()
@@ -345,11 +348,11 @@ def check_models_available(models: Iterable[str]) -> dict[str, tuple[bool, str]]
             ok = "fireworks ai" in listed or bool(os.environ.get("FIREWORKS_API_KEY"))
             return ok, "Fireworks account ready" if ok else "Fireworks login or key required"
         if provider == "xai":
-            ok = bool(os.environ.get("XAI_API_KEY"))
+            ok = "xai" in listed or bool(os.environ.get("XAI_API_KEY"))
             return ok, "xAI key ready" if ok else "XAI_API_KEY required"
 
         env_name = f"{provider.upper().replace('-', '_')}_API_KEY"
-        ok = bool(os.environ.get(env_name))
+        ok = provider in listed or provider.replace("-", " ") in listed or bool(os.environ.get(env_name))
         if ok:
             return True, f"{env_name} ready"
         if probe_error:
@@ -492,8 +495,13 @@ def run(
 
     try:
         major = _cli_major_version()
+        if major == 1 and os.environ.get("MOA_RESTRICT_WORKSPACE") == "1":
+            return OpenCodeResult(success=False, payload=None, raw_stdout="", raw_stderr="",
+                exit_code=1, duration_seconds=time.monotonic() - start,
+                error_message="Restricted workspace runs require OpenCode v2.")
         tmpdir = tempfile.mkdtemp(prefix="moa-opencode-")
         env = os.environ.copy()
+        env = {k: v for k, v in env.items() if not k.startswith("SLACK_")}
         env["TMPDIR"] = tmpdir
         env["XDG_CACHE_HOME"] = str(Path(tmpdir) / "cache")
         env["PYTHONDONTWRITEBYTECODE"] = "1"
@@ -557,7 +565,9 @@ def run(
             if prompt_file is not None:
                 attached = active_repo / ".moa-agent-input" / "prompt.md"
                 attached.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(prompt_file, attached)
+                attached.write_text(prompt_file.read_text(encoding="utf-8").replace(
+                    str(repo_path.resolve()), str(active_repo.resolve())
+                ), encoding="utf-8")
                 cmd.extend(["--file", str(attached)])
         else:
             # V1's file option is greedy: keep it last after the message.
@@ -705,7 +715,7 @@ def _diagnose_failure(stdout: str, stderr: str) -> tuple[str, bool]:
     )
     auth_hit = any(
         p in stderr_lower
-        for p in ("unauthorized", "401", "403", "invalid api key", "not authenticated", "no credentials")
+        for p in ("unauthorized", "401", "403", "provider.auth", "model access is disabled", "invalid api key", "not authenticated", "no credentials")
     )
     routing_hit = any(
         p in stderr_lower

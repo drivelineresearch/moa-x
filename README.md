@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/moa-x-header.png" alt="MoA-X — Cross-Lab Mixture of Agents for coding plans" width="100%">
+  <img src="docs/moa-x-header.png" alt="MoA-X — Slack, web and CLI requests; Luna interview; Gemini 4 Argon, Grok 4.7 and GPT-6 Luna proposals; DeepSeek V4.1 Flash and Opus 5.5 review; GPT-6.1 Sol synthesis" width="100%">
 </p>
 
 <p align="center">
@@ -9,9 +9,7 @@
   <img src="https://img.shields.io/badge/harnesses-codex%20%7C%20claude%20%7C%20opencode%20%7C%20agy-informational" alt="supported CLIs">
 </p>
 
-<p align="center">
-  <img src="docs/moa-x-workflow.png" alt="MoA-X four-stage workflow: Scout and control room, Gemini Pro/Grok/GPT-6 Luna proposers, Qwen/DeepSeek/Opus broadcast refiners, and GPT-6.1 Sol aggregation with Opus and warning-gated Fable alternatives" width="100%">
-</p>
+
 
 A small, CLI-native take on the 2024
 [Mixture-of-Agents paper](https://arxiv.org/abs/2406.04692), pointed at
@@ -21,22 +19,24 @@ from three model labs to work — Google `agy-gemini-pro`
 (`gemini-4-argon-high`), xAI `grok` (`opencode-go/grok-4.7`), and
 OpenAI `codex-luna` (`gpt-6-luna`) — reading the repo in
 parallel, doing their own web research, and each writing an independent
-plan. Three refiners—Alibaba Qwen `qwen3.8-max`, DeepSeek V4.1 Flash,
+plan. Two refiners—DeepSeek V4.1 Flash
 and Anthropic `claude-opus-5-5`—then refine in broadcast mode (every refiner
 sees every plan). The shipped defaults and all recommended Web UI modes run Layer 3
 through the recorded Codex path with `gpt-6.1-sol` at `xhigh` reasoning.
 Claude Opus 5.5 is also available as an aggregator, while Fable 5.1 is available
 only as a warning-gated, quota-heavy aggregator option.
 
-Built to run **inside Claude Code** as a skill, or from the local Web UI.
+Run **inside Claude Code** as a skill, through the local Web UI, or by
+chatting with a configured Slack bot.
 Standalone Python works too. The harness ships curated routes across four
 execution harnesses (`codex`, `claude`, `opencode`, `agy`) and the roster — which models run at
 which layer, and how many — is pure config. API-based auth and more
 providers are already supported. See "Contributions we'd prioritize" below
 for the remaining gaps.
 
-OpenCode Go powers the default `qwen` refiner with `opencode-go/qwen3.8-max`,
-using the same authenticated account as Grok and DeepSeek V4.1 Flash.
+OpenCode Go powers Grok and DeepSeek V4.1 Flash. Qwen routes are disabled
+for new launches; historical runs retain their model and lab attribution.
+The curated DeepSeek route is V4.1 Flash. Pro is excluded from new runs.
 
 ## TL;DR
 
@@ -101,7 +101,7 @@ AGY is the curated Google route and reuses the account already signed into
 ```
 Layer 0 — Scout brief           (parent Claude, in-place)
 Layer 1 — Proposers (parallel)    default: Gemini Pro + Grok + GPT-6 Luna
-Layer 2 — Broadcast refiners      default: Qwen + DeepSeek + Opus, each sees ALL proposals
+Layer 2 — Broadcast refiners      default: DeepSeek V4.1 Flash + Opus, each sees ALL proposals
 Layer 3 — Aggregator              default: recorded GPT-6.1 Sol at xhigh
 ```
 
@@ -196,8 +196,8 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the PR protocol.
 
 ## Status
 
-Active reference implementation, currently v0.5.0. The default six-lab roster
-and Qwen Token Plan route have been exercised end to end; offline CI covers
+Active reference implementation, currently v0.5.0. The current default spans five model labs
+with three proposals, two independent reviewers, and one recorded synthesis. Offline CI covers
 configuration, schemas, adapters, checkpoint recovery, recorded Layer 3, and
 self-contained HTML report generation. Contributions are welcome; see
 [CONTRIBUTING.md](CONTRIBUTING.md), and release notes are in
@@ -221,3 +221,9 @@ Kyle Boddy.
   <a href="https://github.com/mjfork"><img src="https://github.com/mjfork.png?size=64" width="64" height="64" alt="@mjfork" title="@mjfork"></a>
   <a href="https://github.com/joewilsonai"><img src="https://github.com/joewilsonai.png?size=64" width="64" height="64" alt="@joewilsonai" title="@joewilsonai"></a>
 </p>
+
+### Slack
+
+Chat with the ensemble through an existing Slack bot: Luna interview, automatic
+model/depth selection, reference uploads, progress, cancellation and final results
+in the same thread. Setup and access rules: [docs/slack.md](docs/slack.md).

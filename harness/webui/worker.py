@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 import os
+import queue
 import re
 import signal
 import subprocess
 import sys
 import threading
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -22,6 +24,20 @@ from .store import Store
 
 ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 PHASE_PROGRESS = {"layer1": 0.08, "layer2": 0.43, "layer3": 0.78}
+
+
+def _native_run_busy() -> bool:
+    if not hasattr(os, "getuid"):
+        return False
+    import fcntl
+    path = Path(tempfile.gettempdir()) / f"moa-{os.getuid()}.lock"
+    with path.open("a+") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return True
+        fcntl.flock(lock, fcntl.LOCK_UN)
+    return False
 
 
 def _process_tree(root_pid: int) -> list[int]:
@@ -45,14 +61,41 @@ def _process_tree(root_pid: int) -> list[int]:
     return found
 
 
-def _terminate_tree(root_pid: int) -> None:
-    pids = _process_tree(root_pid)
-    # Children first because adapters intentionally create their own sessions.
-    for pid in reversed(pids):
+def _process_identity(pid: int) -> str | None:
+    try:
+        return Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[19]
+    except (OSError, IndexError):
+        return None
+
+
+def _signal_processes(targets: dict[int, Any], sig: int) -> None:
+    # Retain identities across reparenting without risking a reused PID.
+    for pid, identity in reversed(list(targets.items())):
+        if not isinstance(identity, str):
+            # On POSIX without /proc, retain the owned Popen handle and signal
+            # its new process group only while that parent remains alive.
+            if identity.poll() is None:
+                try:
+                    os.killpg(pid, sig)
+                except (ProcessLookupError, PermissionError):
+                    pass
+            continue
+        if _process_identity(pid) != identity:
+            continue
         try:
-            os.kill(pid, signal.SIGTERM)
+            os.kill(pid, sig)
         except (ProcessLookupError, PermissionError):
             pass
+
+
+def _terminate_tree(root_pid: int, process=None) -> dict[int, Any]:
+    targets = {pid: identity for pid in _process_tree(root_pid)
+               if (identity := _process_identity(pid)) is not None}
+    if not Path("/proc").is_dir() and process is not None:
+        targets[root_pid] = process
+    # Children first because adapters intentionally create their own sessions.
+    _signal_processes(targets, signal.SIGTERM)
+    return targets
 
 
 class JobWorker:
@@ -90,21 +133,12 @@ class JobWorker:
         changed = self.store.request_cancel(job_id)
         if not changed:
             return False
-        if job["status"] == "queued":
-            self.store.update_job(
-                job_id,
-                status="cancelled",
-                phase="cancelled",
-                finished_at=time.time(),
-            )
+        if self.store.get_job(job_id)["status"] == "cancelled":
             self.store.append_event(job_id, "job", "Queued job cancelled")
             return True
-        self.store.update_job(job_id, status="cancelling")
         self.store.append_event(job_id, "warning", "Cancellation requested")
-        with self._lock:
-            proc = self._processes.get(job_id)
-        if proc and proc.poll() is None:
-            _terminate_tree(proc.pid)
+        # The phase supervisor captures identities before signalling children,
+        # then escalates even when their parent exits and they are reparented.
         self.wake()
         return True
 
@@ -160,6 +194,9 @@ class JobWorker:
         config = job["config"]
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"
+        if config.get("transport") == "slack":
+            env["MOA_RESTRICT_WORKSPACE"] = "1"
+            env["MOA_JOB_SESSION_DIR"] = job["session_dir"]
         provider_catalog = harness_config.load_provider_catalog()
         for provider_name, model in (
             config.get("options", {}).get("model_overrides") or {}
@@ -185,6 +222,16 @@ class JobWorker:
 
     def _run_phase(self, job: dict[str, Any], phase: str) -> int:
         job_id = job["id"]
+        waiting = False
+        while self.runner.name == "run_moa.py" and _native_run_busy():
+            if not waiting:
+                self.store.update_job(job_id, phase="waiting")
+                self._event(job_id, "phase", "Waiting for the active ensemble to finish")
+                waiting = True
+            if self.store.cancel_requested(job_id):
+                return -signal.SIGTERM
+            self._wake.wait(0.5)
+            self._wake.clear()
         config = job["config"]
         log_path = Path(job["session_dir"]) / "webui.log"
         cmd = self._command(job, phase)
@@ -210,15 +257,47 @@ class JobWorker:
                 self._processes[job_id] = proc
             self.store.update_job(job_id, pid=proc.pid)
             assert proc.stdout is not None
-            for line in iter(proc.stdout.readline, ""):
+            lines = queue.Queue()
+            def read_output():
+                try:
+                    for line in iter(proc.stdout.readline, ""):
+                        lines.put(line)
+                finally:
+                    lines.put(None)
+            reader = threading.Thread(target=read_output, daemon=True)
+            reader.start()
+            stopping_at = None
+            targets = {}
+            output_ended = False
+            last_cancel_check = 0
+            while True:
+                now = time.monotonic()
+                should_check = now - last_cancel_check >= 0.25
+                if should_check:
+                    last_cancel_check = now
+                if stopping_at is not None or (should_check and self.store.cancel_requested(job_id)):
+                    if stopping_at is None:
+                        stopping_at = time.monotonic()
+                        targets = _terminate_tree(proc.pid, proc)
+                    elif time.monotonic() - stopping_at >= 3:
+                        _signal_processes(targets, signal.SIGKILL)
+                if output_ended and proc.poll() is not None:
+                    break
+                try:
+                    line = lines.get(timeout=0.25)
+                except queue.Empty:
+                    continue
+                if line is None:
+                    output_ended = True
+                    continue
                 clean = ANSI_RE.sub("", line.rstrip())
                 log.write(clean + "\n")
                 log.flush()
                 if clean:
                     self._event(job_id, "log", clean, phase=phase)
-                if self.store.cancel_requested(job_id) and proc.poll() is None:
-                    _terminate_tree(proc.pid)
+            reader.join(timeout=3)
             code = proc.wait()
+            proc.stdout.close()
             with self._lock:
                 self._processes.pop(job_id, None)
             self.store.update_job(job_id, pid=None)
@@ -541,7 +620,7 @@ class JobWorker:
                 raise InterruptedError
             if code == 0:
                 summary = _artifact_summary(Path(job["session_dir"]))
-                self.store.update_job(
+                finished = self.store.update_job(
                     job_id,
                     status="completed",
                     phase="complete",
@@ -550,15 +629,19 @@ class JobWorker:
                     exit_code=0,
                     finished_at=time.time(),
                 )
+                if finished["status"] != "completed":
+                    raise InterruptedError
                 self._event(job_id, "job", "Job completed", summary=summary)
             else:
-                self.store.update_job(
+                finished = self.store.update_job(
                     job_id,
                     status="failed",
                     phase="failed",
                     exit_code=code,
                     finished_at=time.time(),
                 )
+                if finished["status"] != "failed":
+                    raise InterruptedError
                 self._event(job_id, "error", f"Job failed with exit code {code}")
                 capture_operational_error(
                     OperationalError(
@@ -581,17 +664,22 @@ class JobWorker:
             )
             self._event(job_id, "job", "Job cancelled")
         except AttachmentError as exc:
-            self.store.update_job(
+            cancelled = self.store.cancel_requested(job_id)
+            finished = self.store.update_job(
                 job_id,
-                status="failed",
-                phase="failed",
-                summary=str(exc),
-                exit_code=1,
+                status="cancelled" if cancelled else "failed",
+                phase="cancelled" if cancelled else "failed",
+                summary="Reference preparation cancelled" if cancelled else str(exc),
+                exit_code=-signal.SIGTERM if cancelled else 1,
                 finished_at=time.time(),
             )
-            self._event(job_id, "error", f"Reference preparation failed: {exc}")
+            if finished["status"] == "cancelling":
+                cancelled = True
+                self.store.update_job(job_id, status="cancelled", phase="cancelled", summary="Reference preparation cancelled", exit_code=-signal.SIGTERM, finished_at=time.time())
+            self._event(job_id, "job" if cancelled else "error",
+                        "Job cancelled during reference preparation" if cancelled else f"Reference preparation failed: {exc}")
         except Exception as exc:
-            self.store.update_job(
+            finished = self.store.update_job(
                 job_id,
                 status="failed",
                 phase="failed",
@@ -599,6 +687,10 @@ class JobWorker:
                 exit_code=1,
                 finished_at=time.time(),
             )
+            if finished["status"] == "cancelling":
+                self.store.update_job(job_id, status="cancelled", phase="cancelled", summary="Cancelled", exit_code=-signal.SIGTERM, finished_at=time.time())
+                self._event(job_id, "job", "Job cancelled")
+                return
             self._event(job_id, "error", f"Worker error: {exc}")
             capture_operational_error(
                 exc,

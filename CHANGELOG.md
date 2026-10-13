@@ -5,14 +5,24 @@ versioning.
 
 ## [Unreleased]
 
+### Added
+
+- Optional Socket Mode Slack gateway with Luna interviews, shared depth/effort
+  presets, owned reference uploads, durable queue launch, progress, cancellation,
+  expiring read-only dashboard links and final plan/report delivery.
+- Refreshed product header and installation, configuration and conversation docs.
+
 ### Changed
+
+- Disable curated Qwen routes for new launches; DeepSeek V4.1 Flash and Opus
+  are the Balanced/Thorough reviewers. Preserve archived Qwen lab attribution.
 
 - Refresh active routes to Gemini 4 Argon, GPT-6 Astra/Luna and GPT-6.1 Sol,
   Claude Sonnet/Opus 5.5 and Fable 5.1, Grok 4.7, GLM 5.3, and Qwen 3.8 Max
   through OpenCode Go. DeepSeek V4.1 Flash is the only curated DeepSeek route;
   archived Pro manifests keep their original attribution.
 - Update prompt-coach primary/fallback models independently of roster defaults.
-- Preserve deployed proxy-path support, decision-map UI refinements, report
+- Support forwarded URL prefixes, decision-map UI refinements, report
   escaping, and bounded broadcast-review settings.
 
 ### Fixed

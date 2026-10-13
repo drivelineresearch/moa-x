@@ -348,6 +348,7 @@ def model_catalog(*, probe: bool = True) -> list[dict[str, Any]]:
                 if harness_config.provider_allows_role(item.name, role, item.model)
             ]
         )
+        roles = [role for role in roles if harness_config.provider_allows_role(item.name, role, item.model)]
         default_roles = []
         if item.name in proposer_defaults:
             default_roles.append("proposer")

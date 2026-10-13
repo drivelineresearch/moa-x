@@ -1,0 +1,2 @@
+-r requirements-web.txt
+slack-sdk>=3.45,<4

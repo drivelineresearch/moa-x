@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
-import threading
 import time
 from pathlib import Path
 from typing import Any, Iterable
@@ -15,7 +14,7 @@ EMAIL_RE = re.compile(
     r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b",
     re.IGNORECASE,
 )
-HOME_PATH_RE = re.compile(r"(?<![\w.-])/home/[^/\s]+")
+HOME_PATH_RE = re.compile(r"(?<![\w.-])/(?:home|Users)/[^/\s]+")
 
 
 def redact_event_text(value: Any) -> str:
@@ -89,6 +88,10 @@ CREATE TABLE IF NOT EXISTS github_workspaces (
 );
 CREATE INDEX IF NOT EXISTS github_workspaces_checked_idx
 ON github_workspaces(last_checked_at DESC);
+CREATE TABLE IF NOT EXISTS run_shares (
+    token_hash TEXT PRIMARY KEY, job_id TEXT NOT NULL, profile_id TEXT NOT NULL,
+    created_at REAL NOT NULL, expires_at REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS report_shares (
     token_hash TEXT PRIMARY KEY,
     job_id TEXT NOT NULL,
@@ -101,6 +104,14 @@ ON report_shares(job_id, revoked_at);
 """
 
 
+class _ClosingConnection(sqlite3.Connection):
+    def __exit__(self, *args):
+        try:
+            return super().__exit__(*args)
+        finally:
+            self.close()
+
+
 class Store:
     def __init__(self, path: Path):
         self.path = path
@@ -109,15 +120,14 @@ class Store:
             self.path.parent.chmod(0o700)
         except OSError:
             pass
-        self._local = threading.local()
         self.initialize()
 
-    def connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.path, timeout=30, isolation_level=None)
+    def connect(self, *, timeout: float = 30) -> sqlite3.Connection:
+        conn = sqlite3.connect(self.path, timeout=timeout, isolation_level=None, factory=_ClosingConnection)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys=ON")
-        conn.execute("PRAGMA busy_timeout=30000")
+        conn.execute(f"PRAGMA busy_timeout={int(timeout * 1000)}")
         return conn
 
     def initialize(self) -> None:
@@ -378,6 +388,23 @@ class Store:
                 ).fetchone()
             )
 
+    def create_run_share(self, job_id, profile_id, token_hash, *, lifetime=30*86400):
+        job = self.get_job(job_id)
+        if not job or job['profile_id'] != profile_id:
+            raise ValueError('job does not belong to this principal')
+        with self.connect() as conn:
+            conn.execute('INSERT INTO run_shares VALUES (?,?,?,?,?)',
+                         (token_hash,job_id,profile_id,time.time(),time.time()+lifetime))
+
+    def get_run_share(self, token_hash):
+        with self.connect() as conn:
+            return self._decode(conn.execute('SELECT * FROM run_shares WHERE token_hash=? AND expires_at>?',
+                                             (token_hash,time.time())).fetchone())
+
+    def revoke_run_shares(self, job_id, profile_id):
+        with self.connect() as conn:
+            conn.execute("DELETE FROM run_shares WHERE job_id=? AND profile_id=?", (job_id, profile_id))
+
     def insert_job(self, job: dict[str, Any]) -> dict[str, Any]:
         with self.connect() as conn:
             conn.execute(
@@ -450,9 +477,10 @@ class Store:
         if not values:
             return self.get_job(job_id)
         assignments = ", ".join(f"{key}=?" for key in values)
+        guard = " AND cancel_requested=0" if values.get("status") in {"completed", "failed"} else ""
         with self.connect() as conn:
             conn.execute(
-                f"UPDATE jobs SET {assignments} WHERE id=?",
+                f"UPDATE jobs SET {assignments} WHERE id=?{guard}",
                 [*values.values(), job_id],
             )
         return self.get_job(job_id)
@@ -461,10 +489,13 @@ class Store:
         with self.connect() as conn:
             cursor = conn.execute(
                 """
-                UPDATE jobs SET cancel_requested=1
+                UPDATE jobs SET cancel_requested=1,
+                  status=CASE WHEN status='queued' THEN 'cancelled' ELSE 'cancelling' END,
+                  phase=CASE WHEN status='queued' THEN 'cancelled' ELSE phase END,
+                  finished_at=CASE WHEN status='queued' THEN ? ELSE finished_at END
                 WHERE id=? AND status IN ('queued', 'running', 'cancelling')
                 """,
-                (job_id,),
+                (time.time(), job_id),
             )
         return cursor.rowcount > 0
 

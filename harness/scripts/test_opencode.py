@@ -22,6 +22,9 @@ class OpenCodeV2Test(unittest.TestCase):
         self.assertIn("provider.no-route", error)
         self.assertFalse(oc._diagnose_failure('', error)[1])
 
+    def test_disabled_model_access_is_not_transient(self):
+        message,transient=oc._diagnose_failure('', 'provider.auth: Upstream request failed: Model access is disabled')
+        self.assertFalse(transient);self.assertIn('auth',message.lower())
     def test_usage_errors_do_not_redispatch(self):
         self.assertFalse(oc._diagnose_failure('Usage: opencode run', 'Unrecognized flag: --dir')[1])
 
@@ -44,6 +47,10 @@ class OpenCodeV2Test(unittest.TestCase):
         self.assertEqual(config['providers']['opencode-go']['models']['qwen3.8-max']['settings']['thinking'],
                          {'type': 'enabled', 'budgetTokens': 8192})
 
+    def test_slack_research_budget_is_bounded(self):
+        with patch.dict(oc.os.environ, {'MOA_RESTRICT_WORKSPACE':'1'}):
+            cfg = oc._v2_config_for_model('opencode-go/grok-4.7', allow_tools=True, allow_webfetch=True)
+        self.assertEqual(cfg['agents']['moa-reader']['steps'],20)
     def test_repair_policy_denies_every_tool(self):
         cfg = oc._v2_config_for_model('opencode-go/glm-5.3', allow_tools=False, allow_webfetch=False)
         self.assertEqual(cfg['agents']['moa-reader']['permissions'], [{'action':'*', 'resource':'*', 'effect':'deny'}])
@@ -72,9 +79,10 @@ class OpenCodeV2Test(unittest.TestCase):
             def popen(command, **kwargs):
                 captured.update(command=command, **kwargs)
                 captured['policy'] = json.loads((Path(kwargs['cwd']) / '.opencode/opencode.json').read_text())
+                captured['prompt'] = Path(command[command.index('--file') + 1]).read_text()
                 return process
-            with patch.object(oc, '_cli_major_version', return_value=2), patch.object(oc, '_isolated_git_workspace', source_workspace), patch.object(oc.subprocess, 'Popen', side_effect=popen):
-                result = oc.run(prompt='Return fixture JSON.', repo_path=source, model='opencode-go/glm-5.3', reasoning_effort='high')
+            with patch.dict(oc.os.environ, {'SLACK_BOT_TOKEN': 'test-secret'}), patch.object(oc, '_cli_major_version', return_value=2), patch.object(oc, '_isolated_git_workspace', source_workspace), patch.object(oc.subprocess, 'Popen', side_effect=popen):
+                result = oc.run(prompt='Inspect '+str(source)+' and return fixture JSON.', repo_path=source, model='opencode-go/glm-5.3', reasoning_effort='high')
             self.assertTrue(result.success)
             self.assertEqual(result.payload, payload)
             self.assertEqual(captured['env']['PWD'], str(Path(captured['cwd']).resolve()))
@@ -84,6 +92,9 @@ class OpenCodeV2Test(unittest.TestCase):
             self.assertNotIn('--dir', captured['command'])
             self.assertNotIn('--variant', captured['command'])
             self.assertNotIn('OPENCODE_CONFIG', captured['env'])
+            self.assertNotIn('SLACK_BOT_TOKEN', captured['env'])
+            self.assertNotIn(str(source), captured['prompt'])
+            self.assertIn(str(captured['cwd']), captured['prompt'])
             self.assertNotEqual(captured['env']['XDG_CONFIG_HOME'], str(Path.home() / '.config'))
             self.assertFalse((source / '.opencode').exists())
 
@@ -96,10 +107,22 @@ class OpenCodeV2Test(unittest.TestCase):
         self.assertTrue(status['opencode-go/grok-4.7'][0])
 
     def test_unknown_major_version_fails_closed(self):
-        version = SimpleNamespace(returncode=0, stdout='opencode v3.0.0')
+        version = SimpleNamespace(returncode=0, stdout='opencode v3.0.0', stderr='')
         with patch.object(oc.subprocess, 'run', return_value=version):
             with self.assertRaises(RuntimeError):
                 oc._cli_major_version()
+
+    def test_restricted_runs_reject_v1_before_launch(self):
+        with patch.dict(oc.os.environ, {"MOA_RESTRICT_WORKSPACE": "1"}), patch.object(oc, "_cli_major_version", return_value=1), patch.object(oc.subprocess, "Popen") as launch:
+            result = oc.run(prompt="Inspect the repo", repo_path=Path("."), model="opencode-go/grok-4.7")
+        self.assertFalse(result.success)
+        self.assertIn("require OpenCode v2", result.error_message)
+        launch.assert_not_called()
+
+    def test_version_catalog_probe_errors_are_unavailable(self):
+        auth = SimpleNamespace(returncode=0, stdout='OpenCode Go', stderr='')
+        with patch.object(oc.shutil, 'which', return_value='/usr/bin/opencode'), patch.object(oc.subprocess, 'run', return_value=auth), patch.object(oc, '_cli_major_version', side_effect=RuntimeError('unsupported')):
+            self.assertFalse(oc.check_model_available('opencode-go/grok-4.7')[0])
 
 
 if __name__ == '__main__':

@@ -47,6 +47,8 @@ from .prompt_coach import PromptCoachError, analyze as analyze_prompt
 from .prompt_coach import finalize as finalize_prompt
 from .store import Store, redact_event_text
 from .worker import JobWorker
+from .launch import LaunchService, LaunchError
+from .rosters import DEPTH_PROFILES
 
 
 WEBUI_DIR = Path(__file__).resolve().parent
@@ -651,6 +653,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                 "workspace": str(REPO_ROOT),
                 "github_owner": app.config["GITHUB_OWNER"],
                 "base_path": request.script_root,
+                "depth_profiles": DEPTH_PROFILES,
             },
             local_font_stylesheet=_local_fonts_ready(local_font_dir),
         )
@@ -1077,194 +1080,18 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     @require_profile
     def create_job(profile: dict[str, Any]):
         body = request.get_json(silent=True) or {}
-        goal = str(body.get("goal") or "").strip()
-        if not goal:
-            return _error("goal is required")
-        if len(goal) > 100_000:
-            return _error("goal is too large")
-        requested_proposers = _string_list(body.get("proposers"))
-        requested_refiners = _string_list(body.get("refiners"))
-        requested_aggregator = str(body.get("aggregator") or "codex-sol")
-        route_roles = {
-            str(item["id"]): set(item.get("roles") or [])
-            for item in model_catalog(probe=False)
-        }
-        route_roles.update({
-            name: set(roles)
-            for name, roles in harness_config.PROVIDER_ALLOWED_ROLES.items()
-            if not roles
-        })
-        for role, route_ids in (
-            ("proposer", requested_proposers),
-            ("refiner", requested_refiners),
-            ("aggregator", [requested_aggregator]),
-        ):
-            disallowed = [
-                route_id
-                for route_id in route_ids
-                if route_id in route_roles and role not in route_roles[route_id]
-            ]
-            if disallowed:
-                names = ", ".join(disallowed)
-                if disallowed == ["fable"]:
-                    detail = "Fable models are aggregator-only"
-                else:
-                    detail = "the route is disabled or restricted to another role"
-                return _error(
-                    f"{names} {'is' if len(disallowed) == 1 else 'are'} "
-                    f"not allowed in the {role} layer; {detail}"
-                )
-        profile_id = profile["id"]
-
-        job_id = (
-            datetime.now().strftime("%Y%m%d-%H%M%S")
-            + "-"
-            + uuid.uuid4().hex[:8]
-        )
-        source_info = None
-        source_mode = str(body.get("source_mode") or "").strip().lower()
-        github_pointer = str(body.get("github_repository") or "").strip()
-        if source_mode == "brief":
-            workspace = brief_workspace_dir / job_id
-            workspace.mkdir(mode=0o700, parents=False, exist_ok=False)
-            try:
-                workspace.chmod(0o700)
-            except OSError:
-                pass
-            source_info = {"type": "brief"}
-        elif source_mode == "github" or github_pointer:
-            git_ref = str(body.get("github_ref") or "").strip() or None
-            try:
-                owner, repo = parse_repo_pointer(
-                    github_pointer, app.config["GITHUB_OWNER"]
-                )
-                result = clone_repository(
-                    github_pointer,
-                    github_workspace_dir,
-                    git_ref=git_ref,
-                    owner_allowlist=app.config["GITHUB_OWNER"],
-                )
-            except (ValueError, GitHubWorkspaceError) as exc:
-                if isinstance(exc, GitHubWorkspaceError):
-                    capture_operational_error(
-                        exc,
-                        operation="github.clone_for_job",
-                        context={"owner": app.config["GITHUB_OWNER"]},
-                    )
-                return _error(
-                    str(exc), 400 if isinstance(exc, ValueError) else 502
-                )
-            store.upsert_github_workspace(
-                owner=owner,
-                repo=repo,
-                profile_id=profile_id,
-                local_path=result["path"],
-                remote_url=result["remote_url"],
-            )
-            workspace = Path(result["path"]).resolve()
-            source_info = {
-                "type": "github",
-                "repository": github_pointer,
-                "ref": result.get("git_ref") or git_ref,
-                "remote_url": result["remote_url"],
-            }
-        else:
-            try:
-                workspace = _safe_workspace(
-                    str(body.get("workspace") or ""),
-                    app.config["WORKSPACE_ROOTS"],
-                )
-            except ValueError as exc:
-                return _error(str(exc))
-
-        attachment_ids = body.get("upload_ids")
-        if attachment_ids is None:
-            attachment_ids = body.get("attachments")
-        upload_ids = _string_list(attachment_ids)
-        selected_uploads = []
-        for upload_id in upload_ids:
-            upload = store.get_upload(upload_id)
-            if not upload or upload.get("profile_id") != profile_id:
-                return _error(f"upload not found: {upload_id}")
-            source = Path(upload["stored_path"]).resolve()
-            if not source.is_file() or upload_dir not in source.parents:
-                return _error(f"upload is unavailable: {upload_id}", 409)
-            selected_uploads.append((upload, source))
-
-        session_dir = workspace / ".moa" / job_id
-        session_dir.mkdir(parents=True, exist_ok=False)
-        uploaded_files = []
-        if selected_uploads:
-            inputs_dir = session_dir / "inputs"
-            inputs_dir.mkdir()
-            for index, (upload, source) in enumerate(selected_uploads, start=1):
-                filename = f"{index:02d}-{upload['original_name']}"
-                target = inputs_dir / filename
-                shutil.copy2(source, target)
-                uploaded_files.append(
-                    {
-                        "upload_id": upload["id"],
-                        "name": upload["original_name"],
-                        "path": str(target.relative_to(session_dir)),
-                        "size_bytes": upload["size_bytes"],
-                        "sha256": upload["sha256"],
-                    }
-                )
-        scout = {
-            "session_id": job_id,
-            "frozen_spec": goal,
-            "repo_path": str(workspace),
-            "source": source_info or {"type": "local"},
-            "focus_files": body.get("focus_files") or [],
-            "focus_topics": body.get("focus_topics") or [],
-            "in_scope": body.get("in_scope") or [],
-            "out_of_scope": body.get("out_of_scope") or [],
-            "clarifications_resolved": body.get("clarifications_resolved") or [],
-            "uploaded_files": uploaded_files,
-        }
-        (session_dir / "scout-brief.json").write_text(
-            json.dumps(scout, indent=2), encoding="utf-8"
-        )
-        config = {
-            "proposers": requested_proposers,
-            "refiners": requested_refiners,
-            "aggregator": requested_aggregator,
-            "options": (
-                body.get("options")
-                if isinstance(body.get("options"), dict)
-                else {}
-            ),
-            "upload_ids": upload_ids,
-        }
-        job = store.insert_job(
-            {
-                "id": job_id,
-                "profile_id": profile_id,
-                "title": str(body.get("title") or goal.splitlines()[0])[:140],
-                "workspace": str(workspace),
-                "session_dir": str(session_dir),
-                "goal": goal,
-                "status": "queued",
-                "config": config,
-                "created_at": time.time(),
-            }
-        )
-        if uploaded_files:
-            store.append_event(
-                job_id,
-                "attachment-progress",
-                (
-                    f"Queued {len(uploaded_files)} reference "
-                    f"{'file' if len(uploaded_files) == 1 else 'files'} "
-                    "for local preparation"
-                ),
-                {
-                    "file_count": len(uploaded_files),
-                    "stage": "queued",
-                },
-            )
-        store.append_event(job_id, "job", "Job queued", {"position": "pending"})
-        worker.wake()
+        service = LaunchService(store, upload_dir=upload_dir,
+            github_workspace_dir=github_workspace_dir, brief_workspace_dir=brief_workspace_dir,
+            github_owner=app.config["GITHUB_OWNER"], workspace_roots=app.config["WORKSPACE_ROOTS"],
+            wake=worker.wake, catalog=lambda: model_catalog(probe=False),
+            clone=lambda *args, **kwargs: clone_repository(*args, **kwargs))
+        try:
+            job = service.launch(profile, body)
+        except LaunchError as exc:
+            if isinstance(exc.__cause__, GitHubWorkspaceError):
+                capture_operational_error(exc.__cause__, operation="github.clone_for_job",
+                    context={"owner": app.config["GITHUB_OWNER"]})
+            return _error(str(exc), exc.status)
         return jsonify(_job_view(job)), 201
 
     @app.get("/api/jobs/<job_id>")
@@ -1494,7 +1321,64 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         response = Response(report, mimetype="text/html")
         response.headers["Cache-Control"] = "private, no-store"
         response.headers["X-Robots-Tag"] = "noindex, nofollow"
+        response.headers["Referrer-Policy"] = "no-referrer"
         return response
+
+    def shared_run_job(token):
+        if not re.fullmatch(r"[A-Za-z0-9_-]{32,160}", token):
+            abort(404)
+        share = store.get_run_share(hashlib.sha256(token.encode()).hexdigest())
+        job = store.get_job(share["job_id"]) if share else None
+        if not job or job["profile_id"] != share["profile_id"]:
+            abort(404)
+        return job
+
+    def private_response(response):
+        response.headers["Cache-Control"] = "private, no-store"
+        response.headers["X-Robots-Tag"] = "noindex, nofollow"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        return response
+
+    @app.get("/shared/runs/<token>")
+    def shared_run(token):
+        shared_run_job(token)
+        return private_response(app.make_response(render_template("shared_run.html",
+            status_url=f"{request.script_root}/shared/runs/{token}/status")))
+
+    @app.get("/shared/runs/<token>/status")
+    def shared_run_status(token):
+        job = _job_view(shared_run_job(token))
+        public = {key: job.get(key) for key in ("id", "title", "status", "phase", "progress", "summary", "agents", "roster")}
+        def redact(value):
+            if isinstance(value, str):
+                return redact_event_text(value)
+            if isinstance(value, list):
+                return [redact(item) for item in value]
+            if isinstance(value, dict):
+                return {key: redact(item) for key, item in value.items()}
+            return value
+        public = redact(public)
+        public["artifacts"] = {key: f"{request.script_root}/shared/runs/{token}/artifacts/{Path(url).name}"
+                               for key, url in job["artifacts"].items()
+                               if Path(url).name in {"report.html", "decision-map.json", "final-plan.md", "final-plan.json"}}
+        return private_response(jsonify(public))
+
+    @app.get("/shared/runs/<token>/artifacts/<filename>")
+    def shared_run_artifact(token, filename):
+        job = shared_run_job(token)
+        session = Path(job["session_dir"])
+        if filename == "report.html":
+            payload = _read_fresh_report(session)
+            if payload is None: abort(404)
+            return private_response(Response(payload, mimetype="text/html"))
+        if filename == "decision-map.json":
+            payload = _read_verified_decision_map(session)
+            if payload is None: abort(404)
+            return private_response(Response(payload, mimetype="application/json"))
+        if filename not in {"final-plan.md", "final-plan.json"}: abort(404)
+        if filename.startswith("final-plan") and decision_map_module.final_artifact_staleness(session) is not None: abort(404)
+        if not (session / filename).is_file(): abort(404)
+        return private_response(send_file(session / filename))
 
     @app.post("/api/history/import")
     @require_profile

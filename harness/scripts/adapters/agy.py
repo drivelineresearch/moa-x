@@ -181,6 +181,7 @@ def _copy_untracked_file(source: Path, target: Path) -> None:
 def _isolated_git_workspace(
     repo_path: Path,
     session_dir: Path,
+    *, restricted: bool = False,
 ) -> Iterator[Path]:
     """Mirror Git-visible state into a disposable AGY worktree.
 
@@ -202,7 +203,15 @@ def _isolated_git_workspace(
     if probe.returncode != 0:
         # Task-only Web UI workspaces are intentionally not Git repositories.
         # AGY still has plan mode, its native sandbox, and UV_NO_SYNC there.
-        yield repo_path
+        if restricted or os.environ.get("MOA_RESTRICT_WORKSPACE") == "1":
+            with tempfile.TemporaryDirectory(prefix="moa-agy-workspace-") as scratch:
+                copied = Path(scratch) / "workspace"
+                shutil.copytree(repo_path, copied,
+                                ignore=shutil.ignore_patterns(".moa", ".venv", "node_modules", "__pycache__"),
+                                symlinks=True)
+                yield copied
+        else:
+            yield repo_path
         return
 
     git_root = Path(probe.stdout.strip()).resolve()
@@ -327,12 +336,15 @@ def run(
     prompt_file: Optional[Path] = None,
     schema_path: Optional[Path] = None,
     reasoning_effort: Optional[str] = None,
+    restricted: bool = False,
 ) -> AgyResult:
     """Run AGY headlessly using the CLI's already-authenticated local account."""
+    restricted = restricted or os.environ.get("MOA_RESTRICT_WORKSPACE") == "1"
     started = time.monotonic()
     stdout = ""
     stderr = ""
     scratch_dir: Optional[tempfile.TemporaryDirectory[str]] = None
+    settings_dir: Optional[tempfile.TemporaryDirectory[str]] = None
     try:
         if prompt_file is None:
             if log_file is not None:
@@ -340,6 +352,15 @@ def run(
             else:
                 scratch_dir = tempfile.TemporaryDirectory(prefix="moa-agy-")
                 prompt_file = Path(scratch_dir.name) / "prompt.md"
+        if schema_path is not None:
+            try:
+                schema = json.loads(schema_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError) as exc:
+                return AgyResult(False, None, "", str(exc), -1,
+                                 time.monotonic() - started, "invalid response schema")
+            # AGY has no native schema flag. The parser's required-key check
+            # cannot replace actually supplying the contract to the model.
+            prompt += "\n\nRequired response JSON Schema:\n" + json.dumps(schema)
         prompt_file.parent.mkdir(parents=True, exist_ok=True)
         prompt_file.write_text(READ_ONLY_RULE + "\n\n" + prompt, encoding="utf-8")
 
@@ -351,12 +372,16 @@ def run(
         internal_log.parent.mkdir(parents=True, exist_ok=True)
         try:
             session_dir = log_file.parents[1] if log_file is not None else prompt_file.parent
-            with _isolated_git_workspace(repo_path, session_dir) as isolated_repo:
+            with _isolated_git_workspace(repo_path, session_dir, restricted=restricted) as isolated_repo:
                 active_prompt = prompt_file
-                if isolated_repo.resolve() != repo_path.resolve():
+                if isolated_repo.resolve() != repo_path.resolve() or restricted:
                     active_prompt = isolated_repo / ".moa-agent-input" / prompt_file.name
                     active_prompt.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(prompt_file, active_prompt)
+                    active_prompt.write_text(
+                        prompt_file.read_text(encoding="utf-8").replace(
+                            str(repo_path.resolve()), str(isolated_repo.resolve())
+                        ), encoding="utf-8"
+                    )
                 instruction = (
                     f"Read the complete task from {active_prompt.resolve()}. "
                     "Treat that file as instructions, inspect the current "
@@ -371,7 +396,64 @@ def run(
                     internal_log=internal_log,
                     reasoning_effort=reasoning_effort,
                 )
-                child_env = os.environ.copy()
+                if restricted:
+                    # Headless mode rejects unapproved outside-workspace reads.
+                    # Broad auto-approval would bypass that file-tool boundary.
+                    cmd.remove("--dangerously-skip-permissions")
+                    cmd += ["--disable-slash-commands"]
+                    # Native headless approval failures end the turn. Give the
+                    # planner a usable file-tool path instead of prompting for
+                    # shell commands or outside-workspace reads.
+                    index = cmd.index("--print") + 1
+                    cmd[index] += (
+                        " For this Slack request, use only built-in file tools "
+                        "inside the current repository and web search. Do not "
+                        "call RunCommand, terminal/shell tools, subagents or "
+                        "MCP. Do not read outside the project or seek approvals. "
+                        "Cite repository-relative paths, never sandbox paths. "
+                        "If a fact needs unavailable tools, record that limitation "
+                        "and still return the requested complete JSON."
+                    )
+                child_env = {k: v for k, v in os.environ.items() if not k.startswith("SLACK_")}
+                if restricted:
+                    if not shutil.which("bwrap"):
+                        raise AgyWorkspaceIsolationError("Restricted AGY requires bubblewrap on Linux")
+                    settings_dir = tempfile.TemporaryDirectory(prefix="moa-agy-context-")
+                    context = Path(settings_dir.name)
+                    context.chmod(0o700)
+                    existing = Path.home() / ".gemini" / "antigravity-cli"
+                    for name in ("antigravity-oauth-token", "installation_id"):
+                        if (existing / name).is_file():
+                            shutil.copy2(existing / name, context / name)
+                            (context / name).chmod(0o600)
+                    (context / "settings.json").write_text(json.dumps({"permissions": {
+                        "allow": ["read_url(*)"],
+                        "deny": ["write_file(*)", "command(*)", "unsandboxed(*)", "mcp(*)", "execute_url(*)", "read_file(" + str(existing) + ")"]
+                    }}))
+                    # AGY fixes its settings path under the user's home. Mount
+                    # a private CLI context there without altering HOME or the
+                    # operator's settings/authentication files.
+                    wrapper = ["bwrap", "--die-with-parent", "--unshare-user", "--unshare-pid", "--unshare-ipc",
+                               "--tmpfs", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp"]
+                    for directory in ("/usr", "/etc", "/bin", "/sbin", "/lib", "/lib64"):
+                        if Path(directory).exists():
+                            wrapper += ["--ro-bind", directory, directory]
+                    resolver = Path("/etc/resolv.conf").resolve()
+                    if resolver.parent != Path("/etc"):
+                        wrapper += ["--ro-bind", str(resolver.parent), str(resolver.parent)]
+                    executable = Path(shutil.which(_agy_bin()) or _agy_bin()).resolve()
+                    wrapper += ["--ro-bind", str(executable), str(executable),
+                                "--bind", str(context), str(existing)]
+                    for name in ("bin", "builtin"):
+                        if (existing / name).is_dir():
+                            wrapper += ["--ro-bind", str(existing / name), str(existing / name)]
+                    wrapper += ["--ro-bind", str(isolated_repo), str(isolated_repo), "--chdir", str(isolated_repo), "--"]
+                    cmd[cmd.index("--log-file") + 1] = str(existing / "moa-run.log")
+                    cmd[0] = str(executable)
+                    cmd = wrapper + cmd
+                    child_env["AGY_CLI_DISABLE_AUTO_UPDATE"] = "1"
+                    child_env["TMPDIR"] = "/tmp"
+                    child_env["XDG_CACHE_HOME"] = "/tmp/cache"
                 # Defense in depth for AGY's terminal sandbox bootstrap. The
                 # disposable worktree is the primary containment boundary.
                 child_env["UV_NO_SYNC"] = "1"
@@ -429,7 +511,10 @@ def run(
                 False, None, stdout, stderr, proc.returncode,
                 time.monotonic() - started,
                 "agy returned empty output" if empty else "could not extract JSON object from agy output",
-                transient_empty=empty,
+                # Like OpenCode, schema-unenforced AGY can emit malformed JSON
+                # under a clean invocation. Permit the worker's single bounded
+                # redispatch; never accept a nested object as the role result.
+                transient_empty=empty or stdout.lstrip().startswith(("{", "```json")),
             )
         return AgyResult(
             True, payload, stdout, stderr, proc.returncode,
@@ -437,5 +522,13 @@ def run(
         )
     finally:
         _write_capture(log_file, stdout, stderr)
+        if settings_dir is not None:
+            private_log = Path(settings_dir.name) / "moa-run.log"
+            if private_log.is_file():
+                try:
+                    shutil.copy2(private_log, internal_log)
+                except OSError:
+                    pass
+            settings_dir.cleanup()
         if scratch_dir is not None:
             scratch_dir.cleanup()

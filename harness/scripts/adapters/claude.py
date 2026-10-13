@@ -45,6 +45,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -222,6 +223,7 @@ def run(
     stdout_captured = ""
     stderr_captured = ""
     tmpdir: Optional[str] = None
+    workspace_context = ExitStack()
 
     try:
         if not schema_path.exists():
@@ -273,6 +275,19 @@ def run(
             reasoning_effort=reasoning_effort,
             tools=SONNET_READONLY_TOOLS if allow_research else "",
         )
+
+        if os.environ.get("MOA_RESTRICT_WORKSPACE") == "1":
+            cmd.remove(CLAUDE_ISOLATION_FLAG)
+            cmd.remove("--dangerously-skip-permissions")
+            cmd += ["--restricted", "--strict-mcp-config"]
+            env = {k: v for k, v in env.items() if not k.startswith("SLACK_")}
+            if allow_research:
+                from adapters.agy import _isolated_git_workspace
+                original_repo = repo_path.resolve()
+                repo_path = workspace_context.enter_context(
+                    _isolated_git_workspace(original_repo, Path(tmpdir))
+                )
+                prompt = prompt.replace(str(original_repo), str(repo_path.resolve()))
 
         try:
             # Use explicit Popen + killpg on timeout so we can tear down the
@@ -368,6 +383,7 @@ def run(
         # ALWAYS write the log file (even on error/timeout/exception) so
         # post-mortem is possible. Then clean up the tmpdir.
         _write_log_file(log_file, stdout_captured, stderr_captured)
+        workspace_context.close()
         if tmpdir is not None:
             shutil.rmtree(tmpdir, ignore_errors=True)
 

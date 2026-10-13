@@ -24,26 +24,26 @@ codex login
 agy install
 agy models
 
-# OpenCode (drives Grok plus the Qwen/DeepSeek routes)
+# OpenCode (drives Grok and DeepSeek Flash)
 curl -fsSL https://opencode.ai/install | bash
 # or: npm i -g @opencode/cli
 opencode auth login    # interactive login
 # or export a provider key (no login needed):
-#   export QWEN_TOKEN_PLAN_API_KEY=sk-sp-...  # default Qwen refiner
+#   export FIREWORKS_API_KEY=...  # only for explicitly configured custom routes
 ```
 
 The Balanced default roster uses Gemini 4 Argon, Grok 4.7, and GPT-6 Luna as
-proposers; Qwen 3.8, DeepSeek V4.1 Flash, and Claude Opus 5.5 at `high` as refiners; and
+proposers; DeepSeek V4.1 Flash and Claude Opus 5.5 at `high` as refiners; and
 GPT-6.1 Sol at `xhigh` as the aggregator. That keeps the default lane
-lab-diverse across Google, xAI, OpenAI, Alibaba, DeepSeek, and Anthropic.
+lab-diverse across Google, xAI, OpenAI, DeepSeek, and Anthropic.
 Fable 5.1 1M at `xhigh` is an optional, quota-heavy Claude aggregator and
 is never eligible as a proposer or refiner.
 
-The built-in `qwen` refiner uses OpenCode Go and
-`opencode-go/qwen3.8-max`, with the preserved 900-second broadcast-review cap.
-It shares the existing OpenCode Go account used by Grok and DeepSeek Flash.
-Token Plan is available only as an explicitly configured custom provider;
-it is no longer required by the default roster.
+Grok and DeepSeek V4.1 Flash use OpenCode Go. The curated Qwen routes are
+disabled for new launches and remain resolvable for archived provenance.
+Install the current OpenCode major version; the adapter selects the V1 or V2
+invocation contract automatically. Catalog visibility alone does not prove
+that an account may invoke a model. Verify an actual structured planning run.
 
 Subscription auth is the path I use and what the docs lead with. If
 you'd rather bill through an API key, each vendor CLI already handles
@@ -159,3 +159,11 @@ python3 harness/scripts/test_offline.py
 
 No network, no external CLIs. All tests should pass. CI runs the
 same thing on every push.
+
+## Slack gateway
+
+Install `requirements-slack.txt`, provide a private bot/app credential file, and
+run `python -m harness.slack` beside the web queue worker. The gateway uses
+Socket Mode; no public event receiver is required. Follow [Slack setup](slack.md)
+for events, scopes, workspace membership, uploads and deployment. Keep all
+workspace IDs, tokens, hostnames and service environment files outside Git.

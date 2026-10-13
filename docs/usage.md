@@ -1,6 +1,6 @@
 # Usage
 
-MoA-X has three entry points. Pick the one that matches how you work.
+MoA-X has four entry points. Pick the one that matches how you work.
 
 ## Inside Claude Code (primary)
 
@@ -34,13 +34,11 @@ What happens:
    sandboxing for Codex, a hard tool allowlist for Claude, and a
    permission-deny policy for OpenCode), does web research, and writes an independent plan to
    `.moa/<session>/layer1/`.
-4. **Broadcast refiners (Layer 2, parallel).** Three more subprocesses,
-   `qwen` (`qwen3.8-max`), `deepseek-flash` (`deepseek-v4.1-flash`), and `opus`
-   (`claude-opus-5-5`, high), each
-   receive every valid proposal and
-   produce verification output in `.moa/<session>/layer2/`.
-   "Broadcast" means every refiner sees every proposal, per the MoA
-   paper.
+4. **Broadcast refiners (Layer 2, parallel).** `deepseek-flash`
+   (`deepseek-v4.1-flash`) and `opus` (`claude-opus-5-5`, high) each receive
+   every valid proposal and produce verification output in
+   `.moa/<session>/layer2/`. Both reviewer labs are independent of the
+   OpenAI aggregator. Qwen is disabled for new launches.
 5. **Aggregator (Layer 3).** By default GPT-6.1 Sol at `xhigh` reads the
    retained `.moa/<session>/synthesis-input.md` through the recorded Codex
    phase, synthesizes, honors refiner contradictions, and writes
@@ -74,6 +72,20 @@ through the authenticated `gh` CLI into managed XDG storage. Up to 10
 reference files (25 MB each) can be attached, copied into the run's
 `.moa/<session>/inputs/` snapshot, and converted into shared Markdown context
 for every model layer. See [`webui.md`](webui.md).
+
+## Slack
+
+DM the configured bot, or mention it in a channel where it is a member. Add
+supported reference files with the request or in the same thread. Luna asks
+up to three material questions, recommends a depth, and previews the improved
+brief and exact model/effort choices. Answer with buttons or text, then choose
+**Run MoA-X**. Progress, cancellation and the final answer/files stay in Slack;
+the run-specific dashboard is optional.
+
+Quick uses two proposals, one reviewer and one synthesis lane. Balanced uses
+three proposals, two reviewers and one synthesis lane. Thorough adds Astra
+and GLM to its proposal layer and raises Opus effort. See [setup and
+examples](slack.md).
 
 ## Running standalone
 
@@ -125,7 +137,7 @@ Each invocation creates a directory under `.moa/`:
 │   └── sonnet-proposer.{json,log}
 ├── layer2/
 │   ├── codex-sol-refiner-broadcast.{json,log}
-│   └── qwen-refiner-broadcast.{json,log}
+│   └── deepseek-flash-refiner-broadcast.{json,log}
 ├── layer3/
 │   ├── aggregation-output.schema.json
 │   └── codex-sol-aggregator.{json,log}

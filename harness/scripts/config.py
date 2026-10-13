@@ -130,6 +130,8 @@ BUILTIN_PROVIDERS: dict[str, ResolvedProvider] = {
 PROVIDER_ALLOWED_ROLES: dict[str, frozenset[str]] = {
     "fable": frozenset({"aggregator"}),
     "kimi": frozenset(),
+    "qwen": frozenset(),
+    "qwen-opencode": frozenset(),
     "deepseek": frozenset(),  # retired Pro route; archives retain its identity
 }
 
@@ -459,7 +461,7 @@ class LoadedConfig:
 
 # Default layer assignments when no YAML / env override is set.
 _DEFAULT_PROPOSERS = ["agy-gemini-pro", "grok", "codex-luna"]
-_DEFAULT_REFINERS = ["qwen", "deepseek-flash", "opus"]
+_DEFAULT_REFINERS = ["deepseek-flash", "opus"]
 _DEFAULT_AGGREGATOR = "codex-sol"
 
 
