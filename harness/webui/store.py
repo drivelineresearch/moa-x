@@ -14,7 +14,7 @@ EMAIL_RE = re.compile(
     r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b",
     re.IGNORECASE,
 )
-HOME_PATH_RE = re.compile(r"(?<![\w.-])/home/[^/\s]+")
+HOME_PATH_RE = re.compile(r"(?<![\w.-])/(?:home|Users)/[^/\s]+")
 
 
 def redact_event_text(value: Any) -> str:
@@ -477,7 +477,7 @@ class Store:
         if not values:
             return self.get_job(job_id)
         assignments = ", ".join(f"{key}=?" for key in values)
-        guard = " AND cancel_requested=0" if values.get("status") == "completed" else ""
+        guard = " AND cancel_requested=0" if values.get("status") in {"completed", "failed"} else ""
         with self.connect() as conn:
             conn.execute(
                 f"UPDATE jobs SET {assignments} WHERE id=?{guard}",

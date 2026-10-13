@@ -11,18 +11,23 @@ class Delivery:
     def __init__(self, db, client):
         self.db, self.client = db, client
 
-    def existing_message(self, c, key):
+    def existing_message(self, c, key, *, root=False):
         cursor = None
         for _ in range(4):
             args = {
                 "channel": c["channel"],
-                "ts": c["thread"],
                 "limit": 100,
                 "include_all_metadata": True,
             }
             if cursor:
                 args["cursor"] = cursor
-            result = self.client.conversations_replies(**args)
+            if root:
+                args["oldest"] = c["thread"]
+                result = self.client.conversations_history(**args)
+            else:
+                args["ts"] = c.get("message_ts") if c["channel"].startswith("D") else None
+                args["ts"] = args["ts"] or c["thread"]
+                result = self.client.conversations_replies(**args)
             for message in result.get("messages", []):
                 if (message.get("metadata") or {}).get("event_payload", {}).get(
                     "delivery_id"
@@ -35,26 +40,33 @@ class Delivery:
 
     def deliver(self, item):
         c = self.db.get(item["conversation"])
-        if not c:
+        if not c and item["kind"] != "reaction":
             self.db.done("slack_outbox", item)
             return
         try:
-            if item["kind"] == "file":
+            if item["kind"] == "reaction":
+                try:
+                    self.client.reactions_add(**item["payload"])
+                except Exception as error:
+                    if getattr(error, "response", {}).get("error") != "already_reacted":
+                        raise
+            elif item["kind"] == "file":
                 self.file(item, c)
             elif item["kind"] == "card" and c.get("message_ts"):
                 self.client.chat_update(
                     channel=c["channel"], ts=c["message_ts"], **item["payload"]
                 )
             else:
+                root = item["kind"] == "card" and c["channel"].startswith("D")
                 ts = (
-                    self.existing_message(c, item["id"])
+                    self.existing_message(c, item["id"], root=root)
                     if item["attempts"] > 1 or item.get("generation", 0) > 0
                     else None
                 )
                 if not ts:
                     reply = self.client.chat_postMessage(
                         channel=c["channel"],
-                        thread_ts=c["thread"],
+                        thread_ts=None if root else ((c.get("message_ts") or c["thread"]) if c["channel"].startswith("D") else c["thread"]),
                         client_msg_id=str(uuid.uuid5(uuid.NAMESPACE_URL, item["id"])),
                         metadata={
                             "event_type": "moa_x",
@@ -113,7 +125,7 @@ class Delivery:
             self.client.files_completeUploadExternal(
                 files=[{"id": p["file_id"], "title": p["title"]}],
                 channel_id=c["channel"],
-                thread_ts=c["thread"],
+                thread_ts=(c.get("message_ts") or c["thread"]) if c["channel"].startswith("D") else c["thread"],
             )
         except Exception as error:
             if getattr(error, "response", {}).get("error") not in (

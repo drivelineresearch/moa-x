@@ -1349,6 +1349,15 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     def shared_run_status(token):
         job = _job_view(shared_run_job(token))
         public = {key: job.get(key) for key in ("id", "title", "status", "phase", "progress", "summary", "agents", "roster")}
+        def redact(value):
+            if isinstance(value, str):
+                return redact_event_text(value)
+            if isinstance(value, list):
+                return [redact(item) for item in value]
+            if isinstance(value, dict):
+                return {key: redact(item) for key, item in value.items()}
+            return value
+        public = redact(public)
         public["artifacts"] = {key: f"{request.script_root}/shared/runs/{token}/artifacts/{Path(url).name}"
                                for key, url in job["artifacts"].items()
                                if Path(url).name in {"report.html", "decision-map.json", "final-plan.md", "final-plan.json"}}

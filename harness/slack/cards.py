@@ -39,16 +39,18 @@ def button(conversation, label, action, extra=None, style=None):
 def card(conversation):
     d = conversation["data"]
     stage = conversation["stage"]
-    blocks = [section("*MoA-X · " + text(stage.title()) + "*")]
+    emoji = {"collect": "👋", "coaching": "🧠", "interview": "💬", "preview": "📋",
+             "launching": "🚀", "running": "⏳", "completed": "✅", "failed": "❌", "cancelled": "🛑"}.get(stage, "🧠")
+    blocks = [section(emoji + " *MoA-X · " + text(stage.title()) + "*")]
     if stage == "collect":
         blocks.append(
             section(
-                "What task, decision or outcome should I help with? Reply here; PDF, image and text references are welcome."
+                "MoA-X is online. Send me a task, decision or outcome, with optional PDF, image or text references.\n🧠 Luna asks up to three useful questions; then preview the brief, models and effort and press *🚀 Run MoA-X*. Results and progress stay here in Slack.\nTry: `new: Compare two approaches to reducing API latency and recommend a rollout plan.`\nUse `help`, `status` or `cancel` anytime."
             )
         )
     elif stage == "coaching":
         blocks.append(
-            section("Luna is preparing your brief and up to three useful questions.")
+            section("👀 Got your request. 🧠 Luna is preparing your brief and up to three useful questions. This can take a minute or two. Then review the models and effort and press *🚀 Run MoA-X* to start the ensemble.")
         )
     elif stage == "interview":
         questions = d["analysis"]["questions"]
@@ -144,7 +146,7 @@ def card(conversation):
         actions = []
         if roster and not d.get("roster_error"):
             actions.append(
-                button(conversation, "Run MoA-X", "moa_run", style="primary")
+                button(conversation, "🚀 Run MoA-X", "moa_run", style="primary")
             )
         actions.append(button(conversation, "Edit brief", "moa_edit"))
         blocks.append({"type": "actions", "elements": actions})
@@ -170,4 +172,4 @@ def card(conversation):
                 "elements": [button(conversation, "Cancel", "moa_cancel")],
             }
         )
-    return {"text": "MoA-X: " + stage, "blocks": blocks}
+    return {"text": emoji + " MoA-X: " + stage + (" — online; send a task to begin" if stage == "collect" else ""), "blocks": blocks}

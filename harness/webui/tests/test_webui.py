@@ -1930,6 +1930,7 @@ class PromptCoachTest(unittest.TestCase):
         self.assertTrue(model["fallback"])
         self.assertEqual(codex_run.call_args.kwargs["model"], "gpt-6-luna")
         agy_run.assert_called_once()
+        self.assertFalse(agy_run.call_args.kwargs["restricted"])
 
     @patch("harness.webui.prompt_coach.agy.run")
     @patch("harness.webui.prompt_coach.codex.run")

@@ -16,6 +16,7 @@ from harness.webui.store import Store
 from harness.scripts.config import apply_config_to_env
 from .bot import Bot
 from .delivery import Delivery
+from .ingress import DMReconciler
 
 log = logging.getLogger("moa.slack")
 
@@ -45,6 +46,9 @@ def main():
     identity = client.auth_test()
     if identity["team_id"] != team:
         raise ValueError("Bot token belongs to another workspace.")
+    bot_identity = client.bots_info(bot=identity["bot_id"])["bot"]
+    if bot_identity.get("app_id") != app_token.split("-")[2]:
+        raise ValueError("Socket Mode and bot tokens belong to different apps.")
     bot = Bot(
         Store(root / "webui.sqlite3"),
         root,
@@ -64,10 +68,19 @@ def main():
     delivery = Delivery(bot.db, client)
     stop = threading.Event()
     socket = SocketModeClient(app_token=app_token, web_client=client)
+    ingress = {"socket_envelopes": 0, "socket_messages_accepted": 0, "last_socket_envelope_at": None}
+    ingress_lock = threading.Lock()
+    reconciler = DMReconciler(bot, client)
 
     def receive(socket_client, request):
         try:
-            bot.enqueue(request.type, request.payload, fast_cancel=False)
+            accepted = bot.enqueue(request.type, request.payload, fast_cancel=False)
+            with ingress_lock:
+                ingress["socket_envelopes"] += 1
+                ingress["socket_messages_accepted"] += int(accepted)
+                ingress["last_socket_envelope_at"] = time.time()
+            log.info("Slack envelope: %s / %s; accepted=%s", request.type,
+                     (request.payload.get("event") or {}).get("type", request.payload.get("type", "unknown")), accepted)
             socket_client.send_socket_mode_response(
                 SocketModeResponse(envelope_id=request.envelope_id)
             )
@@ -76,6 +89,15 @@ def main():
             log.error("Could not persist incoming Slack envelope")
 
     socket.socket_mode_request_listeners.append(receive)
+
+    def hello(_, message, __):
+        if message.get("type") == "hello":
+            with ingress_lock:
+                ingress["socket_connections"] = message.get("num_connections")
+            log.info("Socket Mode hello received")
+
+    socket.message_listeners.append(hello)
+    socket.on_error_listeners.append(lambda error: log.warning("Socket transport error: %s", type(error).__name__))
 
     def shutdown(*_):
         stop.set()
@@ -119,6 +141,16 @@ def main():
 
     monitor = threading.Thread(target=monitor_runs, daemon=True)
     monitor.start()
+
+    def reconcile_dms():
+        while not stop.is_set():
+            started = time.monotonic()
+            reconciler.tick()
+            # Internal apps have Tier 3 history limits: at most 48 calls/minute.
+            stop.wait(max(0.01, 1.25 - (time.monotonic() - started)))
+
+    dm_reader = threading.Thread(target=reconcile_dms, daemon=True)
+    dm_reader.start()
     with concurrent.futures.ThreadPoolExecutor(
         max_workers=4, thread_name_prefix="moa-slack"
     ) as pool:
@@ -144,7 +176,10 @@ def main():
                     "team": team,
                     "updated_at": time.time(),
                     "interviews_in_progress": len(futures),
+                    **reconciler.status(),
                 }
+                with ingress_lock:
+                    status.update(ingress)
                 p = root / "slack-status.json"
                 p.write_text(json.dumps(status))
                 p.chmod(0o600)
@@ -155,6 +190,7 @@ def main():
         sender.join(timeout=3)
     canceller.join(timeout=3)
     monitor.join(timeout=3)
+    dm_reader.join(timeout=3)
 
 
 if __name__ == "__main__":

@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS slack_outbox (
  attempts INTEGER NOT NULL DEFAULT 0, available REAL NOT NULL DEFAULT 0, error TEXT);
 CREATE INDEX IF NOT EXISTS slack_inbox_ready ON slack_inbox(status,available);
 CREATE INDEX IF NOT EXISTS slack_outbox_ready ON slack_outbox(status,available);
+CREATE TABLE IF NOT EXISTS slack_poll_cursors (
+ target TEXT PRIMARY KEY, watermark TEXT NOT NULL);
 """
 
 
@@ -87,8 +89,8 @@ class SlackStore:
         with self.store.connect() as conn:
             return self.decode(
                 conn.execute(
-                    "SELECT * FROM slack_conversations WHERE team=? AND channel=? AND thread=? AND owner=? ORDER BY updated DESC LIMIT 1",
-                    (team, channel, thread, user),
+                    "SELECT * FROM slack_conversations WHERE team=? AND channel=? AND (thread=? OR message_ts=?) AND owner=? ORDER BY updated DESC LIMIT 1",
+                    (team, channel, thread, thread, user),
                 ).fetchone()
             )
 
@@ -158,13 +160,32 @@ class SlackStore:
             )
         return self.get(ident)
 
-    def receive(self, key, payload):
+    def receive(self, key, payload, *, reaction=None):
         with self.store.connect(timeout=1) as conn:
             cursor = conn.execute(
                 "INSERT OR IGNORE INTO slack_inbox(id,payload) VALUES (?,?)",
                 (key, json.dumps(payload)),
             )
+            if reaction:
+                conn.execute(
+                    "INSERT OR IGNORE INTO slack_outbox(id,conversation,kind,payload) VALUES (?,'','reaction',?)",
+                    ("received:" + key, json.dumps(reaction)),
+                )
         return bool(cursor.rowcount)
+
+    def watermark(self, target, default):
+        with self.store.connect() as conn:
+            conn.execute("INSERT OR IGNORE INTO slack_poll_cursors VALUES (?,?)", (target, default))
+            return conn.execute("SELECT watermark FROM slack_poll_cursors WHERE target=?", (target,)).fetchone()[0]
+
+    def advance_watermark(self, target, value):
+        with self.store.connect() as conn:
+            conn.execute("UPDATE slack_poll_cursors SET watermark=? WHERE target=?", (value, target))
+
+    def dm_threads(self, team):
+        with self.store.connect() as conn:
+            return [self.decode(row) for row in conn.execute(
+                "SELECT * FROM slack_conversations WHERE team=? AND channel LIKE 'D%' AND (stage NOT IN ('completed','failed','cancelled') OR updated>?) ORDER BY updated DESC LIMIT 100", (team, time.time() - 86400))]
 
     def claim(self, table, *, files=None, priority=None):
         if table not in ("slack_inbox", "slack_outbox"):

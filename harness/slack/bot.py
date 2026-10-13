@@ -20,6 +20,14 @@ from .store import SlackStore, StaleDraft
 TERMINAL = {"completed", "failed", "cancelled"}
 
 
+def wants_help(content):
+    value = content.lower().strip().rstrip("?!. ")
+    if value in {"help", "start", "hi", "hello", "hey", "hey there", "moa-x"}:
+        return True
+    return bool(re.fullmatch(
+        r"(?:(?:hey(?: there)?|hi|hello)[\s,!:–-]+)?(?:do you have|is) moa[- ]?x (?:working|online|running|ready|available)(?: yet| now)?", value))
+
+
 class AccessDenied(ValueError):
     pass
 
@@ -102,7 +110,8 @@ class Bot:
                 + str(event.get("ts"))
             )
             priority = re.sub(r"<@" + re.escape(self.bot_user) + r">", "", str(event.get("text", ""))).strip().lower() == "cancel"
-            inserted = self.db.receive(key, {"kind": "message", "event": event, "priority": priority})
+            inserted = self.db.receive(key, {"kind": "message", "event": event, "priority": priority},
+                reaction={"channel": event["channel"], "timestamp": event["ts"], "name": "eyes"})
             if priority and fast_cancel:
                 c = self.db.find(
                     self.team,
@@ -292,6 +301,10 @@ class Bot:
             return
         info = self.member(user)
         command = content.lower()
+        help_request = wants_help(content) and not event.get("files")
+        if c and help_request:
+            self.notice(c, "👋 MoA-X is online. Send a task with `new: your task` (and optional reference files). 🧠 Luna asks up to three questions, then you choose depth/effort and press *🚀 Run MoA-X*. Use `status` or `cancel` for this request.", key)
+            return
         if c and command == "cancel":
             return self.cancel(c, key)
         if c and command == "status":
@@ -321,7 +334,7 @@ class Bot:
             if command.startswith("new:"):
                 content = content[4:].strip()
             data = {
-                "brief": content[:20000],
+                "brief": "" if help_request else content[:20000],
                 "upload_ids": [],
                 "answers": [],
                 "depth": "balanced",
@@ -337,6 +350,9 @@ class Bot:
             c = self.db.create(
                 ident, self.team, channel, thread, user, profile["id"], data
             )
+            if help_request:
+                self.card(c)
+                return
         with self.conversation_lock(c["id"]):
             c = self.db.get(c["id"])
             if c["stage"] in ("coaching", "launching", "running"):
@@ -414,6 +430,7 @@ class Bot:
             if "analysis" not in d:
                 d["analysis"] = self.analyze(
                     d["brief"],
+                    restricted=True,
                     context_mode="github" if self.repository(d["brief"]) else "brief",
                     attachment_count=len(d["upload_ids"]),
                     planning_depth=d["depth"],
@@ -433,6 +450,7 @@ class Bot:
                     return
             d["finalized"] = self.finalize(
                 d["brief"],
+                restricted=True,
                 questions=d["analysis"]["questions"],
                 answers=d["answers"],
                 context_mode="github" if self.repository(d["brief"]) else "brief",
@@ -762,7 +780,7 @@ class Bot:
             tldr = re.search(r"## TL;DR\s*(.*?)(?=\n## |\Z)", plan, re.S)
             summary = tldr.group(1).strip() if tldr else plan[:2200]
             reply = (
-                "*MoA-X finished*\n"
+                "✅ *MoA-X finished*\n"
                 + text(summary[:2400])
                 + "\n\n" + verification
             )

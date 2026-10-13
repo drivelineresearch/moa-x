@@ -112,6 +112,13 @@ class OpenCodeV2Test(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 oc._cli_major_version()
 
+    def test_restricted_runs_reject_v1_before_launch(self):
+        with patch.dict(oc.os.environ, {"MOA_RESTRICT_WORKSPACE": "1"}), patch.object(oc, "_cli_major_version", return_value=1), patch.object(oc.subprocess, "Popen") as launch:
+            result = oc.run(prompt="Inspect the repo", repo_path=Path("."), model="opencode-go/grok-4.7")
+        self.assertFalse(result.success)
+        self.assertIn("require OpenCode v2", result.error_message)
+        launch.assert_not_called()
+
     def test_version_catalog_probe_errors_are_unavailable(self):
         auth = SimpleNamespace(returncode=0, stdout='OpenCode Go', stderr='')
         with patch.object(oc.shutil, 'which', return_value='/usr/bin/opencode'), patch.object(oc.subprocess, 'run', return_value=auth), patch.object(oc, '_cli_major_version', side_effect=RuntimeError('unsupported')):

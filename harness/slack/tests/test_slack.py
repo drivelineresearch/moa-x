@@ -49,6 +49,7 @@ class Client:
     def __init__(self):
         self.messages = []
         self.posts = 0
+        self.reactions = []
 
     def users_info(self, user):
         return {"user": {"id": user, "team_id": TEAM, "real_name": "Member"}}
@@ -64,6 +65,13 @@ class Client:
 
     def conversations_replies(self, **kwargs):
         return {"messages": self.messages}
+
+    def conversations_history(self, **kwargs):
+        return {"messages": self.messages}
+
+    def reactions_add(self, **kwargs):
+        self.reactions.append(kwargs)
+        return {}
 
 
 class FilesStub:
@@ -165,6 +173,133 @@ class SlackTest(unittest.TestCase):
             "answer:1",
         )
         return self.bot.db.get(c["id"])
+
+    def claim_message(self):
+        while item := self.bot.db.claim("slack_outbox", files=False):
+            if item["kind"] != "reaction":
+                return item
+            Delivery(self.bot.db, self.client).deliver(item)
+
+    def test_help_is_fast_and_does_not_start_a_model(self):
+        c = self.message(text="Is MoA-X online?")
+        self.analyze.assert_not_called()
+        self.finalize.assert_not_called()
+        self.assertEqual(c["stage"], "collect")
+        self.assertEqual(c["data"]["brief"], "")
+        delivery = Delivery(self.bot.db, self.client)
+        receipt = self.bot.db.claim("slack_outbox", files=False)
+        self.assertEqual(receipt["kind"], "reaction")
+        delivery.deliver(receipt)
+        delivery.deliver(self.claim_message())
+        self.assertEqual(self.client.reactions[0]["name"], "eyes")
+        self.assertIsNone(self.client.messages[0]["thread_ts"])
+        self.assertIn("online", self.client.messages[0]["text"])
+        blocks = json.dumps(self.client.messages[0]["blocks"], ensure_ascii=False)
+        self.assertIn("🚀 Run MoA-X", blocks)
+        c = self.bot.db.get(c["id"])
+        self.message(ts="2", thread=c["message_ts"], text="Plan a deployment")
+        self.assertEqual(self.bot.db.get(c["id"])["stage"], "interview")
+
+    def test_receipt_is_durable_before_an_interview_slot_is_available(self):
+        event = {"type": "message", "channel": "D_TEST", "user": USER, "ts": "50", "text": "Plan a release"}
+        payload = {"team_id": TEAM, "event": event}
+        self.assertTrue(self.bot.enqueue("events_api", payload))
+        self.assertFalse(self.bot.enqueue("events_api", payload))
+        self.analyze.assert_not_called()
+        item = self.bot.db.claim("slack_outbox", files=False)
+        Delivery(self.bot.db, self.client).deliver(item)
+        self.assertEqual(len(self.client.reactions), 1)
+        self.assertIsNone(self.bot.db.claim("slack_outbox", files=False))
+
+    def test_reconciliation_recovers_dm_without_replaying_old_messages(self):
+        from harness.slack.ingress import DMReconciler
+        client = Mock()
+        client.conversations_list.return_value = {"channels": [{"id": "D_TEST"}]}
+        event = {"type": "message", "user": USER, "ts": "990", "text": "Plan a release"}
+        client.conversations_history.return_value = {"messages": [event, {**event, "ts": "900", "text": "old request"}]}
+        reconciler = DMReconciler(self.bot, client, now=lambda: 1000)
+        reconciler.tick()
+        self.assertEqual(reconciler.received, 1)
+        item = self.bot.db.claim("slack_inbox")
+        self.assertEqual(item["payload"]["event"]["ts"], "990")
+        self.bot.db.done("slack_inbox", item)
+        self.assertIsNone(self.bot.db.claim("slack_inbox"))
+        self.assertFalse(self.bot.enqueue("events_api", {"team_id": TEAM, "event": {**event, "channel": "D_TEST"}}))
+        restarted = DMReconciler(self.bot, client, now=lambda: 1020)
+        restarted.tick()
+        self.assertEqual(restarted.received, 0)
+        self.assertEqual(client.conversations_history.call_args.kwargs["oldest"], "1000")
+
+    def test_history_pages_are_persisted_in_time_order_before_cursor_advances(self):
+        from harness.slack.ingress import DMReconciler
+        client = Mock()
+        client.conversations_list.return_value = {"channels": [{"id": "D_TEST"}]}
+        def event(ts):
+            return {"type": "message", "user": USER, "ts": ts, "text": "help"}
+        client.conversations_history.side_effect = [
+            {"messages": [event("999")], "has_more": True, "response_metadata": {"next_cursor": "next"}},
+            {"messages": [event("990")]}]
+        reconciler = DMReconciler(self.bot, client, now=lambda: 1000)
+        reconciler.tick()
+        self.assertIsNone(self.bot.db.claim("slack_inbox"))
+        self.assertEqual(float(self.bot.db.watermark("D_TEST", "0")), 940)
+        reconciler.tick()
+        self.assertEqual(self.bot.db.claim("slack_inbox")["payload"]["event"]["ts"], "990")
+        self.assertEqual(self.bot.db.watermark("D_TEST", "0"), "1000")
+
+    def test_reconciliation_honors_rate_limit_without_advancing_cursor(self):
+        from harness.slack.ingress import DMReconciler
+        from slack_sdk.errors import SlackApiError
+        client = Mock()
+        client.conversations_list.return_value = {"channels": [{"id": "D_TEST"}]}
+        response = {"error": "ratelimited"}
+        class Response(dict):
+            headers = {"Retry-After": "30"}
+        client.conversations_history.side_effect = SlackApiError("limited", Response(response))
+        reconciler = DMReconciler(self.bot, client, now=lambda: 1000)
+        reconciler.tick()
+        reconciler.tick()
+        self.assertEqual(client.conversations_history.call_count, 1)
+        self.assertEqual(float(self.bot.db.watermark("D_TEST", "0")), 940)
+
+    def test_cancel_wins_atomic_failure_transition(self):
+        c = self.preview()
+        self.bot.run(c)
+        job = self.store.claim_next_job()
+        self.store.request_cancel(job["id"])
+        result = self.store.update_job(job["id"], status="failed", phase="failed")
+        self.assertEqual(result["status"], "cancelling")
+
+    def test_owned_process_group_cancellation_without_proc(self):
+        import signal
+        import subprocess
+        from harness.webui.worker import _terminate_tree, _signal_processes
+        proc = subprocess.Popen(["sleep", "60"], start_new_session=True)
+        try:
+            with patch("harness.webui.worker.Path.is_dir", return_value=False), patch("harness.webui.worker._process_identity", return_value=None):
+                targets = _terminate_tree(proc.pid, proc)
+                _signal_processes(targets, signal.SIGKILL)
+            self.assertNotEqual(proc.wait(timeout=3), 0)
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait()
+
+    def test_worker_converts_late_failure_race_to_cancelled(self):
+        c = self.preview()
+        self.bot.run(c)
+        job = self.store.claim_next_job()
+        worker = JobWorker(self.store, Path("unused"))
+        worker._prepare_attachments = Mock()
+        worker._run_phase = Mock(return_value=4)
+        update = self.store.update_job
+        def race(ident, **fields):
+            if fields.get("status") == "failed":
+                self.store.request_cancel(ident)
+            return update(ident, **fields)
+        with patch.object(self.store, "update_job", side_effect=race):
+            worker._run_job(job)
+        self.assertEqual(self.store.get_job(job["id"])["status"], "cancelled")
 
     def test_interview_owner_depth_and_real_queue(self):
         c = self.preview()
@@ -282,14 +417,14 @@ class SlackTest(unittest.TestCase):
         self.bot.db.put("file:first", c, "file", {"path": "example"})
         file = self.bot.db.claim("slack_outbox", files=True)
         self.assertEqual(file["kind"], "file")
-        self.assertEqual(self.bot.db.claim("slack_outbox", files=False)["kind"], "card")
+        self.assertEqual(self.claim_message()["kind"], "card")
 
     def test_stale_card_retry_cannot_delay_new_generation(self):
         c = self.message()
-        old = self.bot.db.claim("slack_outbox")
+        old = self.claim_message()
         self.bot.db.put(old["id"], c, "card", {"text": "Updated card"})
         self.bot.db.retry("slack_outbox", old, "old failure", delay=300)
-        new = self.bot.db.claim("slack_outbox")
+        new = self.claim_message()
         self.assertEqual(new["attempts"], 1)
         self.assertEqual(new["payload"]["text"], "Updated card")
 
@@ -500,7 +635,7 @@ class SlackTest(unittest.TestCase):
 
     def test_delivery_reconciles_post_after_lost_response(self):
         c = self.message()
-        item = self.bot.db.claim("slack_outbox")
+        item = self.claim_message()
         self.client.messages = [
             {
                 "ts": "existing",
@@ -810,6 +945,11 @@ class SlackTest(unittest.TestCase):
         self.assertEqual(state["id"], c["job_id"])
         self.assertNotIn("profile_id", state)
         self.assertNotIn("workspace", state)
+        self.store.update_job(c["job_id"], summary="Failure at /home/operator/work or /Users/operator/work; contact operator@example.test")
+        with patch("harness.webui.app.read_manifest", return_value=[{"summary": "Failure at /home/operator/work; operator@example.test"}]):
+            shared = client.get(path + "/status").get_data(as_text=True)
+        for private in ("/home/operator", "/Users/operator", "operator@example.test"):
+            self.assertNotIn(private, shared)
         self.assertEqual(result.headers["Referrer-Policy"], "no-referrer")
         for artifact in ("manifest.json", "synthesis-input.md"):
             self.assertEqual(client.get(path + "/artifacts/" + artifact).status_code, 404)

@@ -495,6 +495,10 @@ def run(
 
     try:
         major = _cli_major_version()
+        if major == 1 and os.environ.get("MOA_RESTRICT_WORKSPACE") == "1":
+            return OpenCodeResult(success=False, payload=None, raw_stdout="", raw_stderr="",
+                exit_code=1, duration_seconds=time.monotonic() - start,
+                error_message="Restricted workspace runs require OpenCode v2.")
         tmpdir = tempfile.mkdtemp(prefix="moa-opencode-")
         env = os.environ.copy()
         env = {k: v for k, v in env.items() if not k.startswith("SLACK_")}

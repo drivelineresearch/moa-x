@@ -2,10 +2,16 @@
 
 The Slack service connects an existing bot through Socket Mode. Full workspace
 members can DM it a question or mention it in a channel where it is a member.
-The entire request, interview, launch, progress, cancellation and final delivery
-stays in the originating thread. The web dashboard is optional.
+In DMs, the main status card appears directly in the conversation; questions,
+controls and results stay with that card. In channels, everything stays in the
+originating thread. The web dashboard is optional.
 
 ## User flow
+
+Send `help` or a greeting for immediate instructions without calling a model.
+Accepted messages receive an 👀 reaction independently of interview slots.
+The status card uses 🧠 while preparing questions, 🚀 at submission, ⏳ during
+the ensemble, and ✅ / ❌ / 🛑 for completion, failure or cancellation.
 
 Send a task, optionally with supported reference files or a public GitHub
 repository URL under the configured organization. Luna asks up to three material
@@ -58,7 +64,8 @@ MOA_WEBUI_GITHUB_OWNER=your-approved-github-organization
 ```
 
 Retain existing bot scopes and event subscriptions. Required bot scopes include
-`chat:write`, `im:history`, `users:read`, `files:read` and `files:write`.
+`chat:write`, `im:read`, `im:history`, `reactions:write`, `users:read`,
+`files:read` and `files:write`.
 Mentions also require `app_mentions:read`. Subscribe to `message.im`,
 `app_mention`, `message.channels`, and `message.groups` for private-channel
 threads. Enable the App Home Messages tab and interactivity. The app-level token
@@ -73,6 +80,20 @@ recommended. It shares the web UI’s XDG database/data root and never construct
 another Flask application or starts another ensemble worker. Keep the web UI
 worker running. The service writes operator connection state to
 `$XDG_DATA_HOME/moa-x/slack-status.json`.
+Connection state includes actual envelope counts and receipt times, recent-DM
+reconciliation counts and API failures. A connected socket alone is not proof
+that the app's event subscriptions are delivering messages. Both credentials
+must belong to the same installed app and configured workspace.
+
+The listener also reconciles recent bot DMs and known request threads through
+the Web API. It discovers DMs every 20 seconds and rotates one history request
+per 1.25 seconds (at most 48 per minute); larger DM catalogs take longer to
+cover. It honors `Retry-After` and persists watermarks across restarts. The first
+discovery reads only the previous minute, never the full historical backlog.
+Socket events and recovered messages share one deduplicated inbox. This fallback
+does not recover channel mentions or interactive button clicks: enable and save
+event subscriptions and interactivity for those. Typed answers, `quick`,
+`balanced`, `thorough`, `run`, `status` and `cancel` work through DM recovery.
 
 ## Ownership and recovery
 
@@ -89,7 +110,9 @@ files were verified. Claude uses its native restricted file-tool mode inside a
 disposable source snapshot that excludes other run sessions. On Linux, AGY uses
 a private CLI context and a read-only project mount through bubblewrap, with
 web reads allowed and shell, MCP, writes and private CLI-file reads denied.
-OpenCode retains its native read-only policy.
+OpenCode retains its native read-only policy and restricted Slack runs require
+V2; V1 is rejected before model execution. The ordinary browser coach's AGY
+fallback remains available on platforms without the Linux Slack sandbox.
 
 Events and action submissions are deduplicated before processing. Draft
 versions reject stale controls, stable job IDs recover launches without creating
