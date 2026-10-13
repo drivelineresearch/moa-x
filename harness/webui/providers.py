@@ -49,7 +49,7 @@ PROVIDER_META = {
         "group": "OpenCode routes",
         "binary": lambda: os.environ.get("MOA_OPENCODE_BIN") or "opencode",
         "probe": opencode.check_available,
-        "install": "curl -fsSL https://opencode.ai/install | bash",
+        "install": "npm i -g @opencode/cli",
         "login": "opencode auth login",
     },
     "agy": {
@@ -88,7 +88,7 @@ EFFORT_OPTIONS = {
     "agy": ["low", "medium", "high"],
 }
 ROUTE_EFFORT_OPTIONS = {
-    "agy-gemini-pro": ["low", "high"],
+    "agy-gemini-pro": ["low", "medium", "high"],
     "fable": [],
 }
 

@@ -45,7 +45,7 @@ Flask's development server is only the fallback when Waitress is unavailable.
 The route chooser only exposes an adjustable control when the underlying CLI
 can honor it safely. Codex and Claude use their native reasoning-effort flags.
 AGY Gemini Pro selects depth by changing the model suffix (for example,
-`gemini-3.1-pro-low` to `gemini-3.1-pro-high`), so the UI sends a model
+`gemini-4-argon-low` to `gemini-4-argon-high`), so the UI sends a model
 variant and never sends a conflicting AGY `--effort` flag. OpenCode variants
 remain configured by their named route/model id.
 
@@ -67,17 +67,17 @@ and the strongest synthesis route in every run:
 
 | Mode | Proposers | Broadcast refiners | Aggregator |
 |---|---|---|---|
-| Quick | Gemini Pro `low`; Grok 4.5 | DeepSeek V4 Pro | GPT-5.6 Sol `xhigh` |
-| Balanced | Gemini Pro `high`; Grok 4.5; GPT-5.6 Luna `medium` | Qwen 3.8; DeepSeek V4 Pro; Opus `high` | GPT-5.6 Sol `xhigh` |
-| Thorough | Gemini Pro `high`; Grok 4.5; GPT-5.6 Terra `high`; GLM 5.2 | Qwen 3.8; DeepSeek V4 Pro; Opus `max` | GPT-5.6 Sol `xhigh` |
+| Quick | Gemini Pro `low`; Grok 4.7 | DeepSeek V4.1 Flash | GPT-6.1 Sol `xhigh` |
+| Balanced | Gemini Pro `high`; Grok 4.7; GPT-6 Luna `medium` | Qwen 3.8; DeepSeek V4.1 Flash; Opus `high` | GPT-6.1 Sol `xhigh` |
+| Thorough | Gemini Pro `high`; Grok 4.7; GPT-6 Astra `high`; GLM 5.3 | Qwen 3.8; DeepSeek V4.1 Flash; Opus `max` | GPT-6.1 Sol `xhigh` |
 
 Gemini Pro stays in the proposal layer because it contributes a
 Google-native research lane before the ensemble converges. Grok contributes
 the xAI proposal lane, Luna joins at Balanced, and Terra joins at Thorough.
-DeepSeek V4 Pro is the Quick reviewer and remains in the full broadcast-review
+DeepSeek V4.1 Flash is the Quick reviewer and remains in the full broadcast-review
 set alongside Qwen and Opus at higher depths. Every named default lane comes
 from a distinct lab within its own layer, and all recommended refiners are
-lab-independent from the OpenAI aggregator. GPT-5.6 Sol remains the selected
+lab-independent from the OpenAI aggregator. GPT-6.1 Sol remains the selected
 `xhigh` aggregator in every recommended mode.
 
 Kimi K3 remains visible on the OpenCode provider page only for archived
@@ -85,7 +85,7 @@ provenance. New launches are disabled because OpenCode Go repeatedly rejects
 the route before inference with `Provider rate limit exceeded`, including when
 balance fallback is enabled.
 
-Claude Opus 5 is available as a normal aggregator alternative. Fable 5 is
+Claude Opus 5.5 is available as a normal aggregator alternative. Fable 5.1 is
 available as an aggregator-only alternative. Selecting Fable opens a
 quota warning and requires the shared acknowledgement phrase before the radio
 selection is applied. This is intentionally only a warning shot—the phrase is
@@ -103,8 +103,8 @@ shown as execution metadata but never determines the character identity.
 ### Prompt coach
 
 The optional **Strengthen with AI** flow remains deliberately small rather
-than starting a second ensemble. GPT-5.6 Luna is the fast primary editor;
-Gemini 3.1 Pro is the bounded fallback. The coach sees only the user's draft,
+than starting a second ensemble. GPT-6 Luna is the fast primary editor;
+Gemini 4 Argon is the bounded fallback. The coach sees only the user's draft,
 source type, attachment count, and selected planning depth—not repository or
 attachment contents. It asks at most three material questions, then returns a
 preview that the user may apply or discard.

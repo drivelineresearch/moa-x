@@ -1,13 +1,13 @@
 # mixture-of-agents
 
 Layered planning ensemble for Claude Code. The configured proposers — by
-default three models from three different labs (Google Gemini 3.1 Pro via
-AGY, xAI Grok 4.5 via OpenCode, and OpenAI GPT-5.6 Luna via Codex) — read
+default three models from three different labs (Google Gemini 4 Argon via
+AGY, xAI Grok 4.7 via OpenCode, and OpenAI GPT-6 Luna via Codex) — read
 the repo, do heavy web research, and write independent plans. The refiners
-(Qwen qwen3.8-max-preview + DeepSeek V4 Pro + Claude Opus 5 high) then
+(Qwen qwen3.8-max + DeepSeek V4.1 Flash + Claude Opus 5.5 high) then
 **broadcast-refine** by
 reading all the proposals and producing cross-verifications. Layer 3
-synthesizes one plan in a recorded Codex subprocess on `gpt-5.6-sol` at
+synthesizes one plan in a recorded Codex subprocess on `gpt-6.1-sol` at
 `xhigh` reasoning.
 
 Use it for non-trivial architecture work, where a second and third
@@ -27,8 +27,8 @@ The skill will:
 1. Ask 1-3 clarifying questions.
 2. Generate a "scout brief" with focus files, in-scope items, out-of-scope items.
 3. Show you the brief and ask "ready to run? ~12-25 minutes".
-4. On yes, spawn Gemini Pro, Grok 4.5, and GPT-5.6 Luna in parallel.
-5. Spawn the broadcast refiners in parallel (Qwen, DeepSeek V4 Pro, and Claude Opus);
+4. On yes, spawn Gemini Pro, Grok 4.7, and GPT-6 Luna in parallel.
+5. Spawn the broadcast refiners in parallel (Qwen, DeepSeek V4.1 Flash, and Claude Opus);
    each sees all proposals.
 6. Synthesize the proposals + refinements into `final-plan.md` and the
    structured `final-plan.json` decision lineage.
@@ -39,9 +39,9 @@ The skill will:
 
 ```
 Layer 0 — Scout brief                (parent Claude Code, in-place)
-Layer 1 — Proposers (parallel)       (default Gemini Pro + Grok + GPT-5.6 Luna)
+Layer 1 — Proposers (parallel)       (default Gemini Pro + Grok + GPT-6 Luna)
 Layer 2 — Broadcast refiners         (default Qwen + DeepSeek + Opus, each sees all proposals)
-Layer 3 — Aggregator                 (recorded GPT-5.6 Sol at xhigh)
+Layer 3 — Aggregator                 (recorded GPT-6.1 Sol at xhigh)
 ```
 
 Layer 0 happens in the parent REPL. Layer 3 runs through Codex with `--phase
@@ -65,7 +65,7 @@ The Balanced lane assigns Google, xAI, and OpenAI to proposal; Alibaba,
 DeepSeek, and Anthropic to broadcast refinement; and OpenAI to aggregation.
 The refiners remain independent of the aggregator, preserving the
 cross-check that matters most. Quick trims the lane to Gemini + Grok → DeepSeek →
-Sol. Thorough adds GPT-5.6 Terra upstream and raises Opus to `max`.
+Sol. Thorough adds GPT-6 Astra upstream and raises Opus to `max`.
 
 ## Why this skill exists
 
@@ -198,13 +198,13 @@ Most defaults are right. Things you can override:
 ```bash
 python3 ~/.claude/skills/mixture-of-agents/scripts/run_moa.py \
   --scout-brief .moa/<session>/scout-brief.json \
-  --codex-model gpt-5.6-terra \
+  --codex-model gpt-6-astra \
   --codex-effort high \
-  --sonnet-model claude-sonnet-5 \
+  --sonnet-model claude-sonnet-5-5 \
   --codex-timeout 1500 \
   --sonnet-timeout 1200 \
   --proposers agy-gemini-pro,grok,codex-luna \
-  --refiners qwen,deepseek,opus \
+  --refiners qwen,deepseek-flash,opus \
   --skip-layer2          # debug only; skips refiners
 ```
 
@@ -222,14 +222,14 @@ This validates and writes `final-plan.md` plus `final-plan.json`, records the
 Layer 3 log/timing, and regenerates the report.
 
 Defaults:
-- `--codex-model gpt-5.6-terra`
+- `--codex-model gpt-6-astra`
 - `--codex-effort high`
-- `--sonnet-model claude-sonnet-5`; stable Anthropic provider names remain
+- `--sonnet-model claude-sonnet-5-5`; stable Anthropic provider names remain
   `sonnet` and `opus`
 - `--aggregator-provider codex-sol --aggregator-effort xhigh`
-- `--proposers agy-gemini-pro,grok,codex-luna` and `--refiners qwen,deepseek,opus`
+- `--proposers agy-gemini-pro,grok,codex-luna` and `--refiners qwen,deepseek-flash,opus`
 
-The default Qwen refiner routes `qwen-token-plan/qwen3.8-max-preview` through
+The default Qwen refiner routes `opencode-go/qwen3.8-max` through
 OpenCode with a 600-second cap. Set `QWEN_TOKEN_PLAN_API_KEY=sk-sp-...` in
 `.env`; Qwen can also be included in the proposer set.
 
@@ -240,10 +240,9 @@ model/timeout/effort from the
 `MOA_<NAME>_TIMEOUT` / `MOA_<NAME>_EFFORT` env vars. You can also define a provider entirely from
 the environment with `MOA_PROVIDER_<NAME>=<harness>:<model>`. OpenCode model
 ids are `provider/model` strings. Current built-ins use
-`opencode-go/grok-4.5`, disabled legacy `opencode-go/kimi-k3`,
-`opencode-go/glm-5.2`, Qwen Token Plan
-`qwen-token-plan/qwen3.8-max-preview`, and OpenCode Go
-`opencode-go/qwen3.7-max`.
+`opencode-go/grok-4.7`, disabled legacy `opencode-go/kimi-k3`,
+`opencode-go/glm-5.3`, `opencode-go/qwen3.8-max`, and
+`opencode-go/deepseek-v4.1-flash`.
 
 Per-agent timeout defaults:
 - `--codex-timeout` scales with `--codex-effort`: xhigh=1500s, high=1200s, medium/low=900s
@@ -260,7 +259,7 @@ authenticated in the local CLI:
 ```yaml
 layers:
   proposers: [agy-gemini-pro, grok, codex-luna]
-  refiners: [qwen, deepseek, opus]
+  refiners: [qwen, deepseek-flash, opus]
   aggregator: codex-sol
 ```
 
@@ -324,7 +323,7 @@ Version history:
   selection, routing diagnostics, documentation, and workflow art were
   hardened and refreshed.
 - **Current development:** AGY provides Gemini Pro in every recommended
-  proposer roster; Qwen + DeepSeek + Opus refine the Balanced default; and GPT-5.6 Sol
+  proposer roster; Qwen + DeepSeek + Opus refine the Balanced default; and GPT-6.1 Sol
   at `xhigh` aggregates every recommended mode. The local Flask control room
   adds queued runs, provider
   probes, SQLite history, sandbox-independent PDF/text context extraction,

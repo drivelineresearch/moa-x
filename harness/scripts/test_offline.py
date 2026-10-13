@@ -2259,7 +2259,7 @@ def test_config_resolve_builtin_codex() -> bool:
     print("\n[16] config.resolve_provider returns built-in codex triple")
     from config import resolve_provider
     rp = resolve_provider("codex", user_providers={})
-    ok = (rp.name == "codex" and rp.harness == "codex" and rp.model == "gpt-5.6-terra")
+    ok = (rp.name == "codex" and rp.harness == "codex" and rp.model == "gpt-6-astra")
     return _ok(ok, f"got {rp}")
 
 def test_config_resolve_builtin_sonnet_uses_claude_harness() -> bool:
@@ -2269,7 +2269,7 @@ def test_config_resolve_builtin_sonnet_uses_claude_harness() -> bool:
     ok = (
         rp.name == "sonnet"
         and rp.harness == "claude"
-        and rp.model == "claude-sonnet-5"
+        and rp.model == "claude-sonnet-5-5"
         and rp.effort == "high"
     )
     return _ok(ok, f"got {rp}")
@@ -2427,7 +2427,7 @@ def test_config_load_resolved_end_to_end() -> bool:
           custom-grok: {harness: opencode, model: grok-4.20}
         layers:
           proposers: [codex, codex-luna, custom-grok]
-          refiners:  [codex, deepseek]
+          refiners:  [codex, deepseek-flash]
     """)
     with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
         f.write(yaml_text)
@@ -2738,7 +2738,7 @@ def test_config_resolve_builtin_grok_uses_opencode() -> bool:
     ok = (
         rp.name == "grok"
         and rp.harness == "opencode"
-        and rp.model == "opencode-go/grok-4.5"
+        and rp.model == "opencode-go/grok-4.7"
     )
     return _ok(ok, f"got {rp}")
 
@@ -2771,8 +2771,8 @@ def test_config_resolve_builtin_qwen_uses_token_plan() -> bool:
     ok = (
         rp.name == "qwen"
         and rp.harness == "opencode"
-        and rp.model == "qwen-token-plan/qwen3.8-max-preview"
-        and rp.timeout == 600
+        and rp.model == "opencode-go/qwen3.8-max"
+        and rp.timeout == 900
     )
     return _ok(ok, f"got {rp}")
 
@@ -2783,25 +2783,24 @@ def test_provider_catalog_includes_optional_builtins() -> bool:
     catalog = load_provider_catalog(config_path=Path("/nonexistent"))
     ok = (
         catalog.get("qwen") is not None
-        and catalog["qwen"].model == "qwen-token-plan/qwen3.8-max-preview"
-        and catalog["codex-sol"].model == "gpt-5.6-sol"
+        and catalog["qwen"].model == "opencode-go/qwen3.8-max"
+        and catalog["codex-sol"].model == "gpt-6.1-sol"
         and catalog["codex-sol"].effort == "xhigh"
-        and catalog["codex-luna"].model == "gpt-5.6-luna"
+        and catalog["codex-luna"].model == "gpt-6-luna"
         and catalog["codex-luna"].effort == "medium"
         and catalog.get("glm") is not None
-        and catalog["glm"].model == "opencode-go/glm-5.2"
-        and catalog.get("deepseek") is not None
-        and catalog["deepseek"].model == "opencode-go/deepseek-v4-pro"
+        and catalog["glm"].model == "opencode-go/glm-5.3"
+        and "deepseek" not in catalog
         and catalog.get("deepseek-flash") is not None
-        and catalog["deepseek-flash"].model == "opencode-go/deepseek-v4-flash"
+        and catalog["deepseek-flash"].model == "opencode-go/deepseek-v4.1-flash"
         and "composer" not in catalog
         and "cursor-grok" not in catalog
         and catalog.get("codex-reviewer") is not None
-        and catalog["codex-reviewer"].model == "gpt-5.6-sol"
+        and catalog["codex-reviewer"].model == "gpt-6.1-sol"
         and catalog.get("codex-aggregator") is not None
         and catalog["codex-aggregator"].effort == "xhigh"
         and catalog.get("opus") is not None
-        and catalog["opus"].model == "claude-opus-5"
+        and catalog["opus"].model == "claude-opus-5-5"
     )
     return _ok(ok, f"names={sorted(catalog)}")
 
@@ -3218,19 +3217,18 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
         item["id"]: item for item in web_providers.provider_catalog(probe=False)
     }
     expected = {
-        "codex-sol": ("codex", "gpt-5.6-sol"),
-        "codex-luna": ("codex", "gpt-5.6-luna"),
-        "sonnet": ("claude", "claude-sonnet-5"),
-        "opus": ("claude", "claude-opus-5"),
+        "codex-sol": ("codex", "gpt-6.1-sol"),
+        "codex-luna": ("codex", "gpt-6-luna"),
+        "sonnet": ("claude", "claude-sonnet-5-5"),
+        "opus": ("claude", "claude-opus-5-5"),
         "kimi": ("opencode", "opencode-go/kimi-k3"),
-        "qwen": ("opencode", "qwen-token-plan/qwen3.8-max-preview"),
-        "qwen-opencode": ("opencode", "opencode-go/qwen3.7-max"),
-        "grok": ("opencode", "opencode-go/grok-4.5"),
-        "glm": ("opencode", "opencode-go/glm-5.2"),
-        "deepseek": ("opencode", "opencode-go/deepseek-v4-pro"),
-        "deepseek-flash": ("opencode", "opencode-go/deepseek-v4-flash"),
-        "agy-gemini-pro": ("agy", "gemini-3.1-pro-high"),
-        "fable": ("claude", "claude-fable-5"),
+        "qwen": ("opencode", "opencode-go/qwen3.8-max"),
+        "qwen-opencode": ("opencode", "opencode-go/qwen3.8-max"),
+        "grok": ("opencode", "opencode-go/grok-4.7"),
+        "glm": ("opencode", "opencode-go/glm-5.3"),
+        "deepseek-flash": ("opencode", "opencode-go/deepseek-v4.1-flash"),
+        "agy-gemini-pro": ("agy", "gemini-4-argon-high"),
+        "fable": ("claude", "claude-fable-5-1"),
     }
     routes_ok = all(
         name in by_id
@@ -3243,7 +3241,7 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
         and by_id["sonnet"]["effort_options"]
         == ["low", "medium", "high", "xhigh", "max"]
         and by_id["codex"]["supports_effort"]
-        and by_id["agy-gemini-pro"]["effort_options"] == ["low", "high"]
+        and by_id["agy-gemini-pro"]["effort_options"] == ["low", "medium", "high"]
         and by_id["agy-gemini-pro"]["effort_control"] == "model_variant"
         and by_id["fable"]["effort"] == "xhigh"
         and by_id["fable"]["effort_options"] == []
@@ -3267,7 +3265,7 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
         and by_id["grok"]["default_roles"] == ["proposer"]
         and by_id["codex-luna"]["default_roles"] == ["proposer"]
         and by_id["qwen"]["default_roles"] == ["refiner"]
-        and by_id["deepseek"]["default_roles"] == ["refiner"]
+        and by_id["deepseek-flash"]["default_roles"] == ["refiner"]
         and by_id["kimi"]["default_roles"] == []
         and by_id["kimi"]["roles"] == []
         and by_id["opus"]["default_roles"] == ["refiner"]
@@ -3283,10 +3281,10 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
         snippet in app_js
         for snippet in (
             'preferred: ["agy-gemini-pro", "grok"]',
-            'refiner: { preferred: ["deepseek"], limit: 1 }',
+            'refiner: { preferred: ["deepseek-flash"], limit: 1 }',
             'preferred: ["agy-gemini-pro", "grok", "codex-luna"]',
             'preferred: ["agy-gemini-pro", "grok", "codex", "glm"]',
-            'preferred: ["qwen", "deepseek", "opus"]',
+            'preferred: ["qwen", "deepseek-flash", "opus"]',
             'efforts: { opus: "max" }',
             'preferred: ["codex-sol"]',
             'efforts: { "codex-sol": "xhigh" }',
@@ -3378,16 +3376,16 @@ def test_google_provider_builtins_are_default_and_resolve() -> bool:
             pass
     ok = (
         agy_pro.harness == "agy"
-        and agy_pro.model == "gemini-3.1-pro-high"
+        and agy_pro.model == "gemini-4-argon-high"
         and agy_pro.effort == "high"
-        and agy_effort_override.model == "gemini-3.1-pro-high"
+        and agy_effort_override.model == "gemini-4-argon-high"
         and agy_effort_override.effort == "high"
         and proposer_names == ["agy-gemini-pro", "grok", "codex-luna"]
-        and refiner_names == ["qwen", "deepseek", "opus"]
+        and refiner_names == ["qwen", "deepseek-flash", "opus"]
         and defaults.aggregator is not None
         and defaults.aggregator.name == "codex-sol"
         and fable.harness == "claude"
-        and fable.model == "claude-fable-5"
+        and fable.model == "claude-fable-5-1"
         and harness_config.provider_allows_role("fable", "aggregator")
         and not harness_config.provider_allows_role(
             "custom-kimi", "refiner", "opencode-go/kimi-k3"
@@ -3395,13 +3393,13 @@ def test_google_provider_builtins_are_default_and_resolve() -> bool:
         and not harness_config.provider_allows_role("fable", "proposer")
         and not harness_config.provider_allows_role("fable", "refiner")
         and harness_config.provider_allows_role(
-            "custom-alias", "aggregator", "claude-fable-5"
+            "custom-alias", "aggregator", "claude-fable-5-1"
         )
         and not harness_config.provider_allows_role(
-            "custom-alias", "proposer", "claude-fable-5"
+            "custom-alias", "proposer", "claude-fable-5-1"
         )
         and not harness_config.provider_allows_role(
-            "custom-alias", "refiner", "claude-fable-5"
+            "custom-alias", "refiner", "claude-fable-5-1"
         )
         and gemini_removed
         and flash_removed
@@ -4368,7 +4366,7 @@ def test_layer3_fable_phase_uses_claude_and_writes_artifacts() -> bool:
             )
         ok = (
             result.success and result.schema_valid
-            and call.call_args.kwargs["model"] == "claude-fable-5"
+            and call.call_args.kwargs["model"] == "claude-fable-5-1"
             and call.call_args.kwargs["reasoning_effort"] == "xhigh"
             and (session / "final-plan.md").read_text() == markdown
             and json.loads((session / "final-plan.json").read_text()) == lineage

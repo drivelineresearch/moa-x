@@ -9,17 +9,17 @@ The roster is config-driven
 (harness/config.yaml + .env + built-in defaults); the default set is:
 
   Layer 1 (Proposers, parallel):
-    - agy-gemini-pro (gemini-3.1-pro-high, Google via AGY)
-    - grok             (grok-4.5, xAI via OpenCode Go)
-    - codex-luna       (gpt-5.6-luna, OpenAI via Codex)
+    - agy-gemini-pro (gemini-4-argon-high, Google via AGY)
+    - grok             (grok-4.7, xAI via OpenCode Go)
+    - codex-luna       (gpt-6-luna, OpenAI via Codex)
 
   Layer 2 (Refiners, parallel, broadcast):
-    - qwen (qwen3.8-max, Alibaba via Qwen Token Plan; sees ALL outputs)
-    - deepseek-flash (DeepSeek V4 Flash via OpenCode Go; sees ALL outputs)
-    - opus (claude-opus-5 @ high, Anthropic; sees ALL proposer outputs)
+    - qwen (qwen3.8-max, Alibaba via OpenCode Go; sees ALL outputs)
+    - deepseek-flash (DeepSeek V4.1 Flash via OpenCode Go; sees ALL outputs)
+    - opus (claude-opus-5-5 @ high, Anthropic; sees ALL proposer outputs)
 
   Layer 3 (Aggregator):
-    - codex-sol (gpt-5.6-sol @ xhigh, OpenAI via recorded Codex subprocess)
+    - codex-sol (gpt-6.1-sol @ xhigh, OpenAI via recorded Codex subprocess)
 
 Broadcast refinement (each refiner sees every proposer's output) is
 paper-faithful to Wang et al. 2024 (arXiv:2406.04692). The default keeps every
@@ -2527,9 +2527,9 @@ def main() -> int:
                              "Sonnet with full research can spike past 15 min, so headroom "
                              "is the default. A single --timeout overrides this.")
     parser.add_argument("--codex-model",
-                        default=os.environ.get("MOA_CODEX_MODEL") or "gpt-5.6-terra")
+                        default=os.environ.get("MOA_CODEX_MODEL") or "gpt-6-astra")
     parser.add_argument("--codex-reviewer-model",
-                        default=os.environ.get("MOA_CODEX_REVIEWER_MODEL") or "gpt-5.6-sol",
+                        default=os.environ.get("MOA_CODEX_REVIEWER_MODEL") or "gpt-6.1-sol",
                         help="Model for the built-in codex-reviewer refiner.")
     parser.add_argument("--codex-effort",
                         default=os.environ.get("MOA_CODEX_EFFORT") or "high",
@@ -2900,12 +2900,12 @@ def main() -> int:
                 return 2
             final_aggregator = provider_catalog[args.aggregator_provider]
 
-        if args.codex_model and args.codex_model != "gpt-5.6-terra":
+        if args.codex_model and args.codex_model != "gpt-6-astra":
             final_proposers = _apply_model_override(final_proposers, "codex", args.codex_model)
         final_proposers = _apply_effort_override(
             final_proposers, "codex", args.codex_effort
         )
-        if args.codex_reviewer_model and args.codex_reviewer_model != "gpt-5.6-sol":
+        if args.codex_reviewer_model and args.codex_reviewer_model != "gpt-6.1-sol":
             final_refiners = _apply_model_override(
                 final_refiners, "codex-reviewer", args.codex_reviewer_model
             )

@@ -31,7 +31,7 @@ Typical usage:
     # Resolve a named provider to a triple:
     from config import resolve_provider
     rp = resolve_provider("codex", user_providers={})
-    # rp.name == "codex", rp.harness == "codex", rp.model == "gpt-5.6-terra"
+    # rp.name == "codex", rp.harness == "codex", rp.model == "gpt-6-astra"
 
 The config.yaml schema is documented in harness/config.example.yaml.
 """
@@ -99,38 +99,38 @@ class ResolvedProvider:
 # 900-second default: broadcast review can spend six minutes on research and
 # still needs time to serialize a large schema-valid response.
 BUILTIN_PROVIDERS: dict[str, ResolvedProvider] = {
-    "codex":          ResolvedProvider(name="codex",          harness="codex",    model="gpt-5.6-terra", effort="high"),
-    "codex-sol":      ResolvedProvider(name="codex-sol",      harness="codex",    model="gpt-5.6-sol", effort="xhigh"),
-    "codex-luna":     ResolvedProvider(name="codex-luna",     harness="codex",    model="gpt-5.6-luna", effort="medium"),
-    "codex-reviewer": ResolvedProvider(name="codex-reviewer", harness="codex",    model="gpt-5.6-sol", effort="high"),
-    "codex-aggregator": ResolvedProvider(name="codex-aggregator", harness="codex", model="gpt-5.6-sol", timeout=600, effort="xhigh"),
+    "codex":          ResolvedProvider(name="codex",          harness="codex",    model="gpt-6-astra", effort="high"),
+    "codex-sol":      ResolvedProvider(name="codex-sol",      harness="codex",    model="gpt-6.1-sol", effort="xhigh"),
+    "codex-luna":     ResolvedProvider(name="codex-luna",     harness="codex",    model="gpt-6-luna", effort="medium"),
+    "codex-reviewer": ResolvedProvider(name="codex-reviewer", harness="codex",    model="gpt-6.1-sol", effort="high"),
+    "codex-aggregator": ResolvedProvider(name="codex-aggregator", harness="codex", model="gpt-6.1-sol", timeout=600, effort="xhigh"),
     # Pin current canonical Anthropic ids. Claude Code's rolling `sonnet`
     # alias still resolved to 4.6 on 2.1.220 while Sonnet 5 was available
     # explicitly, so aliases would make the UI and recorded provenance lie.
-    "sonnet":         ResolvedProvider(name="sonnet",         harness="claude",   model="claude-sonnet-5", effort="high"),
-    "opus":           ResolvedProvider(name="opus",           harness="claude",   model="claude-opus-5", effort="high"),
+    "sonnet":         ResolvedProvider(name="sonnet",         harness="claude",   model="claude-sonnet-5-5", effort="high"),
+    "opus":           ResolvedProvider(name="opus",           harness="claude",   model="claude-opus-5-5", effort="high"),
     "kimi":           ResolvedProvider(name="kimi",           harness="opencode", model="opencode-go/kimi-k3"),
-    "qwen":           ResolvedProvider(name="qwen",           harness="opencode", model="qwen-token-plan/qwen3.8-max", timeout=900),
-    "qwen-opencode":  ResolvedProvider(name="qwen-opencode",  harness="opencode", model="opencode-go/qwen3.7-max"),
-    "grok":           ResolvedProvider(name="grok",           harness="opencode", model="opencode-go/grok-4.5"),
-    "glm":            ResolvedProvider(name="glm",            harness="opencode", model="opencode-go/glm-5.2"),
-    "deepseek-flash": ResolvedProvider(name="deepseek-flash", harness="opencode", model="opencode-go/deepseek-v4-flash"),
-    "deepseek":       ResolvedProvider(name="deepseek",       harness="opencode", model="opencode-go/deepseek-v4-pro"),
+    "qwen":           ResolvedProvider(name="qwen",           harness="opencode", model="opencode-go/qwen3.8-max", timeout=900),
+    "qwen-opencode":  ResolvedProvider(name="qwen-opencode",  harness="opencode", model="opencode-go/qwen3.8-max"),
+    "grok":           ResolvedProvider(name="grok",           harness="opencode", model="opencode-go/grok-4.7"),
+    "glm":            ResolvedProvider(name="glm",            harness="opencode", model="opencode-go/glm-5.3"),
+    "deepseek-flash": ResolvedProvider(name="deepseek-flash", harness="opencode", model="opencode-go/deepseek-v4.1-flash"),
     # Google runs through AGY, which reuses the account signed into the local
     # Antigravity CLI. Gemini Pro is part of the shipped proposer defaults.
     # AGY selects depth in the model slug itself (for example
-    # ``gemini-3.1-pro-high``), rather than with a separate --effort flag.
+    # ``gemini-4-argon-high``), rather than with a separate --effort flag.
     # Gemini Flash routes are intentionally not curated: Pro is the sole
     # Google route exposed by MoA-X.
-    "agy-gemini-pro": ResolvedProvider(name="agy-gemini-pro", harness="agy",      model="gemini-3.1-pro-high", effort="high"),
+    "agy-gemini-pro": ResolvedProvider(name="agy-gemini-pro", harness="agy",      model="gemini-4-argon-high", effort="high"),
     # Fable is a deliberately gated, quota-intensive synthesis route through
     # Claude Code. It is aggregator-only and never participates upstream.
-    "fable":          ResolvedProvider(name="fable",          harness="claude",   model="claude-fable-5", effort="xhigh"),
+    "fable":          ResolvedProvider(name="fable",          harness="claude",   model="claude-fable-5-1", effort="xhigh"),
 }
 
 PROVIDER_ALLOWED_ROLES: dict[str, frozenset[str]] = {
     "fable": frozenset({"aggregator"}),
     "kimi": frozenset(),
+    "deepseek": frozenset(),  # retired Pro route; archives retain its identity
 }
 
 
@@ -433,7 +433,7 @@ def _providers_from_env() -> dict[str, dict]:
         if ":" not in value:
             raise ValueError(
                 f"{key} must be '<harness>:<model>' "
-                f"(e.g. opencode:zhipuai/glm-5.2); got {value!r}"
+                f"(e.g. opencode:zhipuai/glm-5.3); got {value!r}"
             )
         harness, _, model = value.partition(":")
         harness, model = harness.strip(), model.strip()

@@ -63,7 +63,7 @@ class EffortControlsBrowserTest(unittest.TestCase):
                     "imported": True,
                     "config": {
                         "proposers": ["agy-gemini-pro", "grok", "codex-luna"],
-                        "refiners": ["qwen", "deepseek", "opus"],
+                        "refiners": ["qwen", "deepseek-flash", "opus"],
                         "aggregator": "codex-sol",
                         "options": {"aggregate": True},
                     },

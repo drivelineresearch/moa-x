@@ -182,7 +182,7 @@ class WebUITest(unittest.TestCase):
                 "list_models",
                 return_value=(
                     True,
-                    ["gemini-3.1-pro-high", "gemini-3.1-pro-low"],
+                    ["gemini-4-argon-high", "gemini-4-argon-low"],
                     "2 models available",
                 ),
             ),
@@ -494,13 +494,23 @@ class WebUITest(unittest.TestCase):
                 "workspace": str(self.root),
                 "goal": "Reject Fable in upstream layers.",
                 "proposers": ["grok"],
-                "refiners": ["deepseek"],
+                "refiners": ["deepseek-flash"],
                 "aggregator": "codex-sol",
             }
             payload[field] = ["fable"]
             response = self.client.post("/api/jobs", json=payload)
             self.assertEqual(response.status_code, 400)
             self.assertIn("aggregator-only", response.get_json()["error"])
+
+    def test_retired_deepseek_pro_cannot_be_queued(self):
+        response = self.client.post(
+            "/api/jobs",
+            json={"workspace": str(self.root), "goal": "Reject the removed Pro route.",
+                  "proposers": ["grok"], "refiners": ["deepseek"],
+                  "aggregator": "codex-sol"},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("disabled", response.get_json()["error"])
 
     def test_fable_is_accepted_as_an_explicit_aggregator(self):
         created = self.client.post(
@@ -509,7 +519,7 @@ class WebUITest(unittest.TestCase):
                 "workspace": str(self.root),
                 "goal": "Use Fable only for final synthesis.",
                 "proposers": ["grok"],
-                "refiners": ["deepseek"],
+                "refiners": ["deepseek-flash"],
                 "aggregator": "fable",
             },
         )
@@ -1916,9 +1926,9 @@ class PromptCoachTest(unittest.TestCase):
             "Return the structured result.", prompt_coach.FINALIZE_SCHEMA
         )
         self.assertEqual(payload["optimized_prompt"], "A stronger brief.")
-        self.assertEqual(model["model"], "gemini-3.1-pro-high")
+        self.assertEqual(model["model"], "gemini-3.8-flash-low")
         self.assertTrue(model["fallback"])
-        self.assertEqual(codex_run.call_args.kwargs["model"], "gpt-5.6-luna")
+        self.assertEqual(codex_run.call_args.kwargs["model"], "gpt-6-luna")
         agy_run.assert_called_once()
 
     @patch("harness.webui.prompt_coach.agy.run")
@@ -1937,7 +1947,7 @@ class PromptCoachTest(unittest.TestCase):
         _, model = prompt_coach._run(
             "Return the structured result.", prompt_coach.FINALIZE_SCHEMA
         )
-        self.assertEqual(model["model"], "gpt-5.6-luna")
+        self.assertEqual(model["model"], "gpt-6-luna")
         self.assertFalse(model["fallback"])
         agy_run.assert_not_called()
 

@@ -4,10 +4,10 @@
 
 MoA-X is a Mixture-of-Agents reference harness. `harness/scripts/run_moa.py`
 orchestrates a config-driven roster of CLI proposers and broadcast
-refiners; the shipped default is Gemini Pro + Grok 4.5 + GPT-5.6 Luna proposers
-and Qwen + DeepSeek V4 Pro + Claude Opus refiners (Qwen uses the Token Plan API).
+refiners; the shipped default is Gemini Pro + Grok 4.7 + GPT-6 Luna proposers
+and Qwen + DeepSeek V4.1 Flash + Claude Opus refiners (Qwen uses OpenCode Go).
 Layer 0 (scout) is handled by the parent agent. Layer 3 defaults to a recorded
-Codex subprocess on `gpt-5.6-sol` at `xhigh` reasoning (stable provider name
+Codex subprocess on `gpt-6.1-sol` at `xhigh` reasoning (stable provider name
 `codex-sol`) through `--phase layer3`. Layer 3 adds `final-plan.md` plus a
 schema-validated `final-plan.json` provenance companion and refreshes the
 self-contained report's decision-lineage explorer.
@@ -56,7 +56,7 @@ tests must run offline so CI stays credential-free.
 Rule 2 is non-negotiable. Rule 1 is a strong recommendation.
 
 1. **Recommend lab-independent refiners.** Layer 2 defaults to
-   `{qwen, deepseek, opus}` and the default aggregator uses GPT-5.6 Sol at `xhigh`
+   `{qwen, deepseek-flash, opus}` and the default aggregator uses GPT-6.1 Sol at `xhigh`
    under the stable `codex-sol` provider name. All three reviewers are
    independent of the OpenAI aggregator and of the default proposer labs.
    If changing the aggregator, reconsider
@@ -78,14 +78,14 @@ Rule 2 is non-negotiable. Rule 1 is a strong recommendation.
   normalized usage/cost telemetry and safe pre-dispatch budget controls, not
   basic API-key authentication.
 - **Default CLI roster is `[agy-gemini-pro, grok, codex-luna]` proposers,
-  `[qwen, deepseek, opus]` refiners, and `codex-sol` aggregator at `xhigh`** using the
+  `[qwen, deepseek-flash, opus]` refiners, and `codex-sol` aggregator at `xhigh`** using the
   `{agy, codex, claude, opencode}` harnesses. The Web UI Thorough preset replaces
-  Luna with GLM 5.2 beside Terra so all four proposer lanes come from independent
-  labs. Cursor is unsupported. DeepSeek V4 Pro/Flash remain optional curated
-  routes outside recommended presets. The model defaults are
-  Gemini 3.1 Pro High, Grok 4.5, GPT-5.6 Luna, Qwen
-  `qwen3.8-max-preview`, DeepSeek V4 Pro, Claude Opus 5 (`claude-opus-5`),
-  and `gpt-5.6-sol` at `xhigh` for synthesis. Fable 5 is an
+  Luna with GLM 5.3 beside Astra so all four proposer lanes come from independent
+  labs. Cursor is unsupported. DeepSeek V4.1 Flash is the sole curated DeepSeek route and is included
+  in every refinement preset. The model defaults are
+  Gemini 4 Argon High, Grok 4.7, GPT-6 Luna, Qwen
+  `qwen3.8-max`, DeepSeek V4.1 Flash, Claude Opus 5.5 (`claude-opus-5-5`),
+  and `gpt-6.1-sol` at `xhigh` for synthesis. Fable 5.1 is an
   aggregator-only, warning-gated alternative and is never a proposer or
   refiner. It is a default, not a cap—the roster is pure config (built-in names,
   `providers:` in config.yaml, current Claude/OpenCode/Google routes
@@ -93,7 +93,7 @@ Rule 2 is non-negotiable. Rule 1 is a strong recommendation.
   `MOA_PROVIDER_<NAME>` env shorthand). OpenCode-backed routes use a
   `provider/model` string, but a new *harness* needs its own adapter—open an
   issue first. Stable provider names
-  such as `sonnet`, `opus`, `qwen`, and `deepseek` are compatibility/configuration
+  such as `sonnet`, `opus`, `qwen`, and `deepseek-flash` are compatibility/configuration
   identifiers; manifests and the Web UI record their resolved current model.
 
 ## Config surface
@@ -130,10 +130,10 @@ then `harness/config.yaml`, then built-in defaults. Loader lives at
   `harness/scripts/model_labs.py`. Unknown custom routes use the independent
   lab fallback. Never add `provider-*` or harness-keyed `pixel-*` art.
   → `docs/assets.md`.
-- **Don't guess opencode `run` flags — they contradict the published docs.** No
-  `-q`/`--auto`; auto-approve is `--dangerously-skip-permissions`; no stdin
-  (prompt via `-f`, big prompts overflow argv); `-f` is a greedy array so the
-  message goes before it. → `opencode-headless-run-invocation` skill + `adapters/opencode.py`.
+- **OpenCode dispatch follows the installed major version.** V2 uses a private
+  server, NDJSON, a disposable repository snapshot, and an explicit read-only
+  agent; V1 retains its original flags and permission file. →
+  `adapters/opencode.py`, `docs/architecture.md`.
 - **opencode model ids are `provider/model` strings.** Swap billing paths by
   overriding the model string (`MOA_CUSTOM_MODEL=provider/model`), not by adding a
   harness. → `docs/config.md`.

@@ -30,7 +30,9 @@ jobs:
         run: pip install 'pyyaml>=6,<7'
 
       - name: Run harness offline tests
-        run: python3 harness/scripts/test_offline.py
+        run: |
+          python3 harness/scripts/test_offline.py
+          python3 harness/scripts/test_opencode.py
 
   test-webui-browser:
     runs-on: ubuntu-latest

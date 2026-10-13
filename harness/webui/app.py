@@ -1089,6 +1089,11 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             str(item["id"]): set(item.get("roles") or [])
             for item in model_catalog(probe=False)
         }
+        route_roles.update({
+            name: set(roles)
+            for name, roles in harness_config.PROVIDER_ALLOWED_ROLES.items()
+            if not roles
+        })
         for role, route_ids in (
             ("proposer", requested_proposers),
             ("refiner", requested_refiners),

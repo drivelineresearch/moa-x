@@ -23,8 +23,8 @@ from adapters import agy, codex  # noqa: E402
 from run_moa import _validate_against_schema  # noqa: E402
 
 
-PRIMARY_MODEL = "gpt-5.6-luna"
-FALLBACK_MODEL = "gemini-3.1-pro-high"
+PRIMARY_MODEL = "gpt-6-luna"
+FALLBACK_MODEL = "gemini-3.8-flash-low"
 MAX_BRIEF_CHARS = 20_000
 MAX_QUESTIONS = 3
 

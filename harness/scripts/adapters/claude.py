@@ -200,7 +200,7 @@ def run(
         repo_path: Working directory. Claude Code's Read tool can access this
             tree without --add-dir (cwd is implicitly readable).
         model: Explicit Claude model id. The curated route pins
-            `claude-sonnet-5` so provenance does not depend on a rolling alias.
+            `claude-sonnet-5-5` so provenance does not depend on a rolling alias.
         timeout_seconds: Hard wall-clock cap. Default 1200s (20 min) because
             sonnet with full tool access was observed taking >900s in the
             first dogfood run. The restricted tool set (no Agent) should

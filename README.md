@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/moa-x-workflow.png" alt="MoA-X four-stage workflow: Scout and control room, Gemini Pro/Grok/GPT-5.6 Luna proposers, Qwen/DeepSeek/Opus broadcast refiners, and GPT-5.6 Sol aggregation with Opus and warning-gated Fable alternatives" width="100%">
+  <img src="docs/moa-x-workflow.png" alt="MoA-X four-stage workflow: Scout and control room, Gemini Pro/Grok/GPT-6 Luna proposers, Qwen/DeepSeek/Opus broadcast refiners, and GPT-6.1 Sol aggregation with Opus and warning-gated Fable alternatives" width="100%">
 </p>
 
 A small, CLI-native take on the 2024
@@ -18,14 +18,14 @@ A small, CLI-native take on the 2024
 a different job: producing **repo-grounded implementation plans** for
 coding agents instead of chat answers. The default roster puts proposers
 from three model labs to work — Google `agy-gemini-pro`
-(`gemini-3.1-pro-high`), xAI `grok` (`opencode-go/grok-4.5`), and
-OpenAI `codex-luna` (`gpt-5.6-luna`) — reading the repo in
+(`gemini-4-argon-high`), xAI `grok` (`opencode-go/grok-4.7`), and
+OpenAI `codex-luna` (`gpt-6-luna`) — reading the repo in
 parallel, doing their own web research, and each writing an independent
-plan. Three refiners—Alibaba Qwen `qwen3.8-max-preview`, DeepSeek V4 Pro,
-and Anthropic `claude-opus-5`—then refine in broadcast mode (every refiner
+plan. Three refiners—Alibaba Qwen `qwen3.8-max`, DeepSeek V4.1 Flash,
+and Anthropic `claude-opus-5-5`—then refine in broadcast mode (every refiner
 sees every plan). The shipped defaults and all recommended Web UI modes run Layer 3
-through the recorded Codex path with `gpt-5.6-sol` at `xhigh` reasoning.
-Claude Opus 5 is also available as an aggregator, while Fable 5 is available
+through the recorded Codex path with `gpt-6.1-sol` at `xhigh` reasoning.
+Claude Opus 5.5 is also available as an aggregator, while Fable 5.1 is available
 only as a warning-gated, quota-heavy aggregator option.
 
 Built to run **inside Claude Code** as a skill, or from the local Web UI.
@@ -35,9 +35,8 @@ which layer, and how many — is pure config. API-based auth and more
 providers are already supported. See "Contributions we'd prioritize" below
 for the remaining gaps.
 
-Qwen Cloud Token Plan powers the default `qwen` refiner
-(`qwen-token-plan/qwen3.8-max-preview` through OpenCode). Its dedicated `sk-sp-...`
-key stays in `.env`; see [`docs/config.md`](docs/config.md#add-qwen-token-plan).
+OpenCode Go powers the default `qwen` refiner with `opencode-go/qwen3.8-max`,
+using the same authenticated account as Grok and DeepSeek V4.1 Flash.
 
 ## TL;DR
 
@@ -101,9 +100,9 @@ AGY is the curated Google route and reuses the account already signed into
 
 ```
 Layer 0 — Scout brief           (parent Claude, in-place)
-Layer 1 — Proposers (parallel)    default: Gemini Pro + Grok + GPT-5.6 Luna
+Layer 1 — Proposers (parallel)    default: Gemini Pro + Grok + GPT-6 Luna
 Layer 2 — Broadcast refiners      default: Qwen + DeepSeek + Opus, each sees ALL proposals
-Layer 3 — Aggregator              default: recorded GPT-5.6 Sol at xhigh
+Layer 3 — Aggregator              default: recorded GPT-6.1 Sol at xhigh
 ```
 
 The roster is config-driven; every named route in the default pipeline comes

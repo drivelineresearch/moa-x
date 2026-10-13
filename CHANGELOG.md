@@ -5,7 +5,23 @@ versioning.
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- Refresh active routes to Gemini 4 Argon, GPT-6 Astra/Luna and GPT-6.1 Sol,
+  Claude Sonnet/Opus 5.5 and Fable 5.1, Grok 4.7, GLM 5.3, and Qwen 3.8 Max
+  through OpenCode Go. DeepSeek V4.1 Flash is the only curated DeepSeek route;
+  archived Pro manifests keep their original attribution.
+- Update prompt-coach primary/fallback models independently of roster defaults.
+- Preserve deployed proxy-path support, decision-map UI refinements, report
+  escaping, and bounded broadcast-review settings.
+
+### Fixed
+
+- Dispatch OpenCode V2 with a private server, explicit read-only agent,
+  disposable repository snapshot, matching PWD/cwd, and NDJSON text/error
+  extraction. V1 keeps its original invocation contract.
+- Gate OpenCode route readiness on catalog visibility as well as credentials;
+  CLI usage and unavailable-model errors no longer trigger a research retry.
 
 ## [0.5.0] — 2026-09-21
 

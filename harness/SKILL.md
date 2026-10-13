@@ -2,10 +2,10 @@
 name: mixture-of-agents
 description: |
   Run a non-trivial planning task through a layered ensemble of frontier models
-  from distinct labs (proposers Gemini 3.1 Pro high + Grok 4.5 + GPT-5.6 Luna;
-  refiners qwen3.8-max-preview + DeepSeek V4 Pro + Claude Opus 5 high) before producing a final implementation
+  from distinct labs (proposers Gemini 4 Argon high + Grok 4.7 + GPT-6 Luna;
+  refiners qwen3.8-max + DeepSeek V4.1 Flash + Claude Opus 5.5 high) before producing a final implementation
   plan. The configured proposers run in parallel, broadcast refiners (each
-  sees all proposals) verify and cross-check, then GPT-5.6 Sol at `xhigh`
+  sees all proposals) verify and cross-check, then GPT-6.1 Sol at `xhigh`
   (stable provider name `codex-sol`) aggregates through the recorded Layer 3
   path. Adapted from the 2024 Mixture-of-Agents paper
   (arXiv:2406.04692) for repo-grounded planning, not chat-answer ensembling.
@@ -31,13 +31,13 @@ allowed-tools:
 # Mixture of Agents
 
 Layered ensemble planning. The configured proposers — by default three
-frontier models from three different labs (Google's Gemini 3.1 Pro through
-AGY, xAI's Grok 4.5 through OpenCode, and OpenAI's GPT-5.6 Luna through
+frontier models from three different labs (Google's Gemini 4 Argon through
+AGY, xAI's Grok 4.7 through OpenCode, and OpenAI's GPT-6 Luna through
 Codex) — each produce an independent plan grounded in real repo
 code AND aggressive web research, then the refiners (default
-`qwen`/qwen3.8-max-preview + `deepseek`/deepseek-v4-pro + `opus`/claude-opus-5 high)
+`qwen`/qwen3.8-max + `deepseek-flash`/deepseek-v4.1-flash + `opus`/claude-opus-5-5 high)
 broadcast-refine by reading all the proposals and producing cross-verifications,
-then `codex-sol`/gpt-5.6-sol at `xhigh` synthesizes everything into a final
+then `codex-sol`/gpt-6.1-sol at `xhigh` synthesizes everything into a final
 actionable plan through the recorded Layer 3 path.
 
 ## When to use this skill
@@ -68,28 +68,28 @@ Layer 0 — Spec triage                      (parent Claude Code, in-place)
                    ↓
 Layer 1 — Proposers                        (3 parallel, headless, read-only)
    │
-   ├─ agy --model gemini-3.1-pro-high --mode plan --sandbox
+   ├─ agy --model gemini-4-argon-high --mode plan --sandbox
    │     │   (Google research lane; live catalog-gated)
    │     └→ .moa/<session>/layer1/agy-gemini-pro-proposer.json
    │
-   ├─ opencode run --model opencode-go/grok-4.5
+   ├─ opencode run --model opencode-go/grok-4.7
    │     └→ .moa/<session>/layer1/grok-proposer.json
    │
-   └─ codex --model gpt-5.6-luna --sandbox read-only
+   └─ codex --model gpt-6-luna --sandbox read-only
          └→ .moa/<session>/layer1/codex-luna-proposer.json
                    ↓
 Layer 2 — Broadcast refiners               (3 parallel; each sees ALL valid proposals)
    │
-   ├─ qwen refines the broadcast (opencode @ qwen3.8-max-preview; 600s cap)
+   ├─ qwen refines the broadcast (opencode @ qwen3.8-max; 600s cap)
    │     └→ .moa/<session>/layer2/qwen-refiner-broadcast.json
    │
-   ├─ deepseek refines the broadcast (opencode @ deepseek-v4-pro)
+   ├─ deepseek refines the broadcast (opencode @ deepseek-v4.1-flash)
    │     └→ .moa/<session>/layer2/deepseek-refiner-broadcast.json
    │
-   └─ opus refines the broadcast (claude-opus-5 @ high)
+   └─ opus refines the broadcast (claude-opus-5-5 @ high)
          └→ .moa/<session>/layer2/opus-refiner-broadcast.json
                    ↓
-Layer 3 — Aggregation                      (recorded GPT-5.6 Sol @ xhigh)
+Layer 3 — Aggregation                      (recorded GPT-6.1 Sol @ xhigh)
    │
    ├─ read .moa/<session>/synthesis-input.md (built by orchestrator)
    ├─ pull strongest from each surviving proposer
@@ -117,7 +117,7 @@ subprocess phase.
 
 ### Why every default stage uses different labs
 
-Gemini, Grok, and GPT-5.6 Luna propose; Qwen, DeepSeek, and Opus review; GPT-5.6
+Gemini, Grok, and GPT-6 Luna propose; Qwen, DeepSeek, and Opus review; GPT-5.6
 Sol aggregates at `xhigh`. The proposer and aggregator stages intentionally
 share OpenAI, but every recommended refiner remains independent of the
 aggregator. Fable is an optional quota-heavy Claude aggregator only and is
@@ -195,7 +195,7 @@ them in this precedence
 
 1. `MOA_PROPOSERS` / `MOA_REFINERS` env vars (comma-separated names)
 2. `harness/config.yaml` → `layers.proposers` / `layers.refiners`
-3. Defaults: `[agy-gemini-pro, grok, codex-luna]`, `[qwen, deepseek, opus]`,
+3. Defaults: `[agy-gemini-pro, grok, codex-luna]`, `[qwen, deepseek-flash, opus]`,
    aggregator `codex-sol` at `xhigh`
 
 User-defined provider names declared under `providers:` in
@@ -327,7 +327,7 @@ the whole point of the planning phase was deliberation.
    the user's attention both matter.
 
 2. **Use the recorded Layer 3 path.** Layer 0 remains in the parent. Default
-   GPT-5.6 Sol aggregation must run through `--phase layer3` at `xhigh` so
+   GPT-6.1 Sol aggregation must run through `--phase layer3` at `xhigh` so
    schema validation, lineage checks, timing, logs, and report regeneration
    stay consistent.
 
@@ -361,7 +361,7 @@ the whole point of the planning phase was deliberation.
    are instructed via prompt (and for codex, via sandbox) that they must not
    write, edit, create, or delete files. Codex has hard filesystem
    enforcement via `--sandbox read-only`; Claude gets a hard read-only tool
-   allowlist; OpenCode denies edit and shell tools through `OPENCODE_CONFIG`;
+   allowlist; OpenCode denies edit and shell tools through its version-specific private policy;
    and AGY requires plan mode plus sandboxing.
    The prompt repeats the rule for every
    harness. A Git-visible before/after digest independently verifies the
@@ -412,7 +412,7 @@ planning rather than chat-answer ensembling. Differences from the paper:
   three labs bring different review priors: Qwen for broad technical
   validation, DeepSeek for an additional independent synthesis check, and Opus
   for deeper adversarial critique.
-- **Recorded synthesis by default.** GPT-5.6 Sol at `xhigh` produces the final
+- **Recorded synthesis by default.** GPT-6.1 Sol at `xhigh` produces the final
   phase through the Codex adapter, preserving schema validation, exact
   lineage, timing, and logs in the run artifacts.
 - **Web research required.** All proposers and refiners are explicitly

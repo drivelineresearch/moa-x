@@ -1,20 +1,19 @@
 # MoA-X harness config — copy to harness/config.yaml to activate.
 #
 # Curated routes:
-#   codex          -> Codex CLI / gpt-5.6-terra (high)
-#   codex-luna     -> Codex CLI / gpt-5.6-luna (medium)
-#   codex-sol      -> Codex CLI / gpt-5.6-sol (xhigh default aggregator)
-#   sonnet         -> Claude Code / claude-sonnet-5 (high)
-#   opus           -> Claude Code / claude-opus-5 (high; aggregator-capable)
-#   fable          -> Claude Code / claude-fable-5 (xhigh; aggregator only)
-#   agy-gemini-pro -> AGY / gemini-3.1-pro-high
-#   grok           -> OpenCode Go / grok-4.5
+#   codex          -> Codex CLI / gpt-6-astra (high)
+#   codex-luna     -> Codex CLI / gpt-6-luna (medium)
+#   codex-sol      -> Codex CLI / gpt-6.1-sol (xhigh default aggregator)
+#   sonnet         -> Claude Code / claude-sonnet-5-5 (high)
+#   opus           -> Claude Code / claude-opus-5-5 (high; aggregator-capable)
+#   fable          -> Claude Code / claude-fable-5-1 (xhigh; aggregator only)
+#   agy-gemini-pro -> AGY / gemini-4-argon-high
+#   grok           -> OpenCode Go / grok-4.7
 #   kimi           -> OpenCode Go / kimi-k3 (disabled; archived provenance only)
-#   qwen           -> Qwen Token Plan / qwen3.8-max-preview
-#   qwen-opencode  -> OpenCode Go / qwen3.7-max
-#   glm            -> OpenCode Go / glm-5.2 (Thorough proposer)
-#   deepseek       -> OpenCode Go / deepseek-v4-pro (optional)
-#   deepseek-flash -> OpenCode Go / deepseek-v4-flash (optional)
+#   qwen           -> OpenCode Go / qwen3.8-max
+#   qwen-opencode  -> OpenCode Go / qwen3.8-max
+#   glm            -> OpenCode Go / glm-5.3 (Thorough proposer)
+#   deepseek-flash -> OpenCode Go / deepseek-v4.1-flash (default refiner)
 #
 # Cursor routes are unsupported. Optional routes stay out of recommended presets.
 # Archived manifests retain every original lab attribution.
@@ -23,7 +22,7 @@
 # aggregator; Gemini Pro and Grok enter the evidence pipeline immediately.
 layers:
   proposers: [agy-gemini-pro, grok, codex-luna]
-  refiners: [qwen, deepseek, opus]
+  refiners: [qwen, deepseek-flash, opus]
   aggregator: codex-sol
   skip_refinement: false
 
@@ -39,11 +38,11 @@ layers:
 #
 # layers:
 #   proposers: [agy-gemini-pro, grok, codex-luna]
-#   refiners: [qwen, deepseek, opus, custom-reviewer]
+#   refiners: [qwen, deepseek-flash, opus, custom-reviewer]
 #   aggregator: codex-sol
 #
-# Secrets belong in .env or the shell, never in this file. Qwen Token Plan
-# requires QWEN_TOKEN_PLAN_API_KEY. Per-route overrides use:
+# Secrets belong in .env or the shell, never in this file. Default Qwen uses
+# the existing OpenCode Go account. Per-route overrides use:
 #   MOA_<NAME>_MODEL, MOA_<NAME>_TIMEOUT, MOA_<NAME>_EFFORT
 #
 # Fable can replace codex-sol only as the aggregator. The Web UI adds a

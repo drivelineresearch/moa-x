@@ -609,8 +609,8 @@ function modelsForRole(role) {
     if (!provider || !route) return [];
     return [{
       id: "codex-sol",
-      name: route.name || "GPT-5.6 Sol",
-      model: route.model || "gpt-5.6-sol",
+      name: route.name || "GPT-6.1 Sol",
+      model: route.model || "gpt-6.1-sol",
       effort: route.effort || "xhigh",
       effortOptions: route.effort_options || ["low", "medium", "high", "xhigh"],
       effortControl: route.effort_control || "flag",
@@ -1254,7 +1254,7 @@ function validateStep(step) {
 }
 
 function coachModelLabel(model = {}) {
-  return model.fallback ? "Gemini 3.1 Pro · backup" : "GPT-5.6 Luna";
+  return model.fallback ? "Gemini 4 Argon · backup" : "GPT-6 Luna";
 }
 
 function renderCoachProgress(stage) {
