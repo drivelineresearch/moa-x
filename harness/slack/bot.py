@@ -599,6 +599,13 @@ class Bot:
                     "validation",
                     "error",
                 )
+                or (
+                    e["kind"] == "log"
+                    and re.match(
+                        r"^\[orchestrator\]\s+[A-Za-z0-9_-]+ (?:proposer|refiner|aggregator): (?:OK|FAIL)",
+                        e["message"],
+                    )
+                )
             ]
             phase = job.get("phase", "queued")
             successes = []
@@ -631,9 +638,11 @@ class Bot:
                 progress += "\n" + queued[0]
             if successes:
                 progress += "\nPassed: " + ", ".join(successes)
-            if relevant:
-                progress += "\n" + relevant[-1]["message"][:500]
             d = copy.deepcopy(c["data"])
+            if relevant:
+                d["last_detail"] = relevant[-1]["message"][:500]
+            if d.get("last_detail"):
+                progress += "\n" + d["last_detail"]
             if latest:
                 d["event_cursor"] = latest[-1]["seq"]
             if (

@@ -44,6 +44,10 @@ class OpenCodeV2Test(unittest.TestCase):
         self.assertEqual(config['providers']['opencode-go']['models']['qwen3.8-max']['settings']['thinking'],
                          {'type': 'enabled', 'budgetTokens': 8192})
 
+    def test_slack_research_budget_is_bounded(self):
+        with patch.dict(oc.os.environ, {'MOA_RESTRICT_WORKSPACE':'1'}):
+            cfg = oc._v2_config_for_model('opencode-go/grok-4.7', allow_tools=True, allow_webfetch=True)
+        self.assertEqual(cfg['agents']['moa-reader']['steps'],20)
     def test_repair_policy_denies_every_tool(self):
         cfg = oc._v2_config_for_model('opencode-go/glm-5.3', allow_tools=False, allow_webfetch=False)
         self.assertEqual(cfg['agents']['moa-reader']['permissions'], [{'action':'*', 'resource':'*', 'effect':'deny'}])

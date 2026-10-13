@@ -92,6 +92,10 @@ def _v2_config_for_model(model: str, *, allow_webfetch: bool, allow_tools: bool)
     }
     if "qwen" in model.lower():
         agent["steps"] = _QWEN_MAX_AGENT_STEPS
+    elif os.environ.get("MOA_RESTRICT_WORKSPACE") == "1":
+        # Workspace-wide chat requests need a bounded research turn budget.
+        # The CLI reserves its final turn for the requested structured output.
+        agent["steps"] = 20
     settings = {
         "$schema": "https://opencode.ai/config.json",
         "permissions": rules,

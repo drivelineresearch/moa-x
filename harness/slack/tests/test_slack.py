@@ -320,6 +320,24 @@ class SlackTest(unittest.TestCase):
         self.assertEqual(self.client.posts, 0)
         self.assertEqual(self.bot.db.get(c["id"])["message_ts"], "existing")
 
+    def test_progress_reports_finished_lanes_before_checkpoint(self):
+        c = self.preview()
+        self.bot.run(c)
+        c = self.bot.db.get(c["id"])
+        self.store.update_job(
+            c["job_id"], status="running", phase="layer1", progress=0.08
+        )
+        self.store.append_event(
+            c["job_id"], "log", "[orchestrator]   codex-luna proposer: OK (12s)"
+        )
+        self.bot.monitor()
+        c = self.bot.db.get(c["id"])
+        self.assertIn("codex-luna proposer: OK", c["data"]["progress"])
+        self.bot.monitor()
+        self.assertIn(
+            "codex-luna proposer: OK", self.bot.db.get(c["id"])["data"]["progress"]
+        )
+
     def test_slack_controls_have_unique_actions_and_route_values(self):
         from harness.slack.cards import card
 
