@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
-import threading
 import time
 from pathlib import Path
 from typing import Any, Iterable
@@ -105,6 +104,14 @@ ON report_shares(job_id, revoked_at);
 """
 
 
+class _ClosingConnection(sqlite3.Connection):
+    def __exit__(self, *args):
+        try:
+            return super().__exit__(*args)
+        finally:
+            self.close()
+
+
 class Store:
     def __init__(self, path: Path):
         self.path = path
@@ -113,11 +120,10 @@ class Store:
             self.path.parent.chmod(0o700)
         except OSError:
             pass
-        self._local = threading.local()
         self.initialize()
 
     def connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.path, timeout=30, isolation_level=None)
+        conn = sqlite3.connect(self.path, timeout=30, isolation_level=None, factory=_ClosingConnection)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys=ON")
@@ -395,6 +401,10 @@ class Store:
             return self._decode(conn.execute('SELECT * FROM run_shares WHERE token_hash=? AND expires_at>?',
                                              (token_hash,time.time())).fetchone())
 
+    def revoke_run_shares(self, job_id, profile_id):
+        with self.connect() as conn:
+            conn.execute("DELETE FROM run_shares WHERE job_id=? AND profile_id=?", (job_id, profile_id))
+
     def insert_job(self, job: dict[str, Any]) -> dict[str, Any]:
         with self.connect() as conn:
             conn.execute(
@@ -467,9 +477,10 @@ class Store:
         if not values:
             return self.get_job(job_id)
         assignments = ", ".join(f"{key}=?" for key in values)
+        guard = " AND cancel_requested=0" if values.get("status") == "completed" else ""
         with self.connect() as conn:
             conn.execute(
-                f"UPDATE jobs SET {assignments} WHERE id=?",
+                f"UPDATE jobs SET {assignments} WHERE id=?{guard}",
                 [*values.values(), job_id],
             )
         return self.get_job(job_id)
@@ -478,10 +489,13 @@ class Store:
         with self.connect() as conn:
             cursor = conn.execute(
                 """
-                UPDATE jobs SET cancel_requested=1
+                UPDATE jobs SET cancel_requested=1,
+                  status=CASE WHEN status='queued' THEN 'cancelled' ELSE 'cancelling' END,
+                  phase=CASE WHEN status='queued' THEN 'cancelled' ELSE phase END,
+                  finished_at=CASE WHEN status='queued' THEN ? ELSE finished_at END
                 WHERE id=? AND status IN ('queued', 'running', 'cancelling')
                 """,
-                (job_id,),
+                (time.time(), job_id),
             )
         return cursor.rowcount > 0
 

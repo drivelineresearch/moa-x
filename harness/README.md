@@ -282,8 +282,8 @@ The live account catalog must expose the selected stable model slug.
   it. If a CLI is rate-limited on its web search tool, the proposal
   or refinement will be weaker. Thin `research_sources` arrays in
   the manifest are a signal to retry later.
-- **Heterogeneity is the point.** The recommended rosters span seven labs
-  (Google, xAI, Zhipu, Alibaba, DeepSeek, Anthropic, OpenAI). If you override the defaults so
+- **Heterogeneity is the point.** Balanced spans five labs; Thorough adds
+  Zhipu for six (Google, xAI, Zhipu, DeepSeek, Anthropic, OpenAI). If you override the defaults so
   they converge on the same vendor, you've defeated the whole purpose of MoA.
 - **Claude `--bare` mode is not used for sonnet.** `--bare` requires
   `ANTHROPIC_API_KEY` and skips OAuth/keychain auth, which means

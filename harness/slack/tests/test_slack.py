@@ -237,6 +237,73 @@ class SlackTest(unittest.TestCase):
         self.bot.launch(c)
         self.assertEqual(len(self.store.list_jobs()), 1)
 
+    def test_launch_error_returns_to_preview_without_monitor_retry(self):
+        from harness.webui.launch import LaunchError
+        c = self.preview()
+        self.bot.launcher.launch = Mock(side_effect=LaunchError("Correct the repository selection."))
+        self.bot.run(c)
+        self.assertEqual(self.bot.db.get(c["id"])["stage"], "preview")
+        self.bot.monitor()
+        self.assertEqual(self.bot.launcher.launch.call_count, 1)
+
+    def test_multiple_repository_brief_cannot_silently_drop_source(self):
+        from harness.webui.launch import LaunchError
+        with self.assertRaises(LaunchError):
+            self.bot.repository("repo drivelineresearch/first repo drivelineresearch/second")
+        self.assertEqual(self.bot.repository("repo drivelineresearch/first https://github.com/drivelineresearch/first.git"), "drivelineresearch/first")
+
+    def test_cancel_supersedes_stale_progress_version(self):
+        c = self.preview()
+        self.bot.run(c)
+        stale = self.bot.db.get(c["id"])
+        self.bot.db.save(stale, data={**stale["data"], "progress": "New progress"})
+        self.bot.cancel(stale, "cancel-stale")
+        current = self.bot.db.get(c["id"])
+        self.assertEqual(current["stage"], "cancelled")
+        self.assertEqual(self.store.get_job(current["job_id"])["status"], "cancelled")
+        from harness.slack.store import StaleDraft
+        with self.assertRaises(StaleDraft):
+            self.bot.db.save(stale, stage="running")
+
+    def test_cancel_during_launch_cancels_new_job(self):
+        c = self.preview()
+        original = self.bot.launcher.launch
+        def launch(*args, **kwargs):
+            self.bot.cancel(self.bot.db.get(c["id"]), "during-launch")
+            return original(*args, **kwargs)
+        self.bot.launcher.launch = launch
+        self.bot.run(c)
+        current = self.bot.db.get(c["id"])
+        self.assertEqual(current["stage"], "cancelled")
+        self.assertEqual(self.store.get_job(current["job_id"])["status"], "cancelled")
+
+    def test_file_delivery_does_not_block_pending_messages(self):
+        c = self.message()
+        self.bot.db.put("file:first", c, "file", {"path": "example"})
+        file = self.bot.db.claim("slack_outbox", files=True)
+        self.assertEqual(file["kind"], "file")
+        self.assertEqual(self.bot.db.claim("slack_outbox", files=False)["kind"], "card")
+
+    def test_stale_card_retry_cannot_delay_new_generation(self):
+        c = self.message()
+        old = self.bot.db.claim("slack_outbox")
+        self.bot.db.put(old["id"], c, "card", {"text": "Updated card"})
+        self.bot.db.retry("slack_outbox", old, "old failure", delay=300)
+        new = self.bot.db.claim("slack_outbox")
+        self.assertEqual(new["attempts"], 1)
+        self.assertEqual(new["payload"]["text"], "Updated card")
+
+    def test_completed_write_cannot_overwrite_accepted_cancel(self):
+        c = self.preview()
+        self.bot.run(c)
+        current = self.bot.db.get(c["id"])
+        claimed = self.store.claim_next_job()
+        self.assertEqual(claimed["status"], "running")
+        self.store.request_cancel(current["job_id"])
+        result = self.store.update_job(current["job_id"], status="completed")
+        self.assertEqual(result["status"], "cancelling")
+        self.assertTrue(self.store.cancel_requested(current["job_id"]))
+
     def test_cancel_fast_path_does_not_wait_for_interview_pool(self):
         c = self.preview()
         self.bot.run(c)
@@ -295,6 +362,57 @@ class SlackTest(unittest.TestCase):
         self.assertEqual(
             c["data"]["roster"]["options"]["effort_overrides"]["codex-sol"], "high"
         )
+
+    def test_preview_text_edit_restarts_interview(self):
+        c = self.preview()
+        self.message(ts="2", thread=c["thread"], text="A revised task")
+        current = self.bot.db.get(c["id"])
+        self.assertEqual(current["stage"], "interview")
+        self.assertEqual(current["data"]["brief"], "A revised task")
+        self.assertEqual(self.analyze.call_count, 2)
+        self.assertNotIn("finalized", current["data"])
+
+    def test_preview_upload_restarts_interview(self):
+        c = self.preview()
+        self.bot.message({"type": "message", "channel": "D_TEST", "channel_type": "im",
+                          "user": USER, "ts": "2", "thread_ts": c["thread"],
+                          "text": "", "files": [{"id": "F_TEST"}]}, "upload-message")
+        self.assertEqual(self.bot.db.get(c["id"])["stage"], "interview")
+        self.assertEqual(self.analyze.call_count, 2)
+
+    def test_coach_retry_preserves_original_brief(self):
+        self.analyze.side_effect = [RuntimeError("temporary"), self.analyze.return_value]
+        c = self.message(text="Keep this task")
+        self.assertEqual(c["stage"], "collect")
+        self.message(ts="2", thread=c["thread"], text="retry")
+        self.assertEqual(self.bot.db.get(c["id"])["data"]["brief"], "Keep this task")
+        self.assertEqual(self.analyze.call_count, 2)
+
+    def test_empty_interview_message_does_not_skip_questions(self):
+        c = self.message()
+        self.message(ts="2", thread=c["thread"], text="")
+        self.assertEqual(self.bot.db.get(c["id"])["stage"], "interview")
+        self.finalize.assert_not_called()
+
+    def test_new_request_in_running_thread_is_allowed(self):
+        c = self.preview()
+        self.bot.run(c)
+        new = self.message(ts="2", thread=c["thread"], text="new: Another task")
+        self.assertNotEqual(new["id"], c["id"])
+        self.assertEqual(new["data"]["brief"], "Another task")
+        self.assertEqual(self.bot.db.get(c["id"])["stage"], "running")
+
+    def test_effort_menu_toggle_reuses_roster(self):
+        c = self.preview()
+        self.bot.resolve = Mock(side_effect=AssertionError("Do not probe for a menu toggle"))
+        self.bot.action(USER, "moa_advanced", {"id": c["id"], "v": c["version"]}, "menu")
+        self.assertTrue(self.bot.db.get(c["id"])["data"]["advanced"])
+
+    def test_monitor_failure_does_not_starve_other_conversations(self):
+        self.bot.db.live = Mock(return_value=[{"id": "bad"}, {"id": "good"}])
+        self.bot._monitor = Mock(side_effect=[ValueError("broken artifact"), None])
+        self.bot.monitor()
+        self.assertEqual(self.bot._monitor.call_count, 2)
 
     def test_disabled_qwen_cannot_enter_new_rosters(self):
         from harness.webui.launch import LaunchError
@@ -437,6 +555,59 @@ class SlackTest(unittest.TestCase):
             "Hidden prior user run",
         ):
             self.assertNotIn(hidden, packet)
+
+    def test_claude_slack_reads_a_snapshot_without_other_sessions(self):
+        import os
+        import subprocess
+        from adapters import claude
+        schema = self.root / "schema.json"
+        schema.write_text(json.dumps({"type": "object", "required": ["answer"]}))
+        repo = self.root / "source"
+        repo.mkdir()
+        (repo / "visible.txt").write_text("visible")
+        (repo / ".moa/other-user").mkdir(parents=True)
+        (repo / ".moa/other-user/private.txt").write_text("private")
+        process = Mock(returncode=0)
+        process.communicate.return_value = (json.dumps({"structured_output": {"answer": 42}}), "")
+        native_popen = subprocess.Popen
+        def popen(command, **kwargs):
+            if command[0] == "git":
+                return native_popen(command, **kwargs)
+            snapshot = Path(kwargs["cwd"])
+            self.assertNotEqual(snapshot, repo)
+            self.assertTrue((snapshot / "visible.txt").is_file())
+            self.assertFalse((snapshot / ".moa").exists())
+            self.assertIn("--restricted", command)
+            self.assertNotIn("SLACK_BOT_TOKEN", kwargs["env"])
+            return process
+        with patch.dict(os.environ, {"MOA_RESTRICT_WORKSPACE": "1", "SLACK_BOT_TOKEN": "test-secret"}), patch.object(claude.subprocess, "Popen", side_effect=popen):
+            self.assertTrue(claude.run(prompt="Inspect visible.txt", schema_path=schema, repo_path=repo).success)
+
+    def test_tool_free_codex_repair_omits_repository_packet(self):
+        import os
+        from adapters import codex
+        schema = self.root / "schema.json"
+        schema.write_text(json.dumps({"type": "object", "required": ["answer"]}))
+        process = Mock(returncode=0)
+        process.communicate.return_value = ('{"answer":42}', "")
+        with patch.dict(os.environ, {"MOA_RESTRICT_WORKSPACE": "1"}), patch.object(codex, "_source_packet", side_effect=AssertionError("No repository research during repair")), patch.object(codex.subprocess, "Popen", return_value=process):
+            self.assertTrue(codex.run(prompt="Repair this object", schema_path=schema, repo_path=self.root, allow_tools=False).success)
+
+    def test_cited_source_file_receipt_includes_lines_after_16kb(self):
+        import subprocess
+        from adapters.codex import _source_packet
+        repo = self.root / "packet-source"
+        repo.mkdir()
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        (repo / "focus.py").write_text("# padding\n" * 1800 + "IMPORTANT_END = 42\n")
+        self.assertIn("IMPORTANT_END = 42", _source_packet(repo, "Inspect focus.py"))
+
+    def test_database_context_closes_connections(self):
+        import sqlite3
+        with self.store.connect() as connection:
+            connection.execute("SELECT 1")
+        with self.assertRaises(sqlite3.ProgrammingError):
+            connection.execute("SELECT 1")
 
     def test_final_delivery_survives_repeated_scheduling(self):
         c = self.preview()
@@ -584,6 +755,22 @@ class SlackTest(unittest.TestCase):
             self.assertEqual(files.context(c), summary)
         self.assertEqual(files.ingest(profile["id"], ["F1"], existing=ids), [])
 
+    def test_interview_context_is_reused_by_worker(self):
+        c = self.preview()
+        client = Mock()
+        client.files_info.return_value = {"file": {"name": "reference.txt", "size": 5,
+                                                  "url_private": "https://files.slack.com/file"}}
+        files = Files(self.store, self.root, client, "test", downloader=lambda *a: b"facts")
+        ids = files.ingest(c["profile_id"], ["F1"])
+        c = self.bot.db.save(c, data={**c["data"], "upload_ids": ids})
+        files.context(c)
+        self.bot.files = files
+        with patch("harness.scripts.attachments._decode_text", side_effect=AssertionError("must reuse extraction")):
+            self.bot.run(c)
+            current = self.bot.db.get(c["id"])
+            job = self.store.get_job(current["job_id"])
+            JobWorker(self.store, Path("unused"))._prepare_attachments(job)
+
     def test_unsupported_oversize_and_host_file_rejection(self):
         client = Mock()
         client.files_info.return_value = {"file": {"name": "report.docx"}}
@@ -592,6 +779,30 @@ class SlackTest(unittest.TestCase):
             files.ingest("user", ["F"])
         with self.assertRaises(FileError):
             download_private("https://attacker.test/file", "test")
+
+    def test_repeated_reference_at_file_limit_is_idempotent(self):
+        profile = self.store.upsert_profile("upload-limit", "Test")
+        client = Mock()
+        client.files_info.side_effect = lambda file: {"file": {
+            "name": file + ".txt", "size": 5,
+            "url_private": "https://files.slack.com/" + file}}
+        files = Files(self.store, self.root, client, "test",
+                      downloader=lambda url, token: url.encode())
+        ids = files.ingest(profile["id"], [f"F{i}" for i in range(10)])
+        self.assertEqual(len(ids), 10)
+        self.assertEqual(files.ingest(profile["id"], ["F0"], existing=ids), [])
+        with self.assertRaises(FileError):
+            files.ingest(profile["id"], ["F10"], existing=ids)
+        self.assertEqual(len(self.store.list_uploads(profile_id=profile["id"])), 10)
+
+    def test_different_slack_ids_with_identical_content_use_one_upload(self):
+        profile = self.store.upsert_profile("upload-duplicates", "Test")
+        client = Mock()
+        client.files_info.return_value = {"file": {"name": "same.txt", "size": 5,
+                                                  "url_private": "https://files.slack.com/file"}}
+        files = Files(self.store, self.root, client, "test", downloader=lambda *a: b"facts")
+        self.assertEqual(len(files.ingest(profile["id"], ["F1", "F2"])), 1)
+        self.assertEqual(len(self.store.list_uploads(profile_id=profile["id"])), 1)
 
     def test_attachment_cache_invalidates_when_snapshot_changes(self):
         folder = self.root / "cache"
@@ -608,9 +819,9 @@ class SlackTest(unittest.TestCase):
         self.assertNotEqual(first, scout["attachment_context"]["signature"])
         self.assertIn("second", scout["attachment_context"]["markdown"])
 
-    def test_cross_process_cancel_terminates_silent_worker(self):
+    def _check_cancel(self, program):
         script = self.root / "silent.py"
-        script.write_text('import time\nprint("starting",flush=True)\ntime.sleep(30)\n')
+        script.write_text(program)
         session = self.root / "session"
         session.mkdir()
         (session / "scout-brief.json").write_text("{}")
@@ -633,15 +844,23 @@ class SlackTest(unittest.TestCase):
         )
         thread.start()
         deadline = time.monotonic() + 5
-        while time.monotonic() < deadline and not (
-            self.store.get_job(job["id"]) or {}
-        ).get("pid"):
+        log = session / "webui.log"
+        while time.monotonic() < deadline and (not log.exists() or "starting" not in log.read_text()):
             time.sleep(0.02)
         self.store.request_cancel(job["id"])
-        thread.join(timeout=4)
+        thread.join(timeout=6)
         self.assertFalse(thread.is_alive())
         self.assertTrue(done)
         self.assertNotEqual(done[0], 0)
+
+    def test_cross_process_cancel_terminates_silent_worker(self):
+        self._check_cancel('import time\nprint("starting",flush=True)\ntime.sleep(30)\n')
+
+    def test_cancel_escalates_when_process_ignores_sigterm(self):
+        self._check_cancel('import signal,time\nsignal.signal(signal.SIGTERM,signal.SIG_IGN)\nprint("starting",flush=True)\ntime.sleep(30)\n')
+
+    def test_cancel_kills_reparented_child_holding_stdout(self):
+        self._check_cancel('import os,signal,time\npid=os.fork()\nif not pid:\n signal.signal(signal.SIGTERM,signal.SIG_IGN)\n print("starting",flush=True)\n time.sleep(30)\nelse:\n time.sleep(30)\n')
 
 
 if __name__ == "__main__":

@@ -39,7 +39,9 @@ def main():
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     lock_file = (root / "slack.lock").open("a")
     fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-    client = WebClient(token=token, timeout=20)
+    # Durable outbox reconciliation owns retries; SDK connection retries can
+    # otherwise repeat a write whose successful response was lost.
+    client = WebClient(token=token, timeout=20, retry_handlers=[])
     identity = client.auth_test()
     if identity["team_id"] != team:
         raise ValueError("Bot token belongs to another workspace.")
@@ -83,16 +85,18 @@ def main():
     socket.connect()
     log.info("Slack listener started for workspace %s", team)
 
-    def send():
+    def send(files):
         while not stop.is_set():
-            item = bot.db.claim("slack_outbox")
+            item = bot.db.claim("slack_outbox", files=files)
             if item:
                 delivery.deliver(item)
             else:
                 stop.wait(0.4)
 
-    sender = threading.Thread(target=send, daemon=True)
-    sender.start()
+    senders = [threading.Thread(target=send, args=(files,), daemon=True)
+               for files in (False, True)]
+    for sender in senders:
+        sender.start()
     with concurrent.futures.ThreadPoolExecutor(
         max_workers=4, thread_name_prefix="moa-slack"
     ) as pool:
@@ -100,6 +104,8 @@ def main():
         for c in bot.db.live():
             if c["stage"] == "coaching":
                 futures.append(pool.submit(bot.coach, c))
+            elif c["stage"] == "launching":
+                futures.append(pool.submit(bot.resume_launch, c))
         last_monitor = 0
         while not stop.is_set():
             futures = [f for f in futures if not f.done()]
@@ -108,6 +114,9 @@ def main():
                 if item:
                     futures.append(pool.submit(bot.process, item))
             if time.time() - last_monitor >= 3:
+                for c in bot.db.live():
+                    if c["stage"] == "launching" and len(futures) < 4:
+                        futures.append(pool.submit(bot.resume_launch, c))
                 try:
                     bot.monitor()
                 except Exception:
@@ -124,7 +133,8 @@ def main():
                 last_monitor = time.time()
             stop.wait(0.2)
     socket.close()
-    sender.join(timeout=3)
+    for sender in senders:
+        sender.join(timeout=3)
 
 
 if __name__ == "__main__":

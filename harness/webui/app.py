@@ -1321,6 +1321,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         response = Response(report, mimetype="text/html")
         response.headers["Cache-Control"] = "private, no-store"
         response.headers["X-Robots-Tag"] = "noindex, nofollow"
+        response.headers["Referrer-Policy"] = "no-referrer"
         return response
 
     def shared_run_job(token):
@@ -1349,7 +1350,8 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         job = _job_view(shared_run_job(token))
         public = {key: job.get(key) for key in ("id", "title", "status", "phase", "progress", "summary", "agents", "roster")}
         public["artifacts"] = {key: f"{request.script_root}/shared/runs/{token}/artifacts/{Path(url).name}"
-                               for key, url in job["artifacts"].items()}
+                               for key, url in job["artifacts"].items()
+                               if Path(url).name in {"report.html", "decision-map.json", "final-plan.md", "final-plan.json"}}
         return private_response(jsonify(public))
 
     @app.get("/shared/runs/<token>/artifacts/<filename>")
@@ -1364,7 +1366,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             payload = _read_verified_decision_map(session)
             if payload is None: abort(404)
             return private_response(Response(payload, mimetype="application/json"))
-        if filename not in {"final-plan.md", "final-plan.json", "manifest.json", "synthesis-input.md"}: abort(404)
+        if filename not in {"final-plan.md", "final-plan.json"}: abort(404)
         if filename.startswith("final-plan") and decision_map_module.final_artifact_staleness(session) is not None: abort(404)
         if not (session / filename).is_file(): abort(404)
         return private_response(send_file(session / filename))

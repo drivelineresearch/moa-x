@@ -183,8 +183,8 @@ class Bot:
         self.members[user] = (time.time() + 300, info)
         return info
 
-    def card(self, c):
-        self.db.put("card:" + c["id"], c, "card", card(c))
+    def card(self, c, *, force=False):
+        self.db.put("card:" + c["id"], c, "card", card(c), force=force)
 
     def notice(self, c, message, key):
         self.db.put("notice:" + key, c, "post", {"text": message})
@@ -271,9 +271,12 @@ class Bot:
         if c and command == "cancel":
             return self.cancel(c, key)
         if c and command == "status":
-            self.card(c)
+            self.card(c, force=True)
             return
-        if c and c["stage"] == "running":
+        if c and c["stage"] == "coaching" and not command.startswith("new:"):
+            self.notice(c, "Luna is still preparing this brief. You can edit it from the next card.", key)
+            return
+        if c and c["stage"] in ("launching", "running") and not command.startswith("new:"):
             self.notice(
                 c,
                 "This run’s inputs are frozen. Start another request with “new: your task” or a new mention.",
@@ -281,6 +284,8 @@ class Bot:
             )
             return
         if not c or c["stage"] in TERMINAL or command.startswith("new:"):
+            if c and c["stage"] in ("collect", "coaching", "interview", "preview"):
+                self.db.cancel(c["id"])
             profile = self.db.profile(
                 self.team,
                 user,
@@ -327,6 +332,9 @@ class Bot:
                 self.notice(c, str(error), key)
                 return
             d["last_message"] = key
+            if not content and not file_ids and c["stage"] in ("interview", "preview"):
+                self.card(c)
+                return
             if c["stage"] == "interview" and content and not file_ids:
                 c = self.db.save(c, data=d)
                 return self.answer(c, content, key)
@@ -339,15 +347,22 @@ class Bot:
                 # A typed edit replaces the draft rather than launching a hidden run.
                 d["brief"] = content[:20000]
                 d.pop("analysis", None)
+                d.pop("finalized", None)
                 d["answers"] = []
             elif c["stage"] == "collect" and content:
-                d["brief"] = content[:20000]
+                if not (command == "retry" and d.get("coach_error")):
+                    d["brief"] = content[:20000]
+                d.pop("analysis", None)
+                d.pop("finalized", None)
+                d["answers"] = []
             elif file_ids:
                 d.pop("analysis", None)
+                d.pop("finalized", None)
                 d["answers"] = []
                 if content and c["stage"] not in ("interview", "preview"):
                     d["brief"] = content[:20000]
-            c = self.db.save(c, data=d)
+            d.pop("coach_error", None)
+            c = self.db.save(c, stage="collect", data=d)
             if not d.get("brief"):
                 c = self.db.save(c, stage="collect")
                 self.card(c)
@@ -386,7 +401,7 @@ class Bot:
                     return
                 if d["analysis"]["suitability"] == "poor_fit":
                     c = self.db.save(c, stage="collect", data=d)
-                    self.notice(c, d["analysis"]["summary"], c["id"] + ":poor-fit")
+                    self.notice(c, d["analysis"]["summary"], c["id"] + ":poor-fit:" + str(c["version"]))
                     self.card(c)
                     return
             d["finalized"] = self.finalize(
@@ -403,10 +418,11 @@ class Bot:
         except StaleDraft:
             raise
         except Exception:
+            d["coach_error"] = True
             c = self.db.save(c, stage="collect", data=d)
             self.notice(
                 c,
-                "Luna could not prepare this brief. Reply here to retry; no run was submitted.",
+                "Luna could not prepare this brief. Reply “retry” to try again, or send a revised brief; no run was submitted.",
                 c["id"] + ":coach-error:" + str(c["version"]),
             )
             self.card(c)
@@ -465,6 +481,8 @@ class Bot:
                 d.update(depth=value["depth"], depth_manual=True, effort_overrides={})
             elif action == "moa_advanced":
                 d["advanced"] = not d.get("advanced")
+                self.card(self.db.save(c, data=d))
+                return
             elif action == "moa_effort":
                 d.setdefault("effort_overrides", {})[value["route"]] = value["effort"]
             elif action == "moa_edit":
@@ -485,7 +503,10 @@ class Bot:
             + r"/[A-Za-z0-9_.-]+)",
             brief,
         )
-        return matches[0].removesuffix(".git") if len(set(matches)) == 1 else None
+        matches = set(pointer.removesuffix(".git") for pointer in matches)
+        if len(matches) > 1:
+            raise LaunchError("Choose one repository per run; the brief names several repositories.")
+        return next(iter(matches)) if matches else None
 
     def check_repository(self, pointer):
         proc = subprocess.run(
@@ -538,20 +559,22 @@ class Bot:
 
     def launch(self, c):
         profile = self.store.get_profile(c["profile_id"])
-        if self.db.get(c["id"])["stage"] == "cancelled":
+        if self.db.get(c["id"])["stage"] != "launching":
             return
-        job = self.launcher.launch(
-            profile, c["data"]["launch_body"], job_id=c["job_id"]
-        )
+        try:
+            job = self.launcher.launch(
+                profile, c["data"]["launch_body"], job_id=c["job_id"],
+                prepared_context=getattr(self.files, "prepared_context", lambda c: None)(c),
+            )
+        except LaunchError as error:
+            latest = self.db.get(c["id"])
+            if latest["stage"] == "launching":
+                latest = self.db.save(latest, stage="preview")
+                self.notice(latest, str(error), latest["id"] + ":launch-error:" + str(latest["version"]))
+                self.card(latest)
+            return
         if self.db.get(c["id"])["stage"] == "cancelled":
             self.store.request_cancel(job["id"])
-            if job["status"] == "queued":
-                self.store.update_job(
-                    job["id"],
-                    status="cancelled",
-                    phase="cancelled",
-                    finished_at=time.time(),
-                )
             return
         d = copy.deepcopy(c["data"])
         digest = hashlib.sha256(d["share_token"].encode()).hexdigest()
@@ -561,120 +584,136 @@ class Bot:
         d["progress"] = (
             "Queued. I’ll update this card through preparation, proposals, review and synthesis."
         )
-        c = self.db.save(c, stage="running", data=d)
+        try:
+            c = self.db.save(c, stage="running", data=d)
+        except StaleDraft:
+            if self.db.get(c["id"])["stage"] == "cancelled":
+                self.store.request_cancel(job["id"])
+                self.store.revoke_run_shares(job["id"], c["profile_id"])
+                return
+            raise
         self.card(c)
 
     def cancel(self, c, key):
+        c = self.db.get(c["id"])
         if c["stage"] in TERMINAL:
             self.card(c)
             return
         if c["job_id"]:
+            self.store.revoke_run_shares(c["job_id"], c["profile_id"])
             job = self.store.get_job(c["job_id"])
             if job and job["status"] in TERMINAL:
                 self.card(c)
                 return
             if job and self.store.request_cancel(job["id"]):
-                if job["status"] == "queued":
-                    self.store.update_job(
-                        job["id"],
-                        status="cancelled",
-                        phase="cancelled",
-                        finished_at=time.time(),
-                    )
-                else:
-                    self.store.update_job(job["id"], status="cancelling")
                 self.store.append_event(
                     job["id"], "warning", "Cancellation requested from Slack"
                 )
-        d = copy.deepcopy(c["data"])
-        d["progress"] = "Cancelled."
-        c = self.db.save(c, stage="cancelled", data=d)
+        c = self.db.cancel(c["id"])
         self.card(c)
+
+    def resume_launch(self, c):
+        lock = self.conversation_lock(c["id"])
+        if not lock.acquire(blocking=False):
+            return
+        try:
+            self.launch(self.db.get(c["id"]))
+        finally:
+            lock.release()
 
     def monitor(self):
         for c in self.db.live():
-            if c["stage"] == "launching":
-                with self.conversation_lock(c["id"]):
-                    self.launch(self.db.get(c["id"]))
+            try:
+                self._monitor(c)
+            except StaleDraft:
                 continue
-            if c["stage"] == "coaching":
-                continue
-            job = self.store.get_job(c["job_id"])
-            if not job:
-                continue
-            if job["status"] in TERMINAL:
-                self.finish(c, job)
-                continue
-            latest = self.store.events_after(
-                job["id"], max(0, c["data"].get("event_cursor", 0)), limit=500
+            except Exception:
+                # One malformed artifact or failed API operation must not
+                # starve progress for every other conversation.
+                import logging
+                logging.getLogger("moa.slack").warning("One run could not be reconciled; retrying")
+
+    def _monitor(self, c):
+        if c["stage"] == "launching":
+            return
+        if c["stage"] == "coaching":
+            return
+        job = self.store.get_job(c["job_id"])
+        if not job:
+            return
+        if job["status"] in TERMINAL:
+            self.finish(c, job)
+            return
+        latest = self.store.events_after(
+            job["id"], max(0, c["data"].get("event_cursor", 0)), limit=500
+        )
+        relevant = [
+            e
+            for e in latest
+            if e["kind"]
+            in (
+                "phase",
+                "attachment-progress",
+                "attachment",
+                "warning",
+                "validation",
+                "error",
             )
-            relevant = [
-                e
-                for e in latest
-                if e["kind"]
-                in (
-                    "phase",
-                    "attachment-progress",
-                    "attachment",
-                    "warning",
-                    "validation",
-                    "error",
+            or (
+                e["kind"] == "log"
+                and re.match(
+                    r"^\[orchestrator\]\s+[A-Za-z0-9_-]+ (?:proposer|refiner|aggregator): (?:OK|FAIL)",
+                    e["message"],
                 )
-                or (
-                    e["kind"] == "log"
-                    and re.match(
-                        r"^\[orchestrator\]\s+[A-Za-z0-9_-]+ (?:proposer|refiner|aggregator): (?:OK|FAIL)",
-                        e["message"],
-                    )
-                )
-            ]
-            phase = job.get("phase", "queued")
-            successes = []
-            for filename, key in [
-                ("layer1-manifest.json", "layer1"),
-                ("manifest.json", "layer2"),
-            ]:
-                p = Path(job["session_dir"]) / filename
-                if p.is_file():
-                    try:
-                        successes += [
-                            r["agent_id"]
-                            for r in json.loads(p.read_text()).get(key, [])
-                            if r.get("success")
-                        ]
-                    except (ValueError, OSError):
-                        pass
-            queued = []
-            if job["status"] == "queued":
-                with self.store.connect() as conn:
-                    ahead = conn.execute(
-                        "SELECT count(*) FROM jobs WHERE status IN ('queued','running','cancelling') AND created_at<?",
-                        (job["created_at"],),
-                    ).fetchone()[0]
-                queued = [f"{ahead} run(s) ahead in the queue."]
-            progress = (
-                f"{job['status'].title()} · {phase} · {round(job['progress'] * 100)}%"
             )
-            if queued:
-                progress += "\n" + queued[0]
-            if successes:
-                progress += "\nPassed: " + ", ".join(successes)
-            d = copy.deepcopy(c["data"])
-            if relevant:
-                d["last_detail"] = relevant[-1]["message"][:500]
-            if d.get("last_detail"):
-                progress += "\n" + d["last_detail"]
-            if latest:
-                d["event_cursor"] = latest[-1]["seq"]
-            if (
-                progress != d.get("progress")
-                and time.time() - d.get("last_progress", 0) >= 12
-            ):
-                d.update(progress=progress, last_progress=time.time())
-                c = self.db.save(c, data=d)
-                self.card(c)
-            elif latest:
-                self.db.save(c, data=d)
+        ]
+        phase = job.get("phase", "queued")
+        successes = []
+        for filename, key in [
+            ("layer1-manifest.json", "layer1"),
+            ("manifest.json", "layer2"),
+        ]:
+            p = Path(job["session_dir"]) / filename
+            if p.is_file():
+                try:
+                    successes += [
+                        r["agent_id"]
+                        for r in json.loads(p.read_text()).get(key, [])
+                        if r.get("success")
+                    ]
+                except (ValueError, OSError):
+                    pass
+        queued = []
+        if job["status"] == "queued":
+            with self.store.connect() as conn:
+                ahead = conn.execute(
+                    "SELECT count(*) FROM jobs WHERE status IN ('queued','running','cancelling') AND created_at<?",
+                    (job["created_at"],),
+                ).fetchone()[0]
+            queued = [f"{ahead} run(s) ahead in the queue."]
+        progress = (
+            f"{job['status'].title()} · {phase} · {round(job['progress'] * 100)}%"
+        )
+        if queued:
+            progress += "\n" + queued[0]
+        if successes:
+            progress += "\nPassed: " + ", ".join(successes)
+        d = copy.deepcopy(c["data"])
+        if relevant:
+            d["last_detail"] = relevant[-1]["message"][:500]
+        if d.get("last_detail"):
+            progress += "\n" + d["last_detail"]
+        if latest:
+            d["event_cursor"] = latest[-1]["seq"]
+        if (
+            progress != d.get("progress")
+            and time.time() - d.get("last_progress", 0) >= 12
+        ):
+            d.update(progress=progress, last_progress=time.time())
+            c = self.db.save(c, data=d)
+            self.card(c)
+        elif latest:
+            self.db.save(c, data=d)
 
     def finish(self, c, job):
         d = copy.deepcopy(c["data"])

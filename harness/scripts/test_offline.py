@@ -2677,6 +2677,7 @@ def test_opencode_model_readiness_is_route_specific() -> bool:
     )
     with (
         patch.object(oc.shutil, "which", return_value="/usr/bin/opencode"),
+        patch.object(oc, "_cli_major_version", return_value=1),
         patch.object(oc.subprocess, "run", return_value=auth),
         patch.dict(os.environ, {"QWEN_TOKEN_PLAN_API_KEY": ""}, clear=False),
     ):
@@ -2705,6 +2706,7 @@ def test_opencode_model_readiness_accepts_qwen_token_plan_key() -> bool:
     auth = SimpleNamespace(returncode=0, stdout="0 credentials", stderr="")
     with (
         patch.object(oc.shutil, "which", return_value="/usr/bin/opencode"),
+        patch.object(oc, "_cli_major_version", return_value=1),
         patch.object(oc.subprocess, "run", return_value=auth),
         patch.dict(
             os.environ,

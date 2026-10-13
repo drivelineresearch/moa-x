@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 import shutil
 import time
 import urllib.error
@@ -80,12 +81,17 @@ class Files:
         self.downloader = downloader
 
     def ingest(self, profile_id, file_ids, *, existing=()):
-        if len(existing) + len(set(file_ids)) > MAX_FILES:
+        # Slack file IDs and local upload IDs use different namespaces. Only
+        # count new local uploads after resolving content duplicates.
+        existing = set(existing)
+        file_ids = list(dict.fromkeys(file_ids))
+        if len(existing) > MAX_FILES or len(file_ids) > MAX_FILES:
             raise FileError("A request supports up to 10 files, 25 MiB each.")
         result = []
         folder = self.root / "uploads" / profile_id
         folder.mkdir(mode=0o700, parents=True, exist_ok=True)
-        for ident in dict.fromkeys(file_ids):
+        prior_uploads = self.store.list_uploads(profile_id=profile_id)
+        for ident in file_ids:
             info = self.client.files_info(file=ident)["file"]
             name = secure_filename(str(info.get("name") or ""))[:160]
             if not name or Path(name).suffix.lower() not in SUPPORTED_EXTENSIONS:
@@ -104,15 +110,19 @@ class Files:
             prior = next(
                 (
                     row
-                    for row in self.store.list_uploads(profile_id=profile_id)
+                    for row in prior_uploads
                     if row["sha256"] == digest and row["original_name"] == name
                 ),
                 None,
             )
             if prior:
-                if prior["id"] not in existing:
+                if prior["id"] not in existing and prior["id"] not in result:
+                    if len(existing) + len(result) >= MAX_FILES:
+                        raise FileError("A request supports up to 10 files, 25 MiB each.")
                     result.append(prior["id"])
                 continue
+            if len(existing) + len(result) >= MAX_FILES:
+                raise FileError("A request supports up to 10 files, 25 MiB each.")
             upload_id = uuid.uuid4().hex
             path = folder / upload_id
             with path.open("xb") as output:
@@ -131,6 +141,7 @@ class Files:
                 }
             )
             result.append(upload_id)
+            prior_uploads.append({"id": upload_id, "sha256": digest, "original_name": name})
         return result
 
     def context(self, conversation):
@@ -151,12 +162,13 @@ class Files:
         folder = self.root / "slack" / "drafts" / conversation["id"]
         (folder / "inputs").mkdir(mode=0o700, parents=True, exist_ok=True)
         signature = hashlib.sha256(
-            json.dumps([(r["id"], r["sha256"]) for r in uploads]).encode()
+            json.dumps([[(r["id"], hashlib.sha256(Path(r["stored_path"]).read_bytes()).hexdigest()) for r in uploads],
+                        [os.environ.get(key) for key in ("MOA_ATTACHMENT_MAX_FILE_CHARS", "MOA_ATTACHMENT_MAX_TOTAL_CHARS", "MOA_ATTACHMENT_OCR_LANG")]]).encode()
         ).hexdigest()
         cache = folder / "context.json"
         if cache.is_file():
             saved = json.loads(cache.read_text())
-            if saved.get("signature") == signature:
+            if saved.get("signature") == signature and saved.get("context"):
                 return saved["summary"]
         scout = {"uploaded_files": []}
         for index, row in enumerate(uploads, 1):
@@ -169,7 +181,19 @@ class Files:
                     "sha256": row["sha256"],
                 }
             )
-        prepare_attachment_context(scout, folder)
+        def cancelled():
+            with self.store.connect() as conn:
+                row = conn.execute("SELECT stage FROM slack_conversations WHERE id=?", (conversation["id"],)).fetchone()
+            return bool(row and row[0] == "cancelled")
+        prepare_attachment_context(scout, folder, cancelled=cancelled)
         summary = scout["attachment_context"]["markdown"][:8000]
-        cache.write_text(json.dumps({"signature": signature, "summary": summary}))
+        cache.write_text(json.dumps({"signature": signature, "summary": summary,
+                                     "context": scout["attachment_context"]}))
         return summary
+
+    def prepared_context(self, conversation):
+        if not conversation["data"].get("upload_ids"):
+            return None
+        self.context(conversation)
+        cache = self.root / "slack" / "drafts" / conversation["id"] / "context.json"
+        return json.loads(cache.read_text())["context"]

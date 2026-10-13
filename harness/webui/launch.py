@@ -73,7 +73,7 @@ class LaunchService:
         ]:
             folder.mkdir(parents=True, exist_ok=True, mode=0o700)
 
-    def launch(self, profile, body, *, job_id=None):
+    def launch(self, profile, body, *, job_id=None, prepared_context=None):
         if job_id:
             if not re.fullmatch(r"[A-Za-z0-9_-]{6,80}", job_id):
                 raise LaunchError("invalid job id")
@@ -222,6 +222,14 @@ class LaunchService:
             "clarifications_resolved": body.get("clarifications_resolved") or [],
             "uploaded_files": uploaded_files,
         }
+        if uploaded_files and prepared_context:
+            # This argument is supplied only by the local Slack gateway, never
+            # accepted from an HTTP payload. The worker verifies bytes/settings
+            # against the cached signature before reusing extraction.
+            scout["attachment_context"] = prepared_context
+            (session_dir / "attachment-context.md").write_text(
+                prepared_context["markdown"], encoding="utf-8"
+            )
         (session_dir / "scout-brief.json").write_text(
             json.dumps(scout, indent=2), encoding="utf-8"
         )

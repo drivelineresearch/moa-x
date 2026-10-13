@@ -29,10 +29,12 @@ completion starts a new draft with bounded context from the prior plan.
 
 Supported references: PDF; BMP/JPEG/PNG/TIFF/WebP images; CSV/TSV, Markdown,
 JSON/YAML, HTML/XML, logs and other supported text formats. Limits: ten files,
-25 MiB each. Images and scanned PDFs use OCR text, not full visual analysis.
+25 MiB each; re-sharing an existing reference does not consume another slot.
+Images and scanned PDFs use OCR text, not full visual analysis.
 DOCX/XLSX, audio and video are unsupported. Reference summaries inform the
 interview; the complete bounded extraction packet goes to every ensemble layer.
-Cached extraction is invalidated by changed input bytes or extraction settings.
+The worker reuses the interview's verified extraction packet. Cached extraction
+is invalidated by changed input bytes or extraction settings.
 
 ## Installation
 
@@ -82,7 +84,8 @@ GitHub credential’s broader permissions. Local filesystem workspaces are not
 accepted through Slack. Codex lanes receive a bounded, line-numbered source
 packet rather than command access on this host. The packet omits symlinks,
 secrets and other sessions, records omitted content, and never implies unshown
-files were verified. Claude uses its native restricted file-tool mode. On Linux, AGY uses
+files were verified. Claude uses its native restricted file-tool mode inside a
+disposable source snapshot that excludes other run sessions. On Linux, AGY uses
 a private CLI context and a read-only project mount through bubblewrap, with
 web reads allowed and shell, MCP, writes and private CLI-file reads denied.
 OpenCode retains its native read-only policy.
@@ -91,9 +94,20 @@ Events and action submissions are deduplicated before processing. Draft
 versions reject stale controls, stable job IDs recover launches without creating
 another run, and delivery state persists in an outbox. Ambiguous message sends
 are reconciled against thread metadata; file uploads retain their modern upload
-IDs across retries. Incoming envelopes are acknowledged after local persistence,
+IDs across retries. Message/card delivery and file upload use separate delivery
+workers. SDK connection retries are disabled so the durable outbox owns write
+reconciliation. Incoming envelopes are acknowledged after local persistence,
 with model calls and downloads outside that callback. Cancellation has a fast
-path and the owning worker polls cancellation while waiting on silent children.
+path and the owning worker polls cancellation while waiting on silent children,
+escalating from termination to forced shutdown after three seconds. Failed
+launches return to preview for correction instead of retrying indefinitely.
+Choose one repository per run.
+
+Posting in a channel makes the question, results and run link visible to that
+channel's readers, just like the uploaded result files. Use a DM for private
+questions. Shared run links expose only the plan, report and verified decision
+map; cancellation revokes the link. Permanent delivery errors remain in the
+operator outbox instead of retrying forever, and `status` can refresh a card.
 
 A Slack-service restart restores queued events, interviews, pending delivery and
 job progress. A web-worker restart marks its interrupted active job failed;

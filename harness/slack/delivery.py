@@ -1,6 +1,8 @@
 """Deliver cards and final artifacts with persistent reconciliation state."""
 
 import urllib.request
+import urllib.error
+import logging
 import uuid
 from pathlib import Path
 
@@ -46,7 +48,7 @@ class Delivery:
             else:
                 ts = (
                     self.existing_message(c, item["id"])
-                    if item["attempts"] > 1
+                    if item["attempts"] > 1 or item.get("generation", 0) > 0
                     else None
                 )
                 if not ts:
@@ -69,6 +71,14 @@ class Delivery:
         except Exception as error:
             response = getattr(error, "response", {})
             code = response.get("error", type(error).__name__)
+            if code == "message_not_found" and item["kind"] == "card":
+                self.db.message_sent(c, None)
+            if isinstance(error, urllib.error.HTTPError) and error.code == 403 and item["kind"] == "file" and not item["payload"].get("uploaded"):
+                self.db.file_state(item, file_id=None, upload_url=None, uploaded=False)
+            if code in {"channel_not_found", "not_in_channel", "is_archived", "invalid_auth", "token_revoked", "missing_scope", "account_inactive"} or (item["attempts"] >= 12 and code != "ratelimited"):
+                self.db.fail_delivery(item, code)
+                logging.getLogger("moa.slack").warning("Slack delivery needs operator attention: %s", code)
+                return
             headers = getattr(response, "headers", {}) or {}
             delay = int(
                 headers.get(

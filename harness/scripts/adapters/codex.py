@@ -76,7 +76,7 @@ def _write_log_file(log_file: Optional[Path], stdout: str, stderr: str) -> None:
         print(f"[codex adapter] failed to write log {log_file}: {e}", file=_sys.stderr)
 
 
-def _source_packet(repo_path: Path, prompt: str, *, limit: int = 120_000) -> str:
+def _source_packet(repo_path: Path, prompt: str, *, limit: int = 320_000) -> str:
     """Read only Git-visible source beneath this project, never symlink targets."""
     root = repo_path.resolve()
     proc = subprocess.run(["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
@@ -118,7 +118,8 @@ def _source_packet(repo_path: Path, prompt: str, *, limit: int = 120_000) -> str
         clipped = False
         for index, line in enumerate(lines, 1):
             addition = f"{index}: {line}\n"
-            if len(receipt) + len(addition) > min(16_000, remaining):
+            per_file_limit = 64_000 if relative in prompt else 16_000
+            if len(receipt) + len(addition) > min(per_file_limit, remaining):
                 clipped = True
                 break
             receipt += addition
@@ -208,7 +209,8 @@ def run(
         if slack:
             # The native nested command sandbox is unavailable on this host.
             # Send bounded repository receipts and expose no local tools or MCP.
-            prompt += _source_packet(repo_path, prompt)
+            if allow_tools:
+                prompt += _source_packet(repo_path, prompt)
             allow_tools = False
         if not allow_tools:
             cmd += ["--ignore-user-config", "--ignore-rules",

@@ -46,14 +46,30 @@ def _process_tree(root_pid: int) -> list[int]:
     return found
 
 
-def _terminate_tree(root_pid: int) -> None:
-    pids = _process_tree(root_pid)
-    # Children first because adapters intentionally create their own sessions.
-    for pid in reversed(pids):
+def _process_identity(pid: int) -> str | None:
+    try:
+        return Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[19]
+    except (OSError, IndexError):
+        return None
+
+
+def _signal_processes(targets: dict[int, str], sig: int) -> None:
+    # Retain identities across reparenting without risking a reused PID.
+    for pid, identity in reversed(list(targets.items())):
+        if _process_identity(pid) != identity:
+            continue
         try:
-            os.kill(pid, signal.SIGTERM)
+            os.kill(pid, sig)
         except (ProcessLookupError, PermissionError):
             pass
+
+
+def _terminate_tree(root_pid: int) -> dict[int, str]:
+    targets = {pid: identity for pid in _process_tree(root_pid)
+               if (identity := _process_identity(pid)) is not None}
+    # Children first because adapters intentionally create their own sessions.
+    _signal_processes(targets, signal.SIGTERM)
+    return targets
 
 
 class JobWorker:
@@ -91,21 +107,12 @@ class JobWorker:
         changed = self.store.request_cancel(job_id)
         if not changed:
             return False
-        if job["status"] == "queued":
-            self.store.update_job(
-                job_id,
-                status="cancelled",
-                phase="cancelled",
-                finished_at=time.time(),
-            )
+        if self.store.get_job(job_id)["status"] == "cancelled":
             self.store.append_event(job_id, "job", "Queued job cancelled")
             return True
-        self.store.update_job(job_id, status="cancelling")
         self.store.append_event(job_id, "warning", "Cancellation requested")
-        with self._lock:
-            proc = self._processes.get(job_id)
-        if proc and proc.poll() is None:
-            _terminate_tree(proc.pid)
+        # The phase supervisor captures identities before signalling children,
+        # then escalates even when their parent exits and they are reparented.
         self.wake()
         return True
 
@@ -223,15 +230,30 @@ class JobWorker:
                     lines.put(None)
             reader = threading.Thread(target=read_output, daemon=True)
             reader.start()
+            stopping_at = None
+            targets = {}
+            output_ended = False
+            last_cancel_check = 0
             while True:
-                if self.store.cancel_requested(job_id) and proc.poll() is None:
-                    _terminate_tree(proc.pid)
+                now = time.monotonic()
+                should_check = now - last_cancel_check >= 0.25
+                if should_check:
+                    last_cancel_check = now
+                if stopping_at is not None or (should_check and self.store.cancel_requested(job_id)):
+                    if stopping_at is None:
+                        stopping_at = time.monotonic()
+                        targets = _terminate_tree(proc.pid)
+                    elif time.monotonic() - stopping_at >= 3:
+                        _signal_processes(targets, signal.SIGKILL)
+                if output_ended and proc.poll() is not None:
+                    break
                 try:
                     line = lines.get(timeout=0.25)
                 except queue.Empty:
                     continue
                 if line is None:
-                    break
+                    output_ended = True
+                    continue
                 clean = ANSI_RE.sub("", line.rstrip())
                 log.write(clean + "\n")
                 log.flush()
@@ -562,7 +584,7 @@ class JobWorker:
                 raise InterruptedError
             if code == 0:
                 summary = _artifact_summary(Path(job["session_dir"]))
-                self.store.update_job(
+                finished = self.store.update_job(
                     job_id,
                     status="completed",
                     phase="complete",
@@ -571,6 +593,8 @@ class JobWorker:
                     exit_code=0,
                     finished_at=time.time(),
                 )
+                if finished["status"] != "completed":
+                    raise InterruptedError
                 self._event(job_id, "job", "Job completed", summary=summary)
             else:
                 self.store.update_job(

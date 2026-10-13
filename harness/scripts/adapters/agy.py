@@ -181,6 +181,7 @@ def _copy_untracked_file(source: Path, target: Path) -> None:
 def _isolated_git_workspace(
     repo_path: Path,
     session_dir: Path,
+    *, restricted: bool = False,
 ) -> Iterator[Path]:
     """Mirror Git-visible state into a disposable AGY worktree.
 
@@ -202,7 +203,7 @@ def _isolated_git_workspace(
     if probe.returncode != 0:
         # Task-only Web UI workspaces are intentionally not Git repositories.
         # AGY still has plan mode, its native sandbox, and UV_NO_SYNC there.
-        if os.environ.get("MOA_RESTRICT_WORKSPACE") == "1":
+        if restricted or os.environ.get("MOA_RESTRICT_WORKSPACE") == "1":
             with tempfile.TemporaryDirectory(prefix="moa-agy-workspace-") as scratch:
                 copied = Path(scratch) / "workspace"
                 shutil.copytree(repo_path, copied,
@@ -362,7 +363,7 @@ def run(
         internal_log.parent.mkdir(parents=True, exist_ok=True)
         try:
             session_dir = log_file.parents[1] if log_file is not None else prompt_file.parent
-            with _isolated_git_workspace(repo_path, session_dir) as isolated_repo:
+            with _isolated_git_workspace(repo_path, session_dir, restricted=restricted) as isolated_repo:
                 active_prompt = prompt_file
                 if isolated_repo.resolve() != repo_path.resolve() or restricted:
                     active_prompt = isolated_repo / ".moa-agent-input" / prompt_file.name

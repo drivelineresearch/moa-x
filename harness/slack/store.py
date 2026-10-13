@@ -22,6 +22,8 @@ CREATE TABLE IF NOT EXISTS slack_outbox (
  id TEXT PRIMARY KEY, conversation TEXT NOT NULL, kind TEXT NOT NULL, payload TEXT NOT NULL,
  status TEXT NOT NULL DEFAULT 'pending', generation INTEGER NOT NULL DEFAULT 0,
  attempts INTEGER NOT NULL DEFAULT 0, available REAL NOT NULL DEFAULT 0, error TEXT);
+CREATE INDEX IF NOT EXISTS slack_inbox_ready ON slack_inbox(status,available);
+CREATE INDEX IF NOT EXISTS slack_outbox_ready ON slack_outbox(status,available);
 """
 
 
@@ -143,6 +145,19 @@ class SlackStore:
                 )
             ]
 
+    def cancel(self, ident):
+        # Cancel supersedes progress versions and never waits for an interview
+        # lock. A concurrent CAS save cannot restore a cancelled draft.
+        with self.store.connect() as conn:
+            conn.execute(
+                "UPDATE slack_conversations SET stage='cancelled', "
+                "data=json_remove(json_set(data,'$.progress','Cancelled.'),'$.dashboard'), "
+                "version=version+1,updated=? WHERE id=? "
+                "AND stage NOT IN ('completed','failed','cancelled')",
+                (time.time(), ident),
+            )
+        return self.get(ident)
+
     def receive(self, key, payload):
         with self.store.connect() as conn:
             conn.execute("PRAGMA busy_timeout=1000")
@@ -152,14 +167,19 @@ class SlackStore:
             )
         return bool(cursor.rowcount)
 
-    def claim(self, table):
+    def claim(self, table, *, files=None):
         if table not in ("slack_inbox", "slack_outbox"):
             raise ValueError("invalid queue")
         processing = "processing" if table == "slack_inbox" else "sending"
+        partition = ""
+        if files is not None:
+            if table != "slack_outbox":
+                raise ValueError("file partition requires outbox")
+            partition = " AND kind='file'" if files else " AND kind!='file'"
         with self.store.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             row = conn.execute(
-                f"SELECT * FROM {table} WHERE status='pending' AND available<=? ORDER BY rowid LIMIT 1",
+                f"SELECT * FROM {table} WHERE status='pending' AND available<=?{partition} ORDER BY rowid LIMIT 1",
                 (time.time(),),
             ).fetchone()
             if row:
@@ -192,17 +212,26 @@ class SlackStore:
         if table not in ("slack_inbox", "slack_outbox"):
             raise ValueError("invalid queue")
         with self.store.connect() as conn:
+            guard = " AND generation=?" if table == "slack_outbox" else ""
+            params = [time.time() + delay, str(error)[:300], item["id"]]
+            if table == "slack_outbox":
+                params.append(item["generation"])
             conn.execute(
-                f"UPDATE {table} SET status='pending',available=?,error=? WHERE id=?",
-                (time.time() + delay, str(error)[:300], item["id"]),
+                f"UPDATE {table} SET status='pending',available=?,error=? WHERE id=?{guard}",
+                params,
             )
 
-    def put(self, key, conversation, kind, payload):
+    def fail_delivery(self, item, error):
+        with self.store.connect() as conn:
+            conn.execute("UPDATE slack_outbox SET status='failed',error=? WHERE id=? AND generation=?",
+                         (str(error)[:300], item["id"], item["generation"]))
+
+    def put(self, key, conversation, kind, payload, *, force=False):
         with self.store.connect() as conn:
             if kind == "card":
                 conn.execute(
-                    "INSERT INTO slack_outbox(id,conversation,kind,payload) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,status='pending',generation=slack_outbox.generation+1,available=0,error=NULL WHERE slack_outbox.payload != excluded.payload",
-                    (key, conversation["id"], kind, json.dumps(payload)),
+                    "INSERT INTO slack_outbox(id,conversation,kind,payload) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,status='pending',generation=slack_outbox.generation+1,attempts=0,available=0,error=NULL WHERE slack_outbox.payload != excluded.payload OR ?",
+                    (key, conversation["id"], kind, json.dumps(payload), int(force)),
                 )
             else:
                 # Terminal delivery may be scheduled again after a restart. Keep
