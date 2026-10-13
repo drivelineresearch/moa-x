@@ -660,6 +660,10 @@ class SlackTest(unittest.TestCase):
             return process
         with patch.object(agy.subprocess, "Popen", side_effect=popen):
             self.assertTrue(agy.run(prompt="Answer with JSON", schema_path=schema, repo_path=self.root, model="fixture-model", prompt_file=prompt_file).success)
+            process.communicate.return_value = ('{"answer":"broken "quotes""}', "")
+            result = agy.run(prompt="Answer with JSON", schema_path=schema, repo_path=self.root, model="fixture-model", prompt_file=prompt_file)
+            self.assertFalse(result.success)
+            self.assertTrue(result.transient_empty)
 
     def test_cancel_revokes_live_run_capability(self):
         import hashlib

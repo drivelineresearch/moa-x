@@ -511,7 +511,10 @@ def run(
                 False, None, stdout, stderr, proc.returncode,
                 time.monotonic() - started,
                 "agy returned empty output" if empty else "could not extract JSON object from agy output",
-                transient_empty=empty,
+                # Like OpenCode, schema-unenforced AGY can emit malformed JSON
+                # under a clean invocation. Permit the worker's single bounded
+                # redispatch; never accept a nested object as the role result.
+                transient_empty=empty or stdout.lstrip().startswith(("{", "```json")),
             )
         return AgyResult(
             True, payload, stdout, stderr, proc.returncode,
