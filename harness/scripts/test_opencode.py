@@ -142,6 +142,12 @@ class OpenCodeV2Test(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 oc._cli_major_version()
 
+    def test_version_probe_respects_a_short_invocation_budget(self):
+        version = SimpleNamespace(returncode=0, stdout='opencode v2.0.0', stderr='')
+        with patch.object(oc.subprocess, 'run', return_value=version) as call:
+            self.assertEqual(oc._cli_major_version(timeout_seconds=.25), 2)
+        self.assertEqual(call.call_args.kwargs['timeout'], .25)
+
     def test_restricted_runs_reject_v1_before_launch(self):
         with patch.dict(oc.os.environ, {"MOA_RESTRICT_WORKSPACE": "1"}), patch.object(oc, "_cli_major_version", return_value=1), patch.object(oc.subprocess, "Popen") as launch:
             result = oc.run(prompt="Inspect the repo", repo_path=Path("."), model="opencode-go/grok-4.7")

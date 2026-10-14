@@ -140,8 +140,8 @@ locators before semantic validation; external absolute paths remain invalid.
 
 Codex and Claude receive their native structured-output controls. OpenCode
 receives an isolated permission config that denies edits and shell access.
-AGY requires plan mode plus sandboxing. For Git workspaces, MoA-X also mirrors
-tracked, staged, dirty, and untracked context into a independent detached
+AGY requires plan mode plus sandboxing. For Git workspaces, MoA-X also copies
+visible tracked, staged, dirty, and untracked file bytes into a independent detached
 checkout below the active session and sets `UV_NO_SYNC=1`. This contains any
 pre-sandbox `uv` bootstrap files while keeping repository context accurate.
 Every CLI call runs in its own process group, and the runner compares per-path

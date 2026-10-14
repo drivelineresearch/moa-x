@@ -112,6 +112,20 @@ class RecoveryTests(unittest.TestCase):
                 self.assertEqual(len(result.attempts), 1)
                 self.assertTrue((self.session / result.log_path).is_file())
 
+    def test_snapshot_preserves_clean_repository_filtered_bytes(self):
+        import shlex
+        source = self.root / "filtered";source.mkdir()
+        def git(*args):return subprocess.run(["git", *args], cwd=source, check=True, capture_output=True)
+        git("init", "-q")
+        (source / ".gitattributes").write_text("tracked.txt filter=fixture\n")
+        command = shlex.quote(sys.executable) + " -c " + shlex.quote('import sys;sys.stdout.write(sys.stdin.read().replace("visible", "stored"))')
+        git("config", "filter.fixture.clean", command)
+        (source / "tracked.txt").write_text("visible bytes\r\n")
+        git("add", ".");git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.com", "commit", "-qm", "filtered")
+        self.assertEqual(git("diff", "HEAD").stdout, b"")
+        with agy._isolated_git_workspace(source, self.session, deadline=time.monotonic()+10) as snapshot:
+            self.assertEqual((snapshot / "tracked.txt").read_bytes(), (source / "tracked.txt").read_bytes())
+
     def test_capacity_exhaustion_is_three_calls_total(self):
         with patch.object(run_moa.codex_adapter, "run", return_value=output(error="HTTP 429 model at capacity")) as call, patch.object(run_moa.time, "sleep"):
             result = self.run_lane()
@@ -271,7 +285,7 @@ class RecoveryTests(unittest.TestCase):
         self.assertFalse((self.session / "layer1/fixture-proposer.json").exists())
 
     def test_retired_families_cannot_return_through_custom_aliases(self):
-        for model in ("qwen-token-plan/qwen3.8-max", "opencode-go/qwen3.8-flash", "openrouter/moonshotai/kimi-k3", "opencode-go/mimo-v2.6-pro", "opencode-go/hy4-preview"):
+        for model in ("qwen-token-plan/qwen3.8-max", "opencode-go/qwen3.8-flash", "openrouter/moonshotai/kimi-k3", "opencode-go/mimo-v2.6-pro", "opencode-go/hy4-preview", "opencode-go/deepseek-v4-pro"):
             self.assertTrue(run_moa.harness_config.provider_is_retired("custom-route", model))
             self.assertFalse(run_moa.harness_config.provider_allows_role("custom-route", "proposer", model))
         self.assertFalse(run_moa.harness_config.provider_is_retired("minimax", "opencode-go/minimax-m3"))

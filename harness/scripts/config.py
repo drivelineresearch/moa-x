@@ -145,6 +145,8 @@ def provider_is_retired(name: str, model: str | None = None) -> bool:
     if name in {"kimi", "qwen", "qwen-opencode", "deepseek", "mimo", "hy4"}:
         return True
     parts = re.split(r"[/:\s]+", str(model or "").lower())
+    if any(part.startswith("deepseek") for part in parts) and not any("flash" in part for part in parts):
+        return True
     return any(part.startswith(("qwen", "kimi", "moonshot", "mimo", "hy4")) for part in parts)
 
 

@@ -259,42 +259,18 @@ def _isolated_git_workspace(
             )
 
         checkout = git_run(
-            ["git", "checkout", "--detach", "HEAD"], cwd=sandbox,
+            ["git", "read-tree", "HEAD"], cwd=sandbox,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120, check=False,
         )
         if checkout.returncode != 0:
-            raise AgyWorkspaceIsolationError("could not populate disposable checkout")
+            raise AgyWorkspaceIsolationError("could not populate disposable index")
+        git_run(["git", "update-ref", "--no-deref", "HEAD", "HEAD"], cwd=sandbox,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=15, check=True)
 
-        diff = git_run(
-            ["git", "diff", "--no-ext-diff", "--no-textconv", "--binary", "--full-index", "HEAD", "--", "."],
-            cwd=git_root,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=120,
-            check=False,
-        )
-        if diff.returncode != 0:
-            raise AgyWorkspaceIsolationError(
-                "could not capture dirty tracked state for AGY isolation"
-            )
-        if diff.stdout:
-            apply = git_run(
-                ["git", "apply", "--binary", "--whitespace=nowarn", "-"],
-                cwd=sandbox,
-                input=diff.stdout,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                timeout=120,
-                check=False,
-            )
-            if apply.returncode != 0:
-                detail = apply.stderr.decode("utf-8", "replace").strip()
-                raise AgyWorkspaceIsolationError(
-                    f"could not mirror dirty tracked state for AGY: {detail[:300]}"
-                )
-
+        # Copy visible working-tree bytes, including clean/smudge-filtered and
+        # CRLF files; replaying Git blobs/diffs can silently change that view.
         untracked = git_run(
-            ["git", "ls-files", "--others", "--exclude-standard", "-z"],
+            ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
             cwd=git_root,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -310,6 +286,8 @@ def _isolated_git_workspace(
         except ValueError:
             session_relative = ""
         for raw in untracked.stdout.split(b"\0"):
+            if deadline is not None and time.monotonic() >= deadline:
+                raise subprocess.TimeoutExpired("copy working tree", 0)
             if not raw:
                 continue
             relative = raw.decode("utf-8", "surrogateescape")

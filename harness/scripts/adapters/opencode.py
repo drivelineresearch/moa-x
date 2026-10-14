@@ -57,10 +57,10 @@ _QWEN_TOKEN_PLAN_BASE_URL = (
 _MAX_INLINE_PROMPT_BYTES = 96 * 1024
 
 
-def _cli_major_version() -> int:
+def _cli_major_version(*, timeout_seconds: float = 10) -> int:
     """Fail closed when the invocation contract cannot be determined."""
     proc = subprocess.run(
-        [_opencode_bin(), "--version"], capture_output=True, text=True, timeout=10
+        [_opencode_bin(), "--version"], capture_output=True, text=True, timeout=min(10, max(0, timeout_seconds))
     )
     match = re.search(r"\bv?(\d+)\.\d+\.\d+\b", (proc.stdout or "") + "\n" + (proc.stderr or ""))
     if proc.returncode != 0 or match is None or int(match.group(1)) not in {1, 2}:
@@ -501,7 +501,7 @@ def run(
     workspace_stack = ExitStack()
 
     try:
-        major = _cli_major_version()
+        major = _cli_major_version(timeout_seconds=remaining_timeout(start, timeout_seconds))
         if major == 1 and os.environ.get("MOA_RESTRICT_WORKSPACE") == "1":
             return OpenCodeResult(success=False, payload=None, raw_stdout="", raw_stderr="",
                 exit_code=1, duration_seconds=time.monotonic() - start,
@@ -592,6 +592,8 @@ def run(
         # alone silently selects the caller's repository and skips our policy.
         env["PWD"] = str(active_repo.resolve())
         try:
+            if remaining_timeout(start, timeout_seconds) <= 0:
+                raise subprocess.TimeoutExpired("OpenCode preparation", timeout_seconds)
             proc = subprocess.Popen(
                 cmd,
                 stdin=None,
