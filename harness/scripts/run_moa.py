@@ -74,6 +74,7 @@ import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from time import sleep as retry_sleep
 from types import SimpleNamespace
 from typing import Any, Optional
 
@@ -485,7 +486,14 @@ def _validate_refiner_verification_cross_fields(
                     repo_path, file_name, line_start, line_end
                 )
             )
-            if capture_status != "captured":
+            # An unverified finding can name the missing receipt it could not
+            # inspect. It must stay unverified; positive/negative fact claims
+            # still require an actual captured source.
+            missing_receipt = (
+                verification.get("status") == "unverified"
+                and capture_status in {"unreadable", "line_out_of_range"}
+            )
+            if capture_status != "captured" and not missing_receipt:
                 errors.append(
                     f"verifications[{index}]: local source receipt "
                     f"{portable_source} is {capture_status}"
@@ -1044,7 +1052,7 @@ def _run_with_recovery(
               f"({research_attempts + 1}/3) after {delay:.1f}s", flush=True)
         # The worker supervisor can terminate this process during backoff;
         # cancellation never waits on a provider's stdout to become readable.
-        time.sleep(delay)
+        retry_sleep(delay)
     result.started_at = started_at
     result.duration_seconds = time.monotonic() - started
     result.attempt = len(history) or 1

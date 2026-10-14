@@ -35,6 +35,8 @@ versioning.
 
 ### Fixed
 
+- Preserve explicitly unverified missing-source findings without rejecting a
+  reviewer's usable checks; verified/contradicted receipts stay strict.
 - Treat Slack task-only/no-repository instructions as context choices instead
   of trying to resolve subsequent words as repository names.
 - Permit initial calls under short timeouts, close atomic-write temporary handles
