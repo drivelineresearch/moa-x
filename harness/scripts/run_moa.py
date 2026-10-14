@@ -2807,6 +2807,10 @@ def main() -> int:
                     file=sys.stderr,
                 )
                 return 2
+            retained = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if decision_map_module.workspace_mutation_agents(retained):
+                print("ERROR: retained research records workspace changes; start fresh research before synthesis.", file=sys.stderr)
+                return 4
             if final_aggregator.harness == "codex":
                 ok, msg = codex_adapter.check_available()
                 default_timeout = codex_timeout

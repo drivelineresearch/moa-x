@@ -453,6 +453,16 @@ class RecoveryTests(unittest.TestCase):
                 )
                 self.assertEqual(updated["layer3"][0]["attempt"], 2)
 
+    def test_cli_synthesis_refuses_mutated_research(self):
+        scout = self.session / "scout-brief.json"
+        scout.write_text(json.dumps({"session_id": "fixture", "repo_path": str(self.root), "frozen_spec": "Retain trustworthy research."}))
+        (self.session / "synthesis-input.md").write_text("Retained input.")
+        (self.session / "manifest.json").write_text(json.dumps({"summary": {"workspace_mutation_failures": ["fixture"]}, "layer1": [], "layer2": []}))
+        argv = ["run_moa.py", "--scout-brief", str(scout), "--repo", str(self.root), "--phase", "layer3"]
+        with patch.object(sys, "argv", argv), patch.object(run_moa, "_global_lock", return_value=contextlib.nullcontext()), patch.object(run_moa, "run_layer3") as call, contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(run_moa.main(), 4)
+        call.assert_not_called()
+
     def test_synthesis_preserves_workspace_mutation_warnings(self):
         manifest = {
             "layer1": [
