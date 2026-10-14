@@ -35,6 +35,9 @@ versioning.
 
 ### Fixed
 
+- Permit initial calls under short timeouts, close atomic-write temporary handles
+  before replacement on Windows, and include adapter termination/draining and
+  Git isolation commands in the invocation budget while retaining partial output.
 - Share bounded recovery across every provider and role, including synthesis:
   retry capacity/transport/incomplete failures, repair structure without tools,
   preserve every attempt, and fail closed on permanent errors or mutations.

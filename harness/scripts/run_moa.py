@@ -62,7 +62,6 @@ import argparse
 import contextlib
 import hashlib
 import json
-import math
 import random
 import os
 import re
@@ -641,14 +640,16 @@ def _build_refiner_prompt(
 
 def _write_text_atomic(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
-                                     prefix=path.name + ".", delete=False) as temporary:
-        temporary_path = Path(temporary.name)
-        try:
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
+                                         prefix=path.name + ".", delete=False) as temporary:
+            temporary_path = Path(temporary.name)
             temporary.write(content)
             temporary.flush()
-            os.replace(temporary_path, path)
-        finally:
+        os.replace(temporary_path, path)
+    finally:
+        if temporary_path is not None:
             temporary_path.unlink(missing_ok=True)
 
 
@@ -940,7 +941,7 @@ def _run_with_recovery(
     result = LayerResult(agent_id=agent_id, layer=layer, role=role, reviewing=reviewing)
     while True:
         remaining = deadline - time.monotonic()
-        if remaining < (20 if repair else 30):
+        if remaining <= 0 or (history and remaining < (20 if repair else 30)):
             stop_reason = "deadline"
             result.success = False
             result.error = (result.error or "provider failed") + "; recovery deadline exhausted"
@@ -949,7 +950,7 @@ def _run_with_recovery(
         log_file = session_dir / f"layer{layer}" / f"{agent_id}-{role}{suffix}.log"
         if log_file.exists():
             log_file = log_file.with_name(log_file.stem + f".run-{time.time_ns()}.log")
-        call_timeout = min(240, math.floor(remaining)) if repair else math.floor(remaining)
+        call_timeout = min(240, remaining) if repair else remaining
         call_start = time.time()
         try:
             adapter_result = _invoke_adapter(

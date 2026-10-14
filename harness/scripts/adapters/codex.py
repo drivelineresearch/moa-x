@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from adapters import extract_json_from_text, kill_proc_tree
+from adapters import extract_json_from_text, remaining_timeout, drain_after_timeout
 
 
 @dataclass
@@ -235,21 +235,14 @@ def run(
             )
             try:
                 stdout_text, stderr_text = proc.communicate(
-                    input=prompt, timeout=timeout_seconds
+                    input=prompt, timeout=remaining_timeout(start, timeout_seconds, reserve_cleanup=True)
                 )
                 duration = time.monotonic() - start
                 stdout_captured = stdout_text or ""
                 stderr_captured = stderr_text or ""
-            except subprocess.TimeoutExpired:
-                kill_proc_tree(proc)
-                # Drain pipes to prevent deadlock (second communicate after kill)
-                try:
-                    stdout_text, stderr_text = proc.communicate(timeout=5)
-                    stdout_captured = stdout_text or ""
-                    stderr_captured = (stderr_text or "") + f"\n[orchestrator] timeout after {timeout_seconds}s"
-                except Exception:
-                    stdout_captured = ""
-                    stderr_captured = f"[orchestrator] timeout after {timeout_seconds}s; could not drain pipes"
+            except subprocess.TimeoutExpired as timeout_error:
+                stdout_captured, stderr_captured = drain_after_timeout(proc, timeout_error, start, timeout_seconds)
+                stderr_captured = (stderr_captured or "") + f"\n[orchestrator] timeout after {timeout_seconds}s"
                 duration = time.monotonic() - start
                 return CodexResult(
                     success=False, payload=None, raw_stdout=stdout_captured,

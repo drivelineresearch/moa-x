@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import json
+import math
 import re
 import shutil
 import subprocess
@@ -23,7 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator, Optional
 
-from adapters import READ_ONLY_RULE, extract_json_from_text, kill_proc_tree
+from adapters import READ_ONLY_RULE, extract_json_from_text, remaining_timeout, drain_after_timeout
 
 _MIN_VERSION = (1, 1, 5)
 _VERSION_RE = re.compile(r"\b(\d+)\.(\d+)\.(\d+)\b")
@@ -148,7 +149,7 @@ def _build_cmd(
         "--sandbox",
         "--dangerously-skip-permissions",
         "--model", model,
-        "--print-timeout", f"{timeout_seconds}s",
+        "--print-timeout", f"{max(1, math.ceil(timeout_seconds))}s",
         "--log-file", str(internal_log),
     ]
     # AGY's currently available model ids encode depth (``-low``, ``-medium``,
@@ -184,6 +185,7 @@ def _isolated_git_workspace(
     repo_path: Path,
     session_dir: Path,
     *, restricted: bool = False,
+    deadline: Optional[float] = None,
 ) -> Iterator[Path]:
     """Mirror Git-visible state into a disposable AGY worktree.
 
@@ -193,7 +195,15 @@ def _isolated_git_workspace(
     worktree contains those side effects while retaining tracked, staged,
     dirty, and untracked context from the operator's working tree.
     """
-    probe = subprocess.run(
+    def git_run(*args, timeout, **kwargs):
+        if deadline is not None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired(args[0], 0)
+            timeout = min(timeout, remaining)
+        return subprocess.run(*args, timeout=timeout, **kwargs)
+
+    probe = git_run(
         ["git", "rev-parse", "--show-toplevel"],
         cwd=repo_path,
         stdout=subprocess.PIPE,
@@ -230,9 +240,8 @@ def _isolated_git_workspace(
     # git worktree accepts a missing or empty target. Removing the empty
     # mkdtemp directory lets Git own its complete lifecycle.
     sandbox.rmdir()
-    registered = False
     try:
-        add = subprocess.run(
+        add = git_run(
             [
                 "git", "worktree", "add", "--detach", "--force",
                 str(sandbox), "HEAD",
@@ -248,9 +257,8 @@ def _isolated_git_workspace(
             raise AgyWorkspaceIsolationError(
                 f"could not create disposable AGY worktree: {detail[:300]}"
             )
-        registered = True
 
-        diff = subprocess.run(
+        diff = git_run(
             ["git", "diff", "--binary", "--full-index", "HEAD", "--", "."],
             cwd=git_root,
             stdout=subprocess.PIPE,
@@ -263,7 +271,7 @@ def _isolated_git_workspace(
                 "could not capture dirty tracked state for AGY isolation"
             )
         if diff.stdout:
-            apply = subprocess.run(
+            apply = git_run(
                 ["git", "apply", "--binary", "--whitespace=nowarn", "-"],
                 cwd=sandbox,
                 input=diff.stdout,
@@ -278,7 +286,7 @@ def _isolated_git_workspace(
                     f"could not mirror dirty tracked state for AGY: {detail[:300]}"
                 )
 
-        untracked = subprocess.run(
+        untracked = git_run(
             ["git", "ls-files", "--others", "--exclude-standard", "-z"],
             cwd=git_root,
             stdout=subprocess.PIPE,
@@ -309,8 +317,9 @@ def _isolated_git_workspace(
 
         yield sandbox / repo_relative
     finally:
-        if registered:
-            subprocess.run(
+        try:
+            # Clean only this invocation's unique worktree; no global prune.
+            git_run(
                 ["git", "worktree", "remove", "--force", str(sandbox)],
                 cwd=git_root,
                 stdout=subprocess.DEVNULL,
@@ -318,14 +327,10 @@ def _isolated_git_workspace(
                 timeout=120,
                 check=False,
             )
-            subprocess.run(
-                ["git", "worktree", "prune"],
-                cwd=git_root,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=30,
-                check=False,
-            )
+        except (OSError, subprocess.SubprocessError):
+            # Retain timed-out sandboxes with private session diagnostics
+            # instead of extending the provider deadline for cleanup.
+            pass
 
 
 def run(
@@ -374,7 +379,8 @@ def run(
         internal_log.parent.mkdir(parents=True, exist_ok=True)
         try:
             session_dir = log_file.parents[1] if log_file is not None else prompt_file.parent
-            with _isolated_git_workspace(repo_path, session_dir, restricted=restricted) as isolated_repo:
+            with _isolated_git_workspace(repo_path, session_dir, restricted=restricted,
+                                         deadline=started + timeout_seconds) as isolated_repo:
                 active_prompt = prompt_file
                 if isolated_repo.resolve() != repo_path.resolve() or restricted:
                     active_prompt = isolated_repo / ".moa-agent-input" / prompt_file.name
@@ -476,13 +482,9 @@ def run(
                     start_new_session=True,
                 )
                 try:
-                    stdout, stderr = proc.communicate(timeout=timeout_seconds + 15)
-                except subprocess.TimeoutExpired:
-                    kill_proc_tree(proc)
-                    try:
-                        stdout, stderr = proc.communicate(timeout=5)
-                    except Exception:
-                        stdout, stderr = "", ""
+                    stdout, stderr = proc.communicate(timeout=remaining_timeout(started, timeout_seconds, reserve_cleanup=True))
+                except subprocess.TimeoutExpired as timeout_error:
+                    stdout, stderr = drain_after_timeout(proc, timeout_error, started, timeout_seconds)
                     stderr = (stderr or "") + f"\n[orchestrator] timeout after {timeout_seconds}s"
                     return AgyResult(
                         False, None, stdout or "", stderr, -1,

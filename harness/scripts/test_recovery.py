@@ -14,7 +14,7 @@ from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import run_moa
-from adapters import agy
+from adapters import agy, remaining_timeout, drain_after_timeout
 from adapters.failures import classify_failure
 from test_offline import _make_valid_proposer, _make_valid_broadcast_refiner
 
@@ -53,6 +53,35 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(result.log_path, "layer1/fixture-proposer.retry-2.log")
         self.assertTrue(all(c.kwargs["model"] == "gpt-6.1-sol" for c in call.call_args_list))
         self.assertGreaterEqual(sleep.call_args.args[0], 5)
+
+    def test_short_deadline_still_invokes_the_initial_provider(self):
+        with patch.object(run_moa.codex_adapter, "run", return_value=output(self.valid)) as call:
+            result = self.run_lane(timeout=5)
+        self.assertTrue(result.success)
+        self.assertEqual(call.call_count, 1)
+        self.assertGreater(call.call_args.kwargs["timeout_seconds"], 0)
+        self.assertLessEqual(call.call_args.kwargs["timeout_seconds"], 5)
+
+    def test_real_timeout_cleanup_is_bounded_and_keeps_partial_stdout(self):
+        if sys.platform == "win32":self.skipTest("POSIX process-group test")
+        started = time.monotonic()
+        proc = subprocess.Popen([sys.executable, "-u", "-c", "import signal,time;signal.signal(signal.SIGTERM,signal.SIG_IGN);print('captured receipt',flush=True);time.sleep(30)"],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+        try:
+            with self.assertRaises(subprocess.TimeoutExpired) as raised:
+                proc.communicate(timeout=remaining_timeout(started, 1, reserve_cleanup=True))
+            stdout, _ = drain_after_timeout(proc, raised.exception, started, 1)
+            self.assertLess(time.monotonic() - started, 1.75)
+            self.assertIn("captured receipt", stdout)
+        finally:
+            proc.kill();proc.communicate(timeout=2)
+
+    def test_git_isolation_probe_is_clipped_to_the_invocation_deadline(self):
+        probe = SimpleNamespace(returncode=1, stdout="", stderr="")
+        with patch.object(agy.time, "monotonic", return_value=15), patch.object(agy.subprocess, "run", return_value=probe) as call:
+            with agy._isolated_git_workspace(self.root, self.session, deadline=20) as workspace:
+                self.assertEqual(workspace, self.root)
+        self.assertEqual(call.call_args.kwargs["timeout"], 5)
 
     def test_adapter_setup_exception_is_logged_and_never_retried(self):
         for failure in (OSError("cannot write prompt file"), subprocess.TimeoutExpired("git rev-parse", 15)):
@@ -247,6 +276,19 @@ class RecoveryTests(unittest.TestCase):
         run_moa._write_text_atomic(target, json.dumps(self.valid))
         self.assertEqual(json.loads(target.read_text()), self.valid)
         self.assertEqual(list(self.session.glob('checkpoint.json.*')), [])
+
+    def test_atomic_replacement_closes_the_temporary_file_first(self):
+        opened = []
+        factory = run_moa.tempfile.NamedTemporaryFile
+        replace = run_moa.os.replace
+        def track(*args, **kwargs):
+            file = factory(*args, **kwargs);opened.append(file);return file
+        def windows_replace(source, target):
+            self.assertTrue(opened[-1].closed)
+            replace(source, target)
+        with patch.object(run_moa.tempfile, "NamedTemporaryFile", side_effect=track), patch.object(run_moa.os, "replace", side_effect=windows_replace):
+            run_moa._write_text_atomic(self.session / "closed.json", '{"complete":true}')
+        self.assertEqual(json.loads((self.session / "closed.json").read_text()), {"complete": True})
 
     def test_aggregator_capacity_recovers_and_validates_lineage(self):
         (self.session / "synthesis-input.md").write_text("# Synthesis\nfixture")

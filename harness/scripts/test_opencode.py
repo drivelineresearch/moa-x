@@ -20,7 +20,7 @@ class OpenCodeV2Test(unittest.TestCase):
         }}), "")
         with tempfile.TemporaryDirectory() as raw:
             @contextmanager
-            def source_workspace(repo, scratch):
+            def source_workspace(repo, scratch, **unused):
                 yield repo
             with patch.object(oc, '_cli_major_version', return_value=2), patch.object(oc, '_isolated_git_workspace', source_workspace), patch.object(oc.subprocess, 'Popen', return_value=process):
                 result = oc.run(prompt="Read the fixture.", repo_path=Path(raw), model="opencode-go/muse-spark-1.3-contributor")
@@ -104,7 +104,7 @@ class OpenCodeV2Test(unittest.TestCase):
         with tempfile.TemporaryDirectory() as raw:
             source = Path(raw);(source / 'fixture.txt').write_text('42')
             @contextmanager
-            def source_workspace(repo, scratch):
+            def source_workspace(repo, scratch, **unused):
                 yield repo
             def popen(command, **kwargs):
                 captured.update(command=command, **kwargs)

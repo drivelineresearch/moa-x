@@ -101,6 +101,12 @@ and are excluded from new launches, including custom aliases.
 All CLI, web and Slack runs use the orchestrator's shared recovery path for
 proposers, broadcast reviewers and final aggregation. Each provider's configured
 timeout is a total deadline across its attempts, backoff and optional repair.
+The initial call may use any positive remaining budget; minimum reserves apply
+only to subsequent research/repair calls. Adapters subtract preparation time
+and reserve up to eight seconds for process termination and output draining.
+AGY has no extra watchdog grace beyond that budget. Git sandbox commands share
+the invocation deadline; an unfinished sandbox may remain as private diagnostic
+context when cleanup would exceed it.
 
 - Capacity/rate limits, temporary transport failures and incomplete output can
   receive two retries, for at most three research invocations. Backoff starts at

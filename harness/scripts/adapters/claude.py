@@ -50,7 +50,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from adapters import READ_ONLY_RULE, extract_json_from_text, kill_proc_tree
+from adapters import READ_ONLY_RULE, extract_json_from_text, remaining_timeout, drain_after_timeout
 
 # The claude CLI has no --temperature flag. For self-moa, each proposer/refiner
 # instance injects this directive to approximate temperature=0.7 diversity.
@@ -308,21 +308,14 @@ def run(
             try:
                 stdout_text, stderr_text = proc.communicate(
                     input=prompt,
-                    timeout=timeout_seconds,
+                    timeout=remaining_timeout(start, timeout_seconds, reserve_cleanup=True),
                 )
                 duration = time.monotonic() - start
                 stdout_captured = stdout_text or ""
                 stderr_captured = stderr_text or ""
-            except subprocess.TimeoutExpired:
-                kill_proc_tree(proc)
-                # Drain pipes to prevent deadlock (second communicate after kill)
-                try:
-                    stdout_text, stderr_text = proc.communicate(timeout=5)
-                    stdout_captured = stdout_text or ""
-                    stderr_captured = (stderr_text or "") + f"\n[orchestrator] timeout after {timeout_seconds}s"
-                except Exception:
-                    stdout_captured = ""
-                    stderr_captured = f"[orchestrator] timeout after {timeout_seconds}s; could not drain pipes"
+            except subprocess.TimeoutExpired as timeout_error:
+                stdout_captured, stderr_captured = drain_after_timeout(proc, timeout_error, start, timeout_seconds)
+                stderr_captured = (stderr_captured or "") + f"\n[orchestrator] timeout after {timeout_seconds}s"
                 duration = time.monotonic() - start
                 return ClaudeResult(
                     success=False, payload=None, raw_stdout=stdout_captured,
