@@ -2291,9 +2291,11 @@ function bindEvents() {
         if (!agents.length) throw new Error("Choose at least one agent to redispatch.");
         const retry = { phase, agents };
         if (phase === "layer3" && state.detailJob?.agents?.some((lane) => lane.role === "aggregator" && lane.harness === "codex")) {
-          const effort = window.prompt("Synthesis effort: low, medium, high or xhigh. Higher effort can take longer.", "medium");
+          const configuredEffort = state.detailJob.config?.options?.effort_overrides?.[roster.aggregator];
+          const recordedEffort = state.detailJob.agents.find((lane) => lane.role === "aggregator")?.model?.match(/\b(low|medium|high|xhigh) effort\b/i)?.[1];
+          const effort = window.prompt("Synthesis effort: low, medium, high or xhigh. Higher effort can take longer.", configuredEffort || recordedEffort?.toLowerCase() || "xhigh");
           if (effort === null) return;
-          retry.aggregator_effort = effort.trim();
+          retry.aggregator_effort = effort.trim().toLowerCase();
         }
         const next = await redispatchJob(retryButton.dataset.redispatchRun, retry);
         state.jobs.unshift(next);

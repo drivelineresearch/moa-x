@@ -453,6 +453,92 @@ class RecoveryTests(unittest.TestCase):
                 )
                 self.assertEqual(updated["layer3"][0]["attempt"], 2)
 
+    def test_synthesis_preserves_workspace_mutation_warnings(self):
+        manifest = {
+            "layer1": [
+                {
+                    "agent_id": "fixture",
+                    "success": True,
+                    "attempts": [{"failure_kind": "workspace_mutation"}],
+                }
+            ],
+            "layer2": [],
+            "summary": {
+                "workspace_mutation_failures": ["prior-aggregator"],
+                "timeout_failures": ["prior-aggregator"],
+            },
+        }
+        (self.session / "manifest.json").write_text(json.dumps(manifest))
+        provider = run_moa.harness_config.ResolvedProvider(
+            "fixture-aggregator", "codex", "gpt-6.1-sol", 900
+        )
+        result = run_moa.LayerResult(
+            agent_id=provider.name, layer=3, role="aggregator", success=True
+        )
+        with patch.object(run_moa, "_refresh_decision_map"):
+            run_moa.update_manifest_layer3(self.session, result, provider, "medium")
+        summary = json.loads((self.session / "manifest.json").read_text())["summary"]
+        self.assertEqual(
+            summary["workspace_mutation_failures"], ["fixture", "prior-aggregator"]
+        )
+        self.assertEqual(summary["timeout_failures"], [])
+
+    def test_synthesis_keeps_default_prior_log_and_ignores_stale_payload(self):
+        folder = self.session / "layer3"
+        folder.mkdir()
+        prior_log = folder / "codex-sol-aggregator.log"
+        prior_log.write_text("Original aggregation receipt.")
+        prior_json = folder / "codex-sol-aggregator.json"
+        payload = {
+            "final_plan_markdown": "# Final Plan\n" + "A bounded plan. " * 20,
+            "lineage": {
+                "version": 1,
+                "title": "Small change",
+                "summary": "Retain evidence.",
+                "confidence": {"level": "high", "rationale": "Independent review."},
+                "steps": [],
+                "rejected_inputs": [],
+            },
+        }
+        prior_json.write_text(json.dumps(payload))
+        (self.session / "synthesis-input.md").write_text("Retained research.")
+        provider = run_moa.harness_config.ResolvedProvider(
+            "codex-sol", "codex", "gpt-6.1-sol", 900
+        )
+        for succeeds in (False, True):
+
+            def invoke(**kwargs):
+                kwargs["log_file"].write_text("Replacement call receipt.")
+                return (
+                    output(payload)
+                    if succeeds
+                    else output(error="HTTP 403 Model access is disabled")
+                )
+
+            with (
+                self.subTest(succeeds=succeeds),
+                patch.object(run_moa.codex_adapter, "run", side_effect=invoke),
+            ):
+                result = run_moa.run_layer3(
+                    provider=provider,
+                    repo_path=self.root,
+                    session_dir=self.session,
+                    timeout=900,
+                    codex_effort="medium",
+                    layer1=[],
+                    layer2=[],
+                )
+            self.assertEqual(result.success, succeeds)
+            self.assertEqual(prior_log.read_text(), "Original aggregation receipt.")
+            self.assertNotEqual(self.session / result.log_path, prior_log)
+            self.assertEqual(
+                (self.session / result.log_path).read_text(),
+                "Replacement call receipt.",
+            )
+            if not succeeds:
+                self.assertIsNone(result.payload)
+                self.assertIsNone(result.json_path)
+
     def test_native_agy_schema_file_is_within_private_mirror(self):
         mirror = self.root / "mirror";mirror.mkdir()
         process = Mock(returncode=0);process.communicate.return_value=(json.dumps(self.valid), "")

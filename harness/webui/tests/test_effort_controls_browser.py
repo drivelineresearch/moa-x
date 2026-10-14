@@ -388,7 +388,11 @@ class EffortControlsBrowserTest(unittest.TestCase):
             dialogs = []
             def accept_recovery(dialog):
                 dialogs.append(dialog.message)
-                dialog.accept(dialog.default_value)
+                if "Synthesis effort:" in dialog.message:
+                    self.assertEqual(dialog.default_value, "xhigh")
+                    dialog.accept("Medium")
+                else:
+                    dialog.accept(dialog.default_value)
             page.on("dialog", accept_recovery)
             page.goto(base_url + "/runs/lab-audit", wait_until="networkidle")
             with page.expect_response(lambda response: response.request.method == "POST" and response.url.endswith("/redispatch")) as response:

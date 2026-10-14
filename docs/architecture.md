@@ -201,4 +201,6 @@ the caller; private repositories require a separate explicit allowlist.
 
 Synthesis-only retries retain validated proposal/review checkpoints and the
 synthesis input. Only Layer 3 executes; prior aggregator attempts stay visible
-in the report, while current failure summaries reflect the replacement result.
+in the report, while current timeout summaries reflect the replacement result. Workspace
+mutation warnings remain recorded; synthesis-only retries cannot reuse inputs
+from a run that recorded workspace changes.

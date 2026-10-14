@@ -1903,9 +1903,7 @@ def update_manifest_layer3(
         row["agent_id"] for row in current_lanes
         if row.get("error") and "timeout after" in row["error"].lower()
     ))
-    summary["workspace_mutation_failures"] = list(dict.fromkeys(
-        row["agent_id"] for row in current_lanes if row.get("workspace_mutations")
-    ))
+    summary["workspace_mutation_failures"] = decision_map_module.workspace_mutation_agents(manifest)
     finished_at = max(
         float(manifest.get("finished_at", 0) or 0),
         result.started_at + result.duration_seconds,

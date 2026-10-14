@@ -1871,6 +1871,9 @@ class WebUITest(unittest.TestCase):
         phase.assert_called_once_with(job, "layer3")
         self.assertEqual(store.get_job(job["id"])["status"], "completed")
         self.assertEqual((session / "final-plan.md").read_text(), "Stale synthesis.")
+        checkpoint["summary"]["workspace_mutation_failures"] = ["codex-sol"]
+        (session / "manifest.json").write_text(json.dumps(checkpoint))
+        self.assertEqual(self.client.post(endpoint, json={"phase": "layer3"}).status_code, 409)
 
     def test_failed_latest_layer3_hides_and_blocks_stale_final_artifacts(self):
         store = self.app.extensions["moa_store"]

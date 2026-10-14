@@ -1140,6 +1140,12 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             inputs = Path(source["session_dir"])
             if not all((inputs / name).is_file() for name in ("manifest.json", "synthesis-input.md")):
                 return _error("synthesis retry requires retained review and synthesis inputs")
+            try:
+                document = json.loads((inputs / "manifest.json").read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                return _error("synthesis retry requires a readable review checkpoint")
+            if decision_map_module.workspace_mutation_agents(document):
+                return _error("address the recorded workspace changes and start fresh research before retrying synthesis", 409)
             agents = [aggregator]
             effort = body.get("aggregator_effort")
             if effort is not None:
