@@ -18,9 +18,8 @@ Never commit `.env`, provider keys, or generated `harness/config.yaml`.
 | `grok` | OpenCode | `opencode-go/grok-4.7` | proposer, refiner | provider-managed |
 | `codex-luna` | Codex | `gpt-6-luna` | proposer, refiner | adjustable; medium default |
 | `codex` | Codex | `gpt-6-astra` | proposer, refiner | adjustable; high default |
-| `qwen` | OpenCode | `opencode-go/qwen3.8-max` | disabled; archived provenance | provider-managed |
-| `qwen-opencode` | OpenCode | `opencode-go/qwen3.8-max` | disabled; archived provenance | provider-managed |
-| `kimi` | OpenCode | `opencode-go/kimi-k3` | disabled; archived provenance only | provider-managed |
+| `minimax` | OpenCode | `opencode-go/minimax-m3` | optional proposer/refiner | provider-managed |
+| `muse-spark` | OpenCode | `opencode-go/muse-spark-1.3-contributor` | optional proposer/refiner | provider-managed |
 | `glm` | OpenCode | `opencode-go/glm-5.3` | proposer, refiner | provider-managed |
 | `deepseek-flash` | OpenCode | `opencode-go/deepseek-v4.1-flash` | proposer, refiner | provider-managed |
 | `sonnet` | Claude Code | `claude-sonnet-5-5` | proposer, refiner | adjustable; high default |
@@ -29,9 +28,9 @@ Never commit `.env`, provider keys, or generated `harness/config.yaml`.
 | `fable` | Claude Code | `claude-fable-5-1` | aggregator only | fixed xhigh |
 
 Cursor is not a supported harness. GLM 5.3 is the fourth proposer in the
-Thorough Web UI preset. DeepSeek V4.1 Flash is the sole curated DeepSeek route and the default refiner. Kimi K3 remains cataloged for archived provenance
-but remains blocked from new Web UI runs pending full requalification after
-prior pre-inference rate-limit failures. Archived manifests preserve every original model-lab identity.
+Thorough Web UI preset. DeepSeek V4.1 Flash is the sole curated DeepSeek route
+and the default refiner. Qwen, Moonshot and MiMo are excluded from new launches.
+Archived manifests preserve their original model-lab identities.
 
 ## Default ensemble
 
@@ -56,9 +55,8 @@ an independent xAI proposer. DeepSeek V4.1 Flash is always a refiner; Opus joins
 Balanced and Thorough. The default OpenAI aggregator stays lab-independent
 from all recommended refiners.
 
-Kimi K3 remains excluded from new launches until a complete research and
-broadcast-review run is qualified. A catalog listing or synthetic response
-alone is insufficient to restore a curated route.
+Optional routes must pass actual planning and broadcast-review qualification.
+A catalog listing or synthetic response alone is insufficient.
 
 ## Environment variables
 
@@ -79,7 +77,6 @@ alone is insufficient to restore a curated route.
 | `MOA_SONNET_TIMEOUT` | `1200` | Claude wall-clock cap |
 | `MOA_OPENCODE_TIMEOUT` | Claude timeout | OpenCode wall-clock cap |
 | `MOA_AGY_TIMEOUT` | Claude timeout | AGY wall-clock cap |
-| `QWEN_TOKEN_PLAN_API_KEY` | none | optional dedicated key for custom Token Plan routes; unused by defaults |
 
 AGY encodes depth in the model slug. MoA-X therefore changes
 `gemini-4-argon-low` / `gemini-4-argon-high` and never sends a conflicting
@@ -140,6 +137,33 @@ at launch, and uses the existing queue. Optional `MOA_SLACK_PRIVATE_REPOS`
 explicitly grants repositories to workspace members; leave it empty to
 permit only public repositories under `MOA_WEBUI_GITHUB_OWNER`. See [Slack](slack.md).
 
-Qwen and Kimi are disabled for new curated launches. Model availability may
-change independently of CLI catalog listings; requalify a route with actual
-planning and broadcast-review requests before restoring it.
+Qwen and Moonshot model families are excluded from launch catalogs, even when
+configured under custom aliases. Historical model identities remain available
+for archives. MiniMax M3 adds an optional independent proposer/reviewer through
+[OpenCode Go](https://opencode.ai/v2/docs/console/go/). Preset choices stay
+explicit in `harness/webui/rosters.py`. Both roles passed live qualification;
+independent review and final synthesis remain necessary for answer accuracy.
+MiMo was excluded after its broadcast reviewer exhausted the qualification
+budget. A valid proposal alone is insufficient to qualify an unreliable route.
+
+
+### Optional model qualification and privacy
+
+MiniMax M3, GLM 5.3 and Muse Spark 1.3 Contributor passed native proposer and
+broadcast-review requests. MiniMax's incomplete first review and Muse's
+incomplete first proposal recovered through the shared retry budget; GLM passed
+both roles on its first invocation. These are scoped compatibility
+checks, not a general model-quality benchmark or an availability guarantee.
+MiniMax's default total budget is 900 seconds; GLM and Muse use the OpenCode
+harness budget (1200 seconds by default). Recommended presets keep their existing
+rosters; choose optional routes explicitly in a custom roster.
+
+MiMo and Hy4 Preview each produced a valid proposal but exhausted their review
+budgets, so both are excluded from new launches, including custom aliases.
+Muse Spark 1.3 Contributor requires
+OpenCode's workspace permission for paid endpoints that train on request data.
+The `muse-spark` route is optional and labels its training policy in the model
+picker; it is available only through workspaces that permit this endpoint. Contributor prompts and completions may be
+used for model training; operators must choose this policy knowingly before
+submitting repository or uploaded-file context. See the provider's
+[Go privacy policy](https://opencode.ai/v2/docs/console/go/#privacy).

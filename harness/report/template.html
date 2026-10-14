@@ -1431,20 +1431,22 @@ __DECISION_MAP_SCRIPT__
     definitions.forEach(function (definition) {
       var spans = [];
       definition.rows.forEach(function (r) {
-        if (r.previous_attempt) {
-          var prior = r.previous_attempt;
-          var priorRecorded = typeof prior.started_at === "number" && t0 ? prior.started_at - t0 : null;
-          spans.push({ r: r, attempt: prior, previous: true, start: Math.max(0, priorRecorded == null ? derivedStart : priorRecorded), dur: Math.max(0, Number(prior.duration_seconds) || 0) });
-        }
-        var recorded = typeof r.started_at === "number" && t0 ? r.started_at - t0 : null;
-        spans.push({ r: r, attempt: r, previous: false, start: Math.max(0, recorded == null ? derivedStart : recorded), dur: Math.max(0, Number(r.duration_seconds) || 0) });
+        var attempts = Array.isArray(r.attempts) && r.attempts.length ? r.attempts : null;
+        if (!attempts) attempts = r.previous_attempt ? [r.previous_attempt, r] : [r];
+        attempts.forEach(function (attempt, index) {
+          var recorded = typeof attempt.started_at === "number" && t0 ? attempt.started_at - t0 : null;
+          spans.push({ r: r, attempt: attempt, previous: index < attempts.length - 1,
+            prior: index ? attempts[index - 1] : null,
+            start: Math.max(0, recorded == null ? derivedStart : recorded),
+            dur: Math.max(0, Number(attempt.duration_seconds) || 0) });
+        });
       });
       var stageStart = spans.reduce(function (value, span) { return Math.min(value, span.start); }, Infinity);
       if (!isFinite(stageStart)) stageStart = derivedStart;
       var stageEnd = spans.reduce(function (value, span) { return Math.max(value, span.start + span.dur); }, stageStart);
       var activeWindow = Math.max(1, stageEnd - stageStart);
       var handoffDelay = Math.max(0, stageStart - previousEnd);
-      var retryCount = definition.rows.filter(function (r) { return Boolean(r.previous_attempt); }).length;
+      var retryCount = definition.rows.filter(function (r) { return (r.attempts || []).length > 1 || Boolean(r.previous_attempt); }).length;
 
       var stage = el("section", { class: "timeline-stage stage-" + definition.number, "aria-label": "Stage " + definition.number + ": " + definition.title });
       stage.appendChild(el("div", { class: "timeline-stage-head" }, [
@@ -1463,7 +1465,7 @@ __DECISION_MAP_SCRIPT__
       if (retryCount) {
         stage.appendChild(el("div", {
           class: "timeline-retry-summary",
-          text: retryCount + " lane" + (retryCount === 1 ? " was" : "s were") + " rerun after incomplete output; the hatched interval is the wait before that retry began."
+          text: retryCount + " lane" + (retryCount === 1 ? " was" : "s were") + " recovered after a provider or validation failure; each interval shows one attempt."
         }));
       }
 
@@ -1472,11 +1474,11 @@ __DECISION_MAP_SCRIPT__
         var left = Math.max(0, Math.min(100, (span.start - stageStart) / activeWindow * 100));
         var width = Math.max(.8, Math.min(100 - left, span.dur / activeWindow * 100));
         var state = span.attempt.success ? "completed" : (span.attempt.transient_empty ? "returned no usable response" : "did not complete");
-        var retry = !span.previous && Number(span.r.attempt || 1) > 1;
+        var retry = Boolean(span.prior);
         var retryWait = null;
-        if (retry && span.r.previous_attempt) {
-          var priorStart = typeof span.r.previous_attempt.started_at === "number" && t0 ? span.r.previous_attempt.started_at - t0 : stageStart;
-          var priorEnd = Math.max(stageStart, priorStart + (Number(span.r.previous_attempt.duration_seconds) || 0));
+        if (span.prior) {
+          var priorStart = typeof span.prior.started_at === "number" && t0 ? span.prior.started_at - t0 : stageStart;
+          var priorEnd = Math.max(stageStart, priorStart + (Number(span.prior.duration_seconds) || 0));
           if (span.start - priorEnd > 5) {
             retryWait = {
               left: Math.max(0, Math.min(100, (priorEnd - stageStart) / activeWindow * 100)),
@@ -1486,15 +1488,13 @@ __DECISION_MAP_SCRIPT__
           }
         }
         var barClass = "timeline-bar" + (span.attempt.success ? "" : (span.attempt.transient_empty ? " transient" : " failed")) + (span.previous ? " previous" : "") + (retry ? " retry" : "");
-        var rowStatus = span.previous
-          ? (span.attempt.transient_empty ? "initial attempt — incomplete response" : "initial attempt failed")
-          : (retry ? "rerun completed" : state);
+        var rowStatus = (span.attempt.kind === "repair" ? "structure repair · " : "") + state;
         var track = el("div", {
           class: "timeline-track",
           role: "img",
-          "aria-label": span.r.agent_id + " attempt " + (span.attempt.attempt || 1) + " " + state + " in " + fmtDur(span.dur) + (retryWait ? "; retry queued for " + fmtDur(retryWait.duration) + " after incomplete output" : "")
+          "aria-label": span.r.agent_id + " attempt " + (span.attempt.attempt || 1) + " " + state + " in " + fmtDur(span.dur) + (retryWait ? "; retry queued for " + fmtDur(retryWait.duration) + " after a provider failure" : "")
         });
-        if (retryWait) track.appendChild(el("span", { class: "timeline-retry-wait", title: "Retry queued after incomplete output: " + fmtDur(retryWait.duration), style: "left:" + retryWait.left.toFixed(2) + "%;width:" + retryWait.width.toFixed(2) + "%" }));
+        if (retryWait) track.appendChild(el("span", { class: "timeline-retry-wait", title: "Retry queued after a provider failure: " + fmtDur(retryWait.duration), style: "left:" + retryWait.left.toFixed(2) + "%;width:" + retryWait.width.toFixed(2) + "%" }));
         track.appendChild(el("span", { class: barClass, style: "left:" + left.toFixed(2) + "%;width:" + width.toFixed(2) + "%" }));
         rows.appendChild(el("div", { class: "timeline-row" + (retry || span.previous ? " is-retry" : "") }, [
           el("div", { class: "timeline-who" }, [

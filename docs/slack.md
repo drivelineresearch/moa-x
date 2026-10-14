@@ -170,8 +170,12 @@ The owning worker polls cancellation while waiting on silent children,
 escalating from termination to forced shutdown after three seconds. Failed
 launches return to preview for correction instead of retrying indefinitely.
 Choose one repository per run.
-Malformed or incomplete AGY/OpenCode JSON receives at most one redispatch;
-unavailable accounts are not silently replaced with another model.
+Provider calls share a bounded recovery deadline: temporary capacity, transport
+or incomplete-output failures can receive two retries with backoff. Schema or
+evidence failures receive one tool-free structure repair. Successful lanes are
+retained, permanent access/billing failures stop immediately, and the selected
+research models stay fixed. See [provider recovery](architecture.md#provider-recovery)
+for limits and attempt provenance.
 
 Posting in a channel makes the question, results and run link visible to that
 channel's readers, just like the uploaded result files. Use a DM for private

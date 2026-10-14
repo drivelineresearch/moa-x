@@ -1,8 +1,8 @@
 """Vendor adapters for mixture-of-agents external CLIs.
 
 Each adapter handles one CLI's quirks: how to invoke it non-interactively,
-how to extract the JSON payload from its output wrapper, how to retry on
-schema validation failure, and how to surface errors. Adapters do NOT
+how to extract the JSON payload from its output wrapper, and how to surface
+errors. The orchestrator owns retry and schema-repair budgets. Adapters do NOT
 import each other -- they are independent so a broken opencode install does
 not break codex runs.
 
@@ -22,7 +22,7 @@ from typing import Optional
 
 READ_ONLY_RULE = (
     "READ-ONLY DISCIPLINE: You may use any tool to READ files, search the "
-    "web, run read-only shell commands, and spawn subagents. You MUST NOT "
+    "web and run read-only shell commands. Do not spawn subagents. You MUST NOT "
     "write, edit, create, delete, or modify ANY file. You MUST NOT run "
     "commands that mutate state (git commit, git push, rm, mv, chmod, "
     "pip install, npm install, etc.). Violating this rule is a critical "

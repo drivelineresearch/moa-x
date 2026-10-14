@@ -36,6 +36,8 @@ const LAB_VISUALS = Object.freeze({
   deepseek: { label: "DeepSeek", accent: "navy" },
   zhipu: { label: "Zhipu", accent: "green" },
   independent: { label: "Independent lab", accent: "gold" },
+  minimax: { label: "MiniMax", accent: "gold" },
+  meta: { label: "Meta", accent: "blue" },
 });
 
 function normalizeLabId(value) {
@@ -53,6 +55,8 @@ function normalizeLabId(value) {
     zhipu: "zhipu",
     independent: "independent",
     independentlab: "independent",
+    minimax: "minimax",
+    meta: "meta",
   };
   return aliases[normalized] || "independent";
 }
@@ -79,6 +83,8 @@ function inferLabId(routeId, model = "", label = "") {
   if (/deepseek/.test(signature)) return "deepseek";
   if (/glm|zhipu/.test(signature)) return "zhipu";
   if (/gpt-|codex|openai/.test(signature)) return "openai";
+  if (/minimax/.test(signature)) return "minimax";
+  if (/muse-spark/.test(signature)) return "meta";
   return "independent";
 }
 const DEPTH_PRESENTATION = Object.freeze({
@@ -90,12 +96,12 @@ const DEPTH_PRESENTATION = Object.freeze({
   balanced: {
     value: 1,
     image: `${BASE}/static/images/context-effort.webp`,
-    caption: "Three proposers and three refiners with each route’s configured effort.",
+    caption: "Three proposers and two refiners with each route’s configured effort.",
   },
   thorough: {
     value: 2,
     image: `${BASE}/static/images/context-roster.webp`,
-    caption: "Four proposers, three refiners, and high effort where supported.",
+    caption: "Four proposers, two refiners, and high effort where supported.",
   },
 });
 const DEPTH_KEYS = ["quick", "balanced", "thorough"];
@@ -599,6 +605,7 @@ function modelsForRole(role) {
       harness,
       available: model.available ?? model.ready ?? providerReady(provider || {}),
       availabilityDetail: model.availability_detail || model.availabilityDetail || "",
+      usageNote: model.usage_note || "",
       default: model.defaultRoles?.includes(role) || model.default_roles?.includes(role) || model.default === role || model.default === true,
     };
   });
@@ -651,7 +658,7 @@ function defaultSelected(option, role, index) {
   if (option.default) return true;
   const standard = {
     proposer: ["agy-gemini-pro", "grok", "codex-luna"],
-    refiner: ["qwen", "deepseek-flash", "opus"],
+    refiner: ["deepseek-flash", "opus"],
     aggregator: ["codex-sol"],
   };
   if (standard[role].includes(option.id)) return true;
@@ -760,7 +767,7 @@ function renderModelOptions(role, targetId, inputType) {
                   <span class="selection-box" aria-hidden="true"></span>
                   <span class="model-row-copy">
                     <strong>${escapeHtml(option.name)}</strong>
-                    <small>${escapeHtml(displayModel)} · ${escapeHtml(effort.label)}${option.available || !option.availabilityDetail ? "" : ` · ${escapeHtml(option.availabilityDetail)}`}</small>
+                    <small>${escapeHtml(displayModel)} · ${escapeHtml(effort.label)}${option.available || !option.availabilityDetail ? "" : ` · ${escapeHtml(option.availabilityDetail)}`}${option.usageNote ? ` · ${escapeHtml(option.usageNote)}` : ""}</small>
                   </span>
                   <span class="model-row-state ${option.available ? "" : "unavailable"}">${option.available ? "Selected" : "Unavailable"}</span>
                 </label>

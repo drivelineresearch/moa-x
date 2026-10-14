@@ -185,3 +185,8 @@ in their originating thread, with the Markdown plan and self-contained report
 as files. A run-specific read-only dashboard links to retained outputs. Failed
 or interrupted runs report their status explicitly; partial provider failures
 remain visible rather than being silently presented as a complete ensemble.
+
+Provider recovery records every invocation in `attempts`. The timeline renders
+research, retry and structure-repair intervals separately, and technical logs
+include each retained attempt. `repaired_by` identifies mechanical repairs by a
+second harness without changing the originating research model's attribution.

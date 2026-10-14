@@ -25,14 +25,19 @@ Confirm that your font license permits browser embedding before enabling this
 option.
 
 The WebP/PNG illustrations under `harness/webui/static/images/` and
-`harness/report/assets/` were generated specifically for this project and are
+`harness/report/assets/` were created specifically for this project and are
 distributed with the repository under its MIT license. They are original
 model-lab and workflow-themed characters and scenes, not official vendor
 logos, licensed characters, or claims of endorsement by a model provider.
 
 The model-lab asset contract is centralized in
 `harness/scripts/model_labs.py`. Each known lab has one 320px editorial avatar
-and one 480px pixel-art character under the `lab-<id>-*` naming scheme. The
+and one 480px full-body illustration under the `lab-<id>-*` naming scheme.
+The historical `pixel` filename identifies the full-body asset; all current
+characters share an ivory-paper, ink-and-watercolor fantasy-tech style.
+Meta/Muse and MiniMax were generated with the built-in image generator using
+existing artwork as style references, then resized and converted to WebP.
+Their prompt set is recorded in [artwork-prompts.md](artwork-prompts.md). The
 same `lab_id` must drive launch-roster groups, provider-health route portraits,
 review-network nodes, live lanes, and archived-run fallbacks. Execution
 harnesses such as OpenCode or AGY must never determine character identity.

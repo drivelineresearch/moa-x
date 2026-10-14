@@ -210,15 +210,17 @@ all {N} proposals) now? Estimated 12-25 minutes wall-clock."
 
 Do not run the orchestrator until the user says yes.
 
-### Step 1+2 — Run the orchestrator (phase-split for redispatch)
-The orchestrator splits Layers 1 and 2 into separate invocations so the
-parent session can intercept transient-empty OpenCode failures (a clean
-process return but no model output — empirically recoverable
-on a single retry) and ask the user whether to redispatch or proceed.
+### Step 1+2 — Run the orchestrator (phase-split for checkpoints)
+
+The orchestrator automatically recovers retryable capacity, transport and
+incomplete-output failures inside one deadline per provider. Each lane gets at
+most three research calls and one tool-free structure repair. Authentication,
+billing, configuration and workspace-mutation failures are terminal. Do not add
+a second automatic retry loop in the parent session.
 
 Provider models come from the resolved config. Define or override a provider
 without editing `harness/config.yaml` via the
-`MOA_PROVIDER_<NAME>=<harness>:<model>` env shorthand.
+`MOA_PROVIDER_<NAME>=<harness>:<model>` environment shorthand.
 
 #### Step 1 — Run Layer 1 (proposers)
 ```bash
@@ -227,36 +229,16 @@ python3 ~/.claude/skills/mixture-of-agents/scripts/run_moa.py \
   --phase layer1
 ```
 
-When this returns, parse the orchestrator's output for the line:
-```
-[orchestrator] transient-empty proposers: <name1>,<name2>
-```
-This line is only emitted when at least one proposer hit the transient
-empty-envelope pattern. Equivalent data lives in
-`.moa/<session_id>/layer1-manifest.json` under
-`summary.transient_empty_proposers`.
+Read `.moa/<session_id>/layer1-manifest.json` after the phase. Failed lanes
+retain `error`, `failure_kind`, `stop_reason` and all `attempts`. Surface those
+causes and the accepted lane count. Proceed with successful proposals when the
+user authorized degraded results; fewer than two proposals lowers confidence.
+If none succeed, stop before paid review.
 
-#### Step 1b — Decision point: redispatch / proceed / cancel
-If `transient_empty_proposers` is non-empty, ask the user via
-`AskUserQuestion`. Render names + the error messages from the manifest's
-`layer1[*].error` field so the user sees what actually failed:
-
-- **Redispatch [names]** — re-run those proposers and loop back to this
-  decision point:
-  ```bash
-  python3 ~/.claude/skills/mixture-of-agents/scripts/run_moa.py \
-    --scout-brief .moa/<session_id>/scout-brief.json \
-    --phase layer1 --redispatch <name1>,<name2>
-  ```
-- **Proceed without them** — continue to Step 2 with what succeeded. The
-  refiners will broadcast over fewer proposers; if `<2` succeeded the
-  manifest is marked `degraded_non_broadcast` and the aggregator applies
-  lower confidence.
-- **Cancel** — stop. Surface the failure summary to the user.
-
-If `transient_empty_proposers` is empty but other proposers failed (quota,
-auth, schema, timeout), do not offer redispatch — those won't recover on
-retry. Surface them and continue (or cancel if the user prefers).
+Manual `--phase layer1 --redispatch <names>` retains successful proposals and
+all prior attempt logs. Use it after the underlying account/provider problem
+changes or when the user explicitly requests another attempt; it opens a new
+provider budget.
 
 #### Step 2 — Run Layer 2 (refiners)
 ```bash
@@ -273,16 +255,12 @@ parallel, writes `.moa/<session_id>/synthesis-input.md` and the final
 [orchestrator]   opus refiner (saw agy-gemini-pro,codex,sonnet): OK (76.1s)
 ```
 
-#### Step 2b — Decision point for refiners
-Same loop as Step 1b but for refiners. Watch for:
-```
-[orchestrator] transient-empty refiners: <names>
-```
-or `summary.transient_empty_refiners` in the final `manifest.json`.
+#### Step 2b — Inspect review results
 
-Redispatch with `--phase layer2 --redispatch <names>` (re-runs only those
-refiners; previously successful refiners are kept). Or proceed (one good
-refiner is enough; the aggregator handles partial refiner output) or cancel.
+Review the same failure fields in `manifest.json`. Automatic recovery has
+already run. Partial review remains explicit in synthesis and confidence.
+Manual `--phase layer2 --redispatch <names>` retains successful reviewers and
+prior attempt history; it should follow a changed cause or explicit request.
 
 Failure modes the orchestrator handles:
 - One proposer fails (non-transient), others succeed → refiners see the ones that worked
@@ -377,7 +355,7 @@ the whole point of the planning phase was deliberation.
 - `scripts/install_deps.py` — dependency check / bootstrap
 - `scripts/test_offline.py` — offline smoke test for parsing + schema layers
 - `scripts/adapters/codex.py` — codex CLI subprocess wrapper
-- `scripts/adapters/opencode.py` — OpenCode CLI subprocess wrapper (Grok, Qwen, DeepSeek)
+- `scripts/adapters/opencode.py` — OpenCode CLI subprocess wrapper (Grok, GLM, MiniMax, DeepSeek)
 - `scripts/adapters/claude.py` — claude CLI subprocess wrapper (sonnet proposer)
 - `scripts/adapters/agy.py` — Antigravity wrapper for consumer Google accounts
 - `scripts/schemas/proposer.schema.json` — JSON Schema for Layer 1 outputs
@@ -407,7 +385,7 @@ planning rather than chat-answer ensembling. Differences from the paper:
   this.
 - **Two reviewers for Balanced.** Each sees every proposal. DeepSeek Flash
   supplies an independent technical review and Opus supplies deeper adversarial
-  critique. Both are independent of the OpenAI aggregator. Qwen and Kimi remain
+  critique. Both are independent of the OpenAI aggregator. Qwen, Moonshot and MiMo remain
   disabled for new launches; historical attribution is retained.
 - **Recorded synthesis by default.** GPT-6.1 Sol at `xhigh` produces the final
   phase through the Codex adapter, preserving schema validation, exact

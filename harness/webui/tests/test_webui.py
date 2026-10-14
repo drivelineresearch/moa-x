@@ -1552,7 +1552,6 @@ class WebUITest(unittest.TestCase):
         }
         with (
             patch.object(worker, "_run_phase", return_value=0) as run_phase,
-            patch.object(worker, "_retry_transient_once", return_value=None),
             patch.object(worker, "_manifest_diagnostic", return_value=diagnostic),
         ):
             worker._run_job(job)

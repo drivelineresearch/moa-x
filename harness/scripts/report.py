@@ -102,6 +102,22 @@ def _load_agent(entry: dict, session_dir: Path) -> dict:
         log_file = session_dir / entry["log_path"]
         if log_file.exists():
             log = _split_log(log_file.read_text(encoding="utf-8", errors="replace"))
+    # Include every retained attempt, without counting the latest log twice.
+    history = entry.get("attempts") or []
+    if len(history) > 1:
+        streams = {"stdout": [], "stderr": []}
+        for attempt in history:
+            log_path = attempt.get("log_path")
+            if not log_path:
+                continue
+            attempt_file = session_dir / log_path
+            if not attempt_file.is_file():
+                continue
+            captured = _split_log(attempt_file.read_text(encoding="utf-8", errors="replace"))
+            label = f"Attempt {attempt.get('attempt', '?')} · {attempt.get('kind', 'research')} · {attempt.get('model', '')}"
+            for stream in streams:
+                streams[stream].append(label + "\n" + captured[stream])
+        log = {stream: "\n\n".join(chunks) for stream, chunks in streams.items()}
     out["log"] = log
     return out
 

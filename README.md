@@ -34,8 +34,8 @@ which layer, and how many — is pure config. API-based auth and more
 providers are already supported. See "Contributions we'd prioritize" below
 for the remaining gaps.
 
-OpenCode Go powers Grok and DeepSeek V4.1 Flash. Qwen routes are disabled
-for new launches; historical runs retain their model and lab attribution.
+OpenCode Go powers Grok, DeepSeek V4.1 Flash, GLM and optional MiniMax/Muse routes.
+Qwen, Moonshot and MiMo are disabled for new launches; historical runs retain their model and lab attribution.
 The curated DeepSeek route is V4.1 Flash. Pro is excluded from new runs.
 
 ## TL;DR
@@ -43,8 +43,7 @@ The curated DeepSeek route is V4.1 Flash. Pro is excluded from new runs.
 ```bash
 # 1. Install the CLIs (see docs/install.md for details)
 npm i -g @openai/codex               && codex login
-curl -fsSL https://opencode.ai/install | bash   # then: opencode auth login,
-                                                 # or export MOONSHOT_API_KEY
+curl -fsSL https://opencode.ai/install | bash   # then: opencode auth login
 # claude CLI: https://docs.claude.com/en/docs/claude-code/quickstart
 # AGY/Antigravity: install/update Antigravity, run `agy install`, then sign in
 
@@ -100,14 +99,14 @@ AGY is the curated Google route and reuses the account already signed into
 
 ```
 Layer 0 — Scout brief           (parent Claude, in-place)
-Layer 1 — Proposers (parallel)    default: Gemini Pro + Grok + GPT-6 Luna
+Layer 1 — Proposers (parallel)    default: Gemini 4 Argon + Grok 4.7 + GPT-6 Luna
 Layer 2 — Broadcast refiners      default: DeepSeek V4.1 Flash + Opus, each sees ALL proposals
 Layer 3 — Aggregator              default: recorded GPT-6.1 Sol at xhigh
 ```
 
 The roster is config-driven; every named route in the default pipeline comes
-from a deliberately named lab: Google, xAI, OpenAI, Alibaba, DeepSeek, and
-Anthropic. The UI groups and illustrates routes by model lab, independently
+from a deliberately named lab: Google, xAI, OpenAI, DeepSeek, and Anthropic. Optional OpenCode Go
+routes add Zhipu, MiniMax and Meta perspectives. The UI groups and illustrates routes by model lab, independently
 of the CLI used to execute them.
 
 Every run also writes a self-contained `.moa/<session>/report.html` — a
@@ -116,6 +115,10 @@ plans, refiner verdict matrix, an evidence-weighted living decision map,
 interactive final-step lineage, aggregated plan, and raw logs). Open it in a
 browser; details in
 [`docs/report.md`](docs/report.md).
+
+Capacity and transport failures receive bounded retries with backoff; malformed
+plan structures receive one tool-free repair. Attempts share a total deadline
+and retain distinct logs. See [provider recovery](docs/architecture.md#provider-recovery).
 
 Typical wall-clock is roughly 12–25 minutes for research-heavy work, with
 provider latency determining the tail. Use it for non-trivial
@@ -161,8 +164,8 @@ requirements-web.txt   optional Flask control-room dependencies
 
 ## Contributions we'd prioritize
 
-The core roster, named-provider system, API-key auth paths, Qwen Token Plan,
-phase checkpoints, and HTML reporting are now shipped. The highest-leverage
+The core roster, named-provider system, API-key auth paths, bounded provider
+recovery, phase checkpoints, and HTML reporting are shipped. The highest-leverage
 remaining contributions are:
 
 - **A CLI-only raw-spec convenience command.** The Web UI can create a job
@@ -175,9 +178,9 @@ remaining contributions are:
   subscription from metered runs, and make unknown cost explicit. A safe
   budget control could stop later dispatches before a configured ceiling is
   exceeded; it must not pretend it can undo an already-billed request.
-- **Tested provider recipes, not just model-name examples.** Qwen Token Plan,
-  OpenCode Go DeepSeek, GLM, and Grok routes are already built in.
-  Contributions for MiniMax, Mistral,
+- **Tested provider recipes, not just model-name examples.** OpenCode Go
+  DeepSeek, GLM, Grok, MiniMax and Muse routes are built in.
+  Contributions for Mistral,
   or another credible coding model should include a reproducible config,
   credential preflight, captured parser fixtures, and an end-to-end smoke-test
   result. Most should use the existing OpenCode adapter; discuss a

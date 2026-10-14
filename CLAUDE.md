@@ -138,10 +138,9 @@ then `harness/config.yaml`, then built-in defaults. Loader lives at
   overriding the model string (`MOA_CUSTOM_MODEL=provider/model`), not by adding a
   harness. → `docs/config.md`.
 - **Schema-invalid roots get one bounded repair pass, not a research retry.**
-  OpenCode retains root-shaped objects missing required fields; OpenCode and
-  Claude repair only the supplied object inside the session directory with
-  research disabled. Incomplete output still uses the existing one-time
-  redispatch path. → `harness/scripts/run_moa.py`.
+  Root-shaped objects are retained for strict validation. Every provider can
+  repair the supplied object with all research tools disabled; attempts and
+  backoff share one provider deadline. → `harness/scripts/run_moa.py`.
 - **Google runs through AGY.** Live probes control route availability;
   execution fails closed on plan mode + sandbox and reuses local CLI auth.
   → `docs/architecture.md`.
@@ -151,3 +150,15 @@ then `harness/config.yaml`, then built-in defaults. Loader lives at
   `src=`/`href=`). The session JSON is embedded in a
   `<script type="application/json">` with `</` → `<\/` so a `</script>` inside
   a captured log can't terminate the tag early. → `docs/report.md`.
+
+### Shared provider recovery
+
+Automatic recovery belongs in `run_moa._run_with_recovery`, for all providers and
+roles including aggregation and self-MoA. Keep a single total per-provider
+deadline: at most three research calls with 5/15-second jittered backoff and one
+tool-free repair capped at 240 seconds. Permanent auth/access/billing/config
+failures and workspace mutations never retry. Record every attempt's log,
+harness, model, timing and outcome. The web/Slack worker must not multiply these
+attempts with another retry loop. AGY's native schema file must stay inside its
+isolated workspace; AGY/Gemini mechanical repairs use tool-free Claude Opus.
+Run `python3 harness/scripts/test_recovery.py` with the existing offline tests.

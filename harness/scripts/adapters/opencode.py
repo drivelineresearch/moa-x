@@ -160,12 +160,19 @@ def _v2_response(stdout: str) -> tuple[str, str]:
             continue
         if event.get("type") == "text":
             part = event.get("part") or {}
+            if not isinstance(part, dict):
+                continue
             text = part.get("text")
             if isinstance(text, str):
                 texts.append(text)
         elif event.get("type") == "error":
             error = event.get("error") or {}
-            errors.append(f"{error.get('type', 'error')}: {error.get('message', '')}")
+            if not isinstance(error, dict):
+                errors.append(f"error: {error}")
+                continue
+            status = error.get("status")
+            status_text = f" (HTTP {status})" if isinstance(status, int) else ""
+            errors.append(f"{error.get('type', 'error')}{status_text}: {error.get('message', '')}")
     return "\n".join(texts), "\n".join(errors)
 
 # Qwen 3.8 Max tends to issue one tool call per model turn. Without an
@@ -641,7 +648,7 @@ def run(
             model_stdout, event_errors = _v2_response(stdout_captured)
             if event_errors:
                 stderr_captured += "\n" + event_errors
-                msg, _ = _diagnose_failure("", stderr_captured)
+                msg = f"opencode provider error: {event_errors[:1000]}"
                 return OpenCodeResult(
                     False, None, stdout_captured, stderr_captured,
                     proc.returncode or 1, duration, msg, transient_empty=False,

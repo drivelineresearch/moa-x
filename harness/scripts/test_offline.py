@@ -2963,7 +2963,7 @@ def test_opencode_repair_prompt_is_inline_and_tool_free() -> bool:
         allow_webfetch=False,
         allow_tools=False,
     )
-    invalid_json = prompt.split("INVALID JSON\n", 1)[1]
+    invalid_json = prompt.split("<invalid_json>\n", 1)[1].split("\n</invalid_json>", 1)[0]
     ok = (
         config["permission"] == {"*": "deny"}
         and len(prompt.encode("utf-8"))
@@ -2984,6 +2984,7 @@ def test_claude_schema_repair_is_bounded_and_tool_free() -> bool:
     from adapters.claude import ClaudeResult
 
     invalid = _make_valid_proposer("sonnet")
+    invalid["plan"][0]["evidence"].append(dict(invalid["plan"][0]["evidence"][0]))
     invalid["plan"][0]["evidence"][0]["line"] = None
     repaired = _make_valid_proposer("sonnet")
     first = ClaudeResult(
@@ -3045,6 +3046,8 @@ def test_refiner_verification_repair_is_harness_independent() -> bool:
 
     invalid = _make_valid_broadcast_refiner("fixture")
     invalid["verifications"][0]["source_url"] = None
+    invalid["verifications"].append({**invalid["verifications"][0],
+                                     "source_url": "https://example.net/independent-verification"})
     repaired = _make_valid_broadcast_refiner("fixture")
     repaired["verifications"][0]["source_url"] = (
         "https://example.net/independent-verification"
@@ -3155,7 +3158,7 @@ def test_model_lab_assets_and_catalog_contract() -> bool:
     for lab_id, values in MODEL_LABS.items():
         for kind in ("avatar", "pixel"):
             path = image_dir / values[kind]
-            if not path.is_file() or path.stat().st_size < 1000:
+            if not path.is_file() or path.read_bytes()[:4] != b"RIFF" or path.read_bytes()[8:12] != b"WEBP":
                 missing.append(f"{lab_id}:{kind}")
     catalog = run_moa.harness_config.load_provider_catalog(
         config_path=Path("/nonexistent")
@@ -3223,11 +3226,10 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
         "codex-luna": ("codex", "gpt-6-luna"),
         "sonnet": ("claude", "claude-sonnet-5-5"),
         "opus": ("claude", "claude-opus-5-5"),
-        "kimi": ("opencode", "opencode-go/kimi-k3"),
-        "qwen": ("opencode", "opencode-go/qwen3.8-max"),
-        "qwen-opencode": ("opencode", "opencode-go/qwen3.8-max"),
         "grok": ("opencode", "opencode-go/grok-4.7"),
         "glm": ("opencode", "opencode-go/glm-5.3"),
+        "minimax": ("opencode", "opencode-go/minimax-m3"),
+        "muse-spark": ("opencode", "opencode-go/muse-spark-1.3-contributor"),
         "deepseek-flash": ("opencode", "opencode-go/deepseek-v4.1-flash"),
         "agy-gemini-pro": ("agy", "gemini-4-argon-high"),
         "fable": ("claude", "claude-fable-5-1"),
@@ -3252,26 +3254,25 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
         groups["claude"]["lab"] == "Anthropic"
         and any(route["id"] == "sonnet" for route in groups["claude"]["routes"])
         and any(route["id"] == "fable" for route in groups["claude"]["routes"])
-        and any(route["id"] == "qwen-opencode" for route in groups["opencode"]["routes"])
+        and not any(route["id"] in {"qwen", "qwen-opencode", "kimi"} for route in groups["opencode"]["routes"])
         and {route["lab_id"] for route in groups["opencode"]["routes"]}
-        == {"xai", "moonshot", "alibaba", "zhipu", "deepseek"}
+        == {"xai", "zhipu", "deepseek", "minimax", "meta"}
     )
     role_ok = (
         {item["id"] for item in models if "aggregator" in item["roles"]}
         == {"codex-sol", "opus", "fable"}
         and by_id["fable"]["roles"] == ["aggregator"]
         and by_id["opus"]["roles"] == ["proposer", "refiner", "aggregator"]
+        and by_id["muse-spark"]["roles"] == ["proposer", "refiner"]
+        and by_id["muse-spark"]["lab_id"] == "meta"
+        and "train Meta" in by_id["muse-spark"]["usage_note"]
     )
     defaults_ok = (
         by_id["agy-gemini-pro"]["default_roles"] == ["proposer"]
         and by_id["grok"]["default_roles"] == ["proposer"]
         and by_id["codex-luna"]["default_roles"] == ["proposer"]
-        and by_id["qwen"]["default_roles"] == []
-        and by_id["qwen"]["roles"] == []
-        and by_id["qwen-opencode"]["roles"] == []
+        and not ({"qwen", "qwen-opencode", "kimi"} & set(by_id))
         and by_id["deepseek-flash"]["default_roles"] == ["refiner"]
-        and by_id["kimi"]["default_roles"] == []
-        and by_id["kimi"]["roles"] == []
         and by_id["opus"]["default_roles"] == ["refiner"]
         and by_id["codex-sol"]["default_roles"] == ["aggregator"]
         and by_id["fable"]["default_roles"] == []
@@ -3769,9 +3770,10 @@ def test_report_generates_single_self_contained_file() -> bool:
         html = out.read_text(encoding="utf-8")
         external = _re.findall(r'(?:src|href)="https?://[^"]*"', html)
         art_count = html.count("data:image/webp;base64,")
-        # Six editorial illustrations plus avatar/pixel pairs for all nine
-        # model labs must be embedded in the portable HTML artifact.
-        inlined = "<script>" in html and art_count == 24
+        # Six editorial illustrations plus avatar/pixel pairs for every
+        # model lab must be embedded in the portable HTML artifact.
+        from model_labs import MODEL_LABS
+        inlined = "<script>" in html and art_count == 6 + 2 * len(MODEL_LABS)
         return _ok(not external and inlined and len(html) > 100_000,
                    f"external_refs={external[:2]}, art={art_count}, bytes={len(html)}")
     finally:
@@ -3793,7 +3795,7 @@ def test_report_embedded_json_round_trips() -> bool:
                   "custom-grok": "xai",
               }
               and data["layer2"][0]["lab_id"] == "moonshot"
-              and len(data["model_labs"]) == 9
+              and set(data["model_labs"]) == set(report_module.MODEL_LABS)
               and data["title"].startswith("Add a widget")
               and data["final_plan_markdown"].startswith("# Final plan")
               and data["final_plan_html"] and "<strong>this</strong>" in data["final_plan_html"]
