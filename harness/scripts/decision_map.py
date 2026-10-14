@@ -768,6 +768,7 @@ def build_decision_map(
                             "success": item.get("success"),
                             "schema_valid": item.get("schema_valid"),
                             "reviewing": item.get("reviewing"),
+                            "verification_warnings": item.get("verification_warnings"),
                         }
                         for item in manifest.get(key, [])
                         if isinstance(item, dict)
@@ -944,6 +945,11 @@ def build_decision_map(
 
     verification_statuses: dict[str, list[str]] = {}
     verification_lookup: dict[tuple[str, int], dict[str, Any]] = {}
+    verification_audits = {
+        (str(row.get("agent_id")), warning.get("verification_index")): warning
+        for row in manifest.get("layer2", [])
+        for warning in row.get("verification_warnings") or []
+    }
     for reviewer_id in sorted(refiner_payloads):
         payload = refiner_payloads[reviewer_id]
         values = payload.get("verifications") if isinstance(payload.get("verifications"), list) else []
@@ -955,6 +961,14 @@ def build_decision_map(
             linked = claim_location.get((proposer_id, path))
             claim_id, evidence_id = linked if linked else (None, None)
             declared_status = str(item.get("status") or "unverified")
+            audit = verification_audits.get((reviewer_id, index))
+            if audit:
+                declared_status = str(audit["original_verification"]["status"])
+                contract_warnings.append(
+                    f"{reviewer_id} verification {index + 1} declared "
+                    f"{declared_status} but its cited receipt is {audit['reason']}; "
+                    "treated as unverified"
+                )
             finding = str(item.get("actual_finding") or "")
             source_url = _portable_verification_source(item.get("source_url"))
             verification_id = _content_id(
@@ -975,7 +989,7 @@ def build_decision_map(
                 repository_matches=repository_matches,
                 previous=prior_verifications.get(verification_id),
             )
-            status = declared_status
+            status = str(item.get("status") or "unverified")
             if (
                 declared_status in {"verified", "contradicted"}
                 and source_receipt["source_capture_status"]

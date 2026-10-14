@@ -644,6 +644,9 @@ __DECISION_MAP_SCRIPT__
     if ((health.transient_empty_refiners || []).length) healthItems.push("Transient-empty refiners: " + health.transient_empty_refiners.join(", "));
     if ((health.agent_id_mismatches || []).length) healthItems.push("Identity mismatches: " + health.agent_id_mismatches.map(function (m) { return m.agent_id + " reported " + m.reported_agent_id; }).join(", "));
     if ((health.workspace_mutation_failures || []).length) healthItems.push("Workspace mutation failures: " + health.workspace_mutation_failures.join(", "));
+    l2.forEach(function (r) {
+      if ((r.verification_warnings || []).length) healthItems.push(r.agent_id + ": " + r.verification_warnings.length + " unsupported citation(s) marked unverified; inspect the evidence debt.");
+    });
     if (healthItems.length) {
       var healthNotice = el("div", { class: "notice" });
       healthNotice.appendChild(el("b", { text: "Run health needs attention" }));

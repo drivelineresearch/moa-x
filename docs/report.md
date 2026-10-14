@@ -28,7 +28,9 @@ supporting process and raw output remain available for deeper inspection.
   recommendation, a plain-language summary from the recorded lineage,
   completion counts, session details, elapsed time, parallel speed-up, and
   visible run-health warnings for timeouts, identity mismatches, transient
-  empty responses, or workspace mutations.
+  empty responses, workspace mutations, or unsupported reviewer citations marked
+  unverified. Original verification records remain in the retained manifest;
+  valid checks from the same reviewer remain available.
 - **Static contributor network** — an embedded illustration and a four-stage
   roster showing how the task brief moved through independent
   recommendations, review, and final synthesis. Names, counts, completion

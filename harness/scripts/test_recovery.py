@@ -63,6 +63,85 @@ class RecoveryTests(unittest.TestCase):
         self.assertGreater(call.call_args.kwargs["timeout_seconds"], 0)
         self.assertLessEqual(call.call_args.kwargs["timeout_seconds"], 5)
 
+    def test_interrupted_http_200_stream_retries_with_remaining_budget(self):
+        message = "opencode provider error: provider.invalid-output (HTTP 200): OpenAI Chat stream ended without finish_reason"
+        with patch.object(run_moa.opencode_adapter, "run", side_effect=[output(error=message), output(self.valid)]) as call, patch.object(run_moa.time, "monotonic", side_effect=[0, 0, 1096, 1101, 1150]), patch.object(run_moa, "retry_sleep"):
+            result = self.run_lane(harness="opencode", model="opencode-go/glm-5.3", timeout=2700)
+        self.assertTrue(result.success)
+        self.assertEqual(call.call_count, 2)
+        self.assertEqual(result.attempts[0]["failure_kind"], "incomplete")
+        self.assertEqual(call.call_args_list[0].kwargs["timeout_seconds"], 2460)
+        self.assertEqual(call.call_args_list[1].kwargs["timeout_seconds"], 1359)
+        self.assertEqual(result.duration_seconds, 1150)
+        for message in ("provider.invalid-output (HTTP 200): unexpected shape", "HTTP 403 stream ended without finish_reason", "insufficient_quota stream ended without finish_reason"):
+            self.assertFalse(classify_failure(message).retryable)
+
+    def test_long_research_reserves_the_full_repair_window(self):
+        invalid = json.loads(json.dumps(self.valid))
+        invalid["plan"][0].pop("risks")
+        with patch.object(run_moa.codex_adapter, "run", side_effect=[output(invalid), output(self.valid)]) as call, patch.object(run_moa.time, "monotonic", side_effect=[0, 0, 2460, 2500]):
+            result = self.run_lane(timeout=2700)
+        self.assertTrue(result.success)
+        self.assertEqual([c.kwargs["timeout_seconds"] for c in call.call_args_list], [2460, 240])
+        self.assertEqual([a["timeout_seconds"] for a in result.attempts], [2460, 240])
+
+    def test_research_timeout_does_not_spend_the_repair_reserve_on_research(self):
+        with patch.object(run_moa.codex_adapter, "run", return_value=output(error="timeout after 2460s")) as call, patch.object(run_moa.time, "monotonic", side_effect=[0, 0, 2460, 2465]), patch.object(run_moa, "retry_sleep") as sleep:
+            result = self.run_lane(timeout=2700)
+        self.assertFalse(result.success)
+        self.assertEqual(call.call_count, 1)
+        self.assertEqual(result.stop_reason, "deadline")
+        sleep.assert_not_called()
+
+    def test_unsupported_verification_keeps_other_checks_and_original_audit(self):
+        (self.root / "short.py").write_text("first\nsecond\n")
+        for status in ("verified", "contradicted"):
+            for source, reason in ((None, "missing_source"), ("short.py:1-3", "line_out_of_range"), ("missing.py:1", "unreadable"), ("short.py:1,2", "invalid_line_range"), ("short.py:2-1", "invalid_line_range")):
+                with self.subTest(status=status, source=source):
+                    payload = _make_valid_broadcast_refiner("fixture")
+                    payload["verifications"][0]["source_url"] = "https://example.org/checked"
+                    original = {**payload["verifications"][0], "status": status, "source_url": source}
+                    payload["verifications"].append(dict(original))
+                    with patch.object(run_moa.opencode_adapter, "run", return_value=output(payload)) as call:
+                        result = self.run_lane(harness="opencode", layer=2, role="refiner-broadcast", schema_path=run_moa.REFINER_SCHEMA_PATH)
+                    self.assertTrue(result.success, result.error)
+                    self.assertEqual(call.call_count, 1)
+                    self.assertEqual(result.payload["verifications"][0]["status"], "verified")
+                    self.assertEqual(result.payload["verifications"][2]["status"], "unverified")
+                    self.assertEqual(result.verification_warnings, [{"verification_index": 2, "reason": reason, "original_verification": original}])
+                    self.assertEqual(result.attempts[0]["verification_warnings"], result.verification_warnings)
+                    self.assertEqual(json.loads((self.session / result.json_path).read_text()), result.payload)
+                    self.assertEqual(payload["verifications"][2], original)
+                    if source == "short.py:1-3":
+                        self.assertEqual(result.payload["verifications"][2]["source_url"], source)
+                    manifest = {"layer2": [{**result.__dict__, "payload": None}]}
+                    manifest_path = self.session / "manifest.json"
+                    manifest_path.write_text(json.dumps(manifest))
+                    restored = run_moa.load_layer_results_from_manifest(manifest_path, "layer2", self.session)
+                    self.assertEqual(restored[0].verification_warnings, result.verification_warnings)
+                    decision_map = run_moa.decision_map_module.build_decision_map(self.session)
+                    checks = [v for v in decision_map["verifications"] if v["index"] == 2]
+                    self.assertEqual(checks[0]["declared_status"], status)
+                    self.assertEqual(checks[0]["status"], "unverified")
+                    self.assertTrue(any(reason in w for w in decision_map["warnings"]))
+
+    def test_downgrade_is_transactional_and_does_not_accept_unsafe_receipts(self):
+        (self.root / "safe.py").write_text("receipt\n")
+        (self.root / "binary.py").write_bytes(b"binary\0")
+        if sys.platform != "win32":
+            (self.root / "linked.py").symlink_to(self.root / "safe.py")
+        for source in ("../outside.py:1", ".env:1", "safe.py:not-a-line", "javascript:alert(1)", "binary.py:1,2", "linked.py:1,2"):
+            if source.startswith("linked") and sys.platform == "win32":
+                continue
+            with self.subTest(source=source):
+                payload = _make_valid_broadcast_refiner("fixture")
+                payload["verifications"][0]["source_url"] = None
+                payload["verifications"].append({**payload["verifications"][0], "source_url": source})
+                candidate, warnings = run_moa._downgrade_unsupported_verifications(payload, self.root)
+                self.assertEqual(candidate, payload)
+                self.assertEqual(warnings, [])
+                self.assertTrue(run_moa._validate_refiner_verification_cross_fields(candidate, self.root))
+
     def test_real_timeout_cleanup_is_bounded_and_keeps_partial_stdout(self):
         if sys.platform == "win32":self.skipTest("POSIX process-group test")
         started = time.monotonic()

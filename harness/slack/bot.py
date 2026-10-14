@@ -790,6 +790,12 @@ class Bot:
                 verification = f"{passed}/{len(rows)} lanes passed · Confidence: {confidence}."
                 if passed < len(rows):
                     verification += " Some lanes failed; inspect the report’s limitations."
+                citation_warnings = sum(len(r.get("verification_warnings") or []) for r in rows)
+                if citation_warnings:
+                    verification += (
+                        f" {citation_warnings} unsupported citation(s) were marked "
+                        "unverified; inspect the evidence debt before using those findings."
+                    )
             except (OSError, ValueError, TypeError, AttributeError):
                 verification = "Verification metadata is unavailable; inspect the retained plan and report before relying on the result."
             tldr = re.search(r"## TL;DR\s*(.*?)(?=\n## |\Z)", plan, re.S)

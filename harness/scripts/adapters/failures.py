@@ -65,6 +65,12 @@ def classify_failure(error: str | None, stderr: str = "", *, incomplete: bool = 
         return Failure("transport", True, retry_after)
     if "timeout after" in text or "timed out" in text:
         return Failure("timeout", True)
+    # OpenCode reports a prematurely terminated Chat stream as a typed
+    # invalid-output error even when the upstream HTTP status was 200.
+    # Other invalid-output errors remain permanent; partial text is never
+    # accepted as a completed response.
+    if re.search(r"stream ended without (?:a )?finish_reason", text):
+        return Failure("incomplete", True)
     if incomplete or re.search(r"(?:could not extract|empty output|no payload|incomplete json|non-json/incomplete)", text):
         return Failure("incomplete", True)
     return Failure("unknown")

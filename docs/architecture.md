@@ -104,18 +104,25 @@ and are excluded from new launches, including custom aliases.
 All CLI, web and Slack runs use the orchestrator's shared recovery path for
 proposers, broadcast reviewers and final aggregation. Each provider's configured
 timeout is a total deadline across its attempts, backoff and optional repair.
-The initial call may use any positive remaining budget; minimum reserves apply
-only to subsequent research/repair calls. Adapters subtract preparation time
+Research calls reserve up to 240 seconds for a tool-free repair within that
+deadline. Explicit deadlines of 60 seconds or less still permit an initial
+call without a repair reserve. Defaults allow 45 minutes for Claude, OpenCode,
+Google and high/xhigh Codex lanes; low/medium Codex lanes retain 15 minutes.
+Shorter configured budgets remain respected. Adapters subtract preparation time
 and reserve up to eight seconds for process termination and output draining.
 AGY has no extra watchdog grace beyond that budget. Git sandbox commands share
 the invocation deadline and write only an independent checkout; interruptions
 cannot leave locks or worktree registrations in the source repository.
 
 - Capacity/rate limits, temporary transport failures and incomplete output can
-  receive two retries, for at most three research invocations. Backoff starts at
+  receive two retries, for at most three research invocations. This includes an
+  OpenCode HTTP 200 stream that terminates without `finish_reason`; its partial
+  text is retained in logs and never accepted as a completed response. Backoff starts at
   five seconds, then fifteen seconds, with jitter. Provider retry hints in
   seconds, milliseconds, minutes or HTTP-date form can extend backoff within
-  the remaining deadline.
+  the remaining deadline. A new research attempt requires at least three
+  minutes after backoff and the repair reserve; insufficient time ends recovery
+  without buying a doomed request.
 - Authentication, unavailable model access, exhausted billing quota and invalid
   configuration fail immediately. Models and effort stay fixed during retries.
 - Parseable output rejected by schema, evidence or verification validation gets
@@ -136,9 +143,17 @@ Each attempt has a distinct log and a manifest record with its harness, model,
 timing, failure category and outcome; `stop_reason` records why recovery ended.
 Payloads and manifests are replaced atomically. Successful lanes remain retained during
 manual redispatch. The web worker does not apply an extra automatic retry loop.
-Safe missing local locators may remain on explicitly unverified findings; they
-never become verified evidence and retain unreadable receipt states in the
-decision map. Verified/contradicted findings still require captured sources.
+A structurally valid review with missing sources or safe missing/out-of-range
+local receipts keeps its independent advice and other checks. The runner marks
+those findings `unverified`, annotates the finding, and records their original
+records and reasons in `verification_warnings` in the manifest and attempt. It
+never invents a URL, clamps a line range, or upgrades a claim. The decision map
+retains the original declared status and evidence debt; the portal, report and
+Slack expose the citation warnings. Unsafe paths, symlinks, sensitive files,
+binary sources and malformed locators still fail closed. A malformed numeric
+line range on a separately checked safe local file is cleared and marked
+unverified, with its original locator retained in the audit. Any other validation
+failure uses the single bounded repair; the worker never hides rejected lanes.
 Repo-local absolute reviewer receipts are normalized to portable relative
 locators before semantic validation; external absolute paths remain invalid.
 

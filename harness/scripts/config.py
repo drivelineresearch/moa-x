@@ -95,9 +95,8 @@ class ResolvedProvider:
 # User-defined providers in
 # harness/config.yaml under `providers:` are layered on top in resolve_provider.
 # Most built-ins carry timeout=None so the existing CLI flag / harness-level
-# env path (MOA_CODEX_TIMEOUT etc.) continues to apply. Qwen has a bounded
-# 900-second default: broadcast review can spend six minutes on research and
-# still needs time to serialize a large schema-valid response.
+# env path (MOA_CODEX_TIMEOUT etc.) continues to apply. Retired routes retain
+# their historical metadata for archived runs.
 BUILTIN_PROVIDERS: dict[str, ResolvedProvider] = {
     "codex":          ResolvedProvider(name="codex",          harness="codex",    model="gpt-6-astra", effort="high"),
     "codex-sol":      ResolvedProvider(name="codex-sol",      harness="codex",    model="gpt-6.1-sol", effort="xhigh"),
@@ -113,7 +112,7 @@ BUILTIN_PROVIDERS: dict[str, ResolvedProvider] = {
     "qwen":           ResolvedProvider(name="qwen",           harness="opencode", model="opencode-go/qwen3.8-max", timeout=900),
     "qwen-opencode":  ResolvedProvider(name="qwen-opencode",  harness="opencode", model="opencode-go/qwen3.8-max"),
     "grok":           ResolvedProvider(name="grok",           harness="opencode", model="opencode-go/grok-4.7"),
-    "minimax":        ResolvedProvider(name="minimax", harness="opencode", model="opencode-go/minimax-m3", timeout=900),
+    "minimax":        ResolvedProvider(name="minimax", harness="opencode", model="opencode-go/minimax-m3"),
     "muse-spark":     ResolvedProvider(name="muse-spark", harness="opencode", model="opencode-go/muse-spark-1.3-contributor"),
     "glm":            ResolvedProvider(name="glm",            harness="opencode", model="opencode-go/glm-5.3"),
     "deepseek-flash": ResolvedProvider(name="deepseek-flash", harness="opencode", model="opencode-go/deepseek-v4.1-flash"),

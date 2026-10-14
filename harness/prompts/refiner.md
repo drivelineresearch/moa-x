@@ -64,7 +64,10 @@ source. Repeating the proposer's declared snippet is not verification. Every
 `verified` or `contradicted` finding must name the external URL or local
 `file:line` receipt you actually checked. If the finding depends on a short
 contiguous block, use an inclusive `file:start-end` range of at most 200 lines.
-`source_url = null` is valid only for an `unverified` finding.
+`source_url = null` is valid only for an `unverified` finding. Check the actual
+file length before giving an inclusive line range. If you cannot inspect the
+source, mark that finding `unverified` and continue the rest of the review;
+never guess a URL or line range to make a record appear verified.
 `claim_index_path` must use the exact canonical syntax
 `plan[<zero-based step>].evidence[<zero-based evidence>]`; prose suffixes,
 `.step`, and approximate paths are invalid.
