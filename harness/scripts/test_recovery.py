@@ -1,6 +1,7 @@
 """Offline regressions for provider recovery, budgets and attempt provenance."""
 from __future__ import annotations
 import contextlib
+import io
 import json
 import signal
 import subprocess
@@ -363,6 +364,94 @@ class RecoveryTests(unittest.TestCase):
             result = run_moa.run_layer3(provider=provider, repo_path=self.root, session_dir=self.session, timeout=900, codex_effort="xhigh", layer1=[], layer2=[])
         self.assertTrue(result.success);self.assertEqual(call.call_count, 2)
         self.assertEqual((self.session / "final-plan.md").read_text(), payload["final_plan_markdown"])
+
+    def test_synthesis_resolves_route_effort_and_retains_prior_attempt(self):
+        scout = self.session / "scout-brief.json"
+        scout.write_text(
+            json.dumps(
+                {
+                    "session_id": "fixture",
+                    "repo_path": str(self.root),
+                    "frozen_spec": "Compare a small implementation plan.",
+                }
+            )
+        )
+        (self.session / "synthesis-input.md").write_text("# Synthesis\nfixture")
+        prior = run_moa.LayerResult(
+            agent_id="codex-sol",
+            layer=3,
+            role="aggregator",
+            error="timeout after 1200s",
+            duration_seconds=1200,
+            log_path="layer3/prior.log",
+        )
+        for flag, expected in (
+            ([], "medium"),
+            (["--aggregator-effort", "high"], "high"),
+        ):
+            with self.subTest(expected=expected):
+                manifest = {
+                    "layer1": [],
+                    "layer2": [],
+                    "layer3": [
+                        {
+                            k: v
+                            for k, v in run_moa.asdict(prior).items()
+                            if k != "payload"
+                        }
+                    ],
+                    "summary": {"timeout_failures": ["codex-sol"]},
+                    "config": {},
+                }
+                (self.session / "manifest.json").write_text(json.dumps(manifest))
+                result = run_moa.LayerResult(
+                    agent_id="codex-sol",
+                    layer=3,
+                    role="aggregator",
+                    error="fixture stop",
+                    attempts=[{"attempt": 1, "error": "fixture stop"}],
+                )
+                argv = [
+                    "run_moa.py",
+                    "--scout-brief",
+                    str(scout),
+                    "--repo",
+                    str(self.root),
+                    "--phase",
+                    "layer3",
+                    "--aggregator-provider",
+                    "codex-sol",
+                    "--no-report",
+                    *flag,
+                ]
+                with (
+                    patch.object(sys, "argv", argv),
+                    patch.dict(
+                        run_moa.os.environ,
+                        {"MOA_CODEX_SOL_EFFORT": "medium", "MOA_AGGREGATOR_EFFORT": ""},
+                    ),
+                    patch.object(
+                        run_moa.codex_adapter,
+                        "check_available",
+                        return_value=(True, "fixture"),
+                    ),
+                    patch.object(run_moa, "run_layer3", return_value=result) as call,
+                    patch.object(
+                        run_moa, "_global_lock", return_value=contextlib.nullcontext()
+                    ),
+                    contextlib.redirect_stdout(io.StringIO()),
+                ):
+                    self.assertEqual(run_moa.main(), 5)
+                self.assertEqual(call.call_args.kwargs["codex_effort"], expected)
+                updated = json.loads((self.session / "manifest.json").read_text())
+                self.assertEqual(
+                    updated["config"]["aggregator"]["reasoning_effort"], expected
+                )
+                self.assertEqual(updated["summary"]["timeout_failures"], [])
+                self.assertEqual(
+                    updated["layer3"][0]["attempts"][0]["log_path"], "layer3/prior.log"
+                )
+                self.assertEqual(updated["layer3"][0]["attempt"], 2)
 
     def test_native_agy_schema_file_is_within_private_mirror(self):
         mirror = self.root / "mirror";mirror.mkdir()

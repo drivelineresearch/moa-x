@@ -67,7 +67,7 @@ and the strongest synthesis route in every run:
 
 | Mode | Proposers | Broadcast refiners | Aggregator |
 |---|---|---|---|
-| Quick | Gemini 4 Argon `low`; Grok 4.7 | DeepSeek V4.1 Flash | GPT-6.1 Sol `xhigh` |
+| Quick | Gemini 4 Argon `low`; Grok 4.7 | DeepSeek V4.1 Flash | GPT-6.1 Sol `medium` |
 | Balanced | Gemini 4 Argon `high`; Grok 4.7; GPT-6 Luna `medium` | DeepSeek V4.1 Flash; Opus `high` | GPT-6.1 Sol `xhigh` |
 | Thorough | Gemini 4 Argon `high`; Grok 4.7; GPT-6 Astra `high`; GLM 5.3 | DeepSeek V4.1 Flash; Opus `max` | GPT-6.1 Sol `xhigh` |
 
@@ -305,7 +305,10 @@ disclosure for diagnosis.
 
 If a stage fails, recovery suggestions are derived from the failed manifest
 rather than from the last generic phase event. Targeted redispatch can retain
-successful checkpoints and rerun selected failed lanes. A clean redispatch
+successful checkpoints and rerun selected failed lanes. A synthesis-only retry
+retains proposal/review checkpoints and synthesis input, and invokes only Layer 3.
+For a Codex synthesis retry, the browser offers a supported effort override;
+the native invocation and manifest use that effective effort. A clean redispatch
 starts every lane again. If Layer 1 has no accepted proposal, the worker stops
 before starting paid reviewers and records the rejection causes in the trace.
 

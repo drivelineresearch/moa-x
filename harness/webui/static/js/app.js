@@ -2278,17 +2278,24 @@ function bindEvents() {
       setButtonLoading(retryButton, true, "Queuing…", "Redispatch failures");
       try {
         const recovery = state.detailJob?.recovery;
-        const recentPhase = [...state.events].reverse().find((item) => ["layer1", "layer2"].includes(item.phase))?.phase;
+        const recentPhase = [...state.events].reverse().find((item) => ["layer1", "layer2", "layer3"].includes(item.phase))?.phase;
         const phase = recovery?.phase || recentPhase || "layer1";
         const roster = state.detailJob?.roster || {};
         const suggested = recovery?.agents?.length
           ? recovery.agents
+          : phase === "layer3" ? [roster.aggregator].filter(Boolean)
           : phase === "layer2" ? roster.refiners || [] : roster.proposers || [];
         const entered = window.prompt(`Agents to redispatch in ${phase} (comma-separated)`, suggested.join(", "));
         if (entered === null) return;
         const agents = entered.split(",").map((item) => item.trim()).filter(Boolean);
         if (!agents.length) throw new Error("Choose at least one agent to redispatch.");
-        const next = await redispatchJob(retryButton.dataset.redispatchRun, { phase, agents });
+        const retry = { phase, agents };
+        if (phase === "layer3" && state.detailJob?.agents?.some((lane) => lane.role === "aggregator" && lane.harness === "codex")) {
+          const effort = window.prompt("Synthesis effort: low, medium, high or xhigh. Higher effort can take longer.", "medium");
+          if (effort === null) return;
+          retry.aggregator_effort = effort.trim();
+        }
+        const next = await redispatchJob(retryButton.dataset.redispatchRun, retry);
         state.jobs.unshift(next);
         showToast("Failed lanes queued for redispatch.");
         await navigate("run-detail", next.id);

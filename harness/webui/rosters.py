@@ -13,7 +13,7 @@ DEPTH_PROFILES = {
         "aggregator": {
             "preferred": ["codex-sol"],
             "limit": 1,
-            "efforts": {"codex-sol": "xhigh"},
+            "efforts": {"codex-sol": "medium"},
         },
     },
     "balanced": {

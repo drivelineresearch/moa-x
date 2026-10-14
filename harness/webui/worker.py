@@ -185,7 +185,7 @@ class JobWorker:
         if options.get("no_report"):
             cmd.append("--no-report")
         retry = config.get("redispatch") or {}
-        if retry.get("phase") == phase and retry.get("agents"):
+        if phase != "layer3" and retry.get("phase") == phase and retry.get("agents"):
             cmd.extend(["--redispatch", ",".join(retry["agents"])])
         return cmd
 
@@ -218,6 +218,8 @@ class JobWorker:
             ):
                 key = "MOA_" + str(provider_name).upper().replace("-", "_") + "_EFFORT"
                 env[key] = str(effort)
+                if provider_name == config.get("aggregator") and provider and provider.harness == "codex":
+                    env["MOA_AGGREGATOR_EFFORT"] = str(effort)
         return env
 
     def _run_phase(self, job: dict[str, Any], phase: str) -> int:
@@ -521,10 +523,10 @@ class JobWorker:
             options = job["config"].get("options") or {}
             retry = job["config"].get("redispatch") or {}
             retry_phase = retry.get("phase")
-            phases = [retry_phase] if retry_phase in {"layer1", "layer2"} else ["layer1"]
+            phases = [retry_phase] if retry_phase in {"layer1", "layer2", "layer3"} else ["layer1"]
             if "layer1" in phases:
                 phases.append("layer2")
-            if options.get("aggregate", True):
+            if "layer3" not in phases and options.get("aggregate", True):
                 phases.append("layer3")
             for phase in phases:
                 if self.store.cancel_requested(job_id):

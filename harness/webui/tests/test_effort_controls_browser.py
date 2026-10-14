@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import threading
 import unittest
@@ -88,7 +89,7 @@ class EffortControlsBrowserTest(unittest.TestCase):
 
     def _assert_browser_contract(self, url: str, store) -> None:
         expected_presets = {
-            "quick": {"agy-gemini-pro": "Low", "codex-sol": "Xhigh"},
+            "quick": {"agy-gemini-pro": "Low", "codex-sol": "Medium"},
             "balanced": {
                 "agy-gemini-pro": "High",
                 "opus": "High",
@@ -371,10 +372,32 @@ class EffortControlsBrowserTest(unittest.TestCase):
             self.assertEqual(console_errors, [])
             store.update_job(
                 "lab-audit",
-                status="completed",
-                phase="complete",
-                progress=1,
+                status="failed",
+                phase="layer3",
+                progress=0.78,
             )
+            session = Path(store.get_job("lab-audit")["session_dir"])
+            (session / "scout-brief.json").write_text(json.dumps({"session_id": "lab-audit", "repo_path": str(session.parent), "frozen_spec": "Browser recovery fixture."}))
+            (session / "synthesis-input.md").write_text("Retained reviewed inputs.")
+            (session / "manifest.json").write_text(json.dumps({
+                "session_id": "lab-audit", "layer1": [], "layer2": [],
+                "layer3": [{"agent_id": "codex-sol", "success": False, "error": "timeout after 1200s"}],
+                "config": {"aggregator": {"name": "codex-sol", "harness": "codex", "model": "gpt-6.1-sol", "effort": "xhigh"}},
+                "summary": {},
+            }))
+            dialogs = []
+            def accept_recovery(dialog):
+                dialogs.append(dialog.message)
+                dialog.accept(dialog.default_value)
+            page.on("dialog", accept_recovery)
+            page.goto(base_url + "/runs/lab-audit", wait_until="networkidle")
+            with page.expect_response(lambda response: response.request.method == "POST" and response.url.endswith("/redispatch")) as response:
+                page.locator('[data-redispatch-run="lab-audit"]').click()
+            self.assertEqual(response.value.status, 201)
+            retried = store.get_job(response.value.json()["id"])
+            self.assertEqual(retried["config"]["redispatch"], {"phase": "layer3", "agents": ["codex-sol"]})
+            self.assertEqual(retried["config"]["options"]["effort_overrides"]["codex-sol"], "medium")
+            self.assertEqual(len(dialogs), 2)
             page.goto("about:blank")
             page.wait_for_timeout(150)
             browser.close()
