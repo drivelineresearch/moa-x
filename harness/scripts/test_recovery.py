@@ -89,6 +89,9 @@ class RecoveryTests(unittest.TestCase):
         self.assertTrue(result.success)
         self.assertEqual([c.kwargs["timeout_seconds"] for c in call.call_args_list], [2460, 240])
         self.assertEqual([a["timeout_seconds"] for a in result.attempts], [2460, 240])
+        self.assertEqual([c.kwargs["reasoning_effort"] for c in call.call_args_list], ["xhigh", "medium"])
+        self.assertEqual([a["effort"] for a in result.attempts], ["xhigh", "medium"])
+        self.assertEqual(result.repaired_by["effort"], "medium")
 
     def test_research_timeout_does_not_spend_the_repair_reserve_on_research(self):
         with patch.object(run_moa.codex_adapter, "run", return_value=output(error="timeout after 2460s")) as call, patch.object(run_moa.time, "monotonic", side_effect=[0, 0, 2460, 2465]), patch.object(run_moa, "retry_sleep") as sleep:
@@ -379,6 +382,7 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(repair.call_args.kwargs["timeout_seconds"], 240)
         self.assertEqual(result.attempts[1]["kind"], "repair")
         self.assertEqual(result.attempts[1]["model"], "claude-opus-5-5")
+        self.assertEqual(repair.call_args.kwargs["reasoning_effort"], "medium")
 
     def test_repair_cannot_invent_a_missing_code_line_or_url(self):
         for key, value in (("line", 12345), ("url", "https://example.com/invented")):

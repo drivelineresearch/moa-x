@@ -124,10 +124,12 @@ cannot leave locks or worktree registrations in the source repository.
   minutes after backoff and the repair reserve; insufficient time ends recovery
   without buying a doomed request.
 - Authentication, unavailable model access, exhausted billing quota and invalid
-  configuration fail immediately. Models and effort stay fixed during retries.
+  configuration fail immediately. Models and effort stay fixed during research retries.
 - Parseable output rejected by schema, evidence or verification validation gets
   one structure repair with all tools disabled and a maximum of 240 seconds,
-  clipped to the remaining deadline. AGY/Gemini use authenticated Claude Opus
+  clipped to the remaining deadline. Native Codex/Claude mechanical repairs use
+  medium effort, independently recorded, so high/max research reasoning does
+  not consume the formatting window. AGY/Gemini use authenticated Claude Opus
   for this mechanical repair because their CLIs lack a tool-free invocation
   mode. The repair receives only the original object, errors and schema; its
   harness and model are recorded separately from the originating lane. A local

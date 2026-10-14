@@ -1110,6 +1110,7 @@ def _run_with_recovery(
         history.append({
             "attempt": len(history) + 1, "kind": "repair" if repair else "research",
             "harness": active_harness, "model": active_model,
+            "effort": active_effort,
             "success": result.success, "started_at": call_start,
             "duration_seconds": adapter_result.duration_seconds,
             "error": result.error, "failure_kind": result.failure_kind,
@@ -1120,7 +1121,7 @@ def _run_with_recovery(
         if result.success:
             stop_reason = "success"
             if repair:
-                result.repaired_by = {"harness": active_harness, "model": active_model}
+                result.repaired_by = {"harness": active_harness, "model": active_model, "effort": active_effort}
             break
         if repair:
             stop_reason = "repair_failed"
@@ -1135,10 +1136,15 @@ def _run_with_recovery(
             original_error = result.error
             original_payload = json.loads(json.dumps(result.payload))
             active_prompt = _build_bounded_repair_prompt(result.payload, str(result.error), schema_path, agent_id)
+            # A tool-free formatting pass needs no deep research reasoning.
+            # Keep research/retries at the requested effort, but avoid spending
+            # the repair's four-minute budget on high/max deliberation.
+            if harness in {"codex", "claude"}:
+                active_effort = "medium"
             # AGY/Gemini lack a tool-free invocation mode. An authenticated
             # Claude structure repair receives only the supplied JSON object.
             if harness in {"agy", "gemini"}:
-                active_harness, active_model, active_effort = "claude", "claude-opus-5-5", "high"
+                active_harness, active_model, active_effort = "claude", "claude-opus-5-5", "medium"
             print(f"[orchestrator] {agent_id}: repairing invalid {role} output without research", flush=True)
             continue
         if not failure.retryable or research_attempts >= 3:
