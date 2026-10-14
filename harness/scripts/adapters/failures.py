@@ -49,7 +49,7 @@ def classify_failure(error: str | None, stderr: str = "", *, incomplete: bool = 
     permanent = {
         "auth": r"(?:http(?:/\S+)?\s+|status(?: code)?\s*[:=]?\s*)(?:401|403)\b|unauthorized|unauthenticated|invalid api.?key|invalid token|login required|not authenticated|authentication error|access is disabled|no credentials",
         "quota": r"insufficient_quota|insufficient (?:credits?|balance)|(?:billing|spending) limit|credit balance|budget (?:exceeded|exhausted)|payment required|monthly spending limit|account[^\n]{0,80}suspended",
-        "configuration": r"provider\.invalid-request|model.?not.?found|unknown model|unsupported model|not eligible|ineligibletier|routing error|route is unavailable|model unavailable|invalid (?:response )?schema|missing schema|binary not found|not on path|argument list too long|could not launch|oserror launching|unrecognized flag|unknown flag|incompatible with the installed|can only be used when",
+        "configuration": r"adapter failure in|provider\.invalid-request|model.?not.?found|unknown model|unsupported model|not eligible|ineligibletier|routing error|route is unavailable|model unavailable|invalid (?:response )?schema|missing schema|binary not found|not on path|argument list too long|could not launch|oserror launching|unrecognized flag|unknown flag|incompatible with the installed|can only be used when",
     }
     for kind, pattern in permanent.items():
         if re.search(pattern, text):

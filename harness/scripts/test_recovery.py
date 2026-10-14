@@ -73,6 +73,21 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(result.attempt, 3)
         self.assertFalse(result.transient_empty)
 
+    def test_adapter_exception_preserves_a_receipt_already_written(self):
+        def failed_adapter(harness, **kwargs):
+            kwargs["log_file"].write_text("Original provider stdout/stderr receipt\n")
+            raise ValueError("unexpected output wrapper")
+        with patch.object(run_moa, "_invoke_adapter", side_effect=failed_adapter) as call:
+            result = self.run_lane()
+        self.assertFalse(result.success)
+        self.assertEqual(call.call_count, 1)
+        self.assertEqual(result.failure_kind, "configuration")
+        log = (self.session / result.log_path).read_text()
+        self.assertTrue(log.startswith("Original provider stdout/stderr receipt\n"))
+        self.assertIn("ADAPTER EXCEPTION", log)
+        self.assertIn("unexpected output wrapper", log)
+        self.assertIn("adapter failure", result.error)
+
     def test_permanent_failures_never_retry_even_if_incomplete(self):
         for error in ("403 Model access is disabled", "401 invalid token", "429 insufficient_quota", "429 monthly spending limit; quota exhausted", "unknown model", "binary not found", "OSError launching codex"):
             with self.subTest(error=error), patch.object(run_moa.codex_adapter, "run", return_value=output(error=error, incomplete=True)) as call, patch.object(run_moa.time, "sleep") as sleep:

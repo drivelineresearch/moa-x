@@ -964,11 +964,13 @@ def _run_with_recovery(
             # cancellation (SystemExit/KeyboardInterrupt) or buy another call.
             adapter_result = SimpleNamespace(
                 success=False, payload=None, raw_stderr="", transient_empty=False,
-                error_message=f"could not launch {active_harness}: {exc}",
+                error_message=f"adapter failure in {active_harness}: {exc}",
                 duration_seconds=max(0, time.time() - call_start),
             )
             try:
-                _write_text_atomic(log_file, traceback.format_exc())
+                log_file.parent.mkdir(parents=True, exist_ok=True)
+                with log_file.open("a", encoding="utf-8") as stream:
+                    stream.write("\nADAPTER EXCEPTION\n" + traceback.format_exc())
             except OSError:
                 pass
         if not repair:
