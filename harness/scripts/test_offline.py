@@ -3295,7 +3295,8 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
         and profiles["thorough"]["proposer"]["preferred"] == ["agy-gemini-pro", "grok", "codex", "glm"]
         and profiles["thorough"]["refiner"]["preferred"] == ["deepseek-flash", "opus"]
         and profiles["thorough"]["refiner"]["efforts"]["opus"] == "max"
-        and all(profile["aggregator"]["preferred"] == ["codex-sol"] and profile["aggregator"]["efforts"]["codex-sol"] == "xhigh" for profile in profiles.values())
+        and all(profile["aggregator"]["preferred"] == ["codex-sol"] for profile in profiles.values())
+        and [profiles[depth]["aggregator"]["efforts"]["codex-sol"] for depth in ("quick", "balanced", "thorough")] == ["medium", "xhigh", "xhigh"]
         and all(snippet in app_js for snippet in (
             "bootstrap.depth_profiles", '["codex-sol", "opus", FABLE_ROUTE_ID].includes(id)',
             'const FABLE_WARNING_PASSWORD = "driveline11";', "syncSelectedProviderGroups();"))

@@ -1898,14 +1898,12 @@ def update_manifest_layer3(
     summary = manifest.setdefault("summary", {})
     summary["layer3_successes"] = int(result.success)
     summary["layer3_failures"] = int(not result.success)
-    if result.error and "timeout after" in result.error.lower():
-        failures = summary.setdefault("timeout_failures", [])
-        if result.agent_id not in failures:
-            failures.append(result.agent_id)
-    if result.workspace_mutations:
-        failures = summary.setdefault("workspace_mutation_failures", [])
-        if result.agent_id not in failures:
-            failures.append(result.agent_id)
+    current_lanes = [row for key in ("layer1", "layer2", "layer3") for row in manifest.get(key, [])]
+    summary["timeout_failures"] = list(dict.fromkeys(
+        row["agent_id"] for row in current_lanes
+        if row.get("error") and "timeout after" in row["error"].lower()
+    ))
+    summary["workspace_mutation_failures"] = decision_map_module.workspace_mutation_agents(manifest)
     finished_at = max(
         float(manifest.get("finished_at", 0) or 0),
         result.started_at + result.duration_seconds,
@@ -2401,10 +2399,10 @@ def main() -> int:
                              "route is codex-sol; explicit custom or legacy "
                              "Claude aggregation remains supported.")
     parser.add_argument("--aggregator-effort",
-                        default=os.environ.get("MOA_AGGREGATOR_EFFORT") or "xhigh",
+                        default=os.environ.get("MOA_AGGREGATOR_EFFORT") or None,
                         choices=["low", "medium", "high", "xhigh"],
                         help="Reasoning effort for a Codex Layer 3 subprocess. "
-                             "Default 'xhigh'.")
+                             "Defaults to the resolved provider effort, then 'xhigh'.")
     parser.add_argument("--skip-layer2",
                         action="store_true",
                         default=_bool_env("MOA_SKIP_LAYER2"),
@@ -2796,6 +2794,8 @@ def main() -> int:
                 effort=final_aggregator.effort,
             )
 
+        args.aggregator_effort = args.aggregator_effort or final_aggregator.effort or "xhigh"
+
         # ---------- Phase: layer3 only (aggregate retained synthesis) ----------
         if args.phase == "layer3":
             manifest_path = session_dir / "manifest.json"
@@ -2807,6 +2807,10 @@ def main() -> int:
                     file=sys.stderr,
                 )
                 return 2
+            retained = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if decision_map_module.workspace_mutation_agents(retained):
+                print("ERROR: retained research records workspace changes; start fresh research before synthesis.", file=sys.stderr)
+                return 4
             if final_aggregator.harness == "codex":
                 ok, msg = codex_adapter.check_available()
                 default_timeout = codex_timeout
@@ -2829,6 +2833,7 @@ def main() -> int:
                 return 3
             layer1 = load_layer_results_from_manifest(manifest_path, "layer1", session_dir)
             layer2 = load_layer_results_from_manifest(manifest_path, "layer2", session_dir)
+            prior_layer3 = load_layer_results_from_manifest(manifest_path, "layer3", session_dir)
             timeout = final_aggregator.timeout or default_timeout
             print(
                 f"[orchestrator] Layer 3: {final_aggregator.name} "
@@ -2845,6 +2850,7 @@ def main() -> int:
                 layer1=layer1,
                 layer2=layer2,
             )
+            mark_redispatch_attempts([result], prior_layer3)
             update_manifest_layer3(
                 session_dir, result, final_aggregator, args.aggregator_effort
             )

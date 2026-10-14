@@ -259,6 +259,26 @@ def _source_domain(url: Optional[str]) -> Optional[str]:
         return None
 
 
+def workspace_mutation_agents(manifest: dict[str, Any]) -> list[str]:
+    """Retain workspace integrity warnings across replacement attempts."""
+    summary = manifest.get("summary") or {}
+    agents = set(summary.get("workspace_mutation_failures") or [])
+    for key in ("layer1", "layer2", "layer3"):
+        for row in manifest.get(key, []) or []:
+            if not isinstance(row, dict):
+                continue
+            mutated = row.get("workspace_mutations") or any(
+                isinstance(attempt, dict) and (
+                    attempt.get("workspace_mutations")
+                    or attempt.get("failure_kind") == "workspace_mutation"
+                )
+                for attempt in row.get("attempts", []) or []
+            )
+            if mutated and isinstance(row.get("agent_id"), str):
+                agents.add(row["agent_id"])
+    return sorted(agents)
+
+
 def _run_git(repo_path: Path, *args: str) -> Optional[bytes]:
     try:
         completed = subprocess.run(

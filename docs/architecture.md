@@ -8,7 +8,7 @@ repo-grounded implementation planning.
 flowchart LR
   S["Scout brief"] --> P["Proposers: Gemini Pro + Grok 4.7 + GPT-6 Luna"]
   P --> R["Broadcast refiners: DeepSeek V4.1 Flash + Claude Opus 5.5"]
-  R --> A["Aggregator: GPT-6.1 Sol xhigh default; Opus or gated Fable alternatives"]
+  R --> A["Aggregator: GPT-6.1 Sol, per-depth effort; Opus or gated Fable alternatives"]
   A --> O["Final plan + evidence-weighted decision map + report"]
 ```
 
@@ -26,7 +26,10 @@ every surviving proposal. They verify claims, identify disagreements, add
 missing evidence, and produce structured review output. Broadcast refinement
 is paper-faithful and gives every reviewer the same comparison surface.
 
-**Layer 3: decision.** GPT-6.1 Sol at xhigh is the default recorded aggregator.
+**Layer 3: decision.** GPT-6.1 Sol is the default recorded aggregator. Quick uses `medium` synthesis
+effort; Balanced/Thorough and the default CLI provider use `xhigh`. Explicit
+CLI effort takes precedence over resolved provider effort. The selected effort
+reaches both the native call and provenance metadata.
 It consumes only validated upstream artifacts, resolves disagreements without
 hiding them, and writes the final Markdown plan plus exact JSON decision
 lineage. Claude Opus is an alternative aggregator. Fable is aggregator-only
@@ -195,3 +198,9 @@ Read-only run capabilities expose one job's status and retained artifacts for
 30 days, without browser-profile or mutation access. Local filesystem roots
 are not accepted through Slack. Uploaded references are bounded and owned by
 the caller; private repositories require a separate explicit allowlist.
+
+Synthesis-only retries retain validated proposal/review checkpoints and the
+synthesis input. Only Layer 3 executes; prior aggregator attempts stay visible
+in the report, while current timeout summaries reflect the replacement result. Workspace
+mutation warnings remain recorded; synthesis-only retries cannot reuse inputs
+from a run that recorded workspace changes.

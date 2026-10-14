@@ -1793,6 +1793,88 @@ class WebUITest(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertFalse((target / name).exists())
 
+    def test_synthesis_retry_preserves_research_and_runs_only_layer3(self):
+        store = self.app.extensions["moa_store"]
+        worker = self.app.extensions["moa_worker"]
+        session = self.root / ".moa" / "synthesis-retry-source"
+        session.mkdir(parents=True)
+        scout = {
+            "session_id": "synthesis-retry-source",
+            "repo_path": str(self.root),
+            "frozen_spec": "Retain completed research.",
+        }
+        checkpoint = {
+            "session_id": scout["session_id"],
+            "layer1": [],
+            "layer2": [],
+            "layer3": [],
+            "summary": {},
+            "config": {},
+        }
+        for name in ("manifest.json", "layer1-manifest.json"):
+            (session / name).write_text(json.dumps(checkpoint))
+        (session / "scout-brief.json").write_text(json.dumps(scout))
+        (session / "synthesis-input.md").write_text("Validated research input.")
+        (session / "final-plan.md").write_text("Stale synthesis.")
+        store.insert_job(
+            {
+                "id": scout["session_id"],
+                "profile_id": "browser_123",
+                "title": "Synthesis retry",
+                "goal": scout["frozen_spec"],
+                "workspace": str(self.root),
+                "session_dir": str(session),
+                "status": "failed",
+                "phase": "layer3",
+                "created_at": 1,
+                "config": {
+                    "proposers": ["codex"],
+                    "refiners": ["deepseek-flash"],
+                    "aggregator": "codex-sol",
+                },
+            }
+        )
+        endpoint = f"/api/jobs/{scout['session_id']}/redispatch"
+        for invalid in (
+            {"agents": ["codex"]},
+            {"aggregator_effort": "invalid"},
+            {"aggregator_effort": []},
+        ):
+            with self.subTest(invalid=invalid):
+                self.assertEqual(
+                    self.client.post(
+                        endpoint, json={"phase": "layer3", **invalid}
+                    ).status_code,
+                    400,
+                )
+        response = self.client.post(
+            endpoint, json={"phase": "layer3", "aggregator_effort": "medium"}
+        )
+        self.assertEqual(response.status_code, 201)
+        job = store.get_job(response.get_json()["id"])
+        target = Path(job["session_dir"])
+        self.assertEqual(
+            (target / "synthesis-input.md").read_text(), "Validated research input."
+        )
+        self.assertFalse((target / "final-plan.md").exists())
+        for name in ("manifest.json", "layer1-manifest.json", "scout-brief.json"):
+            self.assertEqual(
+                json.loads((target / name).read_text())["session_id"], job["id"]
+            )
+        self.assertNotIn("--redispatch", worker._command(job, "layer3"))
+        with patch.dict(os.environ, {"MOA_AGGREGATOR_EFFORT": "xhigh"}):
+            env = worker._environment(job)
+        self.assertEqual(env["MOA_CODEX_SOL_EFFORT"], "medium")
+        self.assertEqual(env["MOA_AGGREGATOR_EFFORT"], "medium")
+        with patch.object(worker, "_run_phase", return_value=0) as phase:
+            worker._run_job(job)
+        phase.assert_called_once_with(job, "layer3")
+        self.assertEqual(store.get_job(job["id"])["status"], "completed")
+        self.assertEqual((session / "final-plan.md").read_text(), "Stale synthesis.")
+        checkpoint["summary"]["workspace_mutation_failures"] = ["codex-sol"]
+        (session / "manifest.json").write_text(json.dumps(checkpoint))
+        self.assertEqual(self.client.post(endpoint, json={"phase": "layer3"}).status_code, 409)
+
     def test_failed_latest_layer3_hides_and_blocks_stale_final_artifacts(self):
         store = self.app.extensions["moa_store"]
         session = self.root / ".moa" / "failed-layer3-final"

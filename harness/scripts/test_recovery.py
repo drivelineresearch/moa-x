@@ -1,6 +1,7 @@
 """Offline regressions for provider recovery, budgets and attempt provenance."""
 from __future__ import annotations
 import contextlib
+import io
 import json
 import signal
 import subprocess
@@ -363,6 +364,190 @@ class RecoveryTests(unittest.TestCase):
             result = run_moa.run_layer3(provider=provider, repo_path=self.root, session_dir=self.session, timeout=900, codex_effort="xhigh", layer1=[], layer2=[])
         self.assertTrue(result.success);self.assertEqual(call.call_count, 2)
         self.assertEqual((self.session / "final-plan.md").read_text(), payload["final_plan_markdown"])
+
+    def test_synthesis_resolves_route_effort_and_retains_prior_attempt(self):
+        scout = self.session / "scout-brief.json"
+        scout.write_text(
+            json.dumps(
+                {
+                    "session_id": "fixture",
+                    "repo_path": str(self.root),
+                    "frozen_spec": "Compare a small implementation plan.",
+                }
+            )
+        )
+        (self.session / "synthesis-input.md").write_text("# Synthesis\nfixture")
+        prior = run_moa.LayerResult(
+            agent_id="codex-sol",
+            layer=3,
+            role="aggregator",
+            error="timeout after 1200s",
+            duration_seconds=1200,
+            log_path="layer3/prior.log",
+        )
+        for flag, expected in (
+            ([], "medium"),
+            (["--aggregator-effort", "high"], "high"),
+        ):
+            with self.subTest(expected=expected):
+                manifest = {
+                    "layer1": [],
+                    "layer2": [],
+                    "layer3": [
+                        {
+                            k: v
+                            for k, v in run_moa.asdict(prior).items()
+                            if k != "payload"
+                        }
+                    ],
+                    "summary": {"timeout_failures": ["codex-sol"]},
+                    "config": {},
+                }
+                (self.session / "manifest.json").write_text(json.dumps(manifest))
+                result = run_moa.LayerResult(
+                    agent_id="codex-sol",
+                    layer=3,
+                    role="aggregator",
+                    error="fixture stop",
+                    attempts=[{"attempt": 1, "error": "fixture stop"}],
+                )
+                argv = [
+                    "run_moa.py",
+                    "--scout-brief",
+                    str(scout),
+                    "--repo",
+                    str(self.root),
+                    "--phase",
+                    "layer3",
+                    "--aggregator-provider",
+                    "codex-sol",
+                    "--no-report",
+                    *flag,
+                ]
+                with (
+                    patch.object(sys, "argv", argv),
+                    patch.dict(
+                        run_moa.os.environ,
+                        {"MOA_CODEX_SOL_EFFORT": "medium", "MOA_AGGREGATOR_EFFORT": ""},
+                    ),
+                    patch.object(
+                        run_moa.codex_adapter,
+                        "check_available",
+                        return_value=(True, "fixture"),
+                    ),
+                    patch.object(run_moa, "run_layer3", return_value=result) as call,
+                    patch.object(
+                        run_moa, "_global_lock", return_value=contextlib.nullcontext()
+                    ),
+                    contextlib.redirect_stdout(io.StringIO()),
+                ):
+                    self.assertEqual(run_moa.main(), 5)
+                self.assertEqual(call.call_args.kwargs["codex_effort"], expected)
+                updated = json.loads((self.session / "manifest.json").read_text())
+                self.assertEqual(
+                    updated["config"]["aggregator"]["reasoning_effort"], expected
+                )
+                self.assertEqual(updated["summary"]["timeout_failures"], [])
+                self.assertEqual(
+                    updated["layer3"][0]["attempts"][0]["log_path"], "layer3/prior.log"
+                )
+                self.assertEqual(updated["layer3"][0]["attempt"], 2)
+
+    def test_cli_synthesis_refuses_mutated_research(self):
+        scout = self.session / "scout-brief.json"
+        scout.write_text(json.dumps({"session_id": "fixture", "repo_path": str(self.root), "frozen_spec": "Retain trustworthy research."}))
+        (self.session / "synthesis-input.md").write_text("Retained input.")
+        (self.session / "manifest.json").write_text(json.dumps({"summary": {"workspace_mutation_failures": ["fixture"]}, "layer1": [], "layer2": []}))
+        argv = ["run_moa.py", "--scout-brief", str(scout), "--repo", str(self.root), "--phase", "layer3"]
+        with patch.object(sys, "argv", argv), patch.object(run_moa, "_global_lock", return_value=contextlib.nullcontext()), patch.object(run_moa, "run_layer3") as call, contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(run_moa.main(), 4)
+        call.assert_not_called()
+
+    def test_synthesis_preserves_workspace_mutation_warnings(self):
+        manifest = {
+            "layer1": [
+                {
+                    "agent_id": "fixture",
+                    "success": True,
+                    "attempts": [{"failure_kind": "workspace_mutation"}],
+                }
+            ],
+            "layer2": [],
+            "summary": {
+                "workspace_mutation_failures": ["prior-aggregator"],
+                "timeout_failures": ["prior-aggregator"],
+            },
+        }
+        (self.session / "manifest.json").write_text(json.dumps(manifest))
+        provider = run_moa.harness_config.ResolvedProvider(
+            "fixture-aggregator", "codex", "gpt-6.1-sol", 900
+        )
+        result = run_moa.LayerResult(
+            agent_id=provider.name, layer=3, role="aggregator", success=True
+        )
+        with patch.object(run_moa, "_refresh_decision_map"):
+            run_moa.update_manifest_layer3(self.session, result, provider, "medium")
+        summary = json.loads((self.session / "manifest.json").read_text())["summary"]
+        self.assertEqual(
+            summary["workspace_mutation_failures"], ["fixture", "prior-aggregator"]
+        )
+        self.assertEqual(summary["timeout_failures"], [])
+
+    def test_synthesis_keeps_default_prior_log_and_ignores_stale_payload(self):
+        folder = self.session / "layer3"
+        folder.mkdir()
+        prior_log = folder / "codex-sol-aggregator.log"
+        prior_log.write_text("Original aggregation receipt.")
+        prior_json = folder / "codex-sol-aggregator.json"
+        payload = {
+            "final_plan_markdown": "# Final Plan\n" + "A bounded plan. " * 20,
+            "lineage": {
+                "version": 1,
+                "title": "Small change",
+                "summary": "Retain evidence.",
+                "confidence": {"level": "high", "rationale": "Independent review."},
+                "steps": [],
+                "rejected_inputs": [],
+            },
+        }
+        prior_json.write_text(json.dumps(payload))
+        (self.session / "synthesis-input.md").write_text("Retained research.")
+        provider = run_moa.harness_config.ResolvedProvider(
+            "codex-sol", "codex", "gpt-6.1-sol", 900
+        )
+        for succeeds in (False, True):
+
+            def invoke(**kwargs):
+                kwargs["log_file"].write_text("Replacement call receipt.")
+                return (
+                    output(payload)
+                    if succeeds
+                    else output(error="HTTP 403 Model access is disabled")
+                )
+
+            with (
+                self.subTest(succeeds=succeeds),
+                patch.object(run_moa.codex_adapter, "run", side_effect=invoke),
+            ):
+                result = run_moa.run_layer3(
+                    provider=provider,
+                    repo_path=self.root,
+                    session_dir=self.session,
+                    timeout=900,
+                    codex_effort="medium",
+                    layer1=[],
+                    layer2=[],
+                )
+            self.assertEqual(result.success, succeeds)
+            self.assertEqual(prior_log.read_text(), "Original aggregation receipt.")
+            self.assertNotEqual(self.session / result.log_path, prior_log)
+            self.assertEqual(
+                (self.session / result.log_path).read_text(),
+                "Replacement call receipt.",
+            )
+            if not succeeds:
+                self.assertIsNone(result.payload)
+                self.assertIsNone(result.json_path)
 
     def test_native_agy_schema_file_is_within_private_mirror(self):
         mirror = self.root / "mirror";mirror.mkdir()

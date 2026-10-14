@@ -21,6 +21,11 @@ versioning.
 
 ### Changed
 
+- Quick synthesis uses medium effort; native Codex aggregation honors the
+  resolved provider/browser/Slack effort and records the actual selection.
+- Synthesis-only recovery reuses proposal/review checkpoints and retains prior
+  aggregator attempts without repeating successful research.
+
 - Exclude Qwen, Moonshot, MiMo and unqualified Hy4 from new launches, including custom aliases;
   preserve archived model identities. DeepSeek V4.1 Flash and Opus remain
   the Balanced/Thorough reviewers.

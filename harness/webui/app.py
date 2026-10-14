@@ -435,6 +435,13 @@ def _agent_views(job: dict[str, Any], session: Path) -> tuple[list[dict[str, Any
             recovery = {"phase": "layer1", "agents": failed_layer1}
         elif failed_layer2:
             recovery = {"phase": "layer2", "agents": failed_layer2}
+        else:
+            failed_layer3 = [
+                agent for (layer, agent), item in results.items()
+                if layer == 3 and not item.get("success")
+            ]
+            if failed_layer3:
+                recovery = {"phase": "layer3", "agents": failed_layer3}
     return cards, recovery
 
 
@@ -1120,12 +1127,40 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         body = request.get_json(silent=True) or {}
         agents = _string_list(body.get("agents"))
         phase = str(body.get("phase") or "layer1")
-        if phase not in {"layer1", "layer2"}:
-            return _error("phase must be layer1 or layer2")
+        if phase not in {"layer1", "layer2", "layer3"}:
+            return _error("phase must be layer1, layer2 or layer3")
         if source["status"] in ACTIVE_STATES:
             return _error("wait for the current job to stop before redispatch", 409)
         redispatch_id = source["id"] + "-retry-" + uuid.uuid4().hex[:5]
         config = dict(source["config"])
+        if phase == "layer3":
+            aggregator = config.get("aggregator")
+            if not aggregator or (agents and agents != [aggregator]):
+                return _error("synthesis retry must select the configured aggregator")
+            inputs = Path(source["session_dir"])
+            if not all((inputs / name).is_file() for name in ("manifest.json", "synthesis-input.md")):
+                return _error("synthesis retry requires retained review and synthesis inputs")
+            try:
+                document = json.loads((inputs / "manifest.json").read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                return _error("synthesis retry requires a readable review checkpoint")
+            if decision_map_module.workspace_mutation_agents(document):
+                return _error("address the recorded workspace changes and start fresh research before retrying synthesis", 409)
+            agents = [aggregator]
+            effort = body.get("aggregator_effort")
+            if effort is not None:
+                provider = harness_config.load_provider_catalog().get(aggregator)
+                if (
+                    not provider or provider.harness != "codex"
+                    or not isinstance(effort, str)
+                    or effort not in {"low", "medium", "high", "xhigh"}
+                ):
+                    return _error("choose a supported Codex synthesis effort")
+                options = dict(config.get("options") or {})
+                options["effort_overrides"] = {**(options.get("effort_overrides") or {}), aggregator: effort}
+                config["options"] = options
+        elif "aggregator_effort" in body:
+            return _error("aggregator_effort is only supported for synthesis retries")
         if agents:
             config["redispatch"] = {"phase": phase, "agents": agents}
         else:
@@ -1143,9 +1178,10 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                 "final-plan.json",
                 "final-plan.md",
                 "report.html",
-                "synthesis-input.md",
             ):
                 (target / stale_name).unlink(missing_ok=True)
+            if phase != "layer3":
+                (target / "synthesis-input.md").unlink(missing_ok=True)
         else:
             target.mkdir(parents=True)
             source_inputs = Path(source["session_dir"]) / "inputs"
@@ -1160,6 +1196,12 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         (target / "scout-brief.json").write_text(
             json.dumps(scout, indent=2), encoding="utf-8"
         )
+        for name in ("manifest.json", "layer1-manifest.json"):
+            checkpoint = target / name
+            if checkpoint.is_file():
+                document = json.loads(checkpoint.read_text(encoding="utf-8"))
+                document["session_id"] = redispatch_id
+                checkpoint.write_text(json.dumps(document, indent=2), encoding="utf-8")
         job = store.insert_job(
             {
                 "id": redispatch_id,

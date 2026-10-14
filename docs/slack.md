@@ -17,7 +17,9 @@ Send a task, optionally with supported reference files or a public GitHub
 repository URL under the configured organization. Luna asks up to three material
 questions, offering buttons or typed answers. A complete brief skips questions.
 It recommends Quick, Balanced or Thorough depth; those presets share the same
-server-side model policy as the browser. Balanced uses three proposals, two reviewers and one
+server-side model policy as the browser. Quick uses Sol at `medium` synthesis
+effort; Balanced and Thorough use `xhigh`. Selected effort overrides reach the
+native aggregator and its manifest. Balanced uses three proposals, two reviewers and one
 synthesis lane; Qwen is excluded from new launches. Preview the optimized brief and actual
 models, adjust depth or individual supported effort levels, then press **Run**.
 

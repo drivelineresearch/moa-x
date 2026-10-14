@@ -67,7 +67,7 @@ and the strongest synthesis route in every run:
 
 | Mode | Proposers | Broadcast refiners | Aggregator |
 |---|---|---|---|
-| Quick | Gemini 4 Argon `low`; Grok 4.7 | DeepSeek V4.1 Flash | GPT-6.1 Sol `xhigh` |
+| Quick | Gemini 4 Argon `low`; Grok 4.7 | DeepSeek V4.1 Flash | GPT-6.1 Sol `medium` |
 | Balanced | Gemini 4 Argon `high`; Grok 4.7; GPT-6 Luna `medium` | DeepSeek V4.1 Flash; Opus `high` | GPT-6.1 Sol `xhigh` |
 | Thorough | Gemini 4 Argon `high`; Grok 4.7; GPT-6 Astra `high`; GLM 5.3 | DeepSeek V4.1 Flash; Opus `max` | GPT-6.1 Sol `xhigh` |
 
@@ -77,13 +77,13 @@ the xAI proposal lane, Luna joins at Balanced, and Astra plus GLM join at Thorou
 DeepSeek V4.1 Flash is the Quick reviewer and remains in the full broadcast-review
 set alongside Opus at higher depths. Every named default lane comes
 from a distinct lab within its own layer, and all recommended refiners are
-lab-independent from the OpenAI aggregator. GPT-6.1 Sol remains the selected
-`xhigh` aggregator in every recommended mode.
+lab-independent from the OpenAI aggregator. GPT-6.1 Sol uses `medium` synthesis
+effort for Quick and `xhigh` for Balanced and Thorough.
 
-Kimi K3 remains visible on the OpenCode provider page only for archived
-provenance. New launches remain disabled pending complete research and broadcast-review
-qualification. A successful synthetic
-response does not establish reliable research or broadcast-review behavior.
+Qwen, Moonshot/Kimi, MiMo and unqualified Hy4 are excluded from new launch
+choices, including custom aliases. Existing runs retain their historical model
+names and receipts. Native research and broadcast-review qualification are
+required before adding a model; a synthetic response alone is insufficient.
 
 Claude Opus 5.5 is available as a normal aggregator alternative. Fable 5.1 is
 available as an aggregator-only alternative. Selecting Fable opens a
@@ -305,7 +305,10 @@ disclosure for diagnosis.
 
 If a stage fails, recovery suggestions are derived from the failed manifest
 rather than from the last generic phase event. Targeted redispatch can retain
-successful checkpoints and rerun selected failed lanes. A clean redispatch
+successful checkpoints and rerun selected failed lanes. A synthesis-only retry
+retains proposal/review checkpoints and synthesis input, and invokes only Layer 3.
+For a Codex synthesis retry, the browser offers a supported effort override;
+the native invocation and manifest use that effective effort. A clean redispatch
 starts every lane again. If Layer 1 has no accepted proposal, the worker stops
 before starting paid reviewers and records the rejection causes in the trace.
 
