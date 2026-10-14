@@ -28,7 +28,9 @@ supporting process and raw output remain available for deeper inspection.
   recommendation, a plain-language summary from the recorded lineage,
   completion counts, session details, elapsed time, parallel speed-up, and
   visible run-health warnings for timeouts, identity mismatches, transient
-  empty responses, or workspace mutations.
+  empty responses, workspace mutations, or unsupported reviewer citations marked
+  unverified. Original verification records remain in the retained manifest;
+  valid checks from the same reviewer remain available.
 - **Static contributor network** — an embedded illustration and a four-stage
   roster showing how the task brief moved through independent
   recommendations, review, and final synthesis. Names, counts, completion
@@ -57,7 +59,9 @@ supporting process and raw output remain available for deeper inspection.
   evidence receipts to atomic claims and final decisions. Select a node to
   inspect its source, review status, and downstream use. A quality strip,
   explicit gates, evidence-debt warnings, and an accessible ledger expose
-  coverage and independence without turning a model's confidence into a score.
+  coverage and independence without turning a model's confidence into a score. Slack final replies use this same effective confidence
+  ceiling, rather than presenting the model's stated confidence as verified. Slack final replies use the
+  same effective confidence ceiling and label unavailable evidence ratings.
 - **Decision trail** — select any final-recommendation step to see the exact
   source steps and review findings that shaped it. Solid paths mean used as
   written, dashed paths mean revised, and dotted paths show reviewer influence;

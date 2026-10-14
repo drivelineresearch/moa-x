@@ -541,6 +541,41 @@ class SlackTest(unittest.TestCase):
             payload = json.loads(conn.execute("SELECT payload FROM slack_outbox WHERE id=?", ("final:" + c["id"],)).fetchone()[0])
         self.assertIn("Verification metadata is unavailable", payload["text"])
 
+    def test_retained_review_citation_warnings_are_visible_in_final_reply(self):
+        c = self.preview()
+        self.bot.run(c)
+        c = self.bot.db.get(c["id"])
+        job = self.store.get_job(c["job_id"])
+        folder = Path(job["session_dir"])
+        (folder / "final-plan.md").write_text("# Plan\nRetained advice.\n")
+        (folder / "final-plan.json").write_text(json.dumps({"confidence": {"level": "medium"}}))
+        (folder / "manifest.json").write_text(json.dumps({"layer2": [{"success": True, "verification_warnings": [{"original_verification": {"source_url": "private-context.py:1"}}]}]}))
+        job = self.store.update_job(job["id"], status="completed")
+        self.bot.finish(c, job)
+        with self.store.connect() as conn:
+            payload = json.loads(conn.execute("SELECT payload FROM slack_outbox WHERE id=?", ("final:" + c["id"],)).fetchone()[0])
+        self.assertIn("1/1 lanes passed", payload["text"])
+        self.assertIn("1 unsupported citation(s)", payload["text"])
+        self.assertIn("unverified", payload["text"])
+        self.assertNotIn("private-context.py", payload["text"])
+
+    def test_final_reply_respects_evidence_confidence_ceiling(self):
+        c = self.preview()
+        self.bot.run(c)
+        c = self.bot.db.get(c["id"])
+        job = self.store.get_job(c["job_id"])
+        folder = Path(job["session_dir"])
+        (folder / "final-plan.md").write_text("# Plan\nRetained advice.\n")
+        (folder / "final-plan.json").write_text(json.dumps({"confidence": {"level": "high"}}))
+        (folder / "manifest.json").write_text(json.dumps({"layer2": [{"success": True}]}))
+        (folder / "decision-map.json").write_text(json.dumps({"quality": {"effective_confidence": "low"}}))
+        job = self.store.update_job(job["id"], status="completed")
+        self.bot.finish(c, job)
+        with self.store.connect() as conn:
+            payload = json.loads(conn.execute("SELECT payload FROM slack_outbox WHERE id=?", ("final:" + c["id"],)).fetchone()[0])
+        self.assertIn("Evidence confidence: low", payload["text"])
+        self.assertIn("Model stated high; evidence gates limit", payload["text"])
+
     def test_two_requests_in_one_dm_need_thread_selection(self):
         first = self.message()
         self.message(ts="2", text="new: Plan something else")

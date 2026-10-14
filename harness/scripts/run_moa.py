@@ -116,6 +116,8 @@ PROPOSER_SCHEMA_PATH = SCHEMAS_DIR / "proposer.schema.json"
 REFINER_SCHEMA_PATH = SCHEMAS_DIR / "refiner.schema.json"
 FINAL_PLAN_SCHEMA_PATH = SCHEMAS_DIR / "final-plan.schema.json"
 DECISION_MAP_SCHEMA_PATH = SCHEMAS_DIR / "decision-map.schema.json"
+REPAIR_TIMEOUT_SECONDS = 240
+MIN_RESEARCH_RETRY_SECONDS = 180
 
 PROPOSER_PROMPT_PATH = PROMPTS_DIR / "proposer.md"
 REFINER_PROMPT_PATH = PROMPTS_DIR / "refiner.md"
@@ -168,6 +170,9 @@ class LayerResult:
     attempts: Optional[list[dict]] = None
     repaired_by: Optional[dict] = None
     stop_reason: Optional[str] = None
+    # Runner-owned audit of unsupported verification claims downgraded to
+    # unverified. Original provider output remains in the attempt log.
+    verification_warnings: Optional[list[dict]] = None
 
 
 # ---------------------------------------------------------------------------
@@ -506,6 +511,77 @@ _LOCAL_RECEIPT_RE = re.compile(
 )
 
 
+def _downgrade_unsupported_verifications(
+    payload: dict,
+    repo_path: Optional[Path],
+    schema: Optional[dict] = None,
+) -> tuple[dict, list[dict]]:
+    """Retain review advice without accepting unsupported fact claims.
+
+    Only absent receipts and safe missing/out-of-range local receipts qualify.
+    Unsafe or malformed locators still fail closed. Never fabricate a source,
+    change a line range, or upgrade a finding. Apply changes transactionally so
+    a later structural repair cannot lose the original evidence provenance.
+    """
+    candidate = json.loads(json.dumps(payload))
+    warnings: list[dict] = []
+    for index, item in enumerate(candidate.get("verifications", [])):
+        if item.get("status") not in {"verified", "contradicted"}:
+            continue
+        source = item.get("source_url")
+        reason = (
+            "missing_source"
+            if source is None or (isinstance(source, str) and not source.strip())
+            else None
+        )
+        parts = decision_map_module._local_verification_source_parts(source)
+        if parts is not None and repo_path is not None:
+            _, _, state = decision_map_module._repo_file_receipt(repo_path, *parts)
+            if state in {"unreadable", "line_out_of_range"}:
+                reason = state
+        elif (
+            parts is None
+            and repo_path is not None
+            and isinstance(source, str)
+            and not source.startswith(("http://", "https://"))
+        ):
+            # A disjoint/reversed/oversized numeric range cannot be an exact
+            # receipt. Discard the unusable locator rather than guessing which
+            # range the model intended. Check the file's safety independently.
+            file_name, separator, line_spec = source.rpartition(":")
+            safe_file = decision_map_module._portable_code_locator(file_name)
+            if separator and safe_file and re.fullmatch(r"[0-9,;\s-]+", line_spec):
+                _, _, state = decision_map_module._repo_file_receipt(
+                    repo_path, safe_file, 1, 1
+                )
+                if state in {"captured", "unreadable", "line_out_of_range"}:
+                    reason = "invalid_line_range"
+        if reason is None:
+            continue
+        warnings.append(
+            {
+                "verification_index": index,
+                "reason": reason,
+                "original_verification": dict(item),
+            }
+        )
+        item["status"] = "unverified"
+        if reason in {"missing_source", "invalid_line_range"}:
+            item["source_url"] = None
+        item["actual_finding"] = (
+            f"Runner validation: cited receipt is {reason}; this finding is "
+            f"unverified. Original model finding: {item['actual_finding']}"
+        )
+    if _validate_refiner_verification_cross_fields(candidate, repo_path) or (
+        warnings
+        and _validate_against_schema(
+            candidate, schema or _load_schema(REFINER_SCHEMA_PATH)
+        )
+    ):
+        return payload, []
+    return candidate, warnings
+
+
 def _normalize_refiner_verification_sources(
     payload: dict,
     repo_path: Optional[Path],
@@ -518,7 +594,7 @@ def _normalize_refiner_verification_sources(
     """
     if repo_path is None:
         return 0
-    repo_root = repo_path.resolve()
+    repo_roots = (repo_path.absolute(), repo_path.resolve())
     verifications = payload.get("verifications")
     if not isinstance(verifications, list):
         return 0
@@ -535,9 +611,16 @@ def _normalize_refiner_verification_sources(
         absolute_file = Path(match.group("file"))
         if not absolute_file.is_absolute():
             continue
-        try:
-            relative = absolute_file.resolve().relative_to(repo_root).as_posix()
-        except (OSError, ValueError):
+        relative = None
+        for root in repo_roots:
+            try:
+                # Resolve only the root alias, never symlinks or traversal in
+                # the cited path. Both spellings of a checkout are supported.
+                relative = absolute_file.relative_to(root).as_posix()
+                break
+            except ValueError:
+                continue
+        if relative is None:
             continue
         suffix = match.group("start")
         if match.group("end") is not None:
@@ -810,6 +893,16 @@ def _finalize_result(
                 file=sys.stderr,
                 flush=True,
             )
+        adapter_payload, warnings = _downgrade_unsupported_verifications(
+            adapter_payload, repo_path, schema
+        )
+        layer_result.verification_warnings = warnings or None
+        if warnings:
+            print(
+                f"[orchestrator WARNING] {layer_result.agent_id}: retained review "
+                f"with {len(warnings)} unsupported verification(s) marked unverified",
+                file=sys.stderr, flush=True,
+            )
         verification_errors = _validate_refiner_verification_cross_fields(
             adapter_payload, repo_path
         )
@@ -834,6 +927,7 @@ def _finalize_result(
     # Persist validated payload to its own file
     json_file.parent.mkdir(parents=True, exist_ok=True)
     _write_text_atomic(json_file, json.dumps(adapter_payload, indent=2))
+    layer_result.payload = adapter_payload
     layer_result.json_path = str(json_file.relative_to(session_dir))
 
 
@@ -934,6 +1028,10 @@ def _run_with_recovery(
     started_at = time.time()
     started = time.monotonic()
     deadline = started + timeout
+    # Keep a real repair window rather than giving it whatever few seconds
+    # happen to remain after research. Very short explicit deadlines still
+    # permit an initial call; the reserve never extends the total deadline.
+    repair_reserve = min(REPAIR_TIMEOUT_SECONDS, timeout / 5) if timeout > 60 else 0
     history: list[dict] = []
     repair = False
     repair_used = False
@@ -949,7 +1047,7 @@ def _run_with_recovery(
     result = LayerResult(agent_id=agent_id, layer=layer, role=role, reviewing=reviewing)
     while True:
         remaining = deadline - time.monotonic()
-        if remaining <= 0 or (history and remaining < (20 if repair else 30)):
+        if remaining <= 0 or (history and remaining < (20 if repair else repair_reserve + MIN_RESEARCH_RETRY_SECONDS)):
             stop_reason = "deadline"
             result.success = False
             result.error = (result.error or "provider failed") + "; recovery deadline exhausted"
@@ -958,7 +1056,7 @@ def _run_with_recovery(
         log_file = session_dir / f"layer{layer}" / f"{agent_id}-{role}{suffix}.log"
         if log_file.exists():
             log_file = log_file.with_name(log_file.stem + f".run-{time.time_ns()}.log")
-        call_timeout = min(240, remaining) if repair else remaining
+        call_timeout = min(REPAIR_TIMEOUT_SECONDS, remaining) if repair else max(0, remaining - repair_reserve)
         call_start = time.time()
         try:
             adapter_result = _invoke_adapter(
@@ -1012,15 +1110,18 @@ def _run_with_recovery(
         history.append({
             "attempt": len(history) + 1, "kind": "repair" if repair else "research",
             "harness": active_harness, "model": active_model,
+            "effort": active_effort,
             "success": result.success, "started_at": call_start,
             "duration_seconds": adapter_result.duration_seconds,
             "error": result.error, "failure_kind": result.failure_kind,
             "log_path": result.log_path,
+            "timeout_seconds": call_timeout,
+            "verification_warnings": result.verification_warnings,
         })
         if result.success:
             stop_reason = "success"
             if repair:
-                result.repaired_by = {"harness": active_harness, "model": active_model}
+                result.repaired_by = {"harness": active_harness, "model": active_model, "effort": active_effort}
             break
         if repair:
             stop_reason = "repair_failed"
@@ -1035,17 +1136,22 @@ def _run_with_recovery(
             original_error = result.error
             original_payload = json.loads(json.dumps(result.payload))
             active_prompt = _build_bounded_repair_prompt(result.payload, str(result.error), schema_path, agent_id)
+            # A tool-free formatting pass needs no deep research reasoning.
+            # Keep research/retries at the requested effort, but avoid spending
+            # the repair's four-minute budget on high/max deliberation.
+            if harness in {"codex", "claude"}:
+                active_effort = "medium"
             # AGY/Gemini lack a tool-free invocation mode. An authenticated
             # Claude structure repair receives only the supplied JSON object.
             if harness in {"agy", "gemini"}:
-                active_harness, active_model, active_effort = "claude", "claude-opus-5-5", "high"
+                active_harness, active_model, active_effort = "claude", "claude-opus-5-5", "medium"
             print(f"[orchestrator] {agent_id}: repairing invalid {role} output without research", flush=True)
             continue
         if not failure.retryable or research_attempts >= 3:
             stop_reason = "retry_limit" if failure.retryable else "permanent_failure"
             break
         delay = max(failure.retry_after, (5 if research_attempts == 1 else 15) * random.uniform(1, 1.2))
-        if deadline - time.monotonic() <= delay + 30:
+        if deadline - time.monotonic() <= delay + repair_reserve + MIN_RESEARCH_RETRY_SECONDS:
             stop_reason = "deadline"
             break
         print(f"[orchestrator] {agent_id}: retrying {failure.kind} failure "
@@ -2168,6 +2274,7 @@ def load_layer_results_from_manifest(
             attempts=entry.get("attempts"),
             repaired_by=entry.get("repaired_by"),
             stop_reason=entry.get("stop_reason"),
+            verification_warnings=entry.get("verification_warnings"),
         )
         if result.success and result.json_path:
             payload_file = session_dir / result.json_path
@@ -2362,11 +2469,11 @@ def main() -> int:
     parser.add_argument("--codex-timeout", type=int,
                         default=_int_env("MOA_CODEX_TIMEOUT"),
                         help="Wall-clock cap for codex calls, in seconds. Default "
-                             "scales with --codex-effort: xhigh=1500, high=1200, "
+                             "scales with --codex-effort: xhigh/high=2700, "
                              "medium/low=900. A single --timeout overrides this.")
     parser.add_argument("--sonnet-timeout", type=int,
-                        default=_int_env("MOA_SONNET_TIMEOUT") or 1200,
-                        help="Wall-clock cap for sonnet calls, in seconds (default 1200). "
+                        default=_int_env("MOA_SONNET_TIMEOUT") or 2700,
+                        help="Total recovery budget for Claude calls, in seconds (default 2700). "
                              "Sonnet with full research can spike past 15 min, so headroom "
                              "is the default. A single --timeout overrides this.")
     parser.add_argument("--codex-model",
@@ -2464,7 +2571,7 @@ def main() -> int:
 
     # Resolve per-agent timeouts. --timeout (master) wins over everything;
     # otherwise use the per-agent default, which for codex is effort-aware.
-    _codex_effort_defaults = {"low": 900, "medium": 900, "high": 1200, "xhigh": 1500}
+    _codex_effort_defaults = {"low": 900, "medium": 900, "high": 2700, "xhigh": 2700}
     if args.timeout is not None:
         codex_timeout = sonnet_timeout = args.timeout
     else:

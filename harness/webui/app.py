@@ -403,6 +403,12 @@ def _agent_views(job: dict[str, Any], session: Path) -> tuple[list[dict[str, Any
                 card["started_at"] = started_at
             if result.get("error"):
                 card["summary"] = str(result["error"])[:1000]
+            elif result.get("verification_warnings"):
+                count = len(result["verification_warnings"])
+                card["summary"] = (
+                    f"Review retained; {count} unsupported citation(s) marked "
+                    "unverified. Inspect the evidence debt before using those findings."
+                )
         elif job.get("status") == "cancelled":
             card["status"] = "cancelled"
             card["summary"] = "This lane did not finish because the run was cancelled."

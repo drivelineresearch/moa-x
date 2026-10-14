@@ -45,8 +45,9 @@ The request’s inputs and resolved model versions freeze at launch. The existin
 single-worker queue prepares references, runs proposals, broadcast review and
 synthesis. An external CLI ensemble causes the worker to wait for its lock
 rather than immediately fail; waiting is cancellable. A status card updates on meaningful progress; its dashboard link is
-read-only and specific to that run. The final reply includes the recommendation,
-lane success counts and confidence, followed by the full plan and HTML report
+read-only and specific to that run. Unsupported reviewer citations remain
+explicitly unverified and appear in the final reply as evidence debt. The final reply includes the recommendation,
+lane success counts and the dashboard's effective evidence confidence, followed by the full plan and HTML report
 as Slack files. Failed/interrupted runs receive an explicit failure reply.
 
 In DMs, ordinary text continues the user’s sole open request. If several are

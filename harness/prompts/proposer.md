@@ -59,9 +59,11 @@ You MUST:
 
 ### Hard research ceiling: don't blow past these
 
-The minimums above are FLOORS; the orchestrator gives you a per-agent timeout
-of 900-1200 seconds, and chasing citations indefinitely will blow past it and
-fail the whole run. Observe these ceilings:
+The minimums above are FLOORS. The configured total lane deadline is normally
+15 minutes at low/medium Codex effort or 45 minutes for long research lanes;
+explicit operator limits may be shorter. Retries and a reserved tool-free
+repair share that same deadline. Chasing citations indefinitely can exhaust
+it before serialization finishes. Observe these research ceilings:
 
 - **Maximum 15 web searches.** If search #15 hasn't produced what you need,
   you are in a rabbit hole. Stop, write the plan with what you have, and

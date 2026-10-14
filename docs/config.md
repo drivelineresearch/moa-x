@@ -73,8 +73,8 @@ A catalog listing or synthetic response alone is insufficient.
 | `MOA_CLAUDE_BIN` | `claude` | Claude executable |
 | `MOA_OPENCODE_BIN` | `opencode` | OpenCode executable |
 | `MOA_AGY_BIN` | `agy` | AGY executable |
-| `MOA_CODEX_TIMEOUT` | effort-derived | Codex wall-clock cap |
-| `MOA_SONNET_TIMEOUT` | `1200` | Claude wall-clock cap |
+| `MOA_CODEX_TIMEOUT` | high/xhigh: `2700`; low/medium: `900` | Codex total recovery budget |
+| `MOA_SONNET_TIMEOUT` | `2700` | Claude wall-clock cap |
 | `MOA_OPENCODE_TIMEOUT` | Claude timeout | OpenCode wall-clock cap |
 | `MOA_AGY_TIMEOUT` | Claude timeout | AGY wall-clock cap |
 
@@ -154,8 +154,8 @@ broadcast-review requests. MiniMax's incomplete first review and Muse's
 incomplete first proposal recovered through the shared retry budget; GLM passed
 both roles on its first invocation. These are scoped compatibility
 checks, not a general model-quality benchmark or an availability guarantee.
-MiniMax's default total budget is 900 seconds; GLM and Muse use the OpenCode
-harness budget (1200 seconds by default). Recommended presets keep their existing
+MiniMax, GLM and Muse use the OpenCode harness recovery budget (2700 seconds
+by default), including retry backoff and a reserved tool-free repair window. Recommended presets keep their existing
 rosters; choose optional routes explicitly in a custom roster.
 
 MiMo and Hy4 Preview each produced a valid proposal but exhausted their review

@@ -3045,7 +3045,9 @@ def test_refiner_verification_repair_is_harness_independent() -> bool:
     from adapters.opencode import OpenCodeResult
 
     invalid = _make_valid_broadcast_refiner("fixture")
-    invalid["verifications"][0]["source_url"] = None
+    # Unsafe locators still require bounded repair, whereas absent/safe
+    # unsupported receipts now conservatively remain unverified.
+    invalid["verifications"][0]["source_url"] = "javascript:invalid-receipt"
     invalid["verifications"].append({**invalid["verifications"][0],
                                      "source_url": "https://example.net/independent-verification"})
     repaired = _make_valid_broadcast_refiner("fixture")

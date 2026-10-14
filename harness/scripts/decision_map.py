@@ -575,6 +575,8 @@ def final_artifact_staleness(
 
 
 def _load_payload(session_dir: Path, entry: dict[str, Any]) -> Optional[dict[str, Any]]:
+    if entry.get("success") is False:
+        return None
     path = _safe_session_path(session_dir, entry.get("json_path"))
     return _read_json(path) if path and path.is_file() else None
 
@@ -746,13 +748,31 @@ def build_decision_map(
 
     proposer_payloads: dict[str, dict[str, Any]] = {}
     refiner_payloads: dict[str, dict[str, Any]] = {}
+    refiner_audits: dict[str, dict[int, dict]] = {}
     for key, destination in (("layer1", proposer_payloads), ("layer2", refiner_payloads)):
         for entry in manifest.get(key, []) if isinstance(manifest.get(key), list) else []:
             if not isinstance(entry, dict) or not entry.get("agent_id"):
                 continue
+            agent_id = str(entry["agent_id"])
+            destination.pop(agent_id, None)
+            if key == "layer2":
+                refiner_audits.pop(agent_id, None)
             payload = _load_payload(session_dir, entry)
             if payload is not None:
-                destination[str(entry["agent_id"])] = payload
+                destination[agent_id] = payload
+                if key == "layer2":
+                    # Replace the whole audit with the same row that supplied
+                    # this payload; stale or failed redispatch rows cannot
+                    # attach warnings to another attempt's verification index.
+                    refiner_audits[agent_id] = {
+                        warning["verification_index"]: warning
+                        for warning in entry.get("verification_warnings") or []
+                        if isinstance(warning, dict)
+                        and type(warning.get("verification_index")) is int
+                        and isinstance(warning.get("original_verification"), dict)
+                        and warning["original_verification"].get("status") in {"verified", "contradicted", "unverified"}
+                        and isinstance(warning.get("reason"), str)
+                    }
 
     input_digest = hashlib.sha256(
         _canonical_json(
@@ -768,6 +788,7 @@ def build_decision_map(
                             "success": item.get("success"),
                             "schema_valid": item.get("schema_valid"),
                             "reviewing": item.get("reviewing"),
+                            "verification_warnings": item.get("verification_warnings"),
                         }
                         for item in manifest.get(key, [])
                         if isinstance(item, dict)
@@ -955,6 +976,14 @@ def build_decision_map(
             linked = claim_location.get((proposer_id, path))
             claim_id, evidence_id = linked if linked else (None, None)
             declared_status = str(item.get("status") or "unverified")
+            audit = refiner_audits.get(reviewer_id, {}).get(index)
+            if audit:
+                declared_status = str(audit["original_verification"]["status"])
+                contract_warnings.append(
+                    f"{reviewer_id} verification {index + 1} declared "
+                    f"{declared_status} but its cited receipt is {audit['reason']}; "
+                    "treated as unverified"
+                )
             finding = str(item.get("actual_finding") or "")
             source_url = _portable_verification_source(item.get("source_url"))
             verification_id = _content_id(
@@ -975,9 +1004,9 @@ def build_decision_map(
                 repository_matches=repository_matches,
                 previous=prior_verifications.get(verification_id),
             )
-            status = declared_status
+            status = str(item.get("status") or "unverified")
             if (
-                declared_status in {"verified", "contradicted"}
+                status in {"verified", "contradicted"}
                 and source_receipt["source_capture_status"]
                 not in USABLE_VERIFICATION_SOURCE_STATES
             ):
