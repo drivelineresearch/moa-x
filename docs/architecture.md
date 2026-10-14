@@ -133,6 +133,9 @@ Each attempt has a distinct log and a manifest record with its harness, model,
 timing, failure category and outcome; `stop_reason` records why recovery ended.
 Payloads and manifests are replaced atomically. Successful lanes remain retained during
 manual redispatch. The web worker does not apply an extra automatic retry loop.
+Safe missing local locators may remain on explicitly unverified findings; they
+never become verified evidence and retain unreadable receipt states in the
+decision map. Verified/contradicted findings still require captured sources.
 Repo-local absolute reviewer receipts are normalized to portable relative
 locators before semantic validation; external absolute paths remain invalid.
 

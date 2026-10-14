@@ -290,6 +290,19 @@ class RecoveryTests(unittest.TestCase):
             self.assertFalse(run_moa.harness_config.provider_allows_role("custom-route", "proposer", model))
         self.assertFalse(run_moa.harness_config.provider_is_retired("minimax", "opencode-go/minimax-m3"))
 
+    def test_unverified_missing_receipt_does_not_invalidate_other_checks(self):
+        payload = _make_valid_broadcast_refiner("fixture")
+        record = payload["verifications"][0]
+        record.update(status="unverified", source_url="missing.py:9999", actual_finding="The cited file could not be found; this claim is unverified.")
+        self.assertEqual(run_moa._validate_refiner_verification_cross_fields(payload, self.root), [])
+        self.assertEqual(record["status"], "unverified")
+        record["status"] = "verified"
+        self.assertTrue(run_moa._validate_refiner_verification_cross_fields(payload, self.root))
+        record["status"] = "contradicted"
+        self.assertTrue(run_moa._validate_refiner_verification_cross_fields(payload, self.root))
+        record.update(status="unverified", source_url="../outside.py:1")
+        self.assertTrue(run_moa._validate_refiner_verification_cross_fields(payload, self.root))
+
     def test_existing_attempt_logs_are_preserved_across_manual_redispatch(self):
         old = self.session / "layer1/fixture-proposer.log";old.write_text("original failed provider receipt")
         with patch.object(run_moa.codex_adapter, "run", return_value=output(self.valid)) as call:
