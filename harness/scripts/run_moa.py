@@ -594,7 +594,10 @@ def _normalize_refiner_verification_sources(
         if not absolute_file.is_absolute():
             continue
         try:
-            relative = absolute_file.resolve().relative_to(repo_root).as_posix()
+            # Preserve the cited lexical path so receipt validation can still
+            # reject symlink components and traversal. Resolving here would
+            # silently substitute the symlink target for the model's source.
+            relative = absolute_file.relative_to(repo_root).as_posix()
         except (OSError, ValueError):
             continue
         suffix = match.group("start")

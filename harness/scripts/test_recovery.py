@@ -142,6 +142,20 @@ class RecoveryTests(unittest.TestCase):
                 self.assertEqual(warnings, [])
                 self.assertTrue(run_moa._validate_refiner_verification_cross_fields(candidate, self.root))
 
+    def test_absolute_receipt_normalization_preserves_symlink_rejection(self):
+        if sys.platform == "win32":
+            self.skipTest("POSIX symlink test")
+        (self.root / "safe.py").write_text("receipt\n")
+        (self.root / "linked.py").symlink_to(self.root / "safe.py")
+        payload = _make_valid_broadcast_refiner("fixture")
+        payload["verifications"][0]["source_url"] = str(self.root / "linked.py") + ":1"
+        self.assertEqual(run_moa._normalize_refiner_verification_sources(payload, self.root), 1)
+        self.assertEqual(payload["verifications"][0]["source_url"], "linked.py:1")
+        self.assertTrue(run_moa._validate_refiner_verification_cross_fields(payload, self.root))
+        candidate, warnings = run_moa._downgrade_unsupported_verifications(payload, self.root)
+        self.assertEqual(candidate, payload)
+        self.assertEqual(warnings, [])
+
     def test_real_timeout_cleanup_is_bounded_and_keeps_partial_stdout(self):
         if sys.platform == "win32":self.skipTest("POSIX process-group test")
         started = time.monotonic()
