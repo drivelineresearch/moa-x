@@ -7,6 +7,8 @@ versioning.
 
 ### Added
 
+- Optional MiniMax M3 proposer/reviewer through OpenCode Go, qualified with
+  native research and broadcast-review calls.
 - Slack repository-name lookup with cached GitHub discovery, visible/frozen
   repository context, and a private local policy supporting exact repositories
   or an explicitly approved organization wildcard.
@@ -17,11 +19,12 @@ versioning.
 
 ### Changed
 
-- Disable curated Qwen routes for new launches; DeepSeek V4.1 Flash and Opus
-  are the Balanced/Thorough reviewers. Preserve archived Qwen lab attribution.
+- Exclude Qwen, Moonshot and MiMo from new launches, including custom aliases;
+  preserve archived model identities. DeepSeek V4.1 Flash and Opus remain
+  the Balanced/Thorough reviewers.
 
 - Refresh active routes to Gemini 4 Argon, GPT-6 Astra/Luna and GPT-6.1 Sol,
-  Claude Sonnet/Opus 5.5 and Fable 5.1, Grok 4.7, GLM 5.3, and Qwen 3.8 Max
+  Claude Sonnet/Opus 5.5 and Fable 5.1, Grok 4.7 and GLM 5.3
   through OpenCode Go. DeepSeek V4.1 Flash is the only curated DeepSeek route;
   archived Pro manifests keep their original attribution.
 - Update prompt-coach primary/fallback models independently of roster defaults.
@@ -30,6 +33,13 @@ versioning.
 
 ### Fixed
 
+- Share bounded recovery across every provider and role, including synthesis:
+  retry capacity/transport/incomplete failures, repair structure without tools,
+  preserve every attempt, and fail closed on permanent errors or mutations.
+- Pass AGY its native JSON schema/output format and retain typed error envelopes.
+- Preserve actual OpenCode V2 provider policy errors after a clean CLI exit.
+- Replace payloads/manifests atomically and show all attempts in report timelines
+  and logs; remove the worker's duplicate retry layer.
 - Recover late-visible Slack history messages with a bounded overlap and
   persistent deduplication instead of skipping them after a cursor advance.
 - Keep Slack connector attribution out of brief text and typed command parsing.

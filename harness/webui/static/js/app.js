@@ -36,6 +36,7 @@ const LAB_VISUALS = Object.freeze({
   deepseek: { label: "DeepSeek", accent: "navy" },
   zhipu: { label: "Zhipu", accent: "green" },
   independent: { label: "Independent lab", accent: "gold" },
+  minimax: { label: "MiniMax", accent: "gold" },
 });
 
 function normalizeLabId(value) {
@@ -53,6 +54,7 @@ function normalizeLabId(value) {
     zhipu: "zhipu",
     independent: "independent",
     independentlab: "independent",
+    minimax: "minimax",
   };
   return aliases[normalized] || "independent";
 }
@@ -79,6 +81,7 @@ function inferLabId(routeId, model = "", label = "") {
   if (/deepseek/.test(signature)) return "deepseek";
   if (/glm|zhipu/.test(signature)) return "zhipu";
   if (/gpt-|codex|openai/.test(signature)) return "openai";
+  if (/minimax/.test(signature)) return "minimax";
   return "independent";
 }
 const DEPTH_PRESENTATION = Object.freeze({
@@ -95,7 +98,7 @@ const DEPTH_PRESENTATION = Object.freeze({
   thorough: {
     value: 2,
     image: `${BASE}/static/images/context-roster.webp`,
-    caption: "Four proposers, three refiners, and high effort where supported.",
+    caption: "Four proposers, two refiners, and high effort where supported.",
   },
 });
 const DEPTH_KEYS = ["quick", "balanced", "thorough"];

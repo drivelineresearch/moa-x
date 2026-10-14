@@ -93,8 +93,8 @@ GLM is a Thorough proposer and DeepSeek V4.1 Flash is a recommended refiner.
 
 The default keeps one model from each lab in a layer. DeepSeek Pro was removed
 from the active catalog during the October 2026 refresh; old manifests retain
-its original identity. Kimi K3 remains attributable in archives and disabled
-for new runs pending a real broadcast-review requalification.
+its original identity. Qwen, Moonshot and MiMo remain attributable in archives
+and are excluded from new launches, including custom aliases.
 
 ## Provider recovery
 
@@ -104,8 +104,9 @@ timeout is a total deadline across its attempts, backoff and optional repair.
 
 - Capacity/rate limits, temporary transport failures and incomplete output can
   receive two retries, for at most three research invocations. Backoff starts at
-  five seconds, then fifteen seconds, with jitter; an explicit numeric
-  `Retry-After` can extend it within the remaining deadline.
+  five seconds, then fifteen seconds, with jitter. Provider retry hints in
+  seconds, milliseconds, minutes or HTTP-date form can extend backoff within
+  the remaining deadline.
 - Authentication, unavailable model access, exhausted billing quota and invalid
   configuration fail immediately. Models and effort stay fixed during retries.
 - Parseable output rejected by schema, evidence or verification validation gets
@@ -114,7 +115,8 @@ timeout is a total deadline across its attempts, backoff and optional repair.
   for this mechanical repair because their CLIs lack a tool-free invocation
   mode. The repair receives only the original object, errors and schema; its
   harness and model are recorded separately from the originating lane. A local
-  guard rejects new citation values absent from the supplied object.
+  guard rejects invented text/citations, recombined evidence records and
+  changed decision lineage.
 
 AGY also receives its native `--json-schema` contract through a file inside the
 isolated workspace. Invalid output never enters refinement. A failed repair
@@ -122,7 +124,8 @@ fails closed; it does not restart research. Workspace mutation is terminal.
 Cancellation interrupts the provider process tree or backoff promptly.
 
 Each attempt has a distinct log and a manifest record with its harness, model,
-timing, failure category and outcome. Successful lanes remain retained during
+timing, failure category and outcome; `stop_reason` records why recovery ended.
+Payloads and manifests are replaced atomically. Successful lanes remain retained during
 manual redispatch. The web worker does not apply an extra automatic retry loop.
 Repo-local absolute reviewer receipts are normalized to portable relative
 locators before semantic validation; external absolute paths remain invalid.

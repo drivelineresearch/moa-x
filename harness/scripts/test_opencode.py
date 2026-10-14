@@ -8,9 +8,30 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from adapters import opencode as oc
+from adapters.failures import classify_failure
 
 
 class OpenCodeV2Test(unittest.TestCase):
+    def test_policy_error_survives_clean_exit_and_is_not_retried(self):
+        cause = "This Go model trains on request data. Allow paid endpoints that train on request data in your workspace's Privacy settings to use it."
+        process = Mock(returncode=0)
+        process.communicate.return_value = (json.dumps({"type": "error", "error": {
+            "type": "provider.invalid-request", "status": 400, "message": cause,
+        }}), "")
+        with tempfile.TemporaryDirectory() as raw:
+            @contextmanager
+            def source_workspace(repo, scratch):
+                yield repo
+            with patch.object(oc, '_cli_major_version', return_value=2), patch.object(oc, '_isolated_git_workspace', source_workspace), patch.object(oc.subprocess, 'Popen', return_value=process):
+                result = oc.run(prompt="Read the fixture.", repo_path=Path(raw), model="opencode-go/muse-spark-1.3-contributor")
+        self.assertFalse(result.success)
+        self.assertIn(cause, result.error_message)
+        self.assertIn("HTTP 400", result.error_message)
+        self.assertFalse(result.transient_empty)
+        failure = classify_failure(result.error_message, result.raw_stderr)
+        self.assertEqual(failure.kind, "configuration")
+        self.assertFalse(failure.retryable)
+
     def test_ndjson_excludes_tool_payloads_and_preserves_typed_errors(self):
         output = '\n'.join(json.dumps(item) for item in [
             {"type": "tool_use", "part": {"text": '{"agent_id":"wrong"}'}},
@@ -21,6 +42,15 @@ class OpenCodeV2Test(unittest.TestCase):
         self.assertEqual(json.loads(text)["agent_id"], "correct")
         self.assertIn("provider.no-route", error)
         self.assertFalse(oc._diagnose_failure('', error)[1])
+
+    def test_unstructured_error_event_keeps_retryable_transport_cause(self):
+        output = '\n'.join(json.dumps(item) for item in [
+            {"type": "text", "part": "unexpected wrapper"},
+            {"type": "error", "error": "HTTP 503 upstream error"},
+        ])
+        text, error = oc._v2_response(output)
+        self.assertEqual(text, "")
+        self.assertTrue(classify_failure(error).retryable)
 
     def test_disabled_model_access_is_not_transient(self):
         message,transient=oc._diagnose_failure('', 'provider.auth: Upstream request failed: Model access is disabled')

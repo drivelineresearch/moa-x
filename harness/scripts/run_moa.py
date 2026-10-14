@@ -75,6 +75,7 @@ import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Optional
 
 # fcntl is POSIX-only. On Windows, _global_lock() degrades to a no-op —
@@ -166,6 +167,7 @@ class LayerResult:
     failure_kind: Optional[str] = None
     attempts: Optional[list[dict]] = None
     repaired_by: Optional[dict] = None
+    stop_reason: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -931,6 +933,7 @@ def _run_with_recovery(
     active_harness, active_model, active_effort = harness, model, reasoning_effort
     original_error = None
     original_payload = None
+    stop_reason = "failed"
     before = _workspace_snapshot(repo_path, session_dir)
     validate = validate or (lambda result: _finalize_result(
         result, result.payload, schema_path, session_dir, repo_path))
@@ -938,6 +941,7 @@ def _run_with_recovery(
     while True:
         remaining = deadline - time.monotonic()
         if remaining < (20 if repair else 30):
+            stop_reason = "deadline"
             result.success = False
             result.error = (result.error or "provider failed") + "; recovery deadline exhausted"
             break
@@ -947,13 +951,26 @@ def _run_with_recovery(
             log_file = log_file.with_name(log_file.stem + f".run-{time.time_ns()}.log")
         call_timeout = min(240, math.floor(remaining)) if repair else math.floor(remaining)
         call_start = time.time()
-        adapter_result = _invoke_adapter(
-            active_harness, prompt=active_prompt, schema_path=schema_path,
-            repo_path=session_dir if repair else repo_path, session_dir=session_dir,
-            timeout=call_timeout, model=active_model, effort=active_effort,
-            log_file=log_file, repair=repair,
-            temperature_shim=None if repair else temperature_shim,
-        )
+        try:
+            adapter_result = _invoke_adapter(
+                active_harness, prompt=active_prompt, schema_path=schema_path,
+                repo_path=session_dir if repair else repo_path, session_dir=session_dir,
+                timeout=call_timeout, model=active_model, effort=active_effort,
+                log_file=log_file, repair=repair,
+                temperature_shim=None if repair else temperature_shim,
+            )
+        except Exception as exc:
+            # Setup failures retain typed provenance too. Never catch process
+            # cancellation (SystemExit/KeyboardInterrupt) or buy another call.
+            adapter_result = SimpleNamespace(
+                success=False, payload=None, raw_stderr="", transient_empty=False,
+                error_message=f"could not launch {active_harness}: {exc}",
+                duration_seconds=max(0, time.time() - call_start),
+            )
+            try:
+                _write_text_atomic(log_file, traceback.format_exc())
+            except OSError:
+                pass
         if not repair:
             research_attempts += 1
         result = LayerResult(
@@ -990,13 +1007,16 @@ def _run_with_recovery(
             "log_path": result.log_path,
         })
         if result.success:
+            stop_reason = "success"
             if repair:
                 result.repaired_by = {"harness": active_harness, "model": active_model}
             break
         if repair:
+            stop_reason = "repair_failed"
             result.error = f"{original_error}; bounded schema repair failed: {result.error}"
             break
         if result.workspace_mutations:
+            stop_reason = "workspace_mutation"
             break
         if (not repair_used and isinstance(result.payload, dict)
             and result.validation_failure in {"schema", "proposer_evidence", "refiner_verification", "aggregation"}):
@@ -1011,9 +1031,11 @@ def _run_with_recovery(
             print(f"[orchestrator] {agent_id}: repairing invalid {role} output without research", flush=True)
             continue
         if not failure.retryable or research_attempts >= 3:
+            stop_reason = "retry_limit" if failure.retryable else "permanent_failure"
             break
         delay = max(failure.retry_after, (5 if research_attempts == 1 else 15) * random.uniform(1, 1.2))
-        if deadline - time.monotonic() <= delay + 1:
+        if deadline - time.monotonic() <= delay + 30:
+            stop_reason = "deadline"
             break
         print(f"[orchestrator] {agent_id}: retrying {failure.kind} failure "
               f"({research_attempts + 1}/3) after {delay:.1f}s", flush=True)
@@ -1024,6 +1046,7 @@ def _run_with_recovery(
     result.duration_seconds = time.monotonic() - started
     result.attempt = len(history) or 1
     result.attempts = history
+    result.stop_reason = stop_reason
     if len(history) > 1:
         result.previous_attempt = history[-2]
     # Compatibility flag remains available for old/manual redispatch manifests.
@@ -2135,6 +2158,7 @@ def load_layer_results_from_manifest(
             failure_kind=entry.get("failure_kind"),
             attempts=entry.get("attempts"),
             repaired_by=entry.get("repaired_by"),
+            stop_reason=entry.get("stop_reason"),
         )
         if result.success and result.json_path:
             payload_file = session_dir / result.json_path

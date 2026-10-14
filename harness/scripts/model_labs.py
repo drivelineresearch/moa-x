@@ -59,6 +59,10 @@ MODEL_LABS: dict[str, dict[str, str]] = {
         "avatar": "lab-zhipu-avatar.webp",
         "pixel": "lab-zhipu-pixel.webp",
     },
+    "minimax": {
+        "label": "MiniMax", "accent": "gold",
+        "avatar": "lab-minimax-avatar.webp", "pixel": "lab-minimax-pixel.webp",
+    },
     "independent": {
         "label": "Independent lab",
         "accent": "gold",
@@ -127,6 +131,7 @@ ROUTE_META: dict[str, dict[str, Any]] = {
         "lab_id": "anthropic",
         "roles": ["aggregator"],
     },
+    "minimax": {"label": "MiniMax M3", "lab_id": "minimax", "roles": ["proposer", "refiner"]},
     "glm": {
         "label": "GLM-5.3",
         "lab_id": "zhipu",
@@ -178,6 +183,8 @@ def route_lab_id(route_id: str | None, model: str | None = None) -> str:
         (("qwen", "alibaba/", "qwen-token-plan/"), "alibaba"),
         (("deepseek",), "deepseek"),
         (("glm", "zhipu"), "zhipu"),
+        (("minimax",), "minimax"),
+        (("mimo", "xiaomi"), "xiaomi"),
     )
     for prefixes, lab_id in prefix_rules:
         if any(prefix in value for prefix in prefixes):

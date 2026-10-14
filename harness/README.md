@@ -106,9 +106,8 @@ into `~/.claude/skills/mixture-of-agents/`. The default roster needs:
 - **agy / Antigravity** — install or update Antigravity, run `agy install`,
   sign in, and verify `agy models`
 - **opencode** (runs Grok, DeepSeek Flash, and optional routes) — `curl -fsSL https://opencode.ai/install | bash`
-  (or `npm i -g opencode-ai`), then `opencode auth login`, or export provider
-  API keys (`MOONSHOT_API_KEY` /
-  `QWEN_TOKEN_PLAN_API_KEY`)
+  then `opencode auth login` and select OpenCode Go; optional direct routes
+  may use their provider API keys
 - **claude** — the Claude Code CLI (runs the Balanced/Thorough Opus refiner)
 
 ```bash
@@ -230,8 +229,8 @@ Defaults:
 - `--proposers agy-gemini-pro,grok,codex-luna` and `--refiners deepseek-flash,opus`
 
 The default reviewers are DeepSeek V4.1 Flash through OpenCode Go and Opus
-5.5 through Claude Code. Qwen routes are disabled for new launches and retain
-archived attribution.
+5.5 through Claude Code. Qwen, Moonshot and MiMo are disabled for new launches
+and retain archived attribution.
 
 The Codex and Claude harnesses have dedicated flags. Every other harness
 (OpenCode for Grok + DeepSeek Flash, and AGY) takes its
@@ -240,11 +239,11 @@ model/timeout/effort from the
 `MOA_<NAME>_TIMEOUT` / `MOA_<NAME>_EFFORT` env vars. You can also define a provider entirely from
 the environment with `MOA_PROVIDER_<NAME>=<harness>:<model>`. OpenCode model
 ids are `provider/model` strings. Current built-ins use
-`opencode-go/grok-4.7`, disabled legacy `opencode-go/kimi-k3`,
-`opencode-go/glm-5.3`, `opencode-go/qwen3.8-max`, and
+`opencode-go/grok-4.7`, `opencode-go/minimax-m3`,
+`opencode-go/glm-5.3`, and
 `opencode-go/deepseek-v4.1-flash`.
 
-Per-agent timeout defaults:
+Per-agent total recovery deadlines (all attempts, backoff and repair):
 - `--codex-timeout` scales with `--codex-effort`: xhigh=1500s, high=1200s, medium/low=900s
 - `--sonnet-timeout 1200` (seconds; sonnet with full research can spike past 15 min)
 - Other harnesses: `MOA_<NAME>_TIMEOUT` or `providers.<name>.timeout`
@@ -333,3 +332,17 @@ Version history:
 ## Author
 
 Kyle Boddy
+
+## Provider recovery
+
+All providers and roles share bounded orchestration: at most three research
+calls and one tool-free structure repair inside the configured deadline.
+Capacity, temporary transport and incomplete-output failures may retry with
+backoff. Permanent account/configuration failures and workspace mutations do
+not retry. Every invocation retains its log and outcome in `attempts`;
+`stop_reason` explains why recovery stopped. AGY receives a native JSON schema;
+its mechanical repairs use tool-free Opus and record the repair model separately.
+
+Payloads and manifests are replaced atomically. Manual redispatch retains
+successful lanes and prior attempt history. The web/Slack worker adds no extra
+automatic retries. See [architecture](../docs/architecture.md#provider-recovery).

@@ -360,8 +360,8 @@ def run(
             except (OSError, ValueError) as exc:
                 return AgyResult(False, None, "", str(exc), -1,
                                  time.monotonic() - started, "invalid response schema")
-            # AGY has no native schema flag. The parser's required-key check
-            # cannot replace actually supplying the contract to the model.
+            # Inline the contract as well as enforcing it through AGY's native
+            # --json-schema flag below; parsing isn't a substitute for either.
             prompt += "\n\nRequired response JSON Schema:\n" + json.dumps(schema)
         prompt_file.parent.mkdir(parents=True, exist_ok=True)
         prompt_file.write_text(READ_ONLY_RULE + "\n\n" + prompt, encoding="utf-8")
@@ -489,7 +489,7 @@ def run(
                         time.monotonic() - started,
                         f"timeout after {timeout_seconds}s",
                     )
-        except (AgyWorkspaceIsolationError, FileNotFoundError, OSError) as exc:
+        except (AgyWorkspaceIsolationError, subprocess.SubprocessError, OSError) as exc:
             return AgyResult(
                 False, None, "", str(exc), -1, time.monotonic() - started,
                 f"could not launch agy: {exc}",
@@ -564,7 +564,7 @@ def _extract_payload(stdout: str, *, required_keys: Optional[set[str]] = None) -
         candidate = extract_json_from_text(stdout)
         if isinstance(candidate, dict) and "agent_id" in candidate and (
             {"summary", "plan"}.issubset(candidate)
-            or {"verifications", "proposer_rankings"}.issubset(candidate)
+            or {"reviewing", "verifications"}.issubset(candidate)
         ):
             return candidate
     return payload

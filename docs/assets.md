@@ -25,14 +25,16 @@ Confirm that your font license permits browser embedding before enabling this
 option.
 
 The WebP/PNG illustrations under `harness/webui/static/images/` and
-`harness/report/assets/` were generated specifically for this project and are
+`harness/report/assets/` were created specifically for this project and are
 distributed with the repository under its MIT license. They are original
 model-lab and workflow-themed characters and scenes, not official vendor
 logos, licensed characters, or claims of endorsement by a model provider.
 
 The model-lab asset contract is centralized in
-`harness/scripts/model_labs.py`. Each known lab has one 320px editorial avatar
-and one 480px pixel-art character under the `lab-<id>-*` naming scheme. The
+`harness/scripts/model_labs.py`. Each known lab has an avatar and pixel-style
+asset under the `lab-<id>-*` naming scheme. Existing editorial characters use
+320px/480px artwork; newer routes may use original 256px/96px monogram artwork
+with no vendor logos. The
 same `lab_id` must drive launch-roster groups, provider-health route portraits,
 review-network nodes, live lanes, and archived-run fallbacks. Execution
 harnesses such as OpenCode or AGY must never determine character identity.

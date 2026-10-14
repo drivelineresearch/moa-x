@@ -3158,7 +3158,7 @@ def test_model_lab_assets_and_catalog_contract() -> bool:
     for lab_id, values in MODEL_LABS.items():
         for kind in ("avatar", "pixel"):
             path = image_dir / values[kind]
-            if not path.is_file() or path.stat().st_size < 1000:
+            if not path.is_file() or path.read_bytes()[:4] != b"RIFF" or path.read_bytes()[8:12] != b"WEBP":
                 missing.append(f"{lab_id}:{kind}")
     catalog = run_moa.harness_config.load_provider_catalog(
         config_path=Path("/nonexistent")
@@ -3228,6 +3228,7 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
         "opus": ("claude", "claude-opus-5-5"),
         "grok": ("opencode", "opencode-go/grok-4.7"),
         "glm": ("opencode", "opencode-go/glm-5.3"),
+        "minimax": ("opencode", "opencode-go/minimax-m3"),
         "deepseek-flash": ("opencode", "opencode-go/deepseek-v4.1-flash"),
         "agy-gemini-pro": ("agy", "gemini-4-argon-high"),
         "fable": ("claude", "claude-fable-5-1"),
@@ -3254,7 +3255,7 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
         and any(route["id"] == "fable" for route in groups["claude"]["routes"])
         and not any(route["id"] in {"qwen", "qwen-opencode", "kimi"} for route in groups["opencode"]["routes"])
         and {route["lab_id"] for route in groups["opencode"]["routes"]}
-        == {"xai", "zhipu", "deepseek"}
+        == {"xai", "zhipu", "deepseek", "minimax"}
     )
     role_ok = (
         {item["id"] for item in models if "aggregator" in item["roles"]}
@@ -3765,9 +3766,10 @@ def test_report_generates_single_self_contained_file() -> bool:
         html = out.read_text(encoding="utf-8")
         external = _re.findall(r'(?:src|href)="https?://[^"]*"', html)
         art_count = html.count("data:image/webp;base64,")
-        # Six editorial illustrations plus avatar/pixel pairs for all nine
-        # model labs must be embedded in the portable HTML artifact.
-        inlined = "<script>" in html and art_count == 24
+        # Six editorial illustrations plus avatar/pixel pairs for every
+        # model lab must be embedded in the portable HTML artifact.
+        from model_labs import MODEL_LABS
+        inlined = "<script>" in html and art_count == 6 + 2 * len(MODEL_LABS)
         return _ok(not external and inlined and len(html) > 100_000,
                    f"external_refs={external[:2]}, art={art_count}, bytes={len(html)}")
     finally:
@@ -3789,7 +3791,7 @@ def test_report_embedded_json_round_trips() -> bool:
                   "custom-grok": "xai",
               }
               and data["layer2"][0]["lab_id"] == "moonshot"
-              and len(data["model_labs"]) == 9
+              and set(data["model_labs"]) == set(report_module.MODEL_LABS)
               and data["title"].startswith("Add a widget")
               and data["final_plan_markdown"].startswith("# Final plan")
               and data["final_plan_html"] and "<strong>this</strong>" in data["final_plan_html"]

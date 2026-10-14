@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import run_moa
 from adapters import agy
 from adapters.failures import classify_failure
-from test_offline import _make_valid_proposer
+from test_offline import _make_valid_proposer, _make_valid_broadcast_refiner
 
 
 def output(payload=None, *, error=None, stderr="", incomplete=False):
@@ -54,6 +54,17 @@ class RecoveryTests(unittest.TestCase):
         self.assertTrue(all(c.kwargs["model"] == "gpt-6.1-sol" for c in call.call_args_list))
         self.assertGreaterEqual(sleep.call_args.args[0], 5)
 
+    def test_adapter_setup_exception_is_logged_and_never_retried(self):
+        for failure in (OSError("cannot write prompt file"), subprocess.TimeoutExpired("git rev-parse", 15)):
+            with self.subTest(failure=type(failure).__name__), patch.object(run_moa, "_invoke_adapter", side_effect=failure) as call:
+                result = self.run_lane()
+                self.assertFalse(result.success)
+                self.assertEqual(result.failure_kind, "configuration")
+                self.assertEqual(result.stop_reason, "permanent_failure")
+                self.assertEqual(call.call_count, 1)
+                self.assertEqual(len(result.attempts), 1)
+                self.assertTrue((self.session / result.log_path).is_file())
+
     def test_capacity_exhaustion_is_three_calls_total(self):
         with patch.object(run_moa.codex_adapter, "run", return_value=output(error="HTTP 429 model at capacity")) as call, patch.object(run_moa.time, "sleep"):
             result = self.run_lane()
@@ -63,7 +74,7 @@ class RecoveryTests(unittest.TestCase):
         self.assertFalse(result.transient_empty)
 
     def test_permanent_failures_never_retry_even_if_incomplete(self):
-        for error in ("403 Model access is disabled", "401 invalid token", "429 insufficient_quota", "429 quota exhausted", "unknown model", "binary not found", "OSError launching codex"):
+        for error in ("403 Model access is disabled", "401 invalid token", "429 insufficient_quota", "429 monthly spending limit; quota exhausted", "unknown model", "binary not found", "OSError launching codex"):
             with self.subTest(error=error), patch.object(run_moa.codex_adapter, "run", return_value=output(error=error, incomplete=True)) as call, patch.object(run_moa.time, "sleep") as sleep:
                 result = self.run_lane()
                 self.assertFalse(result.success)
@@ -72,9 +83,18 @@ class RecoveryTests(unittest.TestCase):
 
     def test_per_minute_quota_is_capacity_and_provider_retry_delays_parse(self):
         self.assertTrue(classify_failure("HTTP 429 Quota exceeded for quota metric per minute").retryable)
+        self.assertTrue(classify_failure("HTTP 429 quota exceeded").retryable)
+        self.assertFalse(classify_failure("quota exhausted").retryable)
         for error in ('HTTP 429 Please retry in 37.2s', 'RESOURCE_EXHAUSTED "retryDelay": "37s"'):
             self.assertGreaterEqual(classify_failure(error).retry_after, 37)
         self.assertFalse(classify_failure('HTTP 429 insufficient_quota').retryable)
+        self.assertEqual(classify_failure('HTTP 429 retry in 2 minutes').retry_after, 120)
+        self.assertEqual(classify_failure('HTTP 429 Retry-After: 500ms').retry_after, .5)
+        self.assertEqual(classify_failure('HTTP 429 try again in 2m').retry_after, 120)
+        with patch('adapters.failures.time.time', return_value=1792000000):
+            from email.utils import formatdate
+            hint=formatdate(1792000030, usegmt=True)
+            self.assertEqual(classify_failure('HTTP 429 Retry-After: ' + hint).retry_after, 30)
         self.assertTrue(classify_failure('HTTP 429 at capacity', 'read: permission denied at line 403').retryable)
         self.assertFalse(classify_failure('HTTP 403 forbidden').retryable)
         self.assertEqual(classify_failure('codex exited with code 1', 'echoed prompt: invalid API key, insufficient_quota\nERROR: Selected model is at capacity.').kind, 'capacity')
@@ -189,10 +209,10 @@ class RecoveryTests(unittest.TestCase):
         self.assertFalse((self.session / "layer1/fixture-proposer.json").exists())
 
     def test_retired_families_cannot_return_through_custom_aliases(self):
-        for model in ("qwen-token-plan/qwen3.8-max", "opencode-go/qwen3.8-flash", "openrouter/moonshotai/kimi-k3"):
+        for model in ("qwen-token-plan/qwen3.8-max", "opencode-go/qwen3.8-flash", "openrouter/moonshotai/kimi-k3", "opencode-go/mimo-v2.6-pro"):
             self.assertTrue(run_moa.harness_config.provider_is_retired("custom-route", model))
             self.assertFalse(run_moa.harness_config.provider_allows_role("custom-route", "proposer", model))
-        self.assertFalse(run_moa.harness_config.provider_is_retired("mimo", "opencode-go/mimo-v2.6-pro"))
+        self.assertFalse(run_moa.harness_config.provider_is_retired("minimax", "opencode-go/minimax-m3"))
 
     def test_existing_attempt_logs_are_preserved_across_manual_redispatch(self):
         old = self.session / "layer1/fixture-proposer.log";old.write_text("original failed provider receipt")
@@ -243,6 +263,9 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(agy._extract_payload(json.dumps(invalid), required_keys=set(self.valid)), invalid)
         self.assertIsNone(agy._extract_payload(json.dumps({"evidence": [self.valid["plan"][0]["evidence"][0]]}), required_keys=set(self.valid)))
         self.assertIsNone(agy._extract_payload(json.dumps({"is_error": True, "structured_output": self.valid})))
+        reviewer = _make_valid_broadcast_refiner("fixture")
+        required = set(reviewer);reviewer.pop("missing_steps")
+        self.assertEqual(agy._extract_payload(json.dumps(reviewer), required_keys=required), reviewer)
 
     def test_cancel_signal_interrupts_real_backoff_without_launching_next_call(self):
         if sys.platform == "win32":self.skipTest("POSIX process groups")
