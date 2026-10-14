@@ -21,6 +21,11 @@ server-side model policy as the browser. Balanced uses three proposals, two revi
 synthesis lane; Qwen is excluded from new launches. Preview the optimized brief and actual
 models, adjust depth or individual supported effort levels, then press **Run**.
 
+Say `task-only`, `no repository`, or `without a repo` to use the brief and uploads
+without repository discovery. These context choices also allow GitHub links as
+research references. A repository literally named `task-only` can still be
+selected with `repo task-only` or its full pointer.
+
 You can also name a repository naturally: `Review sample-service for performance`,
 `repo example-org/sample-service`, or a full GitHub URL. Names resolve against
 the configured organization's accessible GitHub catalog, including names beyond

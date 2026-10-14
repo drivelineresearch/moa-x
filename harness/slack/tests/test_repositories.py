@@ -36,6 +36,16 @@ class RepositoryLookupTest(unittest.TestCase):
         for brief in ("Plan a deployment", "Review API latency and write docs", "Use MoA-X to plan a deployment"):
             self.assertIsNone(self.directory.resolve(brief))
 
+    def test_task_only_and_no_repository_bypass_name_discovery(self):
+        for brief in ("Plan retries with no repository or files", "Without a repo, compare queues", "Task-only: review sample-service as a hypothetical example", "Task only. Discuss https://github.com/another-org/reference as a source"):
+            self.assertIsNone(self.directory.resolve(brief))
+        self.listing.assert_not_called()
+
+    def test_task_only_named_repository_is_still_addressable(self):
+        self.rows.append({"name": "task-only", "nameWithOwner": "example-org/task-only"})
+        for brief in ("repo task-only", "example-org/task-only", "https://github.com/example-org/task-only"):
+            self.assertEqual(self.directory.resolve(brief), "example-org/task-only")
+
     def test_explicit_pointer_wins_over_product_or_dependency_names(self):
         self.assertEqual(self.directory.resolve("Use MoA-X to review https://github.com/example-org/sample-service with other-service as background"), "example-org/sample-service")
         self.assertEqual(self.directory.resolve("Use MoA-X to review sample-service"), "example-org/sample-service")
