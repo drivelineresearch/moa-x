@@ -26,7 +26,7 @@ The skill will:
 
 1. Ask 1-3 clarifying questions.
 2. Generate a "scout brief" with focus files, in-scope items, out-of-scope items.
-3. Show you the brief and ask "ready to run? ~12-25 minutes".
+3. Show you the brief and ask "ready to run? ~12-45+ minutes".
 4. On yes, spawn Gemini Pro, Grok 4.7, and GPT-6 Luna in parallel.
 5. Spawn the broadcast refiners in parallel (DeepSeek V4.1 Flash and Claude Opus);
    each sees all proposals.
@@ -200,8 +200,8 @@ python3 ~/.claude/skills/mixture-of-agents/scripts/run_moa.py \
   --codex-model gpt-6-astra \
   --codex-effort high \
   --sonnet-model claude-sonnet-5-5 \
-  --codex-timeout 1500 \
-  --sonnet-timeout 1200 \
+  --codex-timeout 2700 \
+  --sonnet-timeout 2700 \
   --proposers agy-gemini-pro,grok,codex-luna \
   --refiners deepseek-flash,opus \
   --skip-layer2          # debug only; skips refiners
@@ -244,8 +244,8 @@ ids are `provider/model` strings. Current built-ins use
 `opencode-go/deepseek-v4.1-flash`.
 
 Per-agent total recovery deadlines (all attempts, backoff and repair):
-- `--codex-timeout` scales with `--codex-effort`: xhigh=1500s, high=1200s, medium/low=900s
-- `--sonnet-timeout 1200` (seconds; sonnet with full research can spike past 15 min)
+- `--codex-timeout` scales with `--codex-effort`: xhigh/high=2700s, medium/low=900s
+- `--sonnet-timeout 2700` (45-minute total recovery deadline for Claude; also the default for OpenCode and Google)
 - Other harnesses: `MOA_<NAME>_TIMEOUT` or `providers.<name>.timeout`
 - `--timeout` is a master override that sets all at once. Leave unset
   to use the per-agent defaults tuned to observed tail latency
@@ -274,8 +274,9 @@ The live account catalog must expose the selected stable model slug.
   stops concurrent invocations from racing on shared CLI auth state.
   Sequential invocations are fine; parallel ones from the same user
   aren't.
-- **Wall-clock is typically 12-25 minutes for research-heavy work.** Provider
-  latency can extend the tail; per-route deadlines bound individual calls. Don't run
+- **Runtime depends on effort and retries.** Common runs take roughly 12–25
+  minutes; thorough or max-effort runs can exceed 45 minutes. Per-route deadlines
+  bound individual lanes, including their retries and repair. Don't run
   this for trivial tasks.
 - **Web research is required, not optional.** All prompts insist on
   it. If a CLI is rate-limited on its web search tool, the proposal

@@ -120,8 +120,9 @@ Capacity and transport failures receive bounded retries with backoff; malformed
 plan structures receive one tool-free repair. Attempts share a total deadline
 and retain distinct logs. See [provider recovery](docs/architecture.md#provider-recovery).
 
-Typical wall-clock is roughly 12–25 minutes for research-heavy work, with
-provider latency determining the tail. Use it for non-trivial
+Common runs take roughly 12–25 minutes; thorough or max-effort runs with retries
+can exceed 45 minutes. Each long lane has its own total recovery deadline, and
+the execution layers run sequentially. Use it for non-trivial
 architecture work, not one-line fixes. Background in
 [`docs/architecture.md`](docs/architecture.md).
 

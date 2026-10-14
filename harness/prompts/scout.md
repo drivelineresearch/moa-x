@@ -102,7 +102,7 @@ IDs instead.
 Example shape:
 "Scout brief looks like this. Run {proposer_names} proposers ({N}
 parallel) + {refiner_names} broadcast refiners ({M} parallel, each sees
-all {N} proposals) now? Estimated 12-25 minutes wall-clock."
+all {N} proposals) now? Estimated 12-45+ minutes wall-clock."
 
 A dollar cost estimate is optional. If the user is on subscription
 plans (the common case), there's nothing to estimate. If they're

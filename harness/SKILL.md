@@ -46,7 +46,7 @@ actionable plan through the recorded Layer 3 path.
 - The user pastes a substantial spec and explicitly asks for "deep planning",
   "second opinions", "MoA", or "let's run multiple models on this"
 - A high-stakes architectural decision where catching one blind spot is worth
-  12-25 minutes and a chunk of quota (subscription or API)
+  12-45+ minutes and a chunk of quota (subscription or API)
 
 ## When NOT to use this skill
 
@@ -63,7 +63,7 @@ Layer 0 — Spec triage                      (parent Claude Code, in-place)
    ├─ read spec
    ├─ ask 1-3 clarifying questions via AskUserQuestion
    ├─ generate scout brief (focus files, in-scope, out-of-scope)
-   ├─ get user approval to spend roughly 12-25 minutes
+   ├─ get user approval to spend roughly 12-45+ minutes
    └─ write .moa/<session>/scout-brief.json
                    ↓
 Layer 1 — Proposers                        (3 parallel, headless, read-only)
@@ -206,7 +206,7 @@ refiners) instead.
 Phrase the question with the resolved names, e.g.:
 "Scout brief looks like this. Run {proposer_names} proposers ({N}
 parallel) + {refiner_names} broadcast refiners ({M} parallel, each sees
-all {N} proposals) now? Estimated 12-25 minutes wall-clock."
+all {N} proposals) now? Estimated 12-45+ minutes wall-clock."
 
 Do not run the orchestrator until the user says yes.
 

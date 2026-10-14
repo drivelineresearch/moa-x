@@ -23,7 +23,8 @@ What happens:
    asks 1–3 clarifying questions, and writes a scout brief
    (focus files, in-scope, out-of-scope) to `.moa/<session>/scout-brief.json`.
 2. **Approval gate.** The skill shows you the brief and asks "run it?"
-   Estimated wall-clock: roughly 12–25 minutes for research-heavy runs.
+   Common runs take roughly 12–25 minutes. Thorough or max-effort runs with
+   retries can exceed 45 minutes.
    Nothing spawns until you say yes.
 3. **Proposers (Layer 1, parallel).** Three headless subprocesses
    fire in parallel by default: `agy-gemini-pro` (AGY harness), `grok`
@@ -193,7 +194,8 @@ Skip it with `--no-report` (or `MOA_NO_REPORT=1`). Full details:
 - **One MoA run per user at a time.** A `flock` on the per-user system-temp
   lock (`moa-<uid>.lock` on POSIX) stops concurrent runs from racing on shared
   CLI auth state without blocking another OS user.
-- **Wall-clock is typically 12–25 minutes for research-heavy runs.** Don't run MoA-X for
+- **Runtime depends on effort and retries.** Common runs take roughly 12–25
+  minutes; thorough or max-effort runs can exceed 45 minutes. Don't run MoA-X for
   trivial tasks. The tool is shaped for non-trivial architecture
   work.
 - **Web research is part of the contract.** Proposers and refiners
