@@ -3229,6 +3229,7 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
         "grok": ("opencode", "opencode-go/grok-4.7"),
         "glm": ("opencode", "opencode-go/glm-5.3"),
         "minimax": ("opencode", "opencode-go/minimax-m3"),
+        "muse-spark": ("opencode", "opencode-go/muse-spark-1.3-contributor"),
         "deepseek-flash": ("opencode", "opencode-go/deepseek-v4.1-flash"),
         "agy-gemini-pro": ("agy", "gemini-4-argon-high"),
         "fable": ("claude", "claude-fable-5-1"),
@@ -3255,13 +3256,16 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
         and any(route["id"] == "fable" for route in groups["claude"]["routes"])
         and not any(route["id"] in {"qwen", "qwen-opencode", "kimi"} for route in groups["opencode"]["routes"])
         and {route["lab_id"] for route in groups["opencode"]["routes"]}
-        == {"xai", "zhipu", "deepseek", "minimax"}
+        == {"xai", "zhipu", "deepseek", "minimax", "meta"}
     )
     role_ok = (
         {item["id"] for item in models if "aggregator" in item["roles"]}
         == {"codex-sol", "opus", "fable"}
         and by_id["fable"]["roles"] == ["aggregator"]
         and by_id["opus"]["roles"] == ["proposer", "refiner", "aggregator"]
+        and by_id["muse-spark"]["roles"] == ["proposer", "refiner"]
+        and by_id["muse-spark"]["lab_id"] == "meta"
+        and "train Meta" in by_id["muse-spark"]["usage_note"]
     )
     defaults_ok = (
         by_id["agy-gemini-pro"]["default_roles"] == ["proposer"]

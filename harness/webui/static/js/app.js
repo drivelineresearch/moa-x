@@ -37,6 +37,7 @@ const LAB_VISUALS = Object.freeze({
   zhipu: { label: "Zhipu", accent: "green" },
   independent: { label: "Independent lab", accent: "gold" },
   minimax: { label: "MiniMax", accent: "gold" },
+  meta: { label: "Meta", accent: "blue" },
 });
 
 function normalizeLabId(value) {
@@ -55,6 +56,7 @@ function normalizeLabId(value) {
     independent: "independent",
     independentlab: "independent",
     minimax: "minimax",
+    meta: "meta",
   };
   return aliases[normalized] || "independent";
 }
@@ -82,6 +84,7 @@ function inferLabId(routeId, model = "", label = "") {
   if (/glm|zhipu/.test(signature)) return "zhipu";
   if (/gpt-|codex|openai/.test(signature)) return "openai";
   if (/minimax/.test(signature)) return "minimax";
+  if (/muse-spark/.test(signature)) return "meta";
   return "independent";
 }
 const DEPTH_PRESENTATION = Object.freeze({
@@ -602,6 +605,7 @@ function modelsForRole(role) {
       harness,
       available: model.available ?? model.ready ?? providerReady(provider || {}),
       availabilityDetail: model.availability_detail || model.availabilityDetail || "",
+      usageNote: model.usage_note || "",
       default: model.defaultRoles?.includes(role) || model.default_roles?.includes(role) || model.default === role || model.default === true,
     };
   });
@@ -763,7 +767,7 @@ function renderModelOptions(role, targetId, inputType) {
                   <span class="selection-box" aria-hidden="true"></span>
                   <span class="model-row-copy">
                     <strong>${escapeHtml(option.name)}</strong>
-                    <small>${escapeHtml(displayModel)} · ${escapeHtml(effort.label)}${option.available || !option.availabilityDetail ? "" : ` · ${escapeHtml(option.availabilityDetail)}`}</small>
+                    <small>${escapeHtml(displayModel)} · ${escapeHtml(effort.label)}${option.available || !option.availabilityDetail ? "" : ` · ${escapeHtml(option.availabilityDetail)}`}${option.usageNote ? ` · ${escapeHtml(option.usageNote)}` : ""}</small>
                   </span>
                   <span class="model-row-state ${option.available ? "" : "unavailable"}">${option.available ? "Selected" : "Unavailable"}</span>
                 </label>

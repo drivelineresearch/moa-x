@@ -7,8 +7,10 @@ versioning.
 
 ### Added
 
-- Optional MiniMax M3 proposer/reviewer through OpenCode Go, qualified with
-  native research and broadcast-review calls.
+- Optional MiniMax M3 and Muse Spark 1.3 Contributor proposers/reviewers through
+  OpenCode Go, qualified with native research and broadcast-review calls.
+- Generated Meta/Muse and MiniMax portrait/full-body artwork matching the
+  existing illustrated cast; Muse exposes its Contributor training policy.
 - Slack repository-name lookup with cached GitHub discovery, visible/frozen
   repository context, and a private local policy supporting exact repositories
   or an explicitly approved organization wildcard.
@@ -19,7 +21,7 @@ versioning.
 
 ### Changed
 
-- Exclude Qwen, Moonshot and MiMo from new launches, including custom aliases;
+- Exclude Qwen, Moonshot, MiMo and unqualified Hy4 from new launches, including custom aliases;
   preserve archived model identities. DeepSeek V4.1 Flash and Opus remain
   the Balanced/Thorough reviewers.
 

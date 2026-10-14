@@ -114,6 +114,7 @@ BUILTIN_PROVIDERS: dict[str, ResolvedProvider] = {
     "qwen-opencode":  ResolvedProvider(name="qwen-opencode",  harness="opencode", model="opencode-go/qwen3.8-max"),
     "grok":           ResolvedProvider(name="grok",           harness="opencode", model="opencode-go/grok-4.7"),
     "minimax":        ResolvedProvider(name="minimax", harness="opencode", model="opencode-go/minimax-m3", timeout=900),
+    "muse-spark":     ResolvedProvider(name="muse-spark", harness="opencode", model="opencode-go/muse-spark-1.3-contributor"),
     "glm":            ResolvedProvider(name="glm",            harness="opencode", model="opencode-go/glm-5.3"),
     "deepseek-flash": ResolvedProvider(name="deepseek-flash", harness="opencode", model="opencode-go/deepseek-v4.1-flash"),
     # Google runs through AGY, which reuses the account signed into the local
@@ -131,6 +132,7 @@ BUILTIN_PROVIDERS: dict[str, ResolvedProvider] = {
 PROVIDER_ALLOWED_ROLES: dict[str, frozenset[str]] = {
     "fable": frozenset({"aggregator"}),
     "minimax": frozenset({"proposer", "refiner"}),
+    "muse-spark": frozenset({"proposer", "refiner"}),
     "kimi": frozenset(),
     "qwen": frozenset(),
     "qwen-opencode": frozenset(),
@@ -140,10 +142,10 @@ PROVIDER_ALLOWED_ROLES: dict[str, frozenset[str]] = {
 
 def provider_is_retired(name: str, model: str | None = None) -> bool:
     """Hide retired model families regardless of a custom route's alias."""
-    if name in {"kimi", "qwen", "qwen-opencode", "deepseek", "mimo"}:
+    if name in {"kimi", "qwen", "qwen-opencode", "deepseek", "mimo", "hy4"}:
         return True
     parts = re.split(r"[/:\s]+", str(model or "").lower())
-    return any(part.startswith(("qwen", "kimi", "moonshot", "mimo")) for part in parts)
+    return any(part.startswith(("qwen", "kimi", "moonshot", "mimo", "hy4")) for part in parts)
 
 
 def provider_allows_role(

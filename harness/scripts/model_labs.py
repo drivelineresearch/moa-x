@@ -63,6 +63,10 @@ MODEL_LABS: dict[str, dict[str, str]] = {
         "label": "MiniMax", "accent": "gold",
         "avatar": "lab-minimax-avatar.webp", "pixel": "lab-minimax-pixel.webp",
     },
+    "meta": {
+        "label": "Meta", "accent": "blue",
+        "avatar": "lab-meta-avatar.webp", "pixel": "lab-meta-pixel.webp",
+    },
     "independent": {
         "label": "Independent lab",
         "accent": "gold",
@@ -132,6 +136,11 @@ ROUTE_META: dict[str, dict[str, Any]] = {
         "roles": ["aggregator"],
     },
     "minimax": {"label": "MiniMax M3", "lab_id": "minimax", "roles": ["proposer", "refiner"]},
+    "muse-spark": {
+        "label": "Muse Spark 1.3 Contributor", "lab_id": "meta",
+        "roles": ["proposer", "refiner"],
+        "usage_note": "Contributor endpoint: prompts and responses may train Meta models.",
+    },
     "glm": {
         "label": "GLM-5.3",
         "lab_id": "zhipu",
@@ -184,7 +193,7 @@ def route_lab_id(route_id: str | None, model: str | None = None) -> str:
         (("deepseek",), "deepseek"),
         (("glm", "zhipu"), "zhipu"),
         (("minimax",), "minimax"),
-        (("mimo", "xiaomi"), "xiaomi"),
+        (("muse-spark", "meta/"), "meta"),
     )
     for prefixes, lab_id in prefix_rules:
         if any(prefix in value for prefix in prefixes):

@@ -11,6 +11,7 @@
 #   grok           -> OpenCode Go / grok-4.7
 #   glm            -> OpenCode Go / glm-5.3 (Thorough proposer)
 #   minimax        -> OpenCode Go / minimax-m3 (optional proposer/refiner)
+#   muse-spark     -> OpenCode Go / muse-spark-1.3-contributor (optional; trains on data)
 #   deepseek-flash -> OpenCode Go / deepseek-v4.1-flash (default refiner)
 #
 # Cursor routes are unsupported. Optional routes stay out of recommended presets.

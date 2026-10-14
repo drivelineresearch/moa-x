@@ -224,7 +224,7 @@ class RecoveryTests(unittest.TestCase):
         self.assertFalse((self.session / "layer1/fixture-proposer.json").exists())
 
     def test_retired_families_cannot_return_through_custom_aliases(self):
-        for model in ("qwen-token-plan/qwen3.8-max", "opencode-go/qwen3.8-flash", "openrouter/moonshotai/kimi-k3", "opencode-go/mimo-v2.6-pro"):
+        for model in ("qwen-token-plan/qwen3.8-max", "opencode-go/qwen3.8-flash", "openrouter/moonshotai/kimi-k3", "opencode-go/mimo-v2.6-pro", "opencode-go/hy4-preview"):
             self.assertTrue(run_moa.harness_config.provider_is_retired("custom-route", model))
             self.assertFalse(run_moa.harness_config.provider_allows_role("custom-route", "proposer", model))
         self.assertFalse(run_moa.harness_config.provider_is_retired("minimax", "opencode-go/minimax-m3"))

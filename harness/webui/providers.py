@@ -374,6 +374,7 @@ def model_catalog(*, probe: bool = True) -> list[dict[str, Any]]:
                 # named provider id used in run_moa arguments.
                 "provider_id": item.harness,
                 "named_provider": item.name,
+                "usage_note": meta.get("usage_note", ""),
                 "provider_label": PROVIDER_META[item.harness]["label"],
                 "harness": item.harness,
                 "model": item.model,

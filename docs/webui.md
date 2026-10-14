@@ -294,12 +294,9 @@ The run page shows one provider character card per configured lane. During an
 active stage, completion events move individual cards into their finished
 state immediately; persisted manifests become the source of truth once a
 checkpoint exists, so completed, failed, and downstream-blocked lanes remain
-accurate after reloads. Running characters use a small work animation and
-completed characters switch to a brief victory flourish. These are authored
-animated WebP sequences for each provider character—not transform effects
-applied to a still image. Both work and victory sequences loop while
-their card remains in that state. Reduced-motion browser preferences replace
-both with the provider's static portrait.
+accurate after reloads. Characters use the same static full-body illustration
+throughout the run; the surrounding card, status tag and trace reflect the
+current state. No character animation frames are shipped.
 
 The live trace turns worker and orchestrator events into plain-language stage,
 agent, validation, and failure updates. Repetitive setup logs are collapsed,

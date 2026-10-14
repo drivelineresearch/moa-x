@@ -34,7 +34,7 @@ which layer, and how many — is pure config. API-based auth and more
 providers are already supported. See "Contributions we'd prioritize" below
 for the remaining gaps.
 
-OpenCode Go powers Grok, DeepSeek V4.1 Flash, GLM and optional MiniMax routes.
+OpenCode Go powers Grok, DeepSeek V4.1 Flash, GLM and optional MiniMax/Muse routes.
 Qwen, Moonshot and MiMo are disabled for new launches; historical runs retain their model and lab attribution.
 The curated DeepSeek route is V4.1 Flash. Pro is excluded from new runs.
 
@@ -106,7 +106,7 @@ Layer 3 — Aggregator              default: recorded GPT-6.1 Sol at xhigh
 
 The roster is config-driven; every named route in the default pipeline comes
 from a deliberately named lab: Google, xAI, OpenAI, DeepSeek, and Anthropic. Optional OpenCode Go
-routes add Zhipu and MiniMax perspectives. The UI groups and illustrates routes by model lab, independently
+routes add Zhipu, MiniMax and Meta perspectives. The UI groups and illustrates routes by model lab, independently
 of the CLI used to execute them.
 
 Every run also writes a self-contained `.moa/<session>/report.html` — a
@@ -179,7 +179,7 @@ remaining contributions are:
   budget control could stop later dispatches before a configured ceiling is
   exceeded; it must not pretend it can undo an already-billed request.
 - **Tested provider recipes, not just model-name examples.** OpenCode Go
-  DeepSeek, GLM, Grok and MiniMax routes are built in.
+  DeepSeek, GLM, Grok, MiniMax and Muse routes are built in.
   Contributions for Mistral,
   or another credible coding model should include a reproducible config,
   credential preflight, captured parser fixtures, and an end-to-end smoke-test

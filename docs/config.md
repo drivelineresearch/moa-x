@@ -19,6 +19,7 @@ Never commit `.env`, provider keys, or generated `harness/config.yaml`.
 | `codex-luna` | Codex | `gpt-6-luna` | proposer, refiner | adjustable; medium default |
 | `codex` | Codex | `gpt-6-astra` | proposer, refiner | adjustable; high default |
 | `minimax` | OpenCode | `opencode-go/minimax-m3` | optional proposer/refiner | provider-managed |
+| `muse-spark` | OpenCode | `opencode-go/muse-spark-1.3-contributor` | optional proposer/refiner | provider-managed |
 | `glm` | OpenCode | `opencode-go/glm-5.3` | proposer, refiner | provider-managed |
 | `deepseek-flash` | OpenCode | `opencode-go/deepseek-v4.1-flash` | proposer, refiner | provider-managed |
 | `sonnet` | Claude Code | `claude-sonnet-5-5` | proposer, refiner | adjustable; high default |
@@ -148,19 +149,21 @@ budget. A valid proposal alone is insufficient to qualify an unreliable route.
 
 ### Optional model qualification and privacy
 
-MiniMax M3 and GLM 5.3 passed native proposer and broadcast-review requests.
-MiniMax's incomplete first review recovered through the shared retry budget;
-GLM passed both roles on its first invocation. These are scoped compatibility
+MiniMax M3, GLM 5.3 and Muse Spark 1.3 Contributor passed native proposer and
+broadcast-review requests. MiniMax's incomplete first review and Muse's
+incomplete first proposal recovered through the shared retry budget; GLM passed
+both roles on its first invocation. These are scoped compatibility
 checks, not a general model-quality benchmark or an availability guarantee.
-MiniMax's default total budget is 900 seconds; GLM uses the OpenCode harness
-budget (1200 seconds by default). Recommended presets keep their existing
+MiniMax's default total budget is 900 seconds; GLM and Muse use the OpenCode
+harness budget (1200 seconds by default). Recommended presets keep their existing
 rosters; choose optional routes explicitly in a custom roster.
 
 MiMo and Hy4 Preview each produced a valid proposal but exhausted their review
-budgets, so neither is a curated replacement. Muse Spark 1.3 Contributor requires
+budgets, so both are excluded from new launches, including custom aliases.
+Muse Spark 1.3 Contributor requires
 OpenCode's workspace permission for paid endpoints that train on request data.
-It is not included in the curated roster until that permission is enabled and
-both roles pass live qualification. Contributor prompts and completions may be
+The `muse-spark` route is optional and labels its training policy in the model
+picker; it is available only through workspaces that permit this endpoint. Contributor prompts and completions may be
 used for model training; operators must choose this policy knowingly before
 submitting repository or uploaded-file context. See the provider's
 [Go privacy policy](https://opencode.ai/v2/docs/console/go/#privacy).

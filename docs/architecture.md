@@ -67,7 +67,7 @@ A route is a `{name, harness, model}` triple:
 - `model` is the exact model id sent to that CLI.
 
 The producing model lab is a separate field. This distinction is
-load-bearing: OpenCode executes xAI, DeepSeek, Zhipu, and Alibaba routes but is not
+load-bearing: OpenCode executes xAI, DeepSeek, Zhipu, MiniMax and Meta routes but is not
 itself a model lab. The Web UI therefore groups and illustrates routes by
 `lab_id`, while the provider-health page reports the execution harness used to
 reach those labs. The canonical mapping and asset names live in

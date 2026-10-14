@@ -31,10 +31,13 @@ model-lab and workflow-themed characters and scenes, not official vendor
 logos, licensed characters, or claims of endorsement by a model provider.
 
 The model-lab asset contract is centralized in
-`harness/scripts/model_labs.py`. Each known lab has an avatar and pixel-style
-asset under the `lab-<id>-*` naming scheme. Existing editorial characters use
-320px/480px artwork; newer routes may use original 256px/96px monogram artwork
-with no vendor logos. The
+`harness/scripts/model_labs.py`. Each known lab has one 320px editorial avatar
+and one 480px full-body illustration under the `lab-<id>-*` naming scheme.
+The historical `pixel` filename identifies the full-body asset; all current
+characters share an ivory-paper, ink-and-watercolor fantasy-tech style.
+Meta/Muse and MiniMax were generated with the built-in image generator using
+existing artwork as style references, then resized and converted to WebP.
+Their prompt set is recorded in [artwork-prompts.md](artwork-prompts.md). The
 same `lab_id` must drive launch-roster groups, provider-health route portraits,
 review-network nodes, live lanes, and archived-run fallbacks. Execution
 harnesses such as OpenCode or AGY must never determine character identity.
