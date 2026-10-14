@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Optional
 
-from adapters import READ_ONLY_RULE, extract_json_from_text, remaining_timeout, drain_after_timeout
+from adapters import READ_ONLY_RULE, extract_json_from_text, remaining_timeout, drain_after_timeout, git_safe_env
 from adapters.agy import AgyWorkspaceIsolationError, _isolated_git_workspace
 
 # API-key env vars that authenticate at least one opencode provider without an
@@ -598,7 +598,7 @@ def run(
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                env=env,
+                env=git_safe_env(env),
                 cwd=str(active_repo),
                 start_new_session=True,
             )

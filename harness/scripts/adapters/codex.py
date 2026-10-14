@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from adapters import extract_json_from_text, remaining_timeout, drain_after_timeout
+from adapters import extract_json_from_text, remaining_timeout, drain_after_timeout, git_safe_env
 
 
 @dataclass
@@ -230,7 +230,7 @@ def run(
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                env=env,
+                env=git_safe_env(env),
                 start_new_session=True,  # isolate from parent signal group
             )
             try:

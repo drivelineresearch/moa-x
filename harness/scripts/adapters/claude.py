@@ -50,7 +50,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from adapters import READ_ONLY_RULE, extract_json_from_text, remaining_timeout, drain_after_timeout
+from adapters import READ_ONLY_RULE, extract_json_from_text, remaining_timeout, drain_after_timeout, git_safe_env
 
 # The claude CLI has no --temperature flag. For self-moa, each proposer/refiner
 # instance injects this directive to approximate temperature=0.7 diversity.
@@ -285,7 +285,7 @@ def run(
                 from adapters.agy import _isolated_git_workspace
                 original_repo = repo_path.resolve()
                 repo_path = workspace_context.enter_context(
-                    _isolated_git_workspace(original_repo, Path(tmpdir))
+                    _isolated_git_workspace(original_repo, Path(tmpdir), deadline=start + timeout_seconds)
                 )
                 prompt = prompt.replace(str(original_repo), str(repo_path.resolve()))
 
@@ -301,7 +301,7 @@ def run(
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                env=env,
+                env=git_safe_env(env),
                 cwd=str(repo_path),
                 start_new_session=True,  # isolate from parent signal group
             )

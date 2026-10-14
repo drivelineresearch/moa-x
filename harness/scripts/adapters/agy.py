@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator, Optional
 
-from adapters import READ_ONLY_RULE, extract_json_from_text, remaining_timeout, drain_after_timeout
+from adapters import READ_ONLY_RULE, extract_json_from_text, remaining_timeout, drain_after_timeout, git_safe_env
 
 _MIN_VERSION = (1, 1, 5)
 _VERSION_RE = re.compile(r"\b(\d+)\.(\d+)\.(\d+)\b")
@@ -202,7 +202,7 @@ def _isolated_git_workspace(
             if remaining <= 0:
                 raise subprocess.TimeoutExpired(args[0], 0)
             timeout = min(timeout, remaining)
-        kwargs.setdefault("env", {**os.environ, "GIT_OPTIONAL_LOCKS": "0"})
+        kwargs["env"] = git_safe_env(kwargs.get("env", os.environ.copy()))
         return subprocess.run(*args, timeout=timeout, **kwargs)
 
     probe = git_run(
@@ -474,7 +474,7 @@ def run(
                     stderr=subprocess.PIPE,
                     text=True,
                     cwd=str(isolated_repo),
-                    env=child_env,
+                    env=git_safe_env(child_env),
                     start_new_session=True,
                 )
                 try:

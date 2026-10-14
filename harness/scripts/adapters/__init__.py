@@ -81,6 +81,16 @@ def remaining_timeout(started: float, budget: float, *, reserve_cleanup: bool = 
     return remaining
 
 
+def git_safe_env(environment: dict[str, str]) -> dict[str, str]:
+    """Prevent inherited hook context from redirecting snapshot Git commands."""
+    locations = {"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR",
+                 "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+                 "GIT_PREFIX", "GIT_NAMESPACE", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT"}
+    return {**{key: value for key, value in environment.items()
+               if key not in locations and not key.startswith(("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_"))},
+            "GIT_OPTIONAL_LOCKS": "0"}
+
+
 def drain_after_timeout(proc: subprocess.Popen, error: subprocess.TimeoutExpired,
                         started: float, budget: float) -> tuple[str, str]:
     """Kill within the remaining budget and retain already-captured output."""

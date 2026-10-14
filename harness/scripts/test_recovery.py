@@ -92,7 +92,7 @@ class RecoveryTests(unittest.TestCase):
         (source / "tracked.txt").write_text("dirty source")
         (source / "untracked.txt").write_text("untracked source")
         before = subprocess.check_output(["git", "worktree", "list", "--porcelain"], cwd=source)
-        with agy._isolated_git_workspace(source, self.session, deadline=time.monotonic()+10) as snapshot:
+        with patch.dict(run_moa.os.environ, {"GIT_DIR": str(source / ".git"), "GIT_WORK_TREE": str(source), "GIT_INDEX_FILE": str(source / ".git/index")}), agy._isolated_git_workspace(source, self.session, deadline=time.monotonic()+10) as snapshot:
             self.assertTrue((snapshot / ".git").is_dir())
             self.assertEqual((snapshot / "tracked.txt").read_text(), "dirty source")
             self.assertEqual((snapshot / "untracked.txt").read_text(), "untracked source")
