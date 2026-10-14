@@ -786,8 +786,18 @@ class Bot:
                 rows = [r for key in ("layer1", "layer2", "layer3") for r in manifest.get(key, [])]
                 passed = sum(bool(r.get("success")) for r in rows)
                 lineage = json.loads((folder / "final-plan.json").read_text())
-                confidence = (lineage.get("confidence") or {}).get("level", "unrecorded")
-                verification = f"{passed}/{len(rows)} lanes passed · Confidence: {confidence}."
+                stated = (lineage.get("confidence") or {}).get("level", "unrecorded")
+                try:
+                    decision_map = json.loads((folder / "decision-map.json").read_text())
+                    confidence = decision_map["quality"]["effective_confidence"]
+                    if confidence not in {"low", "medium", "high"}:
+                        raise ValueError("Evidence confidence is not available")
+                    rating = f"Evidence confidence: {confidence}."
+                    if stated != confidence:
+                        rating += f" Model stated {stated}; evidence gates limit that rating."
+                except (OSError, ValueError, KeyError, TypeError):
+                    rating = f"Model-stated confidence: {stated}; evidence-gate rating unavailable."
+                verification = f"{passed}/{len(rows)} lanes passed · {rating}"
                 if passed < len(rows):
                     verification += " Some lanes failed; inspect the report’s limitations."
                 citation_warnings = sum(len(r.get("verification_warnings") or []) for r in rows if r.get("success"))

@@ -133,6 +133,7 @@ class RecoveryTests(unittest.TestCase):
                     self.assertEqual(checks[0]["declared_status"], status)
                     self.assertEqual(checks[0]["status"], "unverified")
                     self.assertTrue(any(reason in w for w in decision_map["warnings"]))
+                    self.assertEqual(sum("verification 3 declared" in w for w in decision_map["warnings"]), 1)
                     self.assertEqual(run_moa._validate_against_schema(decision_map, run_moa._load_schema(run_moa.DECISION_MAP_SCHEMA_PATH)), [])
 
     def test_receipts_without_a_repository_are_not_mislabeled_or_safety_checked(self):

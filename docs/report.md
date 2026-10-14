@@ -59,7 +59,8 @@ supporting process and raw output remain available for deeper inspection.
   evidence receipts to atomic claims and final decisions. Select a node to
   inspect its source, review status, and downstream use. A quality strip,
   explicit gates, evidence-debt warnings, and an accessible ledger expose
-  coverage and independence without turning a model's confidence into a score.
+  coverage and independence without turning a model's confidence into a score. Slack final replies use the
+  same effective confidence ceiling and label unavailable evidence ratings.
 - **Decision trail** — select any final-recommendation step to see the exact
   source steps and review findings that shaped it. Solid paths mean used as
   written, dashed paths mean revised, and dotted paths show reviewer influence;

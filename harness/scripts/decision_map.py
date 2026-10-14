@@ -1006,7 +1006,7 @@ def build_decision_map(
             )
             status = str(item.get("status") or "unverified")
             if (
-                declared_status in {"verified", "contradicted"}
+                status in {"verified", "contradicted"}
                 and source_receipt["source_capture_status"]
                 not in USABLE_VERIFICATION_SOURCE_STATES
             ):
