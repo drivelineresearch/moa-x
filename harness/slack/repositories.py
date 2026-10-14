@@ -91,7 +91,7 @@ class RepositoryDirectory:
         # marker. Ignore pointer text when detecting them so a repo literally
         # named task-only can still be addressed by its URL/owner pointer.
         context = re.sub(r"https?://\S+|\b" + re.escape(owner) + r"/[A-Za-z0-9_.-]+", "", brief, flags=re.I)
-        no_repo = re.search(r"\b(?:no|without)\s+(?:(?:a|an|any|the)\s+)?repo(?:sitory)?\b", context, re.I)
+        no_repo = re.search(r"\b(?:no|without)\s+(?:(?:a|an|any|the)\s+)?repo(?:sitory)?\b(?=\s*(?:$|[.,!?;:]|or\b|context\b|access\b|needed\b|required\b|provided\b|please\b))", context, re.I)
         task_only = re.search(r"\btask[- ]only\b", context, re.I)
         named_task_only = re.search(r"\brepo(?:sitory)?\s+[`\"']?task[- ]only\b", context, re.I)
         if no_repo or (task_only and not named_task_only):
