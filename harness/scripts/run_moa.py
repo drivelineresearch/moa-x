@@ -74,6 +74,7 @@ import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from time import sleep as retry_sleep
 from types import SimpleNamespace
 from typing import Any, Optional
 
@@ -1051,7 +1052,7 @@ def _run_with_recovery(
               f"({research_attempts + 1}/3) after {delay:.1f}s", flush=True)
         # The worker supervisor can terminate this process during backoff;
         # cancellation never waits on a provider's stdout to become readable.
-        time.sleep(delay)
+        retry_sleep(delay)
     result.started_at = started_at
     result.duration_seconds = time.monotonic() - started
     result.attempt = len(history) or 1

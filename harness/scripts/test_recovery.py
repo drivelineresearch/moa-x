@@ -44,7 +44,7 @@ class RecoveryTests(unittest.TestCase):
 
     def test_capacity_recovers_same_model_and_keeps_both_logs(self):
         first = output(error="codex exited with code 1", stderr="ERROR: 429 Too Many Requests\nERROR: Selected model is at capacity.")
-        with patch.object(run_moa.codex_adapter, "run", side_effect=[first, output(self.valid)]) as call, patch.object(run_moa.time, "sleep") as sleep:
+        with patch.object(run_moa.codex_adapter, "run", side_effect=[first, output(self.valid)]) as call, patch.object(run_moa, "retry_sleep") as sleep:
             result = self.run_lane()
         self.assertTrue(result.success)
         self.assertEqual(len(result.attempts), 2)
@@ -127,7 +127,7 @@ class RecoveryTests(unittest.TestCase):
             self.assertEqual((snapshot / "tracked.txt").read_bytes(), (source / "tracked.txt").read_bytes())
 
     def test_capacity_exhaustion_is_three_calls_total(self):
-        with patch.object(run_moa.codex_adapter, "run", return_value=output(error="HTTP 429 model at capacity")) as call, patch.object(run_moa.time, "sleep"):
+        with patch.object(run_moa.codex_adapter, "run", return_value=output(error="HTTP 429 model at capacity")) as call, patch.object(run_moa, "retry_sleep"):
             result = self.run_lane()
         self.assertFalse(result.success)
         self.assertEqual(call.call_count, 3)
@@ -151,7 +151,7 @@ class RecoveryTests(unittest.TestCase):
 
     def test_permanent_failures_never_retry_even_if_incomplete(self):
         for error in ("403 Model access is disabled", "401 invalid token", "429 insufficient_quota", "429 monthly spending limit; quota exhausted", "unknown model", "binary not found", "OSError launching codex"):
-            with self.subTest(error=error), patch.object(run_moa.codex_adapter, "run", return_value=output(error=error, incomplete=True)) as call, patch.object(run_moa.time, "sleep") as sleep:
+            with self.subTest(error=error), patch.object(run_moa.codex_adapter, "run", return_value=output(error=error, incomplete=True)) as call, patch.object(run_moa, "retry_sleep") as sleep:
                 result = self.run_lane()
                 self.assertFalse(result.success)
                 self.assertEqual(call.call_count, 1)
@@ -235,7 +235,7 @@ class RecoveryTests(unittest.TestCase):
 
     def test_failed_repair_never_restarts_research_or_repairs_recursively(self):
         invalid = json.loads(json.dumps(self.valid));invalid["plan"][0].pop("risks")
-        with patch.object(run_moa.opencode_adapter, "run", return_value=output(invalid)) as call, patch.object(run_moa.time, "sleep") as sleep:
+        with patch.object(run_moa.opencode_adapter, "run", return_value=output(invalid)) as call, patch.object(run_moa, "retry_sleep") as sleep:
             result = self.run_lane(harness="opencode", model="opencode-go/grok-4.7")
         self.assertFalse(result.success)
         self.assertEqual(call.call_count, 2)
@@ -245,24 +245,24 @@ class RecoveryTests(unittest.TestCase):
 
     def test_incomplete_output_retries_then_repairs_inside_same_budget(self):
         invalid = json.loads(json.dumps(self.valid));invalid["plan"][0].pop("risks")
-        with patch.object(run_moa.opencode_adapter, "run", side_effect=[output(error="could not extract JSON payload", incomplete=True), output(invalid), output(self.valid)]) as call, patch.object(run_moa.time, "sleep"):
+        with patch.object(run_moa.opencode_adapter, "run", side_effect=[output(error="could not extract JSON payload", incomplete=True), output(invalid), output(self.valid)]) as call, patch.object(run_moa, "retry_sleep"):
             result = self.run_lane(harness="opencode", model="opencode-go/grok-4.7")
         self.assertTrue(result.success)
         self.assertEqual(call.call_count, 3)
         self.assertEqual([x["kind"] for x in result.attempts], ["research", "research", "repair"])
 
     def test_retry_after_is_respected(self):
-        with patch.object(run_moa.codex_adapter, "run", side_effect=[output(error="HTTP 429 Retry-After: 30"), output(self.valid)]), patch.object(run_moa.time, "sleep") as sleep:
+        with patch.object(run_moa.codex_adapter, "run", side_effect=[output(error="HTTP 429 Retry-After: 30"), output(self.valid)]), patch.object(run_moa, "retry_sleep") as sleep:
             self.assertTrue(self.run_lane().success)
         self.assertEqual(sleep.call_args.args[0], 30)
 
     def test_retry_after_beyond_deadline_does_not_sleep_or_invoke(self):
-        with patch.object(run_moa.codex_adapter, "run", return_value=output(error="HTTP 429 Retry-After: 900")) as call, patch.object(run_moa.time, "sleep") as sleep:
+        with patch.object(run_moa.codex_adapter, "run", return_value=output(error="HTTP 429 Retry-After: 900")) as call, patch.object(run_moa, "retry_sleep") as sleep:
             self.assertFalse(self.run_lane(timeout=50).success)
         self.assertEqual(call.call_count, 1);sleep.assert_not_called()
 
     def test_deadline_exhausted_by_first_call_does_not_restart_timeout(self):
-        with patch.object(run_moa.codex_adapter, "run", return_value=output(error="timeout after 20s")) as call, patch.object(run_moa.time, "monotonic", side_effect=[0, 0, 51, 51]), patch.object(run_moa.time, "sleep") as sleep:
+        with patch.object(run_moa.codex_adapter, "run", return_value=output(error="timeout after 20s")) as call, patch.object(run_moa.time, "monotonic", side_effect=[0, 0, 51, 51]), patch.object(run_moa, "retry_sleep") as sleep:
             result = self.run_lane(timeout=50)
         self.assertFalse(result.success);self.assertEqual(call.call_count, 1);sleep.assert_not_called()
 
@@ -359,7 +359,7 @@ class RecoveryTests(unittest.TestCase):
         payload = {"final_plan_markdown": "# Final Plan\n" + "A bounded documentation plan. " * 10,
                    "lineage": {"version": 1, "title": "Small documentation change", "summary": "Improve docs.", "confidence": {"level": "high", "rationale": "Reviewers agree."}, "steps": [], "rejected_inputs": []}}
         provider = run_moa.harness_config.ResolvedProvider("fixture", "codex", "gpt-6.1-sol", 900)
-        with patch.object(run_moa.codex_adapter, "run", side_effect=[output(error="HTTP 503 overloaded"), output(payload)]) as call, patch.object(run_moa.time, "sleep"):
+        with patch.object(run_moa.codex_adapter, "run", side_effect=[output(error="HTTP 503 overloaded"), output(payload)]) as call, patch.object(run_moa, "retry_sleep"):
             result = run_moa.run_layer3(provider=provider, repo_path=self.root, session_dir=self.session, timeout=900, codex_effort="xhigh", layer1=[], layer2=[])
         self.assertTrue(result.success);self.assertEqual(call.call_count, 2)
         self.assertEqual((self.session / "final-plan.md").read_text(), payload["final_plan_markdown"])
