@@ -87,6 +87,15 @@ class RepositoryDirectory:
 
     def resolve(self, brief):
         owner = self.policy.owner
+        # Context opt-outs are instructions, not names after a "repository"
+        # marker. Ignore pointer text when detecting them so a repo literally
+        # named task-only can still be addressed by its URL/owner pointer.
+        context = re.sub(r"https?://\S+|\b" + re.escape(owner) + r"/[A-Za-z0-9_.-]+", "", brief, flags=re.I)
+        no_repo = re.search(r"\b(?:no|without)\s+(?:(?:a|an|any|the)\s+)?repo(?:sitory)?\b(?=\s*(?:$|[.,!?;:]|or\b|context\b|access\b|needed\b|required\b|provided\b|please\b))", context, re.I)
+        task_only = re.search(r"(?:^|[.!?;\n]|\b(?:inputs?|context|mode)\s*:)\s*task[- ]only\b(?=\s*(?:$|[.,;:]|with\b|and\b))", context, re.I)
+        named_task_only = re.search(r"\brepo(?:sitory)?\s+[`\"']?task[- ]only\b", context, re.I)
+        if no_repo or (task_only and not named_task_only):
+            return None
         pointers = set()
         # Slack link labels and /tree/... suffixes do not change the repo owner/name.
         for actual_owner, name in re.findall(r"https?://github\.com/([A-Za-z0-9-]+)/([A-Za-z0-9_.-]+)", brief, re.I):
@@ -101,7 +110,12 @@ class RepositoryDirectory:
                 github.parse_repo_pointer(pointer, owner)
             return self._one(pointers)
 
-        marked = set(re.findall(r"\brepo(?:sitory)?\s+[`\"']?([A-Za-z0-9_.-]+)", brief, re.I))
+        marked = set()
+        for match in re.finditer(r"\brepo(?:sitory)?\s+[`\"']?([A-Za-z0-9_.-]+)", brief, re.I):
+            prefix = brief[max(0, match.start()-30):match.start()]
+            if re.search(r"\b(?:no|without)\s+(?:(?:a|an|any|the)\s+)?$", prefix, re.I):
+                continue
+            marked.add(match.group(1))
         candidates = set(marked)
         for match in re.finditer(r"(?<![\w/.-])([._-]*[A-Za-z0-9][A-Za-z0-9_.-]*)(?![\w/-])", brief):
             name = match.group(1).rstrip(".")

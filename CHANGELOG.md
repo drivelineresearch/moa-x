@@ -35,6 +35,8 @@ versioning.
 
 ### Fixed
 
+- Treat Slack task-only/no-repository instructions as context choices instead
+  of trying to resolve subsequent words as repository names.
 - Permit initial calls under short timeouts, close atomic-write temporary handles
   before replacement on Windows, and include adapter termination/draining and
   Git isolation commands in the invocation budget while retaining partial output.
