@@ -42,7 +42,8 @@ _POSIX = sys.platform != "win32"
 def kill_proc_tree(proc: subprocess.Popen, *, grace_seconds: float = 3) -> None:
     """Tear down a timed-out subprocess and its children.
 
-    POSIX: SIGTERM the process group, wait 3s, SIGKILL if still alive.
+    POSIX: SIGTERM the group, wait up to the permitted grace, then SIGKILL
+    the group, including children whose parent has already exited.
     Windows: proc.kill() (TerminateProcess) the top pid — Windows does not
     have process groups in the POSIX sense, and the CLIs we invoke here
     don't routinely spawn grandchildren on Windows.

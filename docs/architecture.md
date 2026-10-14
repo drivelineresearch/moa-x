@@ -105,8 +105,8 @@ The initial call may use any positive remaining budget; minimum reserves apply
 only to subsequent research/repair calls. Adapters subtract preparation time
 and reserve up to eight seconds for process termination and output draining.
 AGY has no extra watchdog grace beyond that budget. Git sandbox commands share
-the invocation deadline; an unfinished sandbox may remain as private diagnostic
-context when cleanup would exceed it.
+the invocation deadline and write only an independent checkout; interruptions
+cannot leave locks or worktree registrations in the source repository.
 
 - Capacity/rate limits, temporary transport failures and incomplete output can
   receive two retries, for at most three research invocations. Backoff starts at
@@ -141,8 +141,8 @@ locators before semantic validation; external absolute paths remain invalid.
 Codex and Claude receive their native structured-output controls. OpenCode
 receives an isolated permission config that denies edits and shell access.
 AGY requires plan mode plus sandboxing. For Git workspaces, MoA-X also mirrors
-tracked, staged, dirty, and untracked context into a disposable detached
-worktree below the active session and sets `UV_NO_SYNC=1`. This contains any
+tracked, staged, dirty, and untracked context into a independent detached
+checkout below the active session and sets `UV_NO_SYNC=1`. This contains any
 pre-sandbox `uv` bootstrap files while keeping repository context accurate.
 Every CLI call runs in its own process group, and the runner compares per-path
 fingerprints so a concurrent lane is only associated with paths that actually

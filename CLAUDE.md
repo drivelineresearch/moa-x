@@ -131,7 +131,7 @@ then `harness/config.yaml`, then built-in defaults. Loader lives at
   lab fallback. Never add `provider-*` or harness-keyed `pixel-*` art.
   → `docs/assets.md`.
 - **OpenCode dispatch follows the installed major version.** V2 uses a private
-  server, NDJSON, a disposable repository snapshot, and an explicit read-only
+  server, NDJSON, a independent disposable repository snapshot, and an explicit read-only
   agent; V1 retains its original flags and permission file. →
   `adapters/opencode.py`, `docs/architecture.md`.
 - **opencode model ids are `provider/model` strings.** Swap billing paths by

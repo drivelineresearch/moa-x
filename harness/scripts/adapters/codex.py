@@ -242,13 +242,13 @@ def run(
                 stderr_captured = stderr_text or ""
             except subprocess.TimeoutExpired as timeout_error:
                 stdout_captured, stderr_captured = drain_after_timeout(proc, timeout_error, start, timeout_seconds)
-                stderr_captured = (stderr_captured or "") + f"\n[orchestrator] timeout after {timeout_seconds}s"
+                stderr_captured = (stderr_captured or "") + f"\n[orchestrator] timeout after {timeout_seconds:g}s"
                 duration = time.monotonic() - start
                 return CodexResult(
                     success=False, payload=None, raw_stdout=stdout_captured,
                     raw_stderr=stderr_captured, exit_code=-1,
                     duration_seconds=duration,
-                    error_message=f"timeout after {timeout_seconds}s",
+                    error_message=f"timeout after {timeout_seconds:g}s",
                 )
         except FileNotFoundError as e:
             duration = time.monotonic() - start

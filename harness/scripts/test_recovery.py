@@ -83,6 +83,24 @@ class RecoveryTests(unittest.TestCase):
                 self.assertEqual(workspace, self.root)
         self.assertEqual(call.call_args.kwargs["timeout"], 5)
 
+    def test_independent_checkout_never_registers_a_worktree_in_source(self):
+        source = self.root / "source";source.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=source, check=True)
+        (source / "tracked.txt").write_text("original")
+        subprocess.run(["git", "add", "."], cwd=source, check=True)
+        subprocess.run(["git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.com", "commit", "-qm", "fixture"], cwd=source, check=True)
+        (source / "tracked.txt").write_text("dirty source")
+        (source / "untracked.txt").write_text("untracked source")
+        before = subprocess.check_output(["git", "worktree", "list", "--porcelain"], cwd=source)
+        with agy._isolated_git_workspace(source, self.session, deadline=time.monotonic()+10) as snapshot:
+            self.assertTrue((snapshot / ".git").is_dir())
+            self.assertEqual((snapshot / "tracked.txt").read_text(), "dirty source")
+            self.assertEqual((snapshot / "untracked.txt").read_text(), "untracked source")
+            self.assertEqual(subprocess.check_output(["git", "worktree", "list", "--porcelain"], cwd=source), before)
+            (snapshot / "tracked.txt").write_text("simulated model mutation")
+        self.assertEqual((source / "tracked.txt").read_text(), "dirty source")
+        self.assertEqual(subprocess.check_output(["git", "worktree", "list", "--porcelain"], cwd=source), before)
+
     def test_adapter_setup_exception_is_logged_and_never_retried(self):
         for failure in (OSError("cannot write prompt file"), subprocess.TimeoutExpired("git rev-parse", 15)):
             with self.subTest(failure=type(failure).__name__), patch.object(run_moa, "_invoke_adapter", side_effect=failure) as call:

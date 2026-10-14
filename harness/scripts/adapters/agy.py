@@ -187,13 +187,14 @@ def _isolated_git_workspace(
     *, restricted: bool = False,
     deadline: Optional[float] = None,
 ) -> Iterator[Path]:
-    """Mirror Git-visible state into a disposable AGY worktree.
+    """Mirror Git-visible state into an independent disposable checkout.
 
     AGY's terminal sandbox can bootstrap commands through ``uv run``. In a
     project without a lockfile, that bootstrap may create ``uv.lock`` and
     ``.venv`` before the command sandbox is fully established. A detached
-    worktree contains those side effects while retaining tracked, staged,
-    dirty, and untracked context from the operator's working tree.
+    checkout contains those side effects while retaining tracked, staged,
+    dirty, and untracked context. Its own Git metadata ensures interrupted
+    setup and cleanup never leave locks or registrations in the source repo.
     """
     def git_run(*args, timeout, **kwargs):
         if deadline is not None:
@@ -201,6 +202,7 @@ def _isolated_git_workspace(
             if remaining <= 0:
                 raise subprocess.TimeoutExpired(args[0], 0)
             timeout = min(timeout, remaining)
+        kwargs.setdefault("env", {**os.environ, "GIT_OPTIONAL_LOCKS": "0"})
         return subprocess.run(*args, timeout=timeout, **kwargs)
 
     probe = git_run(
@@ -236,15 +238,13 @@ def _isolated_git_workspace(
 
     sandbox_parent = session_dir / "sandboxes"
     sandbox_parent.mkdir(parents=True, exist_ok=True)
-    sandbox = Path(tempfile.mkdtemp(prefix="agy-worktree-", dir=sandbox_parent))
-    # git worktree accepts a missing or empty target. Removing the empty
-    # mkdtemp directory lets Git own its complete lifecycle.
+    sandbox = Path(tempfile.mkdtemp(prefix="agy-checkout-", dir=sandbox_parent))
     sandbox.rmdir()
     try:
         add = git_run(
             [
-                "git", "worktree", "add", "--detach", "--force",
-                str(sandbox), "HEAD",
+                "git", "clone", "--local", "--no-hardlinks", "--no-checkout",
+                "--quiet", str(git_root), str(sandbox),
             ],
             cwd=git_root,
             stdout=subprocess.PIPE,
@@ -255,11 +255,18 @@ def _isolated_git_workspace(
         if add.returncode != 0:
             detail = (add.stderr or add.stdout).decode("utf-8", "replace").strip()
             raise AgyWorkspaceIsolationError(
-                f"could not create disposable AGY worktree: {detail[:300]}"
+                f"could not create disposable checkout: {detail[:300]}"
             )
 
+        checkout = git_run(
+            ["git", "checkout", "--detach", "HEAD"], cwd=sandbox,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120, check=False,
+        )
+        if checkout.returncode != 0:
+            raise AgyWorkspaceIsolationError("could not populate disposable checkout")
+
         diff = git_run(
-            ["git", "diff", "--binary", "--full-index", "HEAD", "--", "."],
+            ["git", "diff", "--no-ext-diff", "--no-textconv", "--binary", "--full-index", "HEAD", "--", "."],
             cwd=git_root,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -317,20 +324,9 @@ def _isolated_git_workspace(
 
         yield sandbox / repo_relative
     finally:
-        try:
-            # Clean only this invocation's unique worktree; no global prune.
-            git_run(
-                ["git", "worktree", "remove", "--force", str(sandbox)],
-                cwd=git_root,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=120,
-                check=False,
-            )
-        except (OSError, subprocess.SubprocessError):
-            # Retain timed-out sandboxes with private session diagnostics
-            # instead of extending the provider deadline for cleanup.
-            pass
+        # Only this independent snapshot is removed; the source .git has
+        # never been written and needs no registration cleanup or prune.
+        shutil.rmtree(sandbox, ignore_errors=True)
 
 
 def run(
@@ -469,7 +465,7 @@ def run(
                     child_env["TMPDIR"] = "/tmp"
                     child_env["XDG_CACHE_HOME"] = "/tmp/cache"
                 # Defense in depth for AGY's terminal sandbox bootstrap. The
-                # disposable worktree is the primary containment boundary.
+                # independent checkout is the primary containment boundary.
                 child_env["UV_NO_SYNC"] = "1"
                 proc = subprocess.Popen(
                     cmd,
@@ -485,11 +481,11 @@ def run(
                     stdout, stderr = proc.communicate(timeout=remaining_timeout(started, timeout_seconds, reserve_cleanup=True))
                 except subprocess.TimeoutExpired as timeout_error:
                     stdout, stderr = drain_after_timeout(proc, timeout_error, started, timeout_seconds)
-                    stderr = (stderr or "") + f"\n[orchestrator] timeout after {timeout_seconds}s"
+                    stderr = (stderr or "") + f"\n[orchestrator] timeout after {timeout_seconds:g}s"
                     return AgyResult(
                         False, None, stdout or "", stderr, -1,
                         time.monotonic() - started,
-                        f"timeout after {timeout_seconds}s",
+                        f"timeout after {timeout_seconds:g}s",
                     )
         except (AgyWorkspaceIsolationError, subprocess.SubprocessError, OSError) as exc:
             return AgyResult(

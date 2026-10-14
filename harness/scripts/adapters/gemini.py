@@ -211,11 +211,11 @@ def run(
                 )
             except subprocess.TimeoutExpired as timeout_error:
                 stdout, stderr = drain_after_timeout(proc, timeout_error, started, timeout_seconds)
-                stderr = (stderr or "") + f"\n[orchestrator] timeout after {timeout_seconds}s"
+                stderr = (stderr or "") + f"\n[orchestrator] timeout after {timeout_seconds:g}s"
                 return GeminiResult(
                     False, None, stdout or "", stderr, -1,
                     time.monotonic() - started,
-                    f"timeout after {timeout_seconds}s",
+                    f"timeout after {timeout_seconds:g}s",
                 )
         except (FileNotFoundError, OSError) as exc:
             return GeminiResult(
