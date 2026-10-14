@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import json
+import math
 import re
 import shutil
 import subprocess
@@ -23,7 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator, Optional
 
-from adapters import READ_ONLY_RULE, extract_json_from_text, kill_proc_tree
+from adapters import READ_ONLY_RULE, extract_json_from_text, remaining_timeout, drain_after_timeout, git_safe_env
 
 _MIN_VERSION = (1, 1, 5)
 _VERSION_RE = re.compile(r"\b(\d+)\.(\d+)\.(\d+)\b")
@@ -148,7 +149,7 @@ def _build_cmd(
         "--sandbox",
         "--dangerously-skip-permissions",
         "--model", model,
-        "--print-timeout", f"{timeout_seconds}s",
+        "--print-timeout", f"{max(1, math.ceil(timeout_seconds))}s",
         "--log-file", str(internal_log),
     ]
     # AGY's currently available model ids encode depth (``-low``, ``-medium``,
@@ -184,16 +185,27 @@ def _isolated_git_workspace(
     repo_path: Path,
     session_dir: Path,
     *, restricted: bool = False,
+    deadline: Optional[float] = None,
 ) -> Iterator[Path]:
-    """Mirror Git-visible state into a disposable AGY worktree.
+    """Mirror Git-visible state into an independent disposable checkout.
 
     AGY's terminal sandbox can bootstrap commands through ``uv run``. In a
     project without a lockfile, that bootstrap may create ``uv.lock`` and
     ``.venv`` before the command sandbox is fully established. A detached
-    worktree contains those side effects while retaining tracked, staged,
-    dirty, and untracked context from the operator's working tree.
+    checkout contains those side effects while retaining tracked, staged,
+    dirty, and untracked context. Its own Git metadata ensures interrupted
+    setup and cleanup never leave locks or registrations in the source repo.
     """
-    probe = subprocess.run(
+    def git_run(*args, timeout, **kwargs):
+        if deadline is not None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired(args[0], 0)
+            timeout = min(timeout, remaining)
+        kwargs["env"] = git_safe_env(kwargs.get("env", os.environ.copy()))
+        return subprocess.run(*args, timeout=timeout, **kwargs)
+
+    probe = git_run(
         ["git", "rev-parse", "--show-toplevel"],
         cwd=repo_path,
         stdout=subprocess.PIPE,
@@ -226,16 +238,13 @@ def _isolated_git_workspace(
 
     sandbox_parent = session_dir / "sandboxes"
     sandbox_parent.mkdir(parents=True, exist_ok=True)
-    sandbox = Path(tempfile.mkdtemp(prefix="agy-worktree-", dir=sandbox_parent))
-    # git worktree accepts a missing or empty target. Removing the empty
-    # mkdtemp directory lets Git own its complete lifecycle.
+    sandbox = Path(tempfile.mkdtemp(prefix="agy-checkout-", dir=sandbox_parent))
     sandbox.rmdir()
-    registered = False
     try:
-        add = subprocess.run(
+        add = git_run(
             [
-                "git", "worktree", "add", "--detach", "--force",
-                str(sandbox), "HEAD",
+                "git", "clone", "--local", "--no-hardlinks", "--no-checkout",
+                "--quiet", str(git_root), str(sandbox),
             ],
             cwd=git_root,
             stdout=subprocess.PIPE,
@@ -246,40 +255,22 @@ def _isolated_git_workspace(
         if add.returncode != 0:
             detail = (add.stderr or add.stdout).decode("utf-8", "replace").strip()
             raise AgyWorkspaceIsolationError(
-                f"could not create disposable AGY worktree: {detail[:300]}"
+                f"could not create disposable checkout: {detail[:300]}"
             )
-        registered = True
 
-        diff = subprocess.run(
-            ["git", "diff", "--binary", "--full-index", "HEAD", "--", "."],
-            cwd=git_root,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=120,
-            check=False,
+        checkout = git_run(
+            ["git", "read-tree", "HEAD"], cwd=sandbox,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120, check=False,
         )
-        if diff.returncode != 0:
-            raise AgyWorkspaceIsolationError(
-                "could not capture dirty tracked state for AGY isolation"
-            )
-        if diff.stdout:
-            apply = subprocess.run(
-                ["git", "apply", "--binary", "--whitespace=nowarn", "-"],
-                cwd=sandbox,
-                input=diff.stdout,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                timeout=120,
-                check=False,
-            )
-            if apply.returncode != 0:
-                detail = apply.stderr.decode("utf-8", "replace").strip()
-                raise AgyWorkspaceIsolationError(
-                    f"could not mirror dirty tracked state for AGY: {detail[:300]}"
-                )
+        if checkout.returncode != 0:
+            raise AgyWorkspaceIsolationError("could not populate disposable index")
+        git_run(["git", "update-ref", "--no-deref", "HEAD", "HEAD"], cwd=sandbox,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=15, check=True)
 
-        untracked = subprocess.run(
-            ["git", "ls-files", "--others", "--exclude-standard", "-z"],
+        # Copy visible working-tree bytes, including clean/smudge-filtered and
+        # CRLF files; replaying Git blobs/diffs can silently change that view.
+        untracked = git_run(
+            ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
             cwd=git_root,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -295,6 +286,8 @@ def _isolated_git_workspace(
         except ValueError:
             session_relative = ""
         for raw in untracked.stdout.split(b"\0"):
+            if deadline is not None and time.monotonic() >= deadline:
+                raise subprocess.TimeoutExpired("copy working tree", 0)
             if not raw:
                 continue
             relative = raw.decode("utf-8", "surrogateescape")
@@ -309,23 +302,9 @@ def _isolated_git_workspace(
 
         yield sandbox / repo_relative
     finally:
-        if registered:
-            subprocess.run(
-                ["git", "worktree", "remove", "--force", str(sandbox)],
-                cwd=git_root,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=120,
-                check=False,
-            )
-            subprocess.run(
-                ["git", "worktree", "prune"],
-                cwd=git_root,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=30,
-                check=False,
-            )
+        # Only this independent snapshot is removed; the source .git has
+        # never been written and needs no registration cleanup or prune.
+        shutil.rmtree(sandbox, ignore_errors=True)
 
 
 def run(
@@ -374,7 +353,8 @@ def run(
         internal_log.parent.mkdir(parents=True, exist_ok=True)
         try:
             session_dir = log_file.parents[1] if log_file is not None else prompt_file.parent
-            with _isolated_git_workspace(repo_path, session_dir, restricted=restricted) as isolated_repo:
+            with _isolated_git_workspace(repo_path, session_dir, restricted=restricted,
+                                         deadline=started + timeout_seconds) as isolated_repo:
                 active_prompt = prompt_file
                 if isolated_repo.resolve() != repo_path.resolve() or restricted:
                     active_prompt = isolated_repo / ".moa-agent-input" / prompt_file.name
@@ -463,7 +443,7 @@ def run(
                     child_env["TMPDIR"] = "/tmp"
                     child_env["XDG_CACHE_HOME"] = "/tmp/cache"
                 # Defense in depth for AGY's terminal sandbox bootstrap. The
-                # disposable worktree is the primary containment boundary.
+                # independent checkout is the primary containment boundary.
                 child_env["UV_NO_SYNC"] = "1"
                 proc = subprocess.Popen(
                     cmd,
@@ -472,22 +452,18 @@ def run(
                     stderr=subprocess.PIPE,
                     text=True,
                     cwd=str(isolated_repo),
-                    env=child_env,
+                    env=git_safe_env(child_env),
                     start_new_session=True,
                 )
                 try:
-                    stdout, stderr = proc.communicate(timeout=timeout_seconds + 15)
-                except subprocess.TimeoutExpired:
-                    kill_proc_tree(proc)
-                    try:
-                        stdout, stderr = proc.communicate(timeout=5)
-                    except Exception:
-                        stdout, stderr = "", ""
-                    stderr = (stderr or "") + f"\n[orchestrator] timeout after {timeout_seconds}s"
+                    stdout, stderr = proc.communicate(timeout=remaining_timeout(started, timeout_seconds, reserve_cleanup=True))
+                except subprocess.TimeoutExpired as timeout_error:
+                    stdout, stderr = drain_after_timeout(proc, timeout_error, started, timeout_seconds)
+                    stderr = (stderr or "") + f"\n[orchestrator] timeout after {timeout_seconds:g}s"
                     return AgyResult(
                         False, None, stdout or "", stderr, -1,
                         time.monotonic() - started,
-                        f"timeout after {timeout_seconds}s",
+                        f"timeout after {timeout_seconds:g}s",
                     )
         except (AgyWorkspaceIsolationError, subprocess.SubprocessError, OSError) as exc:
             return AgyResult(

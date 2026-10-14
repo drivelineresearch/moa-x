@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Optional
 
-from adapters import READ_ONLY_RULE, extract_json_from_text, kill_proc_tree
+from adapters import READ_ONLY_RULE, extract_json_from_text, remaining_timeout, drain_after_timeout, git_safe_env
 from adapters.agy import AgyWorkspaceIsolationError, _isolated_git_workspace
 
 # API-key env vars that authenticate at least one opencode provider without an
@@ -57,10 +57,10 @@ _QWEN_TOKEN_PLAN_BASE_URL = (
 _MAX_INLINE_PROMPT_BYTES = 96 * 1024
 
 
-def _cli_major_version() -> int:
+def _cli_major_version(*, timeout_seconds: float = 10) -> int:
     """Fail closed when the invocation contract cannot be determined."""
     proc = subprocess.run(
-        [_opencode_bin(), "--version"], capture_output=True, text=True, timeout=10
+        [_opencode_bin(), "--version"], capture_output=True, text=True, timeout=min(10, max(0, timeout_seconds))
     )
     match = re.search(r"\bv?(\d+)\.\d+\.\d+\b", (proc.stdout or "") + "\n" + (proc.stderr or ""))
     if proc.returncode != 0 or match is None or int(match.group(1)) not in {1, 2}:
@@ -129,14 +129,14 @@ def _v2_config_for_model(model: str, *, allow_webfetch: bool, allow_tools: bool)
 
 
 @contextmanager
-def _v2_workspace(repo_path: Path, scratch: Path, *, allow_tools: bool):
+def _v2_workspace(repo_path: Path, scratch: Path, *, allow_tools: bool, deadline: Optional[float] = None):
     """V2 ignores OPENCODE_CONFIG: install policy only in a private workspace."""
     if not allow_tools:
         workspace = scratch / "workspace"
         workspace.mkdir()
         yield workspace
         return
-    with _isolated_git_workspace(repo_path, scratch) as workspace:
+    with _isolated_git_workspace(repo_path, scratch, deadline=deadline) as workspace:
         if workspace.resolve() == repo_path.resolve():
             workspace = scratch / "workspace"
             shutil.copytree(
@@ -501,7 +501,7 @@ def run(
     workspace_stack = ExitStack()
 
     try:
-        major = _cli_major_version()
+        major = _cli_major_version(timeout_seconds=remaining_timeout(start, timeout_seconds))
         if major == 1 and os.environ.get("MOA_RESTRICT_WORKSPACE") == "1":
             return OpenCodeResult(success=False, payload=None, raw_stdout="", raw_stderr="",
                 exit_code=1, duration_seconds=time.monotonic() - start,
@@ -550,7 +550,8 @@ def run(
         active_repo = repo_path
         if major == 2:
             active_repo = workspace_stack.enter_context(
-                _v2_workspace(repo_path, Path(tmpdir), allow_tools=allow_tools)
+                _v2_workspace(repo_path, Path(tmpdir), allow_tools=allow_tools,
+                              deadline=start + timeout_seconds)
             )
             private_config = active_repo / ".opencode" / "opencode.json"
             private_config.parent.mkdir(parents=True, exist_ok=True)
@@ -591,30 +592,26 @@ def run(
         # alone silently selects the caller's repository and skips our policy.
         env["PWD"] = str(active_repo.resolve())
         try:
+            if remaining_timeout(start, timeout_seconds) <= 0:
+                raise subprocess.TimeoutExpired("OpenCode preparation", timeout_seconds)
             proc = subprocess.Popen(
                 cmd,
                 stdin=None,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                env=env,
+                env=git_safe_env(env),
                 cwd=str(active_repo),
                 start_new_session=True,
             )
             try:
-                stdout_text, stderr_text = proc.communicate(timeout=timeout_seconds)
+                stdout_text, stderr_text = proc.communicate(timeout=remaining_timeout(start, timeout_seconds, reserve_cleanup=True))
                 duration = time.monotonic() - start
                 stdout_captured = stdout_text or ""
                 stderr_captured = stderr_text or ""
-            except subprocess.TimeoutExpired:
-                kill_proc_tree(proc)
-                try:
-                    stdout_text, stderr_text = proc.communicate(timeout=5)
-                    stdout_captured = stdout_text or ""
-                    stderr_captured = (stderr_text or "") + f"\n[orchestrator] timeout after {timeout_seconds}s"
-                except Exception:
-                    stdout_captured = ""
-                    stderr_captured = f"[orchestrator] timeout after {timeout_seconds}s; could not drain pipes"
+            except subprocess.TimeoutExpired as timeout_error:
+                stdout_captured, stderr_captured = drain_after_timeout(proc, timeout_error, start, timeout_seconds)
+                stderr_captured = (stderr_captured or "") + f"\n[orchestrator] timeout after {timeout_seconds:g}s"
                 duration = time.monotonic() - start
                 return OpenCodeResult(
                     success=False, payload=None, raw_stdout=stdout_captured,

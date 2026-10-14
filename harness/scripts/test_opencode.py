@@ -20,7 +20,7 @@ class OpenCodeV2Test(unittest.TestCase):
         }}), "")
         with tempfile.TemporaryDirectory() as raw:
             @contextmanager
-            def source_workspace(repo, scratch):
+            def source_workspace(repo, scratch, **unused):
                 yield repo
             with patch.object(oc, '_cli_major_version', return_value=2), patch.object(oc, '_isolated_git_workspace', source_workspace), patch.object(oc.subprocess, 'Popen', return_value=process):
                 result = oc.run(prompt="Read the fixture.", repo_path=Path(raw), model="opencode-go/muse-spark-1.3-contributor")
@@ -104,7 +104,7 @@ class OpenCodeV2Test(unittest.TestCase):
         with tempfile.TemporaryDirectory() as raw:
             source = Path(raw);(source / 'fixture.txt').write_text('42')
             @contextmanager
-            def source_workspace(repo, scratch):
+            def source_workspace(repo, scratch, **unused):
                 yield repo
             def popen(command, **kwargs):
                 captured.update(command=command, **kwargs)
@@ -141,6 +141,12 @@ class OpenCodeV2Test(unittest.TestCase):
         with patch.object(oc.subprocess, 'run', return_value=version):
             with self.assertRaises(RuntimeError):
                 oc._cli_major_version()
+
+    def test_version_probe_respects_a_short_invocation_budget(self):
+        version = SimpleNamespace(returncode=0, stdout='opencode v2.0.0', stderr='')
+        with patch.object(oc.subprocess, 'run', return_value=version) as call:
+            self.assertEqual(oc._cli_major_version(timeout_seconds=.25), 2)
+        self.assertEqual(call.call_args.kwargs['timeout'], .25)
 
     def test_restricted_runs_reject_v1_before_launch(self):
         with patch.dict(oc.os.environ, {"MOA_RESTRICT_WORKSPACE": "1"}), patch.object(oc, "_cli_major_version", return_value=1), patch.object(oc.subprocess, "Popen") as launch:

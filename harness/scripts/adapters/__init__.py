@@ -18,6 +18,7 @@ import re
 import signal
 import subprocess
 import sys
+import time
 from typing import Optional
 
 READ_ONLY_RULE = (
@@ -38,10 +39,11 @@ READ_ONLY_RULE = (
 _POSIX = sys.platform != "win32"
 
 
-def kill_proc_tree(proc: subprocess.Popen) -> None:
+def kill_proc_tree(proc: subprocess.Popen, *, grace_seconds: float = 3) -> None:
     """Tear down a timed-out subprocess and its children.
 
-    POSIX: SIGTERM the process group, wait 3s, SIGKILL if still alive.
+    POSIX: SIGTERM the group, wait up to the permitted grace, then SIGKILL
+    the group, including children whose parent has already exited.
     Windows: proc.kill() (TerminateProcess) the top pid — Windows does not
     have process groups in the POSIX sense, and the CLIs we invoke here
     don't routinely spawn grandchildren on Windows.
@@ -51,9 +53,11 @@ def kill_proc_tree(proc: subprocess.Popen) -> None:
             pgid = os.getpgid(proc.pid)
             os.killpg(pgid, signal.SIGTERM)
             try:
-                proc.wait(timeout=3)
+                proc.wait(timeout=max(0, min(3, grace_seconds)))
             except subprocess.TimeoutExpired:
-                os.killpg(pgid, signal.SIGKILL)
+                pass
+            # The parent can exit while a child still holds the output pipes.
+            os.killpg(pgid, signal.SIGKILL)
         except ProcessLookupError:
             # Exited between timeout and killpg — harmless race.
             pass
@@ -67,6 +71,40 @@ def kill_proc_tree(proc: subprocess.Popen) -> None:
             proc.kill()
         except OSError:
             pass
+
+
+def remaining_timeout(started: float, budget: float, *, reserve_cleanup: bool = False) -> float:
+    """Charge setup and bounded process cleanup to one invocation deadline."""
+    remaining = max(0, started + budget - time.monotonic())
+    if reserve_cleanup:
+        remaining -= min(8, remaining / 4)
+    return remaining
+
+
+def git_safe_env(environment: dict[str, str]) -> dict[str, str]:
+    """Prevent inherited hook context from redirecting snapshot Git commands."""
+    locations = {"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR",
+                 "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+                 "GIT_PREFIX", "GIT_NAMESPACE", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT"}
+    return {**{key: value for key, value in environment.items()
+               if key not in locations and not key.startswith(("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_"))},
+            "GIT_OPTIONAL_LOCKS": "0"}
+
+
+def drain_after_timeout(proc: subprocess.Popen, error: subprocess.TimeoutExpired,
+                        started: float, budget: float) -> tuple[str, str]:
+    """Kill within the remaining budget and retain already-captured output."""
+    kill_proc_tree(proc, grace_seconds=remaining_timeout(started, budget))
+    try:
+        return proc.communicate(timeout=min(5, remaining_timeout(started, budget)))
+    except subprocess.TimeoutExpired as final:
+        stdout = final.output if final.output is not None else error.output
+        stderr = final.stderr if final.stderr is not None else error.stderr
+    except (OSError, ValueError):
+        stdout, stderr = error.output, error.stderr
+    def text(value):
+        return value.decode("utf-8", errors="replace") if isinstance(value, bytes) else value or ""
+    return text(stdout), text(stderr)
 
 
 def _loads_json_object(candidate: str) -> Optional[dict]:

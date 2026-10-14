@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from adapters import READ_ONLY_RULE, extract_json_from_text, kill_proc_tree
+from adapters import READ_ONLY_RULE, extract_json_from_text, remaining_timeout, drain_after_timeout, git_safe_env
 
 _REQUIRED_HELP_FLAGS = (
     "--model", "--approval-mode", "--sandbox", "--output-format"
@@ -201,25 +201,21 @@ def run(
                 stderr=subprocess.PIPE,
                 text=True,
                 cwd=str(repo_path),
-                env=os.environ.copy(),
+                env=git_safe_env(os.environ.copy()),
                 start_new_session=True,
             )
             try:
                 stdout, stderr = proc.communicate(
                     input=READ_ONLY_RULE + "\n\n" + prompt,
-                    timeout=timeout_seconds,
+                    timeout=remaining_timeout(started, timeout_seconds, reserve_cleanup=True),
                 )
-            except subprocess.TimeoutExpired:
-                kill_proc_tree(proc)
-                try:
-                    stdout, stderr = proc.communicate(timeout=5)
-                except Exception:
-                    stdout, stderr = "", ""
-                stderr = (stderr or "") + f"\n[orchestrator] timeout after {timeout_seconds}s"
+            except subprocess.TimeoutExpired as timeout_error:
+                stdout, stderr = drain_after_timeout(proc, timeout_error, started, timeout_seconds)
+                stderr = (stderr or "") + f"\n[orchestrator] timeout after {timeout_seconds:g}s"
                 return GeminiResult(
                     False, None, stdout or "", stderr, -1,
                     time.monotonic() - started,
-                    f"timeout after {timeout_seconds}s",
+                    f"timeout after {timeout_seconds:g}s",
                 )
         except (FileNotFoundError, OSError) as exc:
             return GeminiResult(

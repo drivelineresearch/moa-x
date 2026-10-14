@@ -14,7 +14,7 @@ from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import run_moa
-from adapters import agy
+from adapters import agy, remaining_timeout, drain_after_timeout
 from adapters.failures import classify_failure
 from test_offline import _make_valid_proposer, _make_valid_broadcast_refiner
 
@@ -54,6 +54,53 @@ class RecoveryTests(unittest.TestCase):
         self.assertTrue(all(c.kwargs["model"] == "gpt-6.1-sol" for c in call.call_args_list))
         self.assertGreaterEqual(sleep.call_args.args[0], 5)
 
+    def test_short_deadline_still_invokes_the_initial_provider(self):
+        with patch.object(run_moa.codex_adapter, "run", return_value=output(self.valid)) as call:
+            result = self.run_lane(timeout=5)
+        self.assertTrue(result.success)
+        self.assertEqual(call.call_count, 1)
+        self.assertGreater(call.call_args.kwargs["timeout_seconds"], 0)
+        self.assertLessEqual(call.call_args.kwargs["timeout_seconds"], 5)
+
+    def test_real_timeout_cleanup_is_bounded_and_keeps_partial_stdout(self):
+        if sys.platform == "win32":self.skipTest("POSIX process-group test")
+        started = time.monotonic()
+        proc = subprocess.Popen([sys.executable, "-u", "-c", "import signal,time;signal.signal(signal.SIGTERM,signal.SIG_IGN);print('captured receipt',flush=True);time.sleep(30)"],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+        try:
+            with self.assertRaises(subprocess.TimeoutExpired) as raised:
+                proc.communicate(timeout=remaining_timeout(started, 1, reserve_cleanup=True))
+            stdout, _ = drain_after_timeout(proc, raised.exception, started, 1)
+            self.assertLess(time.monotonic() - started, 1.75)
+            self.assertIn("captured receipt", stdout)
+        finally:
+            proc.kill();proc.communicate(timeout=2)
+
+    def test_git_isolation_probe_is_clipped_to_the_invocation_deadline(self):
+        probe = SimpleNamespace(returncode=1, stdout="", stderr="")
+        with patch.object(agy.time, "monotonic", return_value=15), patch.object(agy.subprocess, "run", return_value=probe) as call:
+            with agy._isolated_git_workspace(self.root, self.session, deadline=20) as workspace:
+                self.assertEqual(workspace, self.root)
+        self.assertEqual(call.call_args.kwargs["timeout"], 5)
+
+    def test_independent_checkout_never_registers_a_worktree_in_source(self):
+        source = self.root / "source";source.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=source, check=True)
+        (source / "tracked.txt").write_text("original")
+        subprocess.run(["git", "add", "."], cwd=source, check=True)
+        subprocess.run(["git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.com", "commit", "-qm", "fixture"], cwd=source, check=True)
+        (source / "tracked.txt").write_text("dirty source")
+        (source / "untracked.txt").write_text("untracked source")
+        before = subprocess.check_output(["git", "worktree", "list", "--porcelain"], cwd=source)
+        with patch.dict(run_moa.os.environ, {"GIT_DIR": str(source / ".git"), "GIT_WORK_TREE": str(source), "GIT_INDEX_FILE": str(source / ".git/index")}), agy._isolated_git_workspace(source, self.session, deadline=time.monotonic()+10) as snapshot:
+            self.assertTrue((snapshot / ".git").is_dir())
+            self.assertEqual((snapshot / "tracked.txt").read_text(), "dirty source")
+            self.assertEqual((snapshot / "untracked.txt").read_text(), "untracked source")
+            self.assertEqual(subprocess.check_output(["git", "worktree", "list", "--porcelain"], cwd=source), before)
+            (snapshot / "tracked.txt").write_text("simulated model mutation")
+        self.assertEqual((source / "tracked.txt").read_text(), "dirty source")
+        self.assertEqual(subprocess.check_output(["git", "worktree", "list", "--porcelain"], cwd=source), before)
+
     def test_adapter_setup_exception_is_logged_and_never_retried(self):
         for failure in (OSError("cannot write prompt file"), subprocess.TimeoutExpired("git rev-parse", 15)):
             with self.subTest(failure=type(failure).__name__), patch.object(run_moa, "_invoke_adapter", side_effect=failure) as call:
@@ -64,6 +111,20 @@ class RecoveryTests(unittest.TestCase):
                 self.assertEqual(call.call_count, 1)
                 self.assertEqual(len(result.attempts), 1)
                 self.assertTrue((self.session / result.log_path).is_file())
+
+    def test_snapshot_preserves_clean_repository_filtered_bytes(self):
+        import shlex
+        source = self.root / "filtered";source.mkdir()
+        def git(*args):return subprocess.run(["git", *args], cwd=source, check=True, capture_output=True)
+        git("init", "-q")
+        (source / ".gitattributes").write_text("tracked.txt filter=fixture\n")
+        command = shlex.quote(sys.executable) + " -c " + shlex.quote('import sys;sys.stdout.write(sys.stdin.read().replace("visible", "stored"))')
+        git("config", "filter.fixture.clean", command)
+        (source / "tracked.txt").write_text("visible bytes\r\n")
+        git("add", ".");git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.com", "commit", "-qm", "filtered")
+        self.assertEqual(git("diff", "HEAD").stdout, b"")
+        with agy._isolated_git_workspace(source, self.session, deadline=time.monotonic()+10) as snapshot:
+            self.assertEqual((snapshot / "tracked.txt").read_bytes(), (source / "tracked.txt").read_bytes())
 
     def test_capacity_exhaustion_is_three_calls_total(self):
         with patch.object(run_moa.codex_adapter, "run", return_value=output(error="HTTP 429 model at capacity")) as call, patch.object(run_moa.time, "sleep"):
@@ -224,7 +285,7 @@ class RecoveryTests(unittest.TestCase):
         self.assertFalse((self.session / "layer1/fixture-proposer.json").exists())
 
     def test_retired_families_cannot_return_through_custom_aliases(self):
-        for model in ("qwen-token-plan/qwen3.8-max", "opencode-go/qwen3.8-flash", "openrouter/moonshotai/kimi-k3", "opencode-go/mimo-v2.6-pro", "opencode-go/hy4-preview"):
+        for model in ("qwen-token-plan/qwen3.8-max", "opencode-go/qwen3.8-flash", "openrouter/moonshotai/kimi-k3", "opencode-go/mimo-v2.6-pro", "opencode-go/hy4-preview", "opencode-go/deepseek-v4-pro"):
             self.assertTrue(run_moa.harness_config.provider_is_retired("custom-route", model))
             self.assertFalse(run_moa.harness_config.provider_allows_role("custom-route", "proposer", model))
         self.assertFalse(run_moa.harness_config.provider_is_retired("minimax", "opencode-go/minimax-m3"))
@@ -247,6 +308,19 @@ class RecoveryTests(unittest.TestCase):
         run_moa._write_text_atomic(target, json.dumps(self.valid))
         self.assertEqual(json.loads(target.read_text()), self.valid)
         self.assertEqual(list(self.session.glob('checkpoint.json.*')), [])
+
+    def test_atomic_replacement_closes_the_temporary_file_first(self):
+        opened = []
+        factory = run_moa.tempfile.NamedTemporaryFile
+        replace = run_moa.os.replace
+        def track(*args, **kwargs):
+            file = factory(*args, **kwargs);opened.append(file);return file
+        def windows_replace(source, target):
+            self.assertTrue(opened[-1].closed)
+            replace(source, target)
+        with patch.object(run_moa.tempfile, "NamedTemporaryFile", side_effect=track), patch.object(run_moa.os, "replace", side_effect=windows_replace):
+            run_moa._write_text_atomic(self.session / "closed.json", '{"complete":true}')
+        self.assertEqual(json.loads((self.session / "closed.json").read_text()), {"complete": True})
 
     def test_aggregator_capacity_recovers_and_validates_lineage(self):
         (self.session / "synthesis-input.md").write_text("# Synthesis\nfixture")
