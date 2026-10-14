@@ -104,8 +104,8 @@ and are excluded from new launches, including custom aliases.
 All CLI, web and Slack runs use the orchestrator's shared recovery path for
 proposers, broadcast reviewers and final aggregation. Each provider's configured
 timeout is a total deadline across its attempts, backoff and optional repair.
-Research calls reserve up to 240 seconds for a tool-free repair within that
-deadline. Explicit deadlines of 60 seconds or less still permit an initial
+Research calls reserve 20% of the lane budget, up to 240 seconds, for a
+tool-free repair within that deadline. Explicit deadlines of 60 seconds or less still permit an initial
 call without a repair reserve. Defaults allow 45 minutes for Claude, OpenCode,
 Google and high/xhigh Codex lanes; low/medium Codex lanes retain 15 minutes.
 Shorter configured budgets remain respected. Adapters subtract preparation time

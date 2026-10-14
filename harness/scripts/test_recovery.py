@@ -63,6 +63,11 @@ class RecoveryTests(unittest.TestCase):
         self.assertGreater(call.call_args.kwargs["timeout_seconds"], 0)
         self.assertLessEqual(call.call_args.kwargs["timeout_seconds"], 5)
 
+    def test_short_custom_budget_keeps_most_time_for_research(self):
+        with patch.object(run_moa.codex_adapter, "run", return_value=output(self.valid)) as call, patch.object(run_moa.time, "monotonic", side_effect=[0, 0, 1]):
+            self.assertTrue(self.run_lane(timeout=300).success)
+        self.assertEqual(call.call_args.kwargs["timeout_seconds"], 240)
+
     def test_interrupted_http_200_stream_retries_with_remaining_budget(self):
         message = "opencode provider error: provider.invalid-output (HTTP 200): OpenAI Chat stream ended without finish_reason"
         with patch.object(run_moa.opencode_adapter, "run", side_effect=[output(error=message), output(self.valid)]) as call, patch.object(run_moa.time, "monotonic", side_effect=[0, 0, 1096, 1101, 1150]), patch.object(run_moa, "retry_sleep"):
@@ -114,9 +119,10 @@ class RecoveryTests(unittest.TestCase):
                     self.assertEqual(payload["verifications"][2], original)
                     if source == "short.py:1-3":
                         self.assertEqual(result.payload["verifications"][2]["source_url"], source)
-                    manifest = {"layer2": [{**result.__dict__, "payload": None}]}
-                    manifest_path = self.session / "manifest.json"
-                    manifest_path.write_text(json.dumps(manifest))
+                    manifest_path = run_moa.write_manifest(
+                        session_dir=self.session, scout_brief={"session_id": "fixture"},
+                        layer1=[], layer2=[result], started_at=0, finished_at=1,
+                    )
                     restored = run_moa.load_layer_results_from_manifest(manifest_path, "layer2", self.session)
                     self.assertEqual(restored[0].verification_warnings, result.verification_warnings)
                     decision_map = run_moa.decision_map_module.build_decision_map(self.session)
@@ -124,6 +130,49 @@ class RecoveryTests(unittest.TestCase):
                     self.assertEqual(checks[0]["declared_status"], status)
                     self.assertEqual(checks[0]["status"], "unverified")
                     self.assertTrue(any(reason in w for w in decision_map["warnings"]))
+                    self.assertEqual(run_moa._validate_against_schema(decision_map, run_moa._load_schema(run_moa.DECISION_MAP_SCHEMA_PATH)), [])
+
+    def test_receipts_without_a_repository_are_not_mislabeled_or_safety_checked(self):
+        payload = _make_valid_broadcast_refiner("fixture")
+        payload["verifications"][0]["source_url"] = "safe.py:1-3"
+        candidate, warnings = run_moa._downgrade_unsupported_verifications(payload, None)
+        self.assertEqual(candidate, payload)
+        self.assertEqual(warnings, [])
+        payload["verifications"][0]["source_url"] = "safe.py:1,3"
+        candidate, warnings = run_moa._downgrade_unsupported_verifications(payload, None)
+        self.assertEqual(candidate, payload)
+        self.assertEqual(warnings, [])
+        self.assertTrue(run_moa._validate_refiner_verification_cross_fields(candidate))
+
+    def test_downgrade_must_still_meet_the_full_output_schema(self):
+        payload = _make_valid_broadcast_refiner("fixture")
+        payload["verifications"][0]["source_url"] = None
+        schema = run_moa._load_schema(run_moa.REFINER_SCHEMA_PATH)
+        schema["properties"]["verifications"]["items"]["properties"]["actual_finding"]["maxLength"] = 80
+        self.assertEqual(run_moa._validate_against_schema(payload, schema), [])
+        candidate, warnings = run_moa._downgrade_unsupported_verifications(payload, self.root, schema)
+        self.assertEqual(candidate, payload)
+        self.assertEqual(warnings, [])
+
+    def test_stale_audits_cannot_attach_to_a_replacement_review(self):
+        payload = _make_valid_broadcast_refiner("fixture")
+        payload["verifications"][0]["source_url"] = "https://example.org/checked"
+        path = self.session / "layer2/review.json"
+        path.parent.mkdir(exist_ok=True)
+        path.write_text(json.dumps(payload))
+        audit = {"verification_index": 0, "reason": "missing_source", "original_verification": {"status": "contradicted"}}
+        old = {"agent_id": "fixture", "success": True, "json_path": "layer2/review.json", "verification_warnings": [audit]}
+        new = {**old, "verification_warnings": None}
+        failed = {**old, "success": False}
+        manifest_path = self.session / "manifest.json"
+        manifest_path.write_text(json.dumps({"layer2": [old, new]}))
+        decision_map = run_moa.decision_map_module.build_decision_map(self.session)
+        check = next(v for v in decision_map["verifications"] if v["index"] == 0)
+        self.assertEqual(check["declared_status"], "verified")
+        self.assertFalse(any("declared contradicted" in w for w in decision_map["warnings"]))
+        manifest_path.write_text(json.dumps({"layer2": [old, new, failed]}))
+        decision_map = run_moa.decision_map_module.build_decision_map(self.session)
+        self.assertEqual(decision_map["verifications"], [])
 
     def test_downgrade_is_transactional_and_does_not_accept_unsafe_receipts(self):
         (self.root / "safe.py").write_text("receipt\n")

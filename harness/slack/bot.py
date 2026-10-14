@@ -790,7 +790,7 @@ class Bot:
                 verification = f"{passed}/{len(rows)} lanes passed · Confidence: {confidence}."
                 if passed < len(rows):
                     verification += " Some lanes failed; inspect the report’s limitations."
-                citation_warnings = sum(len(r.get("verification_warnings") or []) for r in rows)
+                citation_warnings = sum(len(r.get("verification_warnings") or []) for r in rows if r.get("success"))
                 if citation_warnings:
                     verification += (
                         f" {citation_warnings} unsupported citation(s) were marked "

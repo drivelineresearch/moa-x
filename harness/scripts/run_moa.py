@@ -512,7 +512,9 @@ _LOCAL_RECEIPT_RE = re.compile(
 
 
 def _downgrade_unsupported_verifications(
-    payload: dict, repo_path: Optional[Path],
+    payload: dict,
+    repo_path: Optional[Path],
+    schema: Optional[dict] = None,
 ) -> tuple[dict, list[dict]]:
     """Retain review advice without accepting unsupported fact claims.
 
@@ -527,31 +529,42 @@ def _downgrade_unsupported_verifications(
         if item.get("status") not in {"verified", "contradicted"}:
             continue
         source = item.get("source_url")
-        reason = "missing_source" if source is None or (isinstance(source, str) and not source.strip()) else None
+        reason = (
+            "missing_source"
+            if source is None or (isinstance(source, str) and not source.strip())
+            else None
+        )
         parts = decision_map_module._local_verification_source_parts(source)
         if parts is not None and repo_path is not None:
             _, _, state = decision_map_module._repo_file_receipt(repo_path, *parts)
             if state in {"unreadable", "line_out_of_range"}:
                 reason = state
-        elif isinstance(source, str) and not source.startswith(("http://", "https://")):
+        elif (
+            parts is None
+            and repo_path is not None
+            and isinstance(source, str)
+            and not source.startswith(("http://", "https://"))
+        ):
             # A disjoint/reversed/oversized numeric range cannot be an exact
             # receipt. Discard the unusable locator rather than guessing which
             # range the model intended. Check the file's safety independently.
             file_name, separator, line_spec = source.rpartition(":")
             safe_file = decision_map_module._portable_code_locator(file_name)
             if separator and safe_file and re.fullmatch(r"[0-9,;\s-]+", line_spec):
-                state = "unreadable"
-                if repo_path is not None:
-                    _, _, state = decision_map_module._repo_file_receipt(repo_path, safe_file, 1, 1)
+                _, _, state = decision_map_module._repo_file_receipt(
+                    repo_path, safe_file, 1, 1
+                )
                 if state in {"captured", "unreadable", "line_out_of_range"}:
                     reason = "invalid_line_range"
         if reason is None:
             continue
-        warnings.append({
-            "verification_index": index,
-            "reason": reason,
-            "original_verification": dict(item),
-        })
+        warnings.append(
+            {
+                "verification_index": index,
+                "reason": reason,
+                "original_verification": dict(item),
+            }
+        )
         item["status"] = "unverified"
         if reason in {"missing_source", "invalid_line_range"}:
             item["source_url"] = None
@@ -559,7 +572,12 @@ def _downgrade_unsupported_verifications(
             f"Runner validation: cited receipt is {reason}; this finding is "
             f"unverified. Original model finding: {item['actual_finding']}"
         )
-    if _validate_refiner_verification_cross_fields(candidate, repo_path):
+    if _validate_refiner_verification_cross_fields(candidate, repo_path) or (
+        warnings
+        and _validate_against_schema(
+            candidate, schema or _load_schema(REFINER_SCHEMA_PATH)
+        )
+    ):
         return payload, []
     return candidate, warnings
 
@@ -872,7 +890,7 @@ def _finalize_result(
                 flush=True,
             )
         adapter_payload, warnings = _downgrade_unsupported_verifications(
-            adapter_payload, repo_path
+            adapter_payload, repo_path, schema
         )
         layer_result.verification_warnings = warnings or None
         if warnings:
@@ -1009,7 +1027,7 @@ def _run_with_recovery(
     # Keep a real repair window rather than giving it whatever few seconds
     # happen to remain after research. Very short explicit deadlines still
     # permit an initial call; the reserve never extends the total deadline.
-    repair_reserve = min(REPAIR_TIMEOUT_SECONDS, max(0, timeout - 60))
+    repair_reserve = min(REPAIR_TIMEOUT_SECONDS, timeout / 5) if timeout > 60 else 0
     history: list[dict] = []
     repair = False
     repair_used = False
