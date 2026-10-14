@@ -594,7 +594,7 @@ def _normalize_refiner_verification_sources(
     """
     if repo_path is None:
         return 0
-    repo_root = repo_path.resolve()
+    repo_roots = (repo_path.absolute(), repo_path.resolve())
     verifications = payload.get("verifications")
     if not isinstance(verifications, list):
         return 0
@@ -611,12 +611,16 @@ def _normalize_refiner_verification_sources(
         absolute_file = Path(match.group("file"))
         if not absolute_file.is_absolute():
             continue
-        try:
-            # Preserve the cited lexical path so receipt validation can still
-            # reject symlink components and traversal. Resolving here would
-            # silently substitute the symlink target for the model's source.
-            relative = absolute_file.relative_to(repo_root).as_posix()
-        except (OSError, ValueError):
+        relative = None
+        for root in repo_roots:
+            try:
+                # Resolve only the root alias, never symlinks or traversal in
+                # the cited path. Both spellings of a checkout are supported.
+                relative = absolute_file.relative_to(root).as_posix()
+                break
+            except ValueError:
+                continue
+        if relative is None:
             continue
         suffix = match.group("start")
         if match.group("end") is not None:

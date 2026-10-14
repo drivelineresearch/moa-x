@@ -205,6 +205,27 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(candidate, payload)
         self.assertEqual(warnings, [])
 
+    def test_checkout_root_alias_does_not_hide_internal_symlinks(self):
+        if sys.platform == "win32":
+            self.skipTest("POSIX symlink test")
+        actual = self.root / "actual"
+        actual.mkdir()
+        alias = self.root / "alias"
+        alias.symlink_to(actual, target_is_directory=True)
+        (actual / "safe.py").write_text("receipt\n")
+        (actual / "linked.py").symlink_to(actual / "safe.py")
+        payload = _make_valid_broadcast_refiner("fixture")
+        record = payload["verifications"][0]
+        for prefix in (actual, alias):
+            record["source_url"] = str(prefix / "safe.py") + ":1"
+            run_moa._normalize_refiner_verification_sources(payload, alias)
+            self.assertEqual(record["source_url"], "safe.py:1")
+            self.assertEqual(run_moa._validate_refiner_verification_cross_fields(payload, alias), [])
+        record["source_url"] = str(alias / "linked.py") + ":1"
+        run_moa._normalize_refiner_verification_sources(payload, alias)
+        self.assertEqual(record["source_url"], "linked.py:1")
+        self.assertTrue(run_moa._validate_refiner_verification_cross_fields(payload, alias))
+
     def test_real_timeout_cleanup_is_bounded_and_keeps_partial_stdout(self):
         if sys.platform == "win32":self.skipTest("POSIX process-group test")
         started = time.monotonic()
