@@ -47,7 +47,7 @@ class RepositoryLookupTest(unittest.TestCase):
             self.assertEqual(self.directory.resolve(brief), "example-org/task-only")
 
     def test_no_repository_edits_does_not_remove_repository_context(self):
-        for brief in ("Review repo sample-service; no repository edits", "Review https://github.com/example-org/sample-service. No repository changes please."):
+        for brief in ("Review repo sample-service; no repository edits", "Review https://github.com/example-org/sample-service. No repository changes please.", "Review sample-service with no repository changes", "Review sample-service on the task-only branch"):
             self.assertEqual(self.directory.resolve(brief), "example-org/sample-service")
 
     def test_explicit_pointer_wins_over_product_or_dependency_names(self):
