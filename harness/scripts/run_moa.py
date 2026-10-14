@@ -488,7 +488,11 @@ def _validate_refiner_verification_cross_fields(
             # An unverified finding can name the missing receipt it could not
             # inspect. It must stay unverified; positive/negative fact claims
             # still require an actual captured source.
-            if capture_status != "captured" and verification.get("status") != "unverified":
+            missing_receipt = (
+                verification.get("status") == "unverified"
+                and capture_status in {"unreadable", "line_out_of_range"}
+            )
+            if capture_status != "captured" and not missing_receipt:
                 errors.append(
                     f"verifications[{index}]: local source receipt "
                     f"{portable_source} is {capture_status}"

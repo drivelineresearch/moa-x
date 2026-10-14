@@ -303,6 +303,25 @@ class RecoveryTests(unittest.TestCase):
         record.update(status="unverified", source_url="../outside.py:1")
         self.assertTrue(run_moa._validate_refiner_verification_cross_fields(payload, self.root))
 
+    def test_unverified_receipts_keep_file_safety_checks(self):
+        payload = _make_valid_broadcast_refiner("fixture")
+        record = payload["verifications"][0]
+        record.update(status="unverified", actual_finding="The cited receipt could not be inspected.")
+        (self.root / "short.py").write_text("one line\n")
+        record["source_url"] = "short.py:9999"
+        self.assertEqual(run_moa._validate_refiner_verification_cross_fields(payload, self.root), [])
+        with tempfile.TemporaryDirectory() as outside:
+            target = Path(outside) / "private.py"
+            target.write_text("outside repository\n")
+            (self.root / "linked.py").symlink_to(target)
+            (self.root / "linked-dir").symlink_to(outside, target_is_directory=True)
+            (self.root / "binary.py").write_bytes(b"\x00binary")
+            (self.root / "directory.py").mkdir()
+            for locator in ("linked.py:1", "linked-dir/private.py:1", "binary.py:1", "directory.py:1"):
+                with self.subTest(locator=locator):
+                    record["source_url"] = locator
+                    self.assertTrue(run_moa._validate_refiner_verification_cross_fields(payload, self.root))
+
     def test_existing_attempt_logs_are_preserved_across_manual_redispatch(self):
         old = self.session / "layer1/fixture-proposer.log";old.write_text("original failed provider receipt")
         with patch.object(run_moa.codex_adapter, "run", return_value=output(self.valid)) as call:
