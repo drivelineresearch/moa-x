@@ -394,3 +394,9 @@ Luna interviews, automatic depth/model choices, effort controls, owned uploads,
 threaded status and final delivery. The gateway is a separate process and must
 not create another queue worker. Browser and Slack launch policies share the
 same server-side presets; disabling a curated route excludes it from both.
+
+Provider recovery happens within the CLI, including final aggregation. The web
+worker adds no extra retry layer. Model capacity and transient transport errors
+receive bounded backoff; failed schemas get one tool-free repair within the same
+provider deadline. Every attempt has a distinct log and manifest record. See
+[provider recovery](architecture.md#provider-recovery).

@@ -96,36 +96,36 @@ from the active catalog during the October 2026 refresh; old manifests retain
 its original identity. Kimi K3 remains attributable in archives and disabled
 for new runs pending a real broadcast-review requalification.
 
-## OpenCode output handling
+## Provider recovery
 
-OpenCode does not provide a native output-schema flag. MoA-X extracts the
-outer JSON object and validates it locally. A root-shaped object that is
-missing required fields is retained for validation and repair; a structural
-signature prevents nested objects from being promoted as roots. Two failures
-are treated differently:
+All CLI, web and Slack runs use the orchestrator's shared recovery path for
+proposers, broadcast reviewers and final aggregation. Each provider's configured
+timeout is a total deadline across its attempts, backoff and optional repair.
 
-1. Empty or incomplete output with no quota/auth signal receives at most one
-   full redispatch.
-2. Parseable JSON that fails schema, proposer-evidence, or refiner-verification
-   cross-field validation
-   receives one bounded repair pass containing only the invalid object, exact
-   error, and schema. The repair runs inside the session directory and must
-   not repeat repository or web research.
+- Capacity/rate limits, temporary transport failures and incomplete output can
+  receive two retries, for at most three research invocations. Backoff starts at
+  five seconds, then fifteen seconds, with jitter; an explicit numeric
+  `Retry-After` can extend it within the remaining deadline.
+- Authentication, unavailable model access, exhausted billing quota and invalid
+  configuration fail immediately. Models and effort stay fixed during retries.
+- Parseable output rejected by schema, evidence or verification validation gets
+  one structure repair with all tools disabled and a maximum of 240 seconds,
+  clipped to the remaining deadline. AGY/Gemini use authenticated Claude Opus
+  for this mechanical repair because their CLIs lack a tool-free invocation
+  mode. The repair receives only the original object, errors and schema; its
+  harness and model are recorded separately from the originating lane. A local
+  guard rejects new citation values absent from the supplied object.
 
-If repair still fails, the lane fails closed and its invalid output never
-enters refinement. Provider quota/auth classification only considers precise
-billing signals when no model response was captured, so tool errors such as
-oversized grep records cannot masquerade as depleted account balance.
+AGY also receives its native `--json-schema` contract through a file inside the
+isolated workspace. Invalid output never enters refinement. A failed repair
+fails closed; it does not restart research. Workspace mutation is terminal.
+Cancellation interrupts the provider process tree or backoff promptly.
 
-Repair eligibility is carried as a typed validation category, independent of
-the human-readable error text. Repo-local absolute refiner receipts are
-normalized deterministically to portable relative locators before semantic
-validation; external absolute paths remain invalid.
-
-Claude's native schema output can still violate semantic cross-field rules
-that JSON Schema does not express. Claude therefore receives the same single
-session-confined repair opportunity, with every repository and web tool
-disabled during repair.
+Each attempt has a distinct log and a manifest record with its harness, model,
+timing, failure category and outcome. Successful lanes remain retained during
+manual redispatch. The web worker does not apply an extra automatic retry loop.
+Repo-local absolute reviewer receipts are normalized to portable relative
+locators before semantic validation; external absolute paths remain invalid.
 
 ## Read-only and process isolation
 

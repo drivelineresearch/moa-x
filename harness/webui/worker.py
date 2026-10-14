@@ -412,57 +412,6 @@ class JobWorker:
         )
 
     @staticmethod
-    def _transient_agents(job: dict[str, Any], phase: str) -> list[str]:
-        session_dir = Path(job["session_dir"])
-        manifest_path = (
-            session_dir / "layer1-manifest.json"
-            if phase == "layer1"
-            else session_dir / "manifest.json"
-        )
-        summary_key = (
-            "transient_empty_proposers"
-            if phase == "layer1"
-            else "transient_empty_refiners"
-        )
-        roster_key = "proposers" if phase == "layer1" else "refiners"
-        try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return []
-        allowed = set(job["config"].get(roster_key) or [])
-        return [
-            name
-            for name in manifest.get("summary", {}).get(summary_key, [])
-            if name in allowed
-        ]
-
-    def _retry_transient_once(
-        self,
-        job: dict[str, Any],
-        phase: str,
-    ) -> int | None:
-        agents = self._transient_agents(job, phase)
-        if not agents:
-            return None
-        self._event(
-            job["id"],
-            "warning",
-            f"Retrying incomplete {phase} output once: {', '.join(agents)}",
-            phase=phase,
-            agents=agents,
-        )
-        config = job["config"]
-        previous_retry = config.get("redispatch")
-        config["redispatch"] = {"phase": phase, "agents": agents}
-        try:
-            return self._run_phase(job, phase)
-        finally:
-            if previous_retry is None:
-                config.pop("redispatch", None)
-            else:
-                config["redispatch"] = previous_retry
-
-    @staticmethod
     def _manifest_diagnostic(
         job: dict[str, Any], phase: str
     ) -> dict[str, Any] | None:
@@ -584,11 +533,6 @@ class JobWorker:
                 if code != 0:
                     break
                 if phase in {"layer1", "layer2"}:
-                    retry_code = self._retry_transient_once(job, phase)
-                    if retry_code is not None:
-                        code = retry_code
-                        if code != 0:
-                            break
                     diagnostic = self._manifest_diagnostic(job, phase)
                     if diagnostic:
                         self._event(

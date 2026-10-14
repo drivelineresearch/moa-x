@@ -90,7 +90,7 @@ const DEPTH_PRESENTATION = Object.freeze({
   balanced: {
     value: 1,
     image: `${BASE}/static/images/context-effort.webp`,
-    caption: "Three proposers and three refiners with each route’s configured effort.",
+    caption: "Three proposers and two refiners with each route’s configured effort.",
   },
   thorough: {
     value: 2,
@@ -651,7 +651,7 @@ function defaultSelected(option, role, index) {
   if (option.default) return true;
   const standard = {
     proposer: ["agy-gemini-pro", "grok", "codex-luna"],
-    refiner: ["qwen", "deepseek-flash", "opus"],
+    refiner: ["deepseek-flash", "opus"],
     aggregator: ["codex-sol"],
   };
   if (standard[role].includes(option.id)) return true;

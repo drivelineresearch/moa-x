@@ -100,7 +100,7 @@ AGY is the curated Google route and reuses the account already signed into
 
 ```
 Layer 0 — Scout brief           (parent Claude, in-place)
-Layer 1 — Proposers (parallel)    default: Gemini Pro + Grok + GPT-6 Luna
+Layer 1 — Proposers (parallel)    default: Gemini 4 Argon + Grok 4.7 + GPT-6 Luna
 Layer 2 — Broadcast refiners      default: DeepSeek V4.1 Flash + Opus, each sees ALL proposals
 Layer 3 — Aggregator              default: recorded GPT-6.1 Sol at xhigh
 ```
@@ -116,6 +116,10 @@ plans, refiner verdict matrix, an evidence-weighted living decision map,
 interactive final-step lineage, aggregated plan, and raw logs). Open it in a
 browser; details in
 [`docs/report.md`](docs/report.md).
+
+Capacity and transport failures receive bounded retries with backoff; malformed
+plan structures receive one tool-free repair. Attempts share a total deadline
+and retain distinct logs. See [provider recovery](docs/architecture.md#provider-recovery).
 
 Typical wall-clock is roughly 12–25 minutes for research-heavy work, with
 provider latency determining the tail. Use it for non-trivial

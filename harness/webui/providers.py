@@ -67,10 +67,10 @@ PROVIDER_META = {
 # run_moa CLI. Model ids themselves come from config.BUILTIN_PROVIDERS, so the
 # API cannot drift from actual dispatch. In particular, Claude 5 routes show
 # the pinned canonical ids rather than the stale rolling aliases.
-HIDDEN_ROUTES = {"codex-reviewer", "codex-aggregator"}
+HIDDEN_ROUTES = {"codex-reviewer", "codex-aggregator", "qwen", "qwen-opencode", "kimi"}
 
 # Routes that authenticated successfully but failed repeated full-schema live
-# validation. Keep them visible for provenance, but prevent paid launches until
+# validation. Retain archived provenance while preventing paid launches until
 # the upstream CLI/model reliably returns its final structured response.
 LIVE_BLOCKED_ROUTES: dict[str, str] = {
     "kimi": (
@@ -114,6 +114,7 @@ def _route_records(harness: str) -> list[dict[str, Any]]:
         if (
             item.harness != harness
             or item.name in HIDDEN_ROUTES
+            or harness_config.provider_is_retired(item.name, item.model)
             or item.harness not in PROVIDER_META
         ):
             continue
@@ -334,7 +335,7 @@ def model_catalog(*, probe: bool = True) -> list[dict[str, Any]]:
     }
     models = []
     for item in harness_config.load_provider_catalog().values():
-        if item.name in HIDDEN_ROUTES or item.harness not in PROVIDER_META:
+        if item.name in HIDDEN_ROUTES or harness_config.provider_is_retired(item.name, item.model) or item.harness not in PROVIDER_META:
             continue
         meta = ROUTE_META.get(item.name, {})
         lab_id = route_lab_id(item.name, item.model)

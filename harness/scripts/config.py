@@ -136,6 +136,14 @@ PROVIDER_ALLOWED_ROLES: dict[str, frozenset[str]] = {
 }
 
 
+def provider_is_retired(name: str, model: str | None = None) -> bool:
+    """Hide retired model families regardless of a custom route's alias."""
+    if name in {"kimi", "qwen", "qwen-opencode", "deepseek"}:
+        return True
+    parts = re.split(r"[/:\s]+", str(model or "").lower())
+    return any(part.startswith(("qwen", "kimi", "moonshot")) for part in parts)
+
+
 def provider_allows_role(
     name: str,
     role: str,
@@ -150,7 +158,7 @@ def provider_allows_role(
     model_id = str(model or "").lower()
     if model_id.startswith("claude-fable-"):
         return role == "aggregator"
-    if model_id.endswith("/kimi-k3"):
+    if provider_is_retired(name, model):
         return False
     return role in PROVIDER_ALLOWED_ROLES.get(
         name, frozenset({"proposer", "refiner", "aggregator"})

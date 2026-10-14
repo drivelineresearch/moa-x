@@ -33,6 +33,8 @@ _REQUIRED_HELP_FLAGS = (
     "--sandbox",
     "--model",
     "--dangerously-skip-permissions",
+    "--json-schema",
+    "--output-format",
 )
 
 
@@ -396,6 +398,12 @@ def run(
                     internal_log=internal_log,
                     reasoning_effort=reasoning_effort,
                 )
+                if schema_path is not None:
+                    schema_file = (active_prompt.parent if isolated_repo.resolve() == repo_path.resolve() and not restricted
+                                   else isolated_repo / ".moa-agent-input") / (prompt_file.stem + ".schema.json")
+                    schema_file.parent.mkdir(parents=True, exist_ok=True)
+                    schema_file.write_text(json.dumps(schema), encoding="utf-8")
+                    cmd += ["--json-schema", str(schema_file), "--output-format", "json"]
                 if restricted:
                     # Headless mode rejects unapproved outside-workspace reads.
                     # Broad auto-approval would bypass that file-tool boundary.
@@ -489,8 +497,9 @@ def run(
 
         stdout = stdout or ""
         stderr = stderr or ""
-        if proc.returncode != 0:
-            detail = (stderr or stdout or "no output").strip()
+        envelope_error = _envelope_error(stdout)
+        if proc.returncode != 0 or envelope_error:
+            detail = (envelope_error or stderr or "no output").strip()
             return AgyResult(
                 False, None, stdout, stderr, proc.returncode,
                 time.monotonic() - started,
@@ -504,7 +513,7 @@ def run(
                 )
             except (OSError, json.JSONDecodeError):
                 required_keys = None
-        payload = extract_json_from_text(stdout, required_keys=required_keys)
+        payload = _extract_payload(stdout, required_keys=required_keys)
         if payload is None:
             empty = not stdout.strip()
             return AgyResult(
@@ -532,3 +541,41 @@ def run(
             settings_dir.cleanup()
         if scratch_dir is not None:
             scratch_dir.cleanup()
+
+
+def _extract_payload(stdout: str, *, required_keys: Optional[set[str]] = None) -> Optional[dict]:
+    """Unwrap native schema output before parsing the model's role object."""
+    try:
+        envelope = json.loads(stdout)
+    except ValueError:
+        envelope = None
+    if isinstance(envelope, dict):
+        if envelope.get("is_error"):
+            return None
+        structured = envelope.get("structured_output")
+        if isinstance(structured, dict):
+            return structured
+        if isinstance(envelope.get("result"), str):
+            stdout = envelope["result"]
+    payload = extract_json_from_text(stdout, required_keys=required_keys)
+    if payload is None:
+        # Keep an actual role root missing a required field for validation;
+        # never promote a nested evidence item into a plan.
+        candidate = extract_json_from_text(stdout)
+        if isinstance(candidate, dict) and "agent_id" in candidate and (
+            {"summary", "plan"}.issubset(candidate)
+            or {"verifications", "proposer_rankings"}.issubset(candidate)
+        ):
+            return candidate
+    return payload
+
+
+def _envelope_error(stdout: str) -> Optional[str]:
+    try:
+        envelope = json.loads(stdout)
+    except ValueError:
+        return None
+    if isinstance(envelope, dict) and envelope.get("is_error"):
+        detail = envelope.get("error") or envelope.get("result") or "AGY returned an error envelope"
+        return detail if isinstance(detail, str) else json.dumps(detail)
+    return None

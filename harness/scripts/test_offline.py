@@ -2963,7 +2963,7 @@ def test_opencode_repair_prompt_is_inline_and_tool_free() -> bool:
         allow_webfetch=False,
         allow_tools=False,
     )
-    invalid_json = prompt.split("INVALID JSON\n", 1)[1]
+    invalid_json = prompt.split("<invalid_json>\n", 1)[1].split("\n</invalid_json>", 1)[0]
     ok = (
         config["permission"] == {"*": "deny"}
         and len(prompt.encode("utf-8"))
@@ -2984,6 +2984,7 @@ def test_claude_schema_repair_is_bounded_and_tool_free() -> bool:
     from adapters.claude import ClaudeResult
 
     invalid = _make_valid_proposer("sonnet")
+    invalid["plan"][0]["evidence"].append(dict(invalid["plan"][0]["evidence"][0]))
     invalid["plan"][0]["evidence"][0]["line"] = None
     repaired = _make_valid_proposer("sonnet")
     first = ClaudeResult(
@@ -3045,6 +3046,8 @@ def test_refiner_verification_repair_is_harness_independent() -> bool:
 
     invalid = _make_valid_broadcast_refiner("fixture")
     invalid["verifications"][0]["source_url"] = None
+    invalid["verifications"].append({**invalid["verifications"][0],
+                                     "source_url": "https://example.net/independent-verification"})
     repaired = _make_valid_broadcast_refiner("fixture")
     repaired["verifications"][0]["source_url"] = (
         "https://example.net/independent-verification"
@@ -3223,9 +3226,6 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
         "codex-luna": ("codex", "gpt-6-luna"),
         "sonnet": ("claude", "claude-sonnet-5-5"),
         "opus": ("claude", "claude-opus-5-5"),
-        "kimi": ("opencode", "opencode-go/kimi-k3"),
-        "qwen": ("opencode", "opencode-go/qwen3.8-max"),
-        "qwen-opencode": ("opencode", "opencode-go/qwen3.8-max"),
         "grok": ("opencode", "opencode-go/grok-4.7"),
         "glm": ("opencode", "opencode-go/glm-5.3"),
         "deepseek-flash": ("opencode", "opencode-go/deepseek-v4.1-flash"),
@@ -3252,9 +3252,9 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
         groups["claude"]["lab"] == "Anthropic"
         and any(route["id"] == "sonnet" for route in groups["claude"]["routes"])
         and any(route["id"] == "fable" for route in groups["claude"]["routes"])
-        and any(route["id"] == "qwen-opencode" for route in groups["opencode"]["routes"])
+        and not any(route["id"] in {"qwen", "qwen-opencode", "kimi"} for route in groups["opencode"]["routes"])
         and {route["lab_id"] for route in groups["opencode"]["routes"]}
-        == {"xai", "moonshot", "alibaba", "zhipu", "deepseek"}
+        == {"xai", "zhipu", "deepseek"}
     )
     role_ok = (
         {item["id"] for item in models if "aggregator" in item["roles"]}
@@ -3266,12 +3266,8 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
         by_id["agy-gemini-pro"]["default_roles"] == ["proposer"]
         and by_id["grok"]["default_roles"] == ["proposer"]
         and by_id["codex-luna"]["default_roles"] == ["proposer"]
-        and by_id["qwen"]["default_roles"] == []
-        and by_id["qwen"]["roles"] == []
-        and by_id["qwen-opencode"]["roles"] == []
+        and not ({"qwen", "qwen-opencode", "kimi"} & set(by_id))
         and by_id["deepseek-flash"]["default_roles"] == ["refiner"]
-        and by_id["kimi"]["default_roles"] == []
-        and by_id["kimi"]["roles"] == []
         and by_id["opus"]["default_roles"] == ["refiner"]
         and by_id["codex-sol"]["default_roles"] == ["aggregator"]
         and by_id["fable"]["default_roles"] == []

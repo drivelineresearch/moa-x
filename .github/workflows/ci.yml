@@ -33,6 +33,7 @@ jobs:
         run: |
           python3 harness/scripts/test_offline.py
           python3 harness/scripts/test_opencode.py
+          python3 harness/scripts/test_recovery.py
 
   test-webui-browser:
     runs-on: ubuntu-latest

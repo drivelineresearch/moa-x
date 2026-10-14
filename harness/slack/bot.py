@@ -716,6 +716,9 @@ class Bot:
                 "validation",
                 "error",
             )
+            or (e["kind"] == "log" and re.match(
+                r"^\[orchestrator\] [A-Za-z0-9_-]+: (?:retrying|repairing)", e["message"]
+            ))
             or (
                 e["kind"] == "log"
                 and re.match(
