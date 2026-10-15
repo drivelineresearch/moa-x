@@ -7,7 +7,7 @@ orchestrates a config-driven roster of CLI proposers and broadcast
 refiners; the shipped default is Gemini Pro + Grok 4.7 + GPT-6 Luna proposers
 and DeepSeek V4.1 Flash + Claude Opus reviewers. Qwen routes retain archived
 identity but are disabled for new launches.
-Layer 0 (scout) is handled by the parent agent. Layer 3 defaults to a recorded
+Layer 0 accepts the parent brief and adds a bounded static repository scout for new runs. Layer 3 defaults to a recorded
 Codex subprocess on `gpt-6.1-sol` at `xhigh` reasoning (stable provider name
 `codex-sol`) through `--phase layer3`. Layer 3 adds `final-plan.md` plus a
 schema-validated `final-plan.json` provenance companion and refreshes the
@@ -76,7 +76,7 @@ Rule 2 is non-negotiable. Rule 1 is a strong recommendation.
   Claude accepts `ANTHROPIC_API_KEY`, and OpenCode reads provider keys
   (`MOONSHOT_API_KEY`,
   `FIREWORKS_API_KEY`, `QWEN_TOKEN_PLAN_API_KEY`, and others). The open gap is
-  normalized usage/cost telemetry and safe pre-dispatch budget controls, not
+  complete cross-provider usage/cost telemetry and safe pre-dispatch budget controls, not
   basic API-key authentication.
 - **Default CLI roster is `[agy-gemini-pro, grok, codex-luna]` proposers,
   `[deepseek-flash, opus]` refiners, and `codex-sol` aggregator at `xhigh`** using the
@@ -162,3 +162,8 @@ harness, model, timing and outcome. The web/Slack worker must not multiply these
 attempts with another retry loop. AGY's native schema file must stay inside its
 isolated workspace; AGY/Gemini mechanical repairs use tool-free Claude Opus.
 Run `python3 harness/scripts/test_recovery.py` with the existing offline tests.
+
+New v2 decisions use `final-plan-v2.schema.json`; archives retain v1. Read
+`docs/evidence-pipeline.md` before changing claim selection, receipts, the final
+audit, checkpoints or readiness. Run `test_scout.py` and `test_evidence_pipeline.py`
+alongside the existing offline/recovery/browser tests.

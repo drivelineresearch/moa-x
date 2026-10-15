@@ -522,6 +522,7 @@ def prepare_attachment_context(
         )
         source_meta: dict[str, Any] = {
             "name": name,
+            "sha256": hashlib.sha256(source_path.read_bytes()).hexdigest(),
             "path": relative,
             "kind": kind,
             "characters": len(included),

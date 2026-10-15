@@ -167,3 +167,5 @@ picker; it is available only through workspaces that permit this endpoint. Contr
 used for model training; operators must choose this policy knowingly before
 submitting repository or uploaded-file context. See the provider's
 [Go privacy policy](https://opencode.ai/v2/docs/console/go/#privacy).
+
+The browser/Slack `options.depth` selects Quick/Balanced/Thorough scouting and verification budgets as well as the roster. See the [pipeline policy table](evidence-pipeline.md#verify-and-adjudicate).

@@ -209,7 +209,7 @@ def run(
         if slack:
             # The native nested command sandbox is unavailable on this host.
             # Send bounded repository receipts and expose no local tools or MCP.
-            if allow_tools:
+            if allow_tools and "<captured_source_packet>" not in prompt:
                 prompt += _source_packet(repo_path, prompt)
             allow_tools = False
         if not allow_tools:

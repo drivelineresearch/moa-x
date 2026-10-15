@@ -751,9 +751,12 @@ class Bot:
                     (job["created_at"],),
                 ).fetchone()[0]
             queued = [f"{ahead} run(s) ahead in the queue."]
-        progress = (
-            f"{job['status'].title()} · {phase} · {round(job['progress'] * 100)}%"
-        )
+        from harness.webui.run_status import evidence_status, evidence_text
+        progress = f"{job['status'].title()} · {phase}"
+        progress += "\n🔎 " + evidence_text(evidence_status(Path(job["session_dir"]), status=job["status"]))
+        historical = self.store.queue_summary(job).get("historical_minutes")
+        if historical:
+            progress += f"\nSimilar completed runs took {historical[0]}–{historical[1]} minutes (historical range)."
         if queued:
             progress += "\n" + queued[0]
         if successes:
@@ -797,7 +800,14 @@ class Bot:
                         rating += f" Model stated {stated}; evidence gates limit that rating."
                 except (OSError, ValueError, KeyError, TypeError):
                     rating = f"Model-stated confidence: {stated}; evidence-gate rating unavailable."
+                from harness.webui.run_status import evidence_status, evidence_text, outcome_label
+                evidence = evidence_status(folder, status=job["status"])
+                d["evidence_outcome"] = evidence.get("outcome")
+                d["outcome_label"] = outcome_label(job["status"], evidence.get("outcome"))
                 verification = f"{passed}/{len(rows)} lanes passed · {rating}"
+                verification += "\n🔎 " + evidence_text(evidence)
+                if evidence.get("outcome") in {"needs_revision", "insufficient_evidence"}:
+                    verification += "\n⚠️ Further verification or revised proposals are required before implementation."
                 if passed < len(rows):
                     verification += " Some lanes failed; inspect the report’s limitations."
                 citation_warnings = sum(len(r.get("verification_warnings") or []) for r in rows if r.get("success"))
@@ -811,7 +821,7 @@ class Bot:
             tldr = re.search(r"## TL;DR\s*(.*?)(?=\n## |\Z)", plan, re.S)
             summary = tldr.group(1).strip() if tldr else plan[:2200]
             reply = (
-                "✅ *MoA-X finished*\n"
+                ("⚠️ *MoA-X complete — " + text(d.get("outcome_label", "review required")) + "*\n" if d.get("evidence_outcome") in {"needs_revision", "insufficient_evidence"} else "✅ *MoA-X finished*\n")
                 + text(summary[:2400])
                 + "\n\n" + verification
             )

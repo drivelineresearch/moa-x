@@ -400,3 +400,5 @@ worker adds no extra retry layer. Model capacity and transient transport errors
 receive bounded backoff; failed schemas get one tool-free repair within the same
 provider deadline. Every attempt has a distinct log and manifest record. See
 [provider recovery](architecture.md#provider-recovery).
+
+The [v2 run contract](evidence-pipeline.md) adds factual-check progress, honest readiness outcomes, final audit links, queue history and owned-worker checkpoint recovery.

@@ -64,7 +64,7 @@ def resolve_roster(depth="balanced", *, effort_overrides=None, catalog=None):
         "proposers": list(profile["proposer"]["preferred"]),
         "refiners": list(profile["refiner"]["preferred"]),
         "aggregator": profile["aggregator"]["preferred"][0],
-        "options": {"model_overrides": {}, "effort_overrides": {}},
+        "options": {"model_overrides": {}, "effort_overrides": {}, "depth": depth},
         "models": [],
     }
     overrides = effort_overrides or {}

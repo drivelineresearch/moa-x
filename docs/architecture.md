@@ -14,8 +14,9 @@ flowchart LR
 
 ## Four layers
 
-**Layer 0: scout.** The parent session turns the request into a bounded scout
-brief with focus files, explicit scope, and shared attachment context.
+**Layer 0: scout.** The parent/transport freezes the request and explicit scope.
+The runner adds bounded static reconnaissance of relevant code, interfaces and
+tests, together with the shared attachment context.
 
 **Layer 1: independent proposals.** Gemini Pro contributes Google-backed web
 research, Grok contributes an xAI lane, and GPT-6 Luna contributes an
@@ -221,3 +222,5 @@ synthesis input. Only Layer 3 executes; prior aggregator attempts stay visible
 in the report, while current timeout summaries reflect the replacement result. Workspace
 mutation warnings remain recorded; synthesis-only retries cannot reuse inputs
 from a run that recorded workspace changes.
+
+The detailed [v2 evidence pipeline](evidence-pipeline.md) defines verification allocation, source capture, exact adopted claims, structured rendering and final audits.

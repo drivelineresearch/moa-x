@@ -34,6 +34,8 @@ jobs:
           python3 harness/scripts/test_offline.py
           python3 harness/scripts/test_opencode.py
           python3 harness/scripts/test_recovery.py
+          python3 harness/scripts/test_scout.py
+          python3 harness/scripts/test_evidence_pipeline.py
 
   test-webui-browser:
     runs-on: ubuntu-latest
@@ -59,3 +61,4 @@ jobs:
           harness.slack.tests.test_repositories
           harness.webui.tests.test_effort_controls_browser
           harness.webui.tests.test_decision_map_browser
+          harness.webui.tests.test_evidence_progress_browser

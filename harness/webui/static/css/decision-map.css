@@ -242,8 +242,11 @@
   .dm-metric:nth-child(-n+4) { border-bottom: 1px solid var(--dm-line); }
   .dm-metric:last-child { grid-column: 1 / -1; }
   .dm-network { padding: 16px; }
-  .dm-agent-rail { min-width: 720px; }
-  .dm-canvas { min-width: 780px; gap: 34px; grid-template-columns: repeat(3, minmax(210px, 1fr)); }
+  .dm-agent-rail { min-width: 0; flex-wrap: wrap; }
+  .dm-agent-rail > .dm-lane-title { width: 100%; }
+  .dm-agent-rail .dm-node { width: 100%; min-width: 0; }
+  .dm-canvas { min-width: 0; gap: 20px; grid-template-columns: minmax(0, 1fr); }
+  .dm-edge-layer { display: none; }
   .dm-detail { padding: 16px; }
   .dm-gates li { grid-template-columns: 54px minmax(0, 1fr); }
   .dm-gates li p { grid-column: 2; }
@@ -266,3 +269,5 @@
   .dm-ledger-table th,
   .dm-ledger-table td { padding: 5pt; }
 }
+
+.dm-stage.needs-review { color: #754b00; background: #fff5d9; border-color: #bd8400; }

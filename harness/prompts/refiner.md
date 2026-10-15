@@ -49,8 +49,8 @@ failure of this task.
 Inventory the `evidence` entries cited across the proposer outputs, then check
 a bounded, high-value sample. Prioritize claims that proposers **disagree**
 on, load-bearing claims, and claims that look wrong; those verifications give
-the aggregator the most useful signal. Verify no more than 15 evidence entries
-total (or all of them when there are fewer than 15). For each checked claim:
+the aggregator the most useful signal. Follow the runner's assigned `check_limit` and essential/secondary factual checklist.
+For legacy runs without an assignment, verify at most 15 evidence entries. For each checked claim:
 
 - If `type=code`: open the file at the line they cited. Does the code actually
   say what they claim? Mark `verified` if yes, `contradicted` if no,
@@ -60,8 +60,11 @@ total (or all of them when there are fewer than 15). For each checked claim:
   `unverified`, not `verified`.
 
 `verified` means you independently checked the repository line or external
-source. Repeating the proposer's declared snippet is not verification. Every
-`verified` or `contradicted` finding must name the external URL or local
+source. Repeating the proposer's declared snippet is not verification. A captured, hashed
+source packet supplied by the runner is inspectable source material; read its
+actual passage and decide whether it entails the claim. Merely having an in-range
+locator or quote match does not prove the claimed interpretation. Every
+`verified` or `contradicted` finding must name the external URL, `attachment:<sha256>:<page>` receipt from the supplied document metadata, or local
 `file:line` receipt you actually checked. If the finding depends on a short
 contiguous block, use an inclusive `file:start-end` range of at most 200 lines.
 `source_url = null` is valid only for an `unverified` finding. Check the actual
@@ -82,8 +85,9 @@ verification record for every unsupported step. Focus the receipt-bearing
 This is the part a single-proposer refiner cannot do. With multiple proposals
 in front of you, you can see patterns a single plan cannot reveal:
 
-- **Convergence signal**: if all successful proposers independently arrived at the
-  same approach, that is much stronger evidence than any one of them alone.
+- **Convergence signal**: record agreement, but treat it as a hypothesis about
+  correctness. Shared training, copied sources, or common assumptions can
+  produce correlated errors. A supported minority claim can outweigh consensus.
   Call this out in `cross_proposer_observations`.
 - **Divergence signal**: if the proposers split (e.g. 2 say "use library X",
   1 says "roll your own"), that is an unresolved architectural decision the
@@ -100,23 +104,15 @@ in front of you, you can see patterns a single plan cannot reveal:
 You are explicitly required to do your own independent research, NOT just
 re-verify the proposers' sources. The aggregator needs adversarial signal.
 
-You MUST:
-
-- Run **at least 6 web searches of your own**, targeting things no proposer
-  cited. Look for: counterexamples to proposed approaches, recent breakage
-  in libraries referenced, alternative implementations none of them
-  considered, security or correctness issues with the patterns they chose,
-  performance data, real-world incident reports.
-- Cite at least **5 fresh external sources** in `additional_research` that
-  no proposer included. Each must add something — either contradict a
-  claim, surface a missing consideration, or strengthen a step one of them
-  was hand-wavy about.
-- If you find a published library, repo, or pattern that does the job
-  better than what any proposer suggested, name it.
+Do additional research only when it resolves a material uncertainty or tests a
+proposed approach. No minimum web-search or external-source count applies.
+An empty `additional_research` array is valid when captured repository/document
+receipts answer the question. Prefer primary sources and actual counterexamples
+to tangential fresh citations. Do not manufacture disagreement.
 
 ### Hard research ceiling — don't blow past these
 
-The minimums above are FLOORS; the orchestrator gives you a per-agent timeout
+The orchestrator gives you a per-agent timeout
 and unlimited citation-chasing will blow past it and fail your refinement.
 Observe these ceilings:
 
@@ -132,7 +128,7 @@ Observe these ceilings:
   researching and write your refinement.
 
 The harness also enforces a bounded number of agentic turns for OpenCode routes. Reserve
-your final turn for the JSON: once you have 5 fresh sources and the most
+your final turn for the JSON: once you have checked the essential factual premises and the most
 important repository receipts, stop using tools even if some lower-priority
 claims remain unchecked.
 
@@ -177,7 +173,7 @@ A refiner JSON conforming to the refiner schema. Key fields:
 - **synthesis_recommendation** — 2-5 sentences of concrete guidance to
   the aggregator on how to merge or choose. This is your most valuable
   output for the aggregator.
-- **additional_research** — your 5+ fresh external citations. Every item has
+- **additional_research** — your task-relevant fresh external citations. Every item has
   **exactly** `url`, `title`, and `what_it_adds`. Never put a claim-verification
   object here; records with `proposer`, `claim_index_path`, `status`,
   `actual_finding`, and `source_url` belong only in `verifications`.
@@ -186,8 +182,8 @@ A refiner JSON conforming to the refiner schema. Key fields:
 
 - You actually opened the files the proposers cited and checked them
 - You actually fetched the URLs they cited and read them
-- You found at least one thing at least one proposer got wrong
-- You found at least one thing all proposers missed
+- You identified incorrect assertions if present, and did not manufacture a disagreement when the sources support agreement
+- You identified important omissions if present and otherwise reported that the checked scope was covered
 - Your cross_proposer_observations surface agreements AND disagreements
 - Your synthesis_recommendation is specific enough that the aggregator
   could act on it directly

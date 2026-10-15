@@ -244,7 +244,8 @@ def _validate_final_plan_lineage(
     report-generation failure: the rest of a run report remains useful even
     when an aggregator produced an incomplete lineage file.
     """
-    schema = _load_schema(FINAL_PLAN_SCHEMA_PATH)
+    schema_path = (SCRIPT_DIR / "schemas" / "final-plan-v2.schema.json") if lineage.get("version") == 2 else FINAL_PLAN_SCHEMA_PATH
+    schema = _load_schema(schema_path)
     warnings_out = _validate_against_schema(lineage, schema)
     if warnings_out:
         return warnings_out

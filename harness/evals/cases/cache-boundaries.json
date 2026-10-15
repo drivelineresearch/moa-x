@@ -1,0 +1,11 @@
+{
+  "id": "cache-boundaries",
+  "description": "Two executable seeded defects: expiry equality and loss of cached falsy values.",
+  "fixture": "fixtures/cache-boundaries",
+  "contract_mentions": {
+    "inclusive_expiry": [">=", "equality", "inclusive", "boundary"],
+    "preserves_falsy_values": ["falsy", "zero", "false", "empty string"],
+    "preserves_existing_contract": ["missing", "before expiry", "live value"]
+  },
+  "note": "Mention checks are smoke signals, not semantic correctness scores. The fixture tests and independent human review establish the expected behavior."
+}

@@ -41,7 +41,9 @@ def card(conversation):
     stage = conversation["stage"]
     emoji = {"collect": "👋", "coaching": "🧠", "interview": "💬", "preview": "📋",
              "launching": "🚀", "running": "⏳", "completed": "✅", "failed": "❌", "cancelled": "🛑"}.get(stage, "🧠")
-    blocks = [section(emoji + " *MoA-X · " + text(stage.title()) + "*")]
+    if stage == "completed" and d.get("evidence_outcome") in {"needs_revision", "insufficient_evidence"}:
+        emoji = "⚠️"
+    blocks = [section(emoji + " *MoA-X · " + text(d.get("outcome_label", stage.title()) if stage == "completed" else stage.title()) + "*")]
     if d.get("repository"):
         pointer = text(d["repository"])
         blocks.append(section("📂 Repository: <https://github.com/" + pointer + "|" + pointer + "> · read-only context"))

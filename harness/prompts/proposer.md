@@ -43,23 +43,16 @@ from different labs is that each one independently surfaces evidence
 the others might miss. If you produce a plan from your training data alone
 you have wasted the run.
 
-You MUST:
-
-- Run **at least 8 distinct web searches** before drafting your plan. Search
-  for similar implementations on GitHub, official documentation for every
-  library or framework you intend to use, blog posts about common pitfalls,
-  Stack Overflow answers, ArXiv papers if the task touches anything
-  ML/algorithmic, recent (2025-2026) discussions if the task involves a
-  fast-moving area.
-- Cite at least **5 distinct external sources** in the `research_sources`
-  field of your output. Mix of: official docs (1+), real GitHub repos that
-  solve similar problems (1+), recent blog posts or articles (1+),
-  authoritative references like specs or papers (1+), and anything else that
-  informed your thinking.
+Research must resolve the task, not satisfy a search or citation quota. For a
+repository-local bug or known-answer question, inspect the relevant source and
+tests first; zero web searches and an empty `research_sources` array are valid.
+Use official documentation and primary research when a material dependency,
+external fact, or architectural choice needs it. Preserve uncertainty when the
+available sources do not settle a question. Never invent a source to fill a quota.
 
 ### Hard research ceiling: don't blow past these
 
-The minimums above are FLOORS. The configured total lane deadline is normally
+The configured total lane deadline is normally
 15 minutes at low/medium Codex effort or 45 minutes for long research lanes;
 explicit operator limits may be shorter. Retries and a reserved tool-free
 repair share that same deadline. Chasing citations indefinitely can exhaust
@@ -72,9 +65,7 @@ it before serialization finishes. Observe these research ceilings:
   the expensive ones; use search snippets to decide which URLs actually
   deserve full loading.
 - **Maximum 8 minutes wall-clock on research**. If you've been researching
-  for more than ~8 minutes, commit to the plan you have now. A plan grounded
-  in 5 real citations is infinitely more valuable than a perfect plan that
-  times out before it's written.
+  for more than ~8 minutes, commit to the plan you have now. Prefer a concise grounded plan with explicit uncertainty over exhaustive research that cannot finish.
 - **Maximum 20 repo file reads + 10 grep calls** per the scout brief's
   `exploration_budget`. Same principle: commit to what you have.
 
@@ -82,8 +73,7 @@ The ceiling exists because codex at xhigh reasoning in v0.2.1 hit the 900s
 wall doing ~50 web searches and produced no output. Don't be that run.
 - For every non-trivial claim in your plan, attach an `evidence` entry that
   cites either a specific local file:line OR an external URL with a verbatim
-  snippet. Refiners will verify these. Unsupported claims get marked
-  `contradicted` and weaken your proposal.
+  snippet. Refiners will verify these. Unsupported claims remain `unverified`; absence of evidence is not contradiction.
 - Keep every evidence `claim` atomic: one proposition that can be verified or
   contradicted on its own. Split compound claims into separate evidence
   records, even when they cite the same source. Every plan step needs at least
@@ -92,7 +82,8 @@ wall doing ~50 web searches and produced no output. Don't be that run.
   of these keys: `type`, `file`, `line`, `url`, `snippet`, `claim`. Use
   `null` for the keys that do not apply to your evidence type:
     - `type = "code"` → populate `file` and `line`, set `url = null` and
-      `snippet = null` (or a short quote of the code if useful)
+      a short verbatim code `snippet`; a supplied source excerpt can be quoted directly
+    - `type = "attachment"` → `file` is the displayed upload filename, `line` is its PDF page (1 for text/images), `url = null`, and `snippet` is the exact supplied passage.
     - `type = "external"` → populate `url` and `snippet`, set `file = null`
       and `line = null`
   `claim` is ALWAYS required. Missing a key (even if null-equivalent) will
@@ -113,6 +104,11 @@ explore beyond it if the spec demands it, but stay bounded:
 - If you find yourself unable to bound the search, the scout brief is wrong —
   note it in `open_questions` and proceed with what you have.
 
+Keep proposals compact: normally 3–8 concrete decisions with 1–3 atomic,
+load-bearing evidence claims per decision. Background literature belongs in
+`research_sources`; avoid repeating the same facts across steps. A narrow task
+may need fewer steps. Do not invent alternatives merely to look different.
+
 ## The plan structure
 
 Output JSON conforming to the proposer schema (handed to you separately by
@@ -132,7 +128,7 @@ the orchestrator). Key fields:
 - **alternatives_rejected** — at least 2. Naming what you ruled out and why
   is as valuable as naming what you chose. The aggregator uses this to
   detect false confidence.
-- **research_sources** — your 5+ external citations with URL, title, your
+- **research_sources** — your task-relevant external citations with URL, title, your
   own summary, and a one-line note on why it matters to this plan.
 
 ## Quality bar

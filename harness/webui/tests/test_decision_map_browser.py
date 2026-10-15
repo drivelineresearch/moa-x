@@ -366,7 +366,7 @@ class DecisionMapBrowserTest(unittest.TestCase):
             page.locator("#live-decision-map .dm-shell").wait_for()
             page.wait_for_function("document.querySelectorAll('#live-decision-map .dm-node-decision').length === 1")
             page.wait_for_function("document.querySelectorAll('#live-decision-map .dm-edge.is-synthesizes').length >= 1")
-            self.assertEqual(page.locator("#live-decision-map .dm-stage").text_content(), "Decision complete")
+            self.assertEqual(page.locator("#live-decision-map .dm-stage").text_content(), "Decision recorded")
             self.assertEqual(page.locator("#live-decision-map .dm-metric").first.locator("strong").inner_text(), "High")
             self.assertEqual(
                 page.locator("#live-decision-map .dm-metric").nth(1).locator("strong").inner_text(),
@@ -384,7 +384,7 @@ class DecisionMapBrowserTest(unittest.TestCase):
                 wait_until="networkidle",
             )
             page.locator(".report-decision-map .dm-shell").wait_for()
-            self.assertEqual(page.locator(".report-decision-map .dm-stage").text_content(), "Decision complete")
+            self.assertEqual(page.locator(".report-decision-map .dm-stage").text_content(), "Decision recorded")
             self.assertEqual(page.locator(".lineage-shell").count(), 1)
             self.assertEqual(page.locator("script[src], link[rel='stylesheet']").count(), 0)
             self._assert_no_body_overflow(page)

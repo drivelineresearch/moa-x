@@ -90,8 +90,9 @@ examples](slack.md).
 
 ## Running standalone
 
-The Python orchestrator handles Layers 1 and 2. Layer 0 (scout brief) remains
-the caller's responsibility; Layer 3 runs as a recorded Codex phase:
+The caller supplies the frozen request in a scout brief. The runner enriches
+it with bounded repository reconnaissance, handles Layers 1 and 2, and runs
+Layer 3 through the recorded aggregation path:
 
 ```bash
 python3 harness/scripts/run_moa.py \
@@ -198,6 +199,7 @@ Skip it with `--no-report` (or `MOA_NO_REPORT=1`). Full details:
   minutes; thorough or max-effort runs can exceed 45 minutes. Don't run MoA-X for
   trivial tasks. The tool is shaped for non-trivial architecture
   work.
-- **Web research is part of the contract.** Proposers and refiners
-  are told to search and cite sources. Thin sources in the manifest
-  usually mean a CLI was rate-limited on search. Retry later.
+- **Research follows the task.** Inspect repository evidence first. Fetch
+  primary sources for material external claims; a local task needs no web-search quota.
+
+New sessions are enriched automatically with a bounded scout. See [evidence-first runs](evidence-pipeline.md) and the [known-answer evaluation guide](../harness/evals/README.md).
