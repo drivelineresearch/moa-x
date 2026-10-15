@@ -486,6 +486,7 @@ def _job_view(job: dict[str, Any]) -> dict[str, Any]:
     job["artifacts"] = artifacts
     job["active"] = job["status"] in ACTIVE_STATES
     config = job.get("config") or {}
+    job["source"] = config.get("source")
     job["roster"] = {
         "proposers": config.get("proposers") or [],
         "refiners": config.get("refiners") or [],
@@ -706,31 +707,19 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         seen = set()
         for job in store.list_jobs(limit=100, profile_id=profile["id"]):
             workspace = job["workspace"]
+            if (Path(workspace).resolve() == github_workspace_dir
+                    or github_workspace_dir in Path(workspace).resolve().parents):
+                continue
             if workspace not in seen:
                 seen.add(workspace)
                 recent.append(workspace)
-        github_workspaces = store.list_github_workspaces(
-            profile_id=profile["id"]
-        )
-        for workspace in github_workspaces:
-            path = workspace["local_path"]
-            if path not in seen and Path(path).is_dir():
-                seen.add(path)
-                recent.append(path)
         return jsonify(
             {
                 "workspaces": [
                     {
                         "path": path,
                         "name": Path(path).name or path,
-                        "source": (
-                            "github"
-                            if any(
-                                item["local_path"] == path
-                                for item in github_workspaces
-                            )
-                            else "local"
-                        ),
+                        "source": "local",
                     }
                     for path in dict.fromkeys([str(REPO_ROOT), *recent])
                     if any(
@@ -942,50 +931,19 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                     "local_path": local_by_id.get(full_name),
                 }
             )
-        return jsonify(
+        response = jsonify(
             {"owner": app.config["GITHUB_OWNER"], "repositories": repos}
         )
+        response.headers["Cache-Control"] = "private, no-store"
+        return response
 
     @app.post("/api/workspaces/github")
     @require_profile
     def github_workspace(profile: dict[str, Any]):
-        body = request.get_json(silent=True) or {}
-        pointer = str(body.get("repo") or "").strip()
-        git_ref = (
-            str(body.get("ref") or body.get("github_ref") or "").strip() or None
+        return _error(
+            "Start a run with source_mode=github and github_repository via /api/jobs; "
+            "separate pre-cloning is no longer supported.", 410
         )
-        try:
-            owner, repo = parse_repo_pointer(
-                pointer, app.config["GITHUB_OWNER"]
-            )
-        except ValueError as exc:
-            return _error(str(exc))
-        try:
-            result = clone_repository(
-                pointer,
-                github_workspace_dir,
-                git_ref=git_ref,
-                owner_allowlist=app.config["GITHUB_OWNER"],
-            )
-        except (GitHubWorkspaceError, ValueError) as exc:
-            if isinstance(exc, GitHubWorkspaceError):
-                capture_operational_error(
-                    exc,
-                    operation="github.clone_workspace",
-                    context={"owner": app.config["GITHUB_OWNER"]},
-                )
-            return _error(str(exc), 502)
-        workspace = store.upsert_github_workspace(
-            owner=owner,
-            repo=repo,
-            profile_id=profile["id"],
-            local_path=result["path"],
-            remote_url=result["remote_url"],
-        )
-        response = _dated_view(workspace)
-        response["path"] = response.pop("local_path")
-        response["created"] = result["created"]
-        return jsonify(response), 201 if result["created"] else 200
 
     @app.get("/api/providers")
     def providers():
@@ -1396,6 +1354,10 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                 return {key: redact(item) for key, item in value.items()}
             return value
         public = redact(public)
+        source = job.get("source") or {}
+        if source.get("type") == "github" and source.get("commit"):
+            # Share only revision metadata, never local paths or remote URLs.
+            public["source"] = {key: source.get(key) for key in ("type", "commit", "ref", "fetched_at")}
         public["artifacts"] = {key: f"{request.script_root}/shared/runs/{token}/artifacts/{Path(url).name}"
                                for key, url in job["artifacts"].items()
                                if Path(url).name in {"report.html", "decision-map.json", "final-plan.md", "final-plan.json", "final-audit.json", "final-audit.md"}}

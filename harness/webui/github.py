@@ -8,6 +8,8 @@ import re
 import shutil
 import subprocess
 import tempfile
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -142,49 +144,18 @@ def clone_repository(
     git_ref: str | None = None,
     owner_allowlist: str | None = None,
 ) -> dict[str, Any]:
+    """Fetch a new private snapshot; never reuse or mutate a prior run's tree."""
     owner, repo = parse_repo_pointer(pointer, owner_allowlist)
     git_ref = validate_git_ref(git_ref)
-    owner_root = workspace_root.resolve() / owner
-    owner_root.mkdir(parents=True, exist_ok=True)
+    root = workspace_root.resolve()
+    owner_root = root / "snapshots" / owner / repo
     try:
-        workspace_root.resolve().chmod(0o700)
-        owner_root.chmod(0o700)
-    except OSError:
-        pass
-    target = owner_root / repo
-    if target.exists():
-        if not (target / ".git").is_dir():
-            raise GitHubWorkspaceError(
-                f"Workspace target already exists but is not a Git repository: {target}"
-            )
-        if git_ref:
-            try:
-                branch = subprocess.run(
-                    ["git", "-C", str(target), "branch", "--show-current"],
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                    shell=False,
-                )
-            except (OSError, subprocess.TimeoutExpired) as exc:
-                raise GitHubWorkspaceError(
-                    f"Could not inspect the existing Git workspace: {exc}"
-                ) from exc
-            if branch.returncode != 0 or branch.stdout.strip() != git_ref:
-                raise GitHubWorkspaceError(
-                    f"Workspace already exists on {branch.stdout.strip() or 'another ref'}; "
-                    f"requested {git_ref}"
-                )
-        return {
-            "owner": owner,
-            "repo": repo,
-            "path": str(target),
-            "remote_url": f"https://github.com/{owner}/{repo}",
-            "created": False,
-            "git_ref": git_ref,
-        }
-
-    temporary = Path(tempfile.mkdtemp(prefix=f".{repo}-", dir=owner_root))
+        for directory in (root, root / "snapshots", owner_root.parent, owner_root):
+            directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+            directory.chmod(0o700)
+        temporary = Path(tempfile.mkdtemp(prefix=f".{repo}-", dir=owner_root))
+    except OSError as exc:
+        raise GitHubWorkspaceError("Could not create a private GitHub snapshot") from exc
     try:
         args = [
             "repo",
@@ -202,7 +173,28 @@ def clone_repository(
             raise GitHubWorkspaceError(f"GitHub clone failed: {detail}")
         if not (temporary / ".git").is_dir():
             raise GitHubWorkspaceError("GitHub clone completed without a Git workspace")
+        try:
+            def git(*args: str) -> str:
+                result = subprocess.run(
+                    ["git", "-C", str(temporary), *args],
+                    capture_output=True, text=True, timeout=30, shell=False,
+                )
+                if result.returncode:
+                    raise GitHubWorkspaceError("Could not pin the fetched GitHub snapshot")
+                return result.stdout.strip()
+
+            commit = git("rev-parse", "HEAD")
+            if not re.fullmatch(r"[0-9a-f]{40}(?:[0-9a-f]{24})?", commit):
+                raise GitHubWorkspaceError("GitHub clone returned an invalid commit")
+            resolved_ref = git_ref or git("branch", "--show-current")
+            git("checkout", "--detach", "--quiet", commit)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise GitHubWorkspaceError("Could not pin the fetched GitHub snapshot") from exc
+        fetched_at = datetime.now(timezone.utc).isoformat()
+        target = owner_root / (commit[:12] + "-" + uuid.uuid4().hex[:12])
         temporary.replace(target)
+    except OSError as exc:
+        raise GitHubWorkspaceError("Could not prepare the fetched GitHub snapshot") from exc
     finally:
         if temporary.exists():
             shutil.rmtree(temporary)
@@ -212,5 +204,7 @@ def clone_repository(
         "path": str(target),
         "remote_url": f"https://github.com/{owner}/{repo}",
         "created": True,
-        "git_ref": git_ref,
+        "git_ref": resolved_ref,
+        "commit": commit,
+        "fetched_at": fetched_at,
     }

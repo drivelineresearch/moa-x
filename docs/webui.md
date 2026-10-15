@@ -164,7 +164,7 @@ moa-x/
 ├── uploads/             # durable uploaded source files
 └── workspaces/
     ├── brief/            # isolated repository-free run workspaces
-    └── github/           # managed GitHub clones
+    └── github/snapshots/ # separate commit-pinned GitHub trees
 ```
 
 Each browser creates a local profile ID in `localStorage`. Its display name
@@ -328,6 +328,35 @@ Browser query parameters and request payloads cannot override the configured
 owner. Managed clones live under the XDG data root and appear in the GitHub
 picker after creation. GitHub and upload commands use explicit argument arrays
 rather than a shell.
+
+Every new GitHub run makes a fresh shallow clone of the requested branch or
+tag (the remote default branch when omitted). It detaches at the fetched
+commit in a private, unique directory under
+`workspaces/github/snapshots/<owner>/<repo>/`. The scout brief, job configuration
+and event trace record the resolved ref, full commit SHA and fetch time; the
+run page shows the short commit beside the repository name. Concurrent runs
+never share a working tree, even when they use the same commit. A failed clone
+fails the launch rather than falling back to older code. Uploads are validated
+before cloning; setup failures remove snapshots proven unreferenced by any
+saved job. A committed job or uncertain database state preserves its tree.
+
+Use **Refresh repositories** beside the GitHub picker to request the current
+repository list without browser caching. It preserves the selected repository
+if it remains available, reports refresh failures, and leaves the last good
+list intact on failure. This refreshes discovery; source code is always fetched
+again when starting a new run. The legacy `POST /api/workspaces/github`
+pre-clone endpoint returns HTTP 410 without cloning; API clients should submit
+`source_mode: "github"` and `github_repository: "owner/repo"` to `POST /api/jobs`.
+Checkpoint retries retain the original source
+snapshot; start a new run to analyze a newer revision.
+
+Old shared clones are no longer used for new launches. Keep directories that
+contain historical `.moa/` sessions: archived jobs and evidence receipts still
+reference them. The `github_workspaces` table is only a listing of the latest
+prepared workspace, not a source cache or authority for future checkouts.
+Managed snapshots are excluded from local workspace choices, and new local-mode
+launches cannot select them to bypass fetching. Archived jobs and checkpoint
+retries still read their original trees.
 
 ## Build, test, and customize
 

@@ -204,7 +204,7 @@ export async function getProfile(id) {
 
 export async function getGithubRepos() {
   try {
-    const payload = await request("/api/github/repos");
+    const payload = await request("/api/github/repos", { cache: "no-store" });
     return arrayFrom(payload, "repositories").map((repo) => ({
       ...repo,
       id: repo.id || repo.nameWithOwner || repo.full_name || repo.name,
@@ -244,13 +244,6 @@ export async function uploadFiles(files, metadata = {}) {
     throw error;
   }
   return payload.uploads || [];
-}
-
-export async function checkoutGithubRepo(repo, profileId) {
-  return request("/api/workspaces/github", {
-    method: "POST",
-    body: JSON.stringify({ repo, profile_id: profileId }),
-  });
 }
 
 export async function cancelJob(id) {

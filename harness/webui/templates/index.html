@@ -214,7 +214,11 @@
                       <select id="github-repo" name="github_repo">
                         <option value="">Loading repositories…</option>
                       </select>
-                      <small id="github-repo-meta">Repository metadata comes from the connected GitHub service.</small>
+                      <small id="github-repo-meta">Each new run fetches the latest branch into a separate snapshot.</small>
+                      <div class="github-refresh-controls">
+                        <button class="text-button" id="github-refresh" type="button">↻ Refresh repositories</button>
+                        <small id="github-refresh-status" role="status" aria-live="polite"></small>
+                      </div>
                     </div>
                   </div>
                 </section>
