@@ -50,7 +50,11 @@ cookies/auth/proxy inheritance, and uses a process deadline covering DNS. Failed
 or uncaptured pages remain unverified. Captured page text and a model's declared
 excerpt are distinguishable. Uploaded reference receipts use
 `attachment:<sha256>:<page>`, with filename, extraction/OCR and truncation metadata.
-A truncated or inaccessible passage cannot silently become verified.
+A truncated or inaccessible passage cannot silently become verified. Quotes are
+checked against their extracted page. Proposal and synthesis evidence use the
+same canonical source identities and quote checks. Multiple passages from one
+source remain available to reviewers without counting as independent sources.
+Each stage prioritizes its selected sources within a fresh bounded capture budget.
 
 ## Final decisions and audit
 
@@ -68,8 +72,9 @@ source windows replace a redundant generic repository packet for synthesis.
 The human plan is rendered from the structured decisions, avoiding two separately
 authored answers that can disagree.
 
-A separate DeepSeek V4.1 Flash pass checks the actual final decisions against
-sources. Its 180/240/360-second Quick/Balanced/Thorough cap is clipped to the
+A separate pass from a successful reviewer in another model lab checks the
+actual final decisions against sources, preferring DeepSeek V4.1 Flash. If no
+independent successful reviewer is available, readiness remains unverified. Its 180/240/360-second Quick/Balanced/Thorough cap is clipped to the
 aggregator phase's remaining deadline. It uses the same bounded recovery machinery,
 with one exact JSON schema and one finding per actionable step. Unsupported
 receipts become unverified; contradictory findings require revision. The audit
@@ -90,7 +95,9 @@ Each native lane has an atomic checkpoint bound to its exact prompt, route,
 effort, repository commit and dirty/untracked bytes. An owned worker restart can
 resume a v2 job at most twice, reusing matching completed lanes and preserving
 terminal failures rather than multiplying provider retries. Changed inputs do
-not reuse checkpoints. Cancelling jobs are not automatically resumed. Legacy
+not reuse successful checkpoints. Workspace-mutation failures remain terminal
+even when the mutation changed the fingerprint. Aggregation and its final audit
+also persist together, so a restart can restore both without another model call. Cancelling jobs are not automatically resumed. Legacy
 interrupted runs keep manual recovery. Targeted redispatch excludes sandboxes and
 old checkpoints; synthesis-only recovery retains the validated upstream work.
 

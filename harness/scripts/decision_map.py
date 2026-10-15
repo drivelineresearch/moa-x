@@ -93,6 +93,8 @@ def _portable_verification_source(value: Any) -> Optional[str]:
         return None
     if re.fullmatch(r"attachment:[a-f0-9]{64}:[1-9][0-9]*", source):
         return source
+    if source.startswith("attachment:"):
+        return None
     if source.startswith(("http://", "https://")):
         return _canonical_url(source)
     match = LOCAL_VERIFICATION_SOURCE_RE.fullmatch(source)
@@ -114,7 +116,7 @@ def _local_verification_source_parts(
 ) -> Optional[tuple[str, int, int]]:
     """Return a canonical repository path and bounded inclusive line range."""
     canonical = _portable_verification_source(value)
-    if canonical is None or canonical.startswith(("http://", "https://")):
+    if canonical is None or canonical.startswith(("http://", "https://", "attachment:")):
         return None
     match = LOCAL_VERIFICATION_SOURCE_RE.fullmatch(canonical)
     if match is None:
@@ -706,6 +708,58 @@ def _edge(edges: list[dict[str, Any]], source: str, target: str, kind: str, stat
         edges.append(value)
 
 
+def _v2_evidence_receipt(item, repo_path, session_dir, scout, repository_matches, prior_evidence):
+    """One source identity, quote validation and safety policy for all stages."""
+    import receipts
+    kind = str(item.get("type") or "unknown")
+    filename = _portable_code_locator(item.get("file"))
+    line = item.get("line") if isinstance(item.get("line"), int) else None
+    url = _canonical_url(item.get("url")) if kind == "external" else None
+    snippet = str(item["snippet"]) if item.get("snippet") is not None else None
+    locator = receipts.evidence_locator(item, scout)
+    if kind == "code":
+        locator = f"{filename or 'blocked'}:{line or 0}"
+        source_key = f"code:{filename or 'unknown'}"
+        label = locator
+    elif kind == "attachment":
+        source_key = locator.rsplit(":", 1)[0] if locator else "attachment:unknown"
+        label = f"{filename or 'attachment'} page {line or '?'}"
+    else:
+        locator = url
+        source_key = f"external:{_source_identity_url(url) or 'unknown'}"
+        label = _source_domain(url) or url or "External source"
+    evidence_id = _content_id("evidence", {"type": kind, "source": source_key,
+                                           "locator": locator, "snippet": _text_key(snippet)})
+    previous = prior_evidence.get(evidence_id, {})
+    if kind == "code" and not repository_matches:
+        source = {"state": "repository_drift" if previous.get("file_sha256") else "unavailable_legacy",
+                  "file_sha256": previous.get("file_sha256"), "line_sha256": previous.get("line_sha256")}
+    elif kind == "external":
+        source = receipts.external_receipt(session_dir, url or "", snippet)
+    elif kind == "attachment":
+        source = receipts.attachment_receipt(scout, locator or "", snippet)
+    elif kind == "code":
+        source = receipts.source_excerpt(repo_path, locator, session=session_dir, scout=scout)
+        if source.get("state") == "captured":
+            if previous.get("file_sha256") and previous["file_sha256"] != source.get("file_sha256"):
+                source = {"state": "repository_drift", "file_sha256": previous.get("file_sha256"),
+                          "line_sha256": previous.get("line_sha256")}
+            elif not snippet:
+                source["state"] = "missing_snippet"
+            elif not receipts.code_snippet_matches(snippet, source.get("text", "")):
+                source["state"] = "snippet_mismatch"
+    else:
+        source = {"state": "invalid_locator"}
+    state = source.get("state", "uncaptured")
+    retained = snippet if state in {"captured", "repository_drift"} else None
+    return {"id": evidence_id, "type": kind, "label": label, "claim_ids": [], "proposer_ids": [],
+            "file": filename, "line": line, "url": url, "source_key": source_key,
+            "source_domain": _source_domain(url), "snippet": retained,
+            "snippet_sha256": hashlib.sha256(retained.encode()).hexdigest() if retained is not None else None,
+            "file_sha256": source.get("file_sha256") or source.get("content_sha256"),
+            "line_sha256": source.get("line_sha256"), "capture_status": state}
+
+
 def build_decision_map(
     session_dir: Path,
     *,
@@ -853,111 +907,117 @@ def build_decision_map(
                 if not claim_text:
                     continue
                 claim_id = _content_id("claim", {"text": _text_key(claim_text)})
-                ev_type = str(item.get("type") or "unknown")
-                canonical_url = _canonical_url(item.get("url")) if ev_type == "external" else None
-                raw_file_name = item.get("file")
-                file_name = _portable_code_locator(raw_file_name)
-                line_number = item.get("line") if isinstance(item.get("line"), int) else None
-                snippet = str(item.get("snippet")) if item.get("snippet") is not None else None
-                if ev_type == "code":
-                    source_key = f"code:{file_name or 'unknown'}"
-                    label = f"{file_name or 'unknown file'}:{line_number or '?'}"
-                elif ev_type == "attachment":
-                    import receipts
-                    source_key = receipts.evidence_locator(item, scout)
-                    label = f"{raw_file_name} page {line_number}"
+                if v2:
+                    descriptor = _v2_evidence_receipt(item, repo_path, session_dir, scout,
+                                                      repository_matches, prior_evidence)
+                    evidence_id = descriptor["id"]
+                    receipt = evidence.setdefault(evidence_id, descriptor)
                 else:
-                    source_key = f"external:{_source_identity_url(canonical_url) or 'unknown'}"
-                    label = _source_domain(canonical_url) or canonical_url or "External source"
-                evidence_id = _content_id(
-                    "evidence",
-                    {
-                        "type": ev_type,
-                        "source": source_key,
-                        "locator": (
-                            f"{file_name or 'blocked'}:{line_number or 0}"
-                            if ev_type == "code"
-                            else canonical_url
-                        ),
-                        "snippet": _text_key(snippet),
-                    },
-                )
-                previous_receipt = prior_evidence.get(evidence_id, {})
-                previous_code_receipt_captured = (
-                    previous_receipt.get("capture_status")
-                    in {"captured", "repository_drift"}
-                    and bool(previous_receipt.get("file_sha256"))
-                    and bool(previous_receipt.get("line_sha256"))
-                )
-                if ev_type == "code" and repository_matches:
-                    file_hash, line_hash, capture_status = _repo_file_receipt(
-                        repo_path, raw_file_name, line_number
+                    ev_type = str(item.get("type") or "unknown")
+                    canonical_url = _canonical_url(item.get("url")) if ev_type == "external" else None
+                    raw_file_name = item.get("file")
+                    file_name = _portable_code_locator(raw_file_name)
+                    line_number = item.get("line") if isinstance(item.get("line"), int) else None
+                    snippet = str(item.get("snippet")) if item.get("snippet") is not None else None
+                    if ev_type == "code":
+                        source_key = f"code:{file_name or 'unknown'}"
+                        label = f"{file_name or 'unknown file'}:{line_number or '?'}"
+                    elif ev_type == "attachment":
+                        import receipts
+                        source_key = receipts.evidence_locator(item, scout)
+                        label = f"{raw_file_name} page {line_number}"
+                    else:
+                        source_key = f"external:{_source_identity_url(canonical_url) or 'unknown'}"
+                        label = _source_domain(canonical_url) or canonical_url or "External source"
+                    evidence_id = _content_id(
+                        "evidence",
+                        {
+                            "type": ev_type,
+                            "source": source_key,
+                            "locator": (
+                                f"{file_name or 'blocked'}:{line_number or 0}"
+                                if ev_type == "code"
+                                else canonical_url
+                            ),
+                            "snippet": _text_key(snippet),
+                        },
                     )
-                    if (
-                        previous_receipt.get("file_sha256")
-                        and file_hash != previous_receipt.get("file_sha256")
-                    ):
+                    previous_receipt = prior_evidence.get(evidence_id, {})
+                    previous_code_receipt_captured = (
+                        previous_receipt.get("capture_status")
+                        in {"captured", "repository_drift"}
+                        and bool(previous_receipt.get("file_sha256"))
+                        and bool(previous_receipt.get("line_sha256"))
+                    )
+                    if ev_type == "code" and repository_matches:
+                        file_hash, line_hash, capture_status = _repo_file_receipt(
+                            repo_path, raw_file_name, line_number
+                        )
+                        if (
+                            previous_receipt.get("file_sha256")
+                            and file_hash != previous_receipt.get("file_sha256")
+                        ):
+                            file_hash = previous_receipt.get("file_sha256")
+                            line_hash = previous_receipt.get("line_sha256")
+                            capture_status = "repository_drift"
+                    elif ev_type == "code" and previous_code_receipt_captured:
                         file_hash = previous_receipt.get("file_sha256")
                         line_hash = previous_receipt.get("line_sha256")
                         capture_status = "repository_drift"
-                elif ev_type == "code" and previous_code_receipt_captured:
-                    file_hash = previous_receipt.get("file_sha256")
-                    line_hash = previous_receipt.get("line_sha256")
-                    capture_status = "repository_drift"
-                elif ev_type == "code":
-                    file_hash, line_hash, capture_status = None, None, "unavailable_legacy"
-                elif v2 and ev_type in {"external", "attachment"}:
-                    import receipts
-                    locator = receipts.evidence_locator(item, scout)
-                    source = receipts.source_excerpt(repo_path, locator, session=session_dir, scout=scout)
-                    if ev_type == "external":
-                        source = receipts.external_receipt(session_dir, locator, snippet)
-                    file_hash, line_hash, capture_status = source.get("content_sha256"), None, source.get("state", "uncaptured")
-                elif ev_type == "external" and canonical_url:
-                    file_hash, line_hash, capture_status = None, None, "declared_excerpt"
-                else:
-                    file_hash, line_hash, capture_status = None, None, "invalid_locator"
-                if v2 and ev_type == "code" and capture_status == "captured":
-                    import receipts
-                    source = receipts.source_excerpt(repo_path, f"{file_name}:{line_number}", session=session_dir, scout=scout)
-                    normalized = lambda text: " ".join(str(text or "").split()).casefold()
-                    if not snippet:
-                        capture_status = "missing_snippet"
-                    elif normalized(snippet) not in normalized(source.get("text", "")):
-                        capture_status = "snippet_mismatch"
-                retained_snippet = snippet
-                if ev_type == "code" and capture_status not in {
-                    "captured",
-                    "repository_drift",
-                }:
-                    # Do not amplify model-returned text from a path the
-                    # orchestrator could not safely validate (for example,
-                    # .env, a symlink, FIFO, or out-of-range locator).
-                    retained_snippet = None
-                receipt = evidence.setdefault(
-                    evidence_id,
-                    {
-                        "id": evidence_id,
-                        "type": ev_type,
-                        "label": label,
-                        "claim_ids": [],
-                        "proposer_ids": [],
-                        "file": file_name,
-                        "line": line_number,
-                        "url": canonical_url,
-                        "source_key": source_key,
-                        "source_domain": _source_domain(canonical_url),
-                        "snippet": retained_snippet,
-                        "snippet_sha256": (
-                            hashlib.sha256(retained_snippet.encode("utf-8")).hexdigest()
-                            if retained_snippet is not None
-                            else None
-                        ),
-                        "file_sha256": file_hash,
-                        "line_sha256": line_hash,
-                        "capture_status": capture_status,
-                    },
-                )
+                    elif ev_type == "code":
+                        file_hash, line_hash, capture_status = None, None, "unavailable_legacy"
+                    elif v2 and ev_type in {"external", "attachment"}:
+                        import receipts
+                        locator = receipts.evidence_locator(item, scout)
+                        source = receipts.source_excerpt(repo_path, locator, session=session_dir, scout=scout)
+                        if ev_type == "external":
+                            source = receipts.external_receipt(session_dir, locator, snippet)
+                        file_hash, line_hash, capture_status = source.get("content_sha256"), None, source.get("state", "uncaptured")
+                    elif ev_type == "external" and canonical_url:
+                        file_hash, line_hash, capture_status = None, None, "declared_excerpt"
+                    else:
+                        file_hash, line_hash, capture_status = None, None, "invalid_locator"
+                    if v2 and ev_type == "code" and capture_status == "captured":
+                        import receipts
+                        source = receipts.source_excerpt(repo_path, f"{file_name}:{line_number}", session=session_dir, scout=scout)
+                        normalized = lambda text: " ".join(str(text or "").split()).casefold()
+                        if not snippet:
+                            capture_status = "missing_snippet"
+                        elif not receipts.code_snippet_matches(snippet, source.get("text", "")):
+                            capture_status = "snippet_mismatch"
+                    retained_snippet = snippet
+                    if ev_type == "code" and capture_status not in {
+                        "captured",
+                        "repository_drift",
+                    }:
+                        # Do not amplify model-returned text from a path the
+                        # orchestrator could not safely validate (for example,
+                        # .env, a symlink, FIFO, or out-of-range locator).
+                        retained_snippet = None
+                    receipt = evidence.setdefault(
+                        evidence_id,
+                        {
+                            "id": evidence_id,
+                            "type": ev_type,
+                            "label": label,
+                            "claim_ids": [],
+                            "proposer_ids": [],
+                            "file": file_name,
+                            "line": line_number,
+                            "url": canonical_url,
+                            "source_key": source_key,
+                            "source_domain": _source_domain(canonical_url),
+                            "snippet": retained_snippet,
+                            "snippet_sha256": (
+                                hashlib.sha256(retained_snippet.encode("utf-8")).hexdigest()
+                                if retained_snippet is not None
+                                else None
+                            ),
+                            "file_sha256": file_hash,
+                            "line_sha256": line_hash,
+                            "capture_status": capture_status,
+                        },
+                    )
                 if claim_id not in receipt["claim_ids"]:
                     receipt["claim_ids"].append(claim_id)
                 if proposer_id not in receipt["proposer_ids"]:
@@ -1232,21 +1292,13 @@ def build_decision_map(
                         critical_pointer_failure = True
                         pointer_warnings.append(f"Final step {step_index + 1} has an unresolved supporting claim")
             for item in step.get("evidence", []) if lineage.get("version") == 2 else []:
-                import receipts
-                locator = receipts.evidence_locator(item, scout)
-                source = receipts.source_excerpt(repo_path, locator, session=session_dir, scout=scout)
-                if item.get("type") == "external":
-                    source = receipts.external_receipt(session_dir, locator, item.get("snippet"))
+                descriptor = _v2_evidence_receipt(item, repo_path, session_dir, scout,
+                                                  repository_matches, prior_evidence)
+                evidence_id = descriptor["id"]
+                receipt = evidence.setdefault(evidence_id, descriptor)
                 claim_id = _content_id("claim", {"text": _text_key(item.get("claim"))})
-                evidence_id = _content_id("evidence", {"source": locator, "snippet": _text_key(item.get("snippet"))})
-                source_key = f"code:{item.get('file')}" if item.get("type") == "code" else locator
-                evidence[evidence_id] = {"id": evidence_id, "type": item["type"], "label": locator,
-                    "claim_ids": [claim_id], "proposer_ids": [], "file": item.get("file"),
-                    "line": item.get("line"), "url": item.get("url"), "source_key": source_key,
-                    "source_domain": _source_domain(item.get("url")), "snippet": item.get("snippet"),
-                    "snippet_sha256": hashlib.sha256(str(item.get("snippet") or "").encode()).hexdigest(),
-                    "file_sha256": source.get("file_sha256") or source.get("content_sha256"),
-                    "line_sha256": source.get("line_sha256"), "capture_status": source.get("state", "uncaptured")}
+                if claim_id not in receipt["claim_ids"]:
+                    receipt["claim_ids"].append(claim_id)
                 claim = claims.setdefault(claim_id, {"id": claim_id, "text": item["claim"], "status": "unreviewed",
                     "critical": False, "proposer_ids": [], "evidence_ids": [], "verification_ids": [],
                     "decision_ids": [], "independent_sources": 0, "verified_reviewer_labs": []})
@@ -1376,13 +1428,15 @@ def build_decision_map(
                 )
 
     critical = [claim for claim in claims.values() if claim["critical"]]
+    verified_source_claims = {item.get("claim_id") for item in verifications
+                              if item.get("status") == "verified" and item.get("source_capture_status") == "captured"}
     supported = [
         claim
         for claim in critical
         if any(
             evidence[evidence_id]["capture_status"] in USABLE_RECEIPT_STATES
             for evidence_id in claim["evidence_ids"]
-        )
+        ) or (v2 and claim["id"] in verified_source_claims)
     ]
     reviewed = [claim for claim in critical if claim["verification_ids"]]
     verified = [claim for claim in critical if claim["status"] == "verified"]
@@ -1538,7 +1592,7 @@ def build_decision_map(
         gate("final-audit", "Final answer audit", "pass" if audit.get("success") and not bad else "fail",
              f"{sum(x.get('status') == 'supported' for x in audit.get('findings', []))} final decisions independently supported; {len(bad)} need evidence or revision.")
         if lineage.get("outcome") != "ready":
-            gate("outcome", "Decision readiness", "fail", str(lineage.get("outcome", "insufficient_evidence")))
+            gate("outcome", "Decision readiness", "fail", "The final editor withheld readiness: revise the decisions or resolve the remaining evidence gaps and questions.")
     failed_gate = any(item["status"] == "fail" for item in gates)
     warning_gate = any(item["status"] in {"warn", "pending"} for item in gates)
     rejected_only = bool(decisions) and not any(

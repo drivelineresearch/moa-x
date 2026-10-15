@@ -266,13 +266,17 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(
             pipeline.validate_decisions(self.lineage, [self.proposer], []), []
         )
-        self.assertTrue(pipeline.render_plan(self.lineage).startswith("# REJECTED:"))
+        self.assertTrue(
+            pipeline.render_plan(self.lineage).startswith("# Needs revision:")
+        )
 
     def test_rendered_plan_uses_exact_decision_description(self):
         self.assertIn(self.step["description"], pipeline.render_plan(self.lineage))
 
     def test_deferred_unsupported_decision_is_explicit(self):
         self.step.update(decision="deferred", proposer_refs=[], supporting_claims=[])
+        self.assertTrue(pipeline.validate_decisions(self.lineage, [self.proposer], []))
+        self.lineage["outcome"] = "insufficient_evidence"
         self.assertEqual(
             pipeline.validate_decisions(self.lineage, [self.proposer], []), []
         )
@@ -451,6 +455,10 @@ class EvidenceTests(unittest.TestCase):
             r = run_moa._dispatch_checkpointed(**args)
             self.assertTrue(r.checkpoint_reused)
             self.assertEqual(dispatch.call_count, 1)
+            (self.session / r.json_path).unlink()
+            restored = run_moa._dispatch_checkpointed(**args)
+            self.assertTrue((self.session / restored.json_path).exists())
+            self.assertEqual(dispatch.call_count, 1)
             (self.repo / "cache.py").write_text(
                 "def expired(now, expires):\n    return now >= expires\n"
             )
@@ -493,7 +501,13 @@ class EvidenceTests(unittest.TestCase):
                 timeout=900,
                 codex_effort="medium",
                 layer1=[self.proposer],
-                layer2=[],
+                layer2=[
+                    SimpleNamespace(
+                        agent_id="deepseek-flash",
+                        success=True,
+                        payload={"overall_verdict": "accept"},
+                    )
+                ],
             )
         self.assertTrue(r.success, r.error)
         self.assertIn(
@@ -503,6 +517,32 @@ class EvidenceTests(unittest.TestCase):
         self.assertTrue(audit["success"])
         self.assertEqual(audit["lab_id"], "deepseek")
         self.assertEqual(audit["findings"][0]["status"], "supported")
+        # A crash after final-file persistence must not purchase aggregation/audit again.
+        (self.session / "final-plan.md").unlink()
+        (self.session / "final-audit.md").unlink()
+        with (
+            patch.dict(os.environ, {"MOA_RESUME_CHECKPOINTS": "1"}),
+            patch.object(run_moa, "_invoke_adapter") as native,
+        ):
+            retained = run_moa.run_layer3(
+                provider=provider,
+                repo_path=self.repo,
+                session_dir=self.session,
+                timeout=900,
+                codex_effort="medium",
+                layer1=[self.proposer],
+                layer2=[
+                    SimpleNamespace(
+                        agent_id="deepseek-flash",
+                        success=True,
+                        payload={"overall_verdict": "accept"},
+                    )
+                ],
+            )
+            native.assert_not_called()
+        self.assertTrue(retained.checkpoint_reused)
+        self.assertTrue((self.session / "final-plan.md").exists())
+        self.assertTrue((self.session / "final-audit.md").exists())
 
     def test_v2_unanimous_rejection_needs_no_fabricated_plan(self):
         from adapters.codex import CodexResult
@@ -531,7 +571,7 @@ class EvidenceTests(unittest.TestCase):
             )
         self.assertTrue(r.success, r.error)
         self.assertTrue(
-            (self.session / "final-plan.md").read_text().startswith("# REJECTED:")
+            (self.session / "final-plan.md").read_text().startswith("# Needs revision:")
         )
 
     def test_worker_recovers_from_transient_storage_error(self):
@@ -712,6 +752,246 @@ class EvidenceTests(unittest.TestCase):
         )
         checked = run_moa._apply_workspace_guard(result, before, after)
         self.assertFalse(checked.success)
+
+    def test_multiline_code_quote_matches_bytes_without_display_line_numbers(self):
+        text = "1: def expired(now, expires):\n2:     return now > expires"
+        self.assertTrue(
+            receipts.code_snippet_matches(
+                "def expired(now, expires):\n    return now > expires", text
+            )
+        )
+        self.assertFalse(receipts.code_snippet_matches("return now >= expires", text))
+
+    def test_valid_independent_receipt_supports_claim_with_bad_proposer_quote(self):
+        self.proposer.payload["plan"][0]["evidence"][0]["snippet"] = (
+            "a nonexistent quotation"
+        )
+        d = self.make_map()
+        self.assertEqual(d["quality"]["supported_critical_claims"], 1)
+        self.assertIn("snippet_mismatch", {e["capture_status"] for e in d["evidence"]})
+
+    def test_final_evidence_uses_same_quote_and_safety_rules(self):
+        self.step["evidence"] = [
+            {**self.evidence, "snippet": "invented source quote"},
+            {**self.evidence, "file": ".env", "snippet": "secret"},
+        ]
+        d = self.make_map()
+        bad = [e for e in d["evidence"] if e["capture_status"] != "captured"]
+        self.assertTrue(any(e["capture_status"] == "snippet_mismatch" for e in bad))
+        self.assertTrue(all(e["snippet"] is None for e in bad))
+
+    def test_final_reusing_proposal_evidence_preserves_provenance(self):
+        self.step["evidence"] = [copy.deepcopy(self.evidence)]
+        d = self.make_map()
+        self.assertEqual(len(d["evidence"]), 1)
+        self.assertEqual(d["evidence"][0]["proposer_ids"], ["grok"])
+        self.assertEqual(
+            next(c for c in d["claims"] if c["critical"])["independent_sources"], 1
+        )
+
+    def test_final_external_receipt_is_same_source_as_proposal(self):
+        item = {
+            **self.evidence,
+            "type": "external",
+            "file": None,
+            "line": None,
+            "url": "https://example.com/source",
+            "snippet": "precise text",
+        }
+        self.proposer.payload["plan"][0]["evidence"] = [item]
+        self.step["evidence"] = [{**item, "snippet": "text"}]
+        receipts.capture(
+            self.session,
+            [item["url"]],
+            fetcher=lambda url: {
+                "state": "captured",
+                "url": url,
+                "text": "precise text",
+            },
+        )
+        d = self.make_map(external=True)
+        self.assertEqual(len({e["source_key"] for e in d["evidence"]}), 1)
+
+    def test_capture_preserves_priority_and_final_stage_allowance(self):
+        seen = []
+
+        def fetch(url):
+            seen.append(url)
+            return {"state": "captured", "url": url, "text": "source"}
+
+        receipts.capture(
+            self.session,
+            ["https://z.example/a", "https://a.example/b"],
+            limit=1,
+            fetcher=fetch,
+        )
+        self.assertEqual(seen, ["https://z.example/a"])
+        receipts.capture(
+            self.session, ["https://final.example/c"], limit=1, fetcher=fetch
+        )
+        self.assertEqual(len(seen), 2)
+        self.assertEqual(len(receipts.load(self.session)), 2)
+
+    def test_packet_keeps_multiple_normalized_quotes_from_one_url(self):
+        url = "https://example.com/paper"
+        text = "first\nquote " + ("x " * 3000) + "second\nquote"
+        receipts.capture(
+            self.session,
+            [url],
+            fetcher=lambda url: {"state": "captured", "url": url, "text": text},
+        )
+        value = receipts.packet(
+            self.repo,
+            [
+                {"evidence": {"type": "external", "url": url, "snippet": quote}}
+                for quote in ("first quote", "second quote")
+            ],
+            session=self.session,
+            scout=self.scout,
+        )
+        records = json.loads(value.split("\n", 1)[1].rsplit("\n", 1)[0])
+        self.assertEqual(len(records), 2)
+        self.assertTrue(all(r["snippet_matched"] for r in records))
+        self.assertIn("second quote", records[1]["text"])
+
+    def test_attachment_is_not_a_repository_path_and_quotes_are_checked(self):
+        self.test_attachment_receipt_checks_hash_and_page()
+        source = "attachment:" + "a" * 64 + ":2"
+        self.assertIsNone(decision_map._local_verification_source_parts(source))
+        self.assertEqual(
+            receipts.attachment_receipt(self.scout, source, "First page")["state"],
+            "snippet_mismatch",
+        )
+        from test_offline import _make_valid_broadcast_refiner
+
+        payload = _make_valid_broadcast_refiner("opus")
+        payload["verifications"][0]["source_url"] = source
+        payload["verifications"][0]["status"] = "verified"
+        result, warnings = run_moa._downgrade_unsupported_verifications(
+            payload, self.repo, scout=self.scout
+        )
+        self.assertEqual(result["verifications"][0]["status"], "verified")
+        self.assertFalse(warnings)
+
+    def test_workspace_mutation_checkpoint_is_terminal_after_source_changes(self):
+        provider = run_moa.harness_config.ResolvedProvider(
+            "grok", "opencode", "opencode-go/grok-4.7", 900
+        )
+        args = dict(
+            provider=provider,
+            layer=1,
+            role="proposer",
+            prompt="Read only",
+            repo_path=self.repo,
+            session_dir=self.session,
+            timeout_for_harness={"opencode": 900},
+            codex_effort="medium",
+        )
+        result = copy.deepcopy(self.proposer)
+        result.success = False
+        result.workspace_mutations = ["cache.py"]
+        with (
+            patch.object(run_moa, "_dispatch_provider", return_value=result) as native,
+            patch.dict(os.environ, {"MOA_RESUME_CHECKPOINTS": "1"}),
+        ):
+            run_moa._dispatch_checkpointed(**args)
+            (self.repo / "cache.py").write_text("changed by failed lane\n")
+            restored = run_moa._dispatch_checkpointed(**args)
+        self.assertEqual(native.call_count, 1)
+        self.assertFalse(restored.success)
+        self.assertTrue(restored.checkpoint_reused)
+
+    def test_auditor_falls_back_to_healthy_independent_lab(self):
+        catalog = run_moa.harness_config.load_provider_catalog()
+        aggregator = catalog["fable"]
+        reviews = [
+            SimpleNamespace(agent_id="deepseek-flash", success=False, payload=None),
+            SimpleNamespace(
+                agent_id="codex-sol",
+                success=True,
+                payload={"overall_verdict": "accept"},
+            ),
+            SimpleNamespace(
+                agent_id="opus", success=True, payload={"overall_verdict": "accept"}
+            ),
+        ]
+        self.assertEqual(
+            run_moa._select_auditor(aggregator, reviews, catalog).name, "codex-sol"
+        )
+        self.assertIsNone(run_moa._select_auditor(aggregator, reviews[2:], catalog))
+
+    def test_worker_storage_error_after_spawn_reaps_process(self):
+        import sys
+
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+        from harness.webui.worker import JobWorker
+
+        store = SimpleNamespace(
+            update_job=lambda *a, **kw: (
+                (_ for _ in ()).throw(OSError("database unavailable"))
+                if "pid" in kw
+                else None
+            ),
+            append_event=lambda *a, **kw: None,
+        )
+        worker = JobWorker(store, Path("fixture.py"))
+        job = {
+            "id": "fixture",
+            "session_dir": str(self.session),
+            "workspace": str(self.repo),
+            "config": {},
+        }
+        processes = []
+        popen = subprocess.Popen
+
+        def spawn(*args, **kwargs):
+            proc = popen(*args, **kwargs)
+            processes.append(proc)
+            return proc
+
+        with (
+            patch.object(
+                worker,
+                "_command",
+                return_value=[sys.executable, "-c", "import time;time.sleep(60)"],
+            ),
+            patch.object(worker, "_environment", return_value=dict(os.environ)),
+            patch("harness.webui.worker.subprocess.Popen", side_effect=spawn),
+        ):
+            with self.assertRaises(OSError):
+                worker._run_phase(job, "layer1")
+        self.assertIsNotNone(processes[0].poll())
+        self.assertEqual(worker._processes, {})
+
+    def test_worker_retries_failure_record_after_database_recovers(self):
+        import sys
+
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+        from harness.webui.worker import JobWorker
+
+        class Storage:
+            claims = 0
+
+            def claim_next_job(inner):
+                inner.claims += 1
+                if inner.claims == 1:
+                    return {"id": "claimed-job"}
+                worker._stop.set()
+                return None
+
+            def update_job(inner, job_id, **fields):
+                self.assertEqual(job_id, "claimed-job")
+                self.assertEqual(fields["status"], "failed")
+                inner.repaired = True
+
+        store = Storage()
+        worker = JobWorker(store, Path("unused"), poll_seconds=0.001)
+        with (
+            patch.object(worker, "_run_job", side_effect=OSError("storage offline")),
+            patch("harness.webui.worker.capture_operational_error"),
+        ):
+            worker._loop()
+        self.assertTrue(store.repaired)
 
 
 if __name__ == "__main__":

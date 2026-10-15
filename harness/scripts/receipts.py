@@ -198,7 +198,7 @@ def load(session: Path) -> dict:
     if path.is_symlink():
         return {}
     try:
-        if path.stat().st_size > 3_000_000:
+        if path.stat().st_size > 8_000_000:
             return {}
         result = json.loads(path.read_text())
         return result if isinstance(result, dict) else {}
@@ -210,10 +210,12 @@ def capture(session: Path, urls: list[str], *, limit=12, fetcher=None) -> dict:
     from run_moa import _write_text_atomic
 
     cached = load(session)
-    pending = sorted(
-        {value for url in urls if (value := _canonical(url)) and value not in cached}
-    )
-    remaining = max(0, limit - len(cached))
+    # Every stage gets a bounded capture allowance. Earlier optional sources and
+    # failed fetches must not consume the final decisions' source budget.
+    requested = list(
+        dict.fromkeys(value for url in urls if (value := _canonical(url)))
+    )[: max(0, limit)]
+    pending = [url for url in requested if url not in cached]
 
     def one(url):
         try:
@@ -228,7 +230,7 @@ def capture(session: Path, urls: list[str], *, limit=12, fetcher=None) -> dict:
             }
 
     with ThreadPoolExecutor(max_workers=4) as pool:
-        for url, receipt in pool.map(one, pending[:remaining]):
+        for url, receipt in pool.map(one, pending):
             cached[url] = receipt
     _write_text_atomic(
         session / "source-receipts.json", json.dumps(cached, ensure_ascii=False)
@@ -247,7 +249,7 @@ def external_receipt(session: Path, url: str, snippet: str | None = None) -> dic
     return row
 
 
-def attachment_receipt(scout: dict, source: str) -> dict:
+def attachment_receipt(scout: dict, source: str, snippet: str | None = None) -> dict:
     """attachment:<sha256>:<page>, addressing an extracted, hashed upload."""
     import re
 
@@ -288,8 +290,12 @@ def attachment_receipt(scout: dict, source: str) -> dict:
                 )
             elif page != 1:
                 return {"state": "page_unavailable"}
+            normalize = lambda value: " ".join(str(value or "").split()).casefold()
+            state = "captured" if text else "page_unavailable"
+            if snippet and normalize(snippet) not in normalize(text):
+                state = "snippet_mismatch"
             return {
-                "state": "captured" if text else "page_unavailable",
+                "state": state,
                 "text": text,
                 "content_sha256": item["sha256"],
                 "name": item["name"],
@@ -328,6 +334,15 @@ def source_excerpt(repo: Path, source: str, *, session: Path, scout: dict) -> di
     }
 
 
+def code_snippet_matches(snippet: str | None, numbered_text: str) -> bool:
+    """Compare source bytes, excluding only the runner's display line numbers."""
+    import re
+
+    plain = re.sub(r"(?m)^[0-9]+: ?", "", numbered_text)
+    normalize = lambda value: " ".join(str(value or "").split()).casefold()
+    return bool(snippet and normalize(snippet) in normalize(plain))
+
+
 def evidence_locator(evidence: dict, scout: dict) -> str:
     if evidence.get("type") == "external":
         return str(evidence.get("url") or "")
@@ -347,14 +362,18 @@ def packet(
     for row in rows:
         ev = row.get("evidence", {})
         locator = evidence_locator(ev, scout)
-        if locator in seen:
+        quote = " ".join(str(ev.get("snippet") or "").split())
+        key = (locator, quote.casefold())
+        if key in seen:
             continue
-        seen.add(locator)
+        seen.add(key)
         receipt = source_excerpt(repo, locator, session=session, scout=scout)
         if ev.get("type") == "external" and receipt.get("text"):
-            text = receipt["text"]
-            quote = ev.get("snippet") or ""
-            pos = text.casefold().find(quote.casefold()) if quote else -1
+            import re
+
+            text = " ".join(receipt["text"].split())
+            match = re.search(re.escape(quote), text, re.I) if quote else None
+            pos = match.start() if match else -1
             receipt["text"] = (
                 text[max(0, pos - 400) : max(0, pos - 400) + 2400]
                 if pos >= 0

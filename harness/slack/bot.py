@@ -784,6 +784,7 @@ class Bot:
         folder = Path(job["session_dir"])
         if job["status"] == "completed" and (folder / "final-plan.md").is_file():
             plan = (folder / "final-plan.md").read_text()
+            lineage = {}
             try:
                 manifest = json.loads((folder / "manifest.json").read_text())
                 rows = [r for key in ("layer1", "layer2", "layer3") for r in manifest.get(key, [])]
@@ -808,6 +809,8 @@ class Bot:
                 verification += "\n🔎 " + evidence_text(evidence)
                 if evidence.get("outcome") in {"needs_revision", "insufficient_evidence"}:
                     verification += "\n⚠️ Further verification or revised proposals are required before implementation."
+                    for reason in evidence.get("reasons", [])[:2]:
+                        verification += "\n• " + str(reason)[:500]
                 if passed < len(rows):
                     verification += " Some lanes failed; inspect the report’s limitations."
                 citation_warnings = sum(len(r.get("verification_warnings") or []) for r in rows if r.get("success"))
@@ -819,7 +822,10 @@ class Bot:
             except (OSError, ValueError, TypeError, AttributeError):
                 verification = "Verification metadata is unavailable; inspect the retained plan and report before relying on the result."
             tldr = re.search(r"## TL;DR\s*(.*?)(?=\n## |\Z)", plan, re.S)
-            summary = tldr.group(1).strip() if tldr else plan[:2200]
+            if lineage.get("version") == 2:
+                summary = lineage.get("summary", "")
+            else:
+                summary = tldr.group(1).strip() if tldr else plan[:2200]
             reply = (
                 ("⚠️ *MoA-X complete — " + text(d.get("outcome_label", "review required")) + "*\n" if d.get("evidence_outcome") in {"needs_revision", "insufficient_evidence"} else "✅ *MoA-X finished*\n")
                 + text(summary[:2400])

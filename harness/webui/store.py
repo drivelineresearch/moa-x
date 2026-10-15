@@ -532,8 +532,11 @@ class Store:
                 """,
                 (now, row["id"]),
             )
+            claimed = conn.execute("SELECT * FROM jobs WHERE id=?", (row["id"],)).fetchone()
+            # Decode before commit: malformed persisted data cannot strand a claim.
+            result = self._decode(claimed)
             conn.execute("COMMIT")
-        return self.get_job(row["id"])
+        return result
 
     def queue_summary(self, job: dict[str, Any]) -> dict[str, Any]:
         """Bounded historical range, explicitly not a promise or model estimate."""

@@ -525,6 +525,7 @@ def _downgrade_unsupported_verifications(
     payload: dict,
     repo_path: Optional[Path],
     schema: Optional[dict] = None,
+    scout: Optional[dict] = None,
 ) -> tuple[dict, list[dict]]:
     """Retain review advice without accepting unsupported fact claims.
 
@@ -545,7 +546,11 @@ def _downgrade_unsupported_verifications(
             else None
         )
         parts = decision_map_module._local_verification_source_parts(source)
-        if parts is not None and repo_path is not None:
+        if isinstance(source, str) and source.startswith("attachment:"):
+            state = receipts.attachment_receipt(scout or {}, source).get("state")
+            if state != "captured":
+                reason = state
+        elif parts is not None and repo_path is not None:
             _, _, state = decision_map_module._repo_file_receipt(repo_path, *parts)
             if state in {"unreadable", "line_out_of_range"}:
                 reason = state
@@ -907,7 +912,8 @@ def _finalize_result(
                 flush=True,
             )
         adapter_payload, warnings = _downgrade_unsupported_verifications(
-            adapter_payload, repo_path, schema
+            adapter_payload, repo_path, schema,
+            decision_map_module._read_json(session_dir / "scout-brief.json") or {},
         )
         layer_result.verification_warnings = warnings or None
         if warnings:
@@ -1357,7 +1363,7 @@ def _apply_workspace_guard(
         for path in set(before_by_path) | set(after_by_path)
         if before_by_path.get(path) != after_by_path.get(path)
     )
-    result.workspace_mutations = changed or ["<content changed in an already-dirty path>"]
+    result.workspace_mutations = changed or ["<repository tree or content changed>"]
     result.success = False
     message = (
         "workspace changed while this provider ran outside the active session: "
@@ -1383,13 +1389,26 @@ def _dispatch_checkpointed(**kwargs):
         try:
             saved = json.loads(path.read_text())
             row = saved["result"]
-            if saved["fingerprint"] == fingerprint and not row.get("workspace_mutations"):
+            # Mutating lanes are terminal for this job, even though their own
+            # writes necessarily changed the original workspace fingerprint.
+            if row.get("workspace_mutations") or (snapshot is not None and saved["fingerprint"] == fingerprint):
                 from dataclasses import fields
                 result = LayerResult(**{k: v for k, v in row.items() if k in {f.name for f in fields(LayerResult)}})
+                if result.workspace_mutations:
+                    result.success = False
                 if result.success:
                     schema = _load_schema(PROPOSER_SCHEMA_PATH if role == "proposer" else REFINER_SCHEMA_PATH)
                     if not isinstance(result.payload, dict) or _validate_against_schema(result.payload, schema):
                         raise ValueError("Invalid retained checkpoint")
+                if result.success:
+                    retained_warnings = result.verification_warnings
+                    target = session / f"layer{kwargs['layer']}" / f"{provider.name}-{role}.json"
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    _finalize_result(result, result.payload,
+                                     PROPOSER_SCHEMA_PATH if role == "proposer" else REFINER_SCHEMA_PATH,
+                                     session, kwargs["repo_path"])
+                    if retained_warnings and not result.verification_warnings:
+                        result.verification_warnings = retained_warnings
                 # Terminal failures remain terminal; restart never multiplies retries.
                 result.checkpoint_reused = True
                 print(f"[orchestrator] Retained checkpoint: {provider.name} {role}", flush=True)
@@ -1713,7 +1732,9 @@ def run_layer2(
     assignments = pipeline.verification_assignments(successful, [p.name for p in runnable], scout_brief)
     source_packet = ""
     if scout_brief.get("pipeline_version") == 2:
-        rows = pipeline.claims_from_results(successful)
+        rows = [row for assigned in assignments.values() for row in assigned["essential"]]
+        rows += [row for assigned in assignments.values() for row in assigned["secondary"]]
+        rows += pipeline.claims_from_results(successful)
         receipts.capture(session_dir, [r["evidence"].get("url") for r in rows if r["evidence"].get("url")],
                          limit=pipeline.policy(scout_brief)["web_sources"])
         _write_text_atomic(session_dir / "verification-assignments.json", json.dumps(assignments, indent=2))
@@ -2012,15 +2033,28 @@ def _build_aggregation_prompt(
     )
 
 
-def _audit_final_decisions(lineage, layer1, repo_path, session_dir, scout, remaining):
+def _select_auditor(aggregator, reviews, catalog):
+    """Prefer a proven, available reviewer from another model lab."""
+    lab = route_lab_id(aggregator.name, aggregator.model)
+    healthy = [r for r in reviews if r.success and r.payload]
+    healthy.sort(key=lambda r: r.agent_id != "deepseek-flash")
+    for result in healthy:
+        provider = catalog.get(result.agent_id)
+        if provider and route_lab_id(provider.name, provider.model) != lab:
+            return provider
+    return None
+
+
+def _audit_final_decisions(lineage, layer1, repo_path, session_dir, scout, remaining, *, aggregator, reviews):
     """One bounded, independent check of the exact decisions users will read."""
+    audit_started = time.monotonic()
     actionable = [step for step in lineage.get("steps", []) if step.get("decision") != "deferred"]
     if not actionable:
         audit = {"success": True, "findings": [], "reason": "No actionable decisions"}
         _write_text_atomic(session_dir / "final-audit.json", json.dumps(audit))
         _write_text_atomic(session_dir / "final-audit.md", "# Final evidence check\n\nNo actionable decisions were proposed; no model audit was required.\n")
         return audit
-    provider = harness_config.load_provider_catalog().get("deepseek-flash")
+    provider = _select_auditor(aggregator, reviews, harness_config.load_provider_catalog())
     if not provider or remaining < 30:
         audit = {"success": False, "findings": [], "reason": "Independent audit unavailable within deadline"}
     else:
@@ -2069,13 +2103,18 @@ def _audit_final_decisions(lineage, layer1, repo_path, session_dir, scout, remai
                         item["finding"] = "Source receipt unavailable; " + item["finding"]
             if result.json_path:
                 _write_text_atomic(session_dir / result.json_path, json.dumps(result.payload, indent=2))
-        result = _run_with_recovery(
-            harness=provider.harness, layer=3, role="synthesis-auditor", prompt=prompt,
-            schema_path=schema_path, repo_path=repo_path, session_dir=session_dir,
-            timeout=min(int(remaining), pipeline.policy(scout)["audit_seconds"]),
-            model=provider.model, agent_id=provider.name, reasoning_effort=provider.effort,
-            validate=validate,
-        )
+        budget = min(int(remaining - (time.monotonic() - audit_started)), pipeline.policy(scout)["audit_seconds"])
+        if budget < 30:
+            result = LayerResult(agent_id=provider.name, layer=3, role="synthesis-auditor",
+                                 success=False, error="Final audit deadline exhausted during source preparation")
+        else:
+            result = _run_with_recovery(
+                harness=provider.harness, layer=3, role="synthesis-auditor", prompt=prompt,
+                schema_path=schema_path, repo_path=repo_path, session_dir=session_dir,
+                timeout=budget,
+                model=provider.model, agent_id=provider.name, reasoning_effort=provider.effort,
+                validate=validate,
+            )
         audit = {"success": result.success, "reviewer": provider.name, "model": provider.model,
                  "lab_id": route_lab_id(provider.name, provider.model),
                  "duration_seconds": result.duration_seconds, "attempts": result.attempts,
@@ -2144,6 +2183,46 @@ def run_layer3(
             error=f"Layer 3 subprocess aggregation supports codex or claude; got {provider.harness!r}",
         )
 
+    checkpoint = session_dir / "lane-checkpoints" / f"layer3-{provider.name}.json"
+    source = _workspace_snapshot(repo_path, session_dir)
+    identity = {"prompt": prompt, "provider": asdict(provider), "effort": codex_effort,
+                "source": source.digest if source else None,
+                "commit": decision_map_module.capture_repository_state(repo_path).get("commit")}
+    checkpoint_key = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
+    if version == 2 and os.environ.get("MOA_RESUME_CHECKPOINTS") == "1" and checkpoint.is_file() and not checkpoint.is_symlink():
+        try:
+            saved = json.loads(checkpoint.read_text())
+            if saved.get("fingerprint") == checkpoint_key:
+                from dataclasses import fields
+                retained = LayerResult(**{k: v for k, v in saved["result"].items() if k in {f.name for f in fields(LayerResult)}})
+                if retained.success and _validate_against_schema(retained.payload, schema):
+                    raise ValueError("Invalid final checkpoint")
+                if retained.workspace_mutations:
+                    raise ValueError("Workspace mutation is not resumable")
+                if retained.success:
+                    _write_text_atomic(json_path, json.dumps(retained.payload, indent=2))
+                    _write_text_atomic(session_dir / "final-plan.json", json.dumps(retained.payload["lineage"], indent=2))
+                    _write_text_atomic(session_dir / "final-plan.md", retained.payload["final_plan_markdown"])
+                    if saved.get("audit") is not None:
+                        _write_text_atomic(session_dir / "final-audit.json", json.dumps(saved["audit"], indent=2))
+                    if saved.get("audit_markdown") is not None:
+                        _write_text_atomic(session_dir / "final-audit.md", saved["audit_markdown"])
+                retained.checkpoint_reused = True
+                print(f"[orchestrator] Retained checkpoint: {provider.name} aggregator and final audit", flush=True)
+                return retained
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+
+    def save_final_checkpoint(result):
+        if version != 2:
+            return
+        checkpoint.parent.mkdir(parents=True, exist_ok=True)
+        audit_path = session_dir / "final-audit.json"
+        markdown_path = session_dir / "final-audit.md"
+        _write_text_atomic(checkpoint, json.dumps({"fingerprint": checkpoint_key, "result": asdict(result),
+            "audit": json.loads(audit_path.read_text()) if audit_path.exists() else None,
+            "audit_markdown": markdown_path.read_text() if markdown_path.exists() else None}, indent=2))
+
     def validate_aggregation(result: LayerResult) -> None:
         if not result.success or not isinstance(result.payload, dict):
             return
@@ -2171,17 +2250,19 @@ def run_layer3(
     result = _run_with_recovery(
         harness=provider.harness, layer=3, role="aggregator", prompt=prompt,
         schema_path=schema_path, repo_path=repo_path, session_dir=session_dir,
-        timeout=timeout,
+        timeout=(max(1, int(timeout - min(pipeline.policy(scout)["audit_seconds"], timeout / 5)
+                            - (time.monotonic() - phase_started))) if version == 2 else timeout),
         model=provider.model, agent_id=provider.name,
         reasoning_effort=codex_effort if provider.harness == "codex" else provider.effort,
         validate=validate_aggregation,
     )
     if not result.success:
+        save_final_checkpoint(result)
         return result
     markdown = result.payload["final_plan_markdown"]
     lineage = result.payload["lineage"]
     if version == 2:
-        audit = _audit_final_decisions(lineage, layer1, repo_path, session_dir, scout, timeout - (time.monotonic() - phase_started))
+        audit = _audit_final_decisions(lineage, layer1, repo_path, session_dir, scout, timeout - (time.monotonic() - phase_started), aggregator=provider, reviews=layer2)
         if any(x.get("status") == "contradicted" for x in audit.get("findings", [])):
             lineage["outcome"] = "needs_revision"
         elif not audit.get("success") or any(x.get("status") == "unverified" for x in audit.get("findings", [])):
@@ -2195,6 +2276,7 @@ def run_layer3(
     result.json_path = str(json_path.relative_to(session_dir))
     _write_text_atomic(session_dir / "final-plan.md", markdown)
     _write_text_atomic(session_dir / "final-plan.json", json.dumps(lineage, indent=2))
+    save_final_checkpoint(result)
     return result
 
 

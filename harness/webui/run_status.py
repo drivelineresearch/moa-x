@@ -46,6 +46,13 @@ def evidence_status(session: Path, *, stale=False, status=None) -> dict:
             for g in quality.get("gates", [])
             if g.get("status") == "fail"
         )
+    if outcome and outcome != "ready":
+        reasons = list(lineage.get("open_questions", []))[:3] + reasons
+        reasons += [
+            "Deferred decision: " + step.get("title", "Unresolved choice")
+            for step in lineage.get("steps", [])
+            if step.get("decision") == "deferred"
+        ]
     return {
         "stage": graph.get("stage", "setup"),
         "verified": sum(x.get("status") == "verified" for x in checks),
@@ -85,6 +92,8 @@ def evidence_text(value: dict) -> str:
     if value.get("outcome") in {"needs_revision", "insufficient_evidence"}:
         if not value.get("audit_success"):
             return "Final evidence check did not complete; review the evidence gaps before implementation"
+        if not value["audit_contradicted"] and not value["audit_unverified"]:
+            return "The final editor withheld readiness; review remaining questions or constraints."
         return f"Final check: {value['audit_contradicted']} contradicted, {value['audit_unverified']} unverified decisions · {value['critical_verified']}/{value['critical_total']} selected claims verified"
     if value.get("critical_total"):
         return f"{value['critical_verified']} of {value['critical_total']} selected claims verified · {value['conflicts']} unresolved contradictions"

@@ -132,6 +132,9 @@ class EvidenceProgressBrowserTest(unittest.TestCase):
                         page.screenshot(
                             path=str(capture / "v2-ready-desktop.png"), full_page=True
                         )
+                        fixture.lineage["open_questions"] = [
+                            "Confirm the required expiry clock contract before implementation."
+                        ]
                         fixture.lineage["outcome"] = "insufficient_evidence"
                         refresh()
                         page.reload(wait_until="networkidle")
@@ -153,6 +156,12 @@ class EvidenceProgressBrowserTest(unittest.TestCase):
                             "completion estimate",
                             page.locator("#run-evidence-progress").inner_text(),
                         )
+                        reason_text = page.locator(
+                            "#run-readiness-reasons"
+                        ).inner_text()
+                        self.assertIn("Confirm the required expiry clock", reason_text)
+                        self.assertNotIn("insufficient_evidence", reason_text)
+                        self.assertNotIn("needs_revision", reason_text)
                         page.screenshot(
                             path=str(capture / "v2-needs-verification-desktop.png"),
                             full_page=True,

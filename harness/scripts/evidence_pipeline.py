@@ -161,7 +161,7 @@ def render_plan(lineage: dict, audit: dict | None = None) -> str:
     outcome = lineage.get("outcome", "ready")
     heading = {
         "ready": "Final Plan",
-        "needs_revision": "REJECTED",
+        "needs_revision": "Needs revision",
         "insufficient_evidence": "Needs verification",
     }.get(outcome, "Final Plan")
     parts = [f"# {heading}: {lineage['title']}", "", lineage["summary"], ""]
@@ -272,7 +272,9 @@ def validate_decisions(lineage: dict, results, reviews) -> list[str]:
         and lineage.get("outcome") == "ready"
     ):
         errors.append("All reviewers reject the proposals; outcome cannot be ready.")
-    if lineage.get("outcome") == "ready" and not lineage.get("steps"):
+    if lineage.get("outcome") == "ready" and not any(
+        step.get("decision") != "deferred" for step in lineage.get("steps", [])
+    ):
         errors.append("A ready result requires at least one grounded decision.")
     for step in lineage.get("steps", []):
         count = 0
