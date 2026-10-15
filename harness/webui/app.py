@@ -15,7 +15,7 @@ from functools import wraps
 from pathlib import Path
 from typing import Any
 
-from flask import Flask, Response, abort, jsonify, render_template, request, send_file
+from flask import Flask, Response, abort, current_app, jsonify, render_template, request, send_file
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.utils import secure_filename
 
@@ -468,15 +468,21 @@ def _job_view(job: dict[str, Any]) -> dict[str, Any]:
         ("final_plan", "final-plan.md"),
         ("manifest", "manifest.json"),
         ("synthesis", "synthesis-input.md"),
+        ("final_audit", "final-audit.md"),
     ):
         if name == "report" and not report_available:
             continue
         if name == "decision_map" and not decision_map_available:
             continue
-        if name == "final_plan" and stale_final_output:
+        if name in {"final_plan", "final_audit"} and stale_final_output:
             continue
         if (session / filename).exists():
             artifacts[name] = f"{request.script_root}/api/jobs/{job['id']}/artifacts/{filename}"
+    from .run_status import evidence_status, evidence_text, outcome_label
+    job["evidence_status"] = evidence_status(session, stale=stale_final_output, status=job["status"])
+    job["evidence_summary"] = evidence_text(job["evidence_status"])
+    job["outcome_label"] = outcome_label(job["status"], job["evidence_status"]["outcome"])
+    job["queue"] = current_app.extensions["moa_store"].queue_summary(job)
     job["artifacts"] = artifacts
     job["active"] = job["status"] in ACTIVE_STATES
     config = job.get("config") or {}
@@ -599,22 +605,6 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         app.config["WORKSPACE_ROOTS"].append(github_workspace_dir)
 
     store = Store(Path(app.config["DATABASE"]))
-    # A read-only/test app may share the database with the production worker.
-    # Only the worker-owning process may reconcile orphaned active jobs;
-    # otherwise opening a second UI instance would falsely interrupt live runs.
-    if app.config["START_WORKER"]:
-        interrupted_jobs = store.reconcile_interrupted_jobs()
-        if interrupted_jobs:
-            capture_operational_error(
-                OperationalError(
-                    f"{len(interrupted_jobs)} active run(s) interrupted by Web UI restart"
-                ),
-                operation="worker.restart_interrupted_jobs",
-                context={
-                    "interrupted_count": len(interrupted_jobs),
-                    "job_ids": interrupted_jobs[:20],
-                },
-            )
     worker = JobWorker(store, RUNNER)
     app.extensions["moa_store"] = store
     app.extensions["moa_worker"] = worker
@@ -703,14 +693,10 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
 
     @app.get("/api/health")
     def health():
-        return jsonify(
-            {
-                "ok": True,
-                "database": str(store.path),
-                "runner": str(RUNNER),
-                "worker": bool(app.config["START_WORKER"]),
-            }
-        )
+        status = worker.status()
+        ready = not app.config["START_WORKER"] or (status["alive"] and status["last_error"] is None)
+        return jsonify({"ok": ready, "database": str(store.path), "runner": str(RUNNER),
+                        "worker": status["alive"], "worker_status": status}), 200 if ready else 503
 
     @app.get("/api/workspaces")
     @require_profile
@@ -1175,13 +1161,15 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             config.pop("redispatch", None)
         target = Path(source["workspace"]) / ".moa" / redispatch_id
         if agents:
-            shutil.copytree(source["session_dir"], target)
+            shutil.copytree(source["session_dir"], target, ignore=shutil.ignore_patterns("sandboxes", "lane-checkpoints", "final-audit.json"))
             # Retain validated checkpoints for a targeted retry, but never
             # advertise the copied run's derived/final outputs as belonging
             # to the new job before the retried phases replace them.
             for stale_name in (
                 "decision-map.json",
                 "final-plan.json",
+            "final-audit.json",
+            "final-audit.md",
                 "final-plan.md",
                 "report.html",
             ):
@@ -1303,6 +1291,8 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             "decision-map.json",
             "final-plan.md",
             "final-plan.json",
+            "final-audit.json",
+            "final-audit.md",
             "manifest.json",
             "synthesis-input.md",
         }:
@@ -1321,7 +1311,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             return Response(payload, mimetype="application/json")
         if not path.is_file():
             abort(404)
-        if filename in {"final-plan.md", "final-plan.json"} and (
+        if filename in {"final-plan.md", "final-plan.json", "final-audit.md", "final-audit.json"} and (
             decision_map_module.final_artifact_staleness(
                 Path(job["session_dir"])
             )
@@ -1408,7 +1398,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         public = redact(public)
         public["artifacts"] = {key: f"{request.script_root}/shared/runs/{token}/artifacts/{Path(url).name}"
                                for key, url in job["artifacts"].items()
-                               if Path(url).name in {"report.html", "decision-map.json", "final-plan.md", "final-plan.json"}}
+                               if Path(url).name in {"report.html", "decision-map.json", "final-plan.md", "final-plan.json", "final-audit.json", "final-audit.md"}}
         return private_response(jsonify(public))
 
     @app.get("/shared/runs/<token>/artifacts/<filename>")
@@ -1423,8 +1413,8 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             payload = _read_verified_decision_map(session)
             if payload is None: abort(404)
             return private_response(Response(payload, mimetype="application/json"))
-        if filename not in {"final-plan.md", "final-plan.json"}: abort(404)
-        if filename.startswith("final-plan") and decision_map_module.final_artifact_staleness(session) is not None: abort(404)
+        if filename not in {"final-plan.md", "final-plan.json", "final-audit.json", "final-audit.md"}: abort(404)
+        if filename in {"final-plan.md", "final-plan.json", "final-audit.md", "final-audit.json"} and decision_map_module.final_artifact_staleness(session) is not None: abort(404)
         if not (session / filename).is_file(): abort(404)
         return private_response(send_file(session / filename))
 

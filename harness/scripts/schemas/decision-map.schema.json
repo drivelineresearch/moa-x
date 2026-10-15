@@ -123,7 +123,7 @@
         "status": {"type": "string", "enum": ["verified", "unverified", "contradicted"]},
         "finding": {"type": "string"},
         "source_url": {"type": ["string", "null"]},
-        "source_type": {"type": ["string", "null"], "enum": ["external", "code", null]},
+        "source_type": {"type": ["string", "null"], "enum": ["external", "code", "attachment", null]},
         "source_capture_status": {"type": "string"},
         "file_sha256": {"type": ["string", "null"]},
         "line_sha256": {"type": ["string", "null"]}
@@ -137,7 +137,7 @@
         "id": {"type": "string"},
         "title": {"type": "string"},
         "description": {"type": "string"},
-        "status": {"type": "string", "enum": ["accepted", "revised", "new", "rejected"]},
+        "status": {"type": "string", "enum": ["accepted", "revised", "new", "rejected", "deferred"]},
         "claim_ids": {"type": "array", "items": {"type": "string"}},
         "evidence_ids": {"type": "array", "items": {"type": "string"}},
         "files_touched": {"type": "array", "items": {"type": "string"}}

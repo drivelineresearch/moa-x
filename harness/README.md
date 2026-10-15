@@ -44,7 +44,7 @@ Layer 2 — Broadcast refiners         (default DeepSeek V4.1 Flash + Opus, each
 Layer 3 — Aggregator                 (recorded GPT-6.1 Sol at xhigh)
 ```
 
-Layer 0 happens in the parent REPL. Layer 3 runs through Codex with `--phase
+The parent prepares the request; the runner adds a bounded repository scout. Layer 3 runs through Codex with `--phase
 layer3` by default. The Opus refiner is a separate `claude -p` headless
 invocation, not the parent session.
 
@@ -90,8 +90,8 @@ aggregator) is adapted from the paper but tuned for:
   and shell tools through config; AGY requires plan
   mode plus sandboxing. Prompts repeat the read-only contract for
   every harness.
-- **Heavy web research.** Every proposer and refiner is told to run
-  at least 6-8 web searches and cite 5+ external sources.
+- **Task-dependent research.** Proposers and reviewers inspect the repository
+  and fetch relevant primary sources when needed. Local questions have no web-search quota.
 - **CLI-first core.** The Claude Code skill remains the primary workflow; the
   repository also ships a local Flask control room over the same orchestrator.
 
@@ -278,10 +278,9 @@ The live account catalog must expose the selected stable model slug.
   minutes; thorough or max-effort runs can exceed 45 minutes. Per-route deadlines
   bound individual lanes, including their retries and repair. Don't run
   this for trivial tasks.
-- **Web research is required, not optional.** All prompts insist on
-  it. If a CLI is rate-limited on its web search tool, the proposal
-  or refinement will be weaker. Thin `research_sources` arrays in
-  the manifest are a signal to retry later.
+- **Evidence is required; source counts are not a quality score.** Repository-local
+  tasks can have an empty external bibliography. Missing captured receipts and
+  unsupported essential claims remain visible evidence debt.
 - **Heterogeneity is the point.** Balanced spans five labs; Thorough adds
   Zhipu for six (Google, xAI, Zhipu, DeepSeek, Anthropic, OpenAI). If you override the defaults so
   they converge on the same vendor, you've defeated the whole purpose of MoA.
@@ -347,3 +346,5 @@ its mechanical repairs use tool-free Opus and record the repair model separately
 Payloads and manifests are replaced atomically. Manual redispatch retains
 successful lanes and prior attempt history. The web/Slack worker adds no extra
 automatic retries. See [architecture](../docs/architecture.md#provider-recovery).
+
+See the [v2 evidence contract](../docs/evidence-pipeline.md) for task-dependent research, exact adopted claims, final audits and checkpoint recovery.

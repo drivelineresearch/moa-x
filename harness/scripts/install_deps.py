@@ -269,6 +269,11 @@ def _check_assets(failures: list[str]) -> None:
         skill_dir / "SKILL.md",
         skill_dir / "scripts" / "run_moa.py",
         skill_dir / "scripts" / "decision_map.py",
+        skill_dir / "scripts" / "scout.py",
+        skill_dir / "scripts" / "evidence_pipeline.py",
+        skill_dir / "scripts" / "receipts.py",
+        skill_dir / "scripts" / "usage.py",
+        skill_dir / "scripts" / "schemas" / "final-plan-v2.schema.json",
         skill_dir / "scripts" / "adapters" / "codex.py",
         skill_dir / "scripts" / "adapters" / "opencode.py",
         skill_dir / "scripts" / "adapters" / "claude.py",
@@ -310,6 +315,7 @@ def _check_strict_lint(failures: list[str]) -> None:
         ("proposer", "proposer.schema.json"),
         ("refiner", "refiner.schema.json"),
         ("final plan", "final-plan.schema.json"),
+        ("final decisions v2", "final-plan-v2.schema.json"),
     ):
         schema_path = SCRIPT_DIR / "schemas" / schema_name
         if not schema_path.exists():

@@ -226,3 +226,5 @@ References: [Socket Mode](https://docs.slack.dev/tools/python-slack-sdk/socket-m
 Public contributions must use example workspace IDs, URLs and credentials.
 Keep deployment receipts, raw run reports and operational findings outside
 the repository; publish generic reproductions and code fixes only.
+
+Slack uses the same [v2 readiness and evidence contract](evidence-pipeline.md) as the portal. A completed run can explicitly require revision or verification; its final evidence check remains in the plan and dashboard.

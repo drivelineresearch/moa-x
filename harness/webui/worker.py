@@ -108,10 +108,28 @@ class JobWorker:
         self._thread: threading.Thread | None = None
         self._processes: dict[str, subprocess.Popen[str]] = {}
         self._lock = threading.Lock()
+        self._last_poll_at = None
+        self._last_error = None
+        self._lease = None
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
             return
+        if hasattr(self.store, "path"):
+            try:
+                import fcntl
+            except ImportError:
+                fcntl = None
+            self._lease = open(str(self.store.path) + ".worker.lock", "a")
+            os.chmod(self._lease.name, 0o600)
+            try:
+                if fcntl is not None:
+                    fcntl.flock(self._lease.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                self._lease.close()
+                self._lease = None
+                raise RuntimeError("A worker already owns this queue")
+            self.store.reconcile_interrupted_jobs()
         self._thread = threading.Thread(
             target=self._loop, name="moa-web-worker", daemon=True
         )
@@ -125,6 +143,9 @@ class JobWorker:
         self._wake.set()
         if self._thread:
             self._thread.join(timeout=3)
+        if self._lease and not (self._thread and self._thread.is_alive()):
+            self._lease.close()
+            self._lease = None
 
     def cancel(self, job_id: str) -> bool:
         job = self.store.get_job(job_id)
@@ -143,13 +164,40 @@ class JobWorker:
         return True
 
     def _loop(self) -> None:
+        pending_failure = None
         while not self._stop.is_set():
-            job = self.store.claim_next_job()
-            if job:
-                self._run_job(job)
-                continue
+            job = None
+            try:
+                if pending_failure:
+                    self.store.update_job(pending_failure, status="failed", phase="failed",
+                                          pid=None, summary="Worker storage error; process stopped",
+                                          exit_code=1, finished_at=time.time())
+                    pending_failure = None
+                job = self.store.claim_next_job()
+                self._last_poll_at = time.time()
+                self._last_error = None
+                if job:
+                    self._run_job(job)
+                    continue
+            except Exception as error:
+                if job:
+                    pending_failure = job["id"]
+                changed = self._last_error != type(error).__name__
+                self._last_error = type(error).__name__
+                if changed:
+                    try:
+                        capture_operational_error(error, operation="worker.queue_poll")
+                    except Exception:
+                        pass
+                self._stop.wait(min(5, max(0.1, self.poll_seconds * 2)))
             self._wake.wait(self.poll_seconds)
             self._wake.clear()
+
+    def status(self) -> dict[str, Any]:
+        with self._lock:
+            active = list(self._processes)
+        return {"alive": bool(self._thread and self._thread.is_alive() and not self._stop.is_set()),
+                "last_poll_at": self._last_poll_at, "last_error": self._last_error, "active_jobs": active}
 
     def _event(self, job_id: str, kind: str, message: str, **data: Any) -> None:
         clean = ANSI_RE.sub("", message).replace("\x00", "")
@@ -194,6 +242,8 @@ class JobWorker:
         config = job["config"]
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"
+        if config.get("options", {}).get("resume_checkpoints"):
+            env["MOA_RESUME_CHECKPOINTS"] = "1"
         if config.get("transport") == "slack":
             env["MOA_RESTRICT_WORKSPACE"] = "1"
             env["MOA_JOB_SESSION_DIR"] = job["session_dir"]
@@ -255,53 +305,70 @@ class JobWorker:
                 shell=False,
                 start_new_session=True,
             )
-            with self._lock:
-                self._processes[job_id] = proc
-            self.store.update_job(job_id, pid=proc.pid)
-            assert proc.stdout is not None
-            lines = queue.Queue()
-            def read_output():
-                try:
-                    for line in iter(proc.stdout.readline, ""):
-                        lines.put(line)
-                finally:
-                    lines.put(None)
-            reader = threading.Thread(target=read_output, daemon=True)
-            reader.start()
-            stopping_at = None
-            targets = {}
-            output_ended = False
-            last_cancel_check = 0
-            while True:
-                now = time.monotonic()
-                should_check = now - last_cancel_check >= 0.25
-                if should_check:
-                    last_cancel_check = now
-                if stopping_at is not None or (should_check and self.store.cancel_requested(job_id)):
-                    if stopping_at is None:
-                        stopping_at = time.monotonic()
-                        targets = _terminate_tree(proc.pid, proc)
-                    elif time.monotonic() - stopping_at >= 3:
+            reader = None
+            try:
+                with self._lock:
+                    self._processes[job_id] = proc
+                self.store.update_job(job_id, pid=proc.pid)
+                assert proc.stdout is not None
+                lines = queue.Queue()
+                def read_output():
+                    try:
+                        for line in iter(proc.stdout.readline, ""):
+                            lines.put(line)
+                    finally:
+                        lines.put(None)
+                reader = threading.Thread(target=read_output, daemon=True)
+                reader.start()
+                stopping_at = None
+                targets = {}
+                output_ended = False
+                last_cancel_check = 0
+                while True:
+                    now = time.monotonic()
+                    should_check = now - last_cancel_check >= 0.25
+                    if should_check:
+                        last_cancel_check = now
+                    if stopping_at is not None or (should_check and self.store.cancel_requested(job_id)):
+                        if stopping_at is None:
+                            stopping_at = time.monotonic()
+                            targets = _terminate_tree(proc.pid, proc)
+                        elif time.monotonic() - stopping_at >= 3:
+                            _signal_processes(targets, signal.SIGKILL)
+                    if output_ended and proc.poll() is not None:
+                        break
+                    try:
+                        line = lines.get(timeout=0.25)
+                    except queue.Empty:
+                        continue
+                    if line is None:
+                        output_ended = True
+                        continue
+                    clean = ANSI_RE.sub("", line.rstrip())
+                    log.write(clean + "\n")
+                    log.flush()
+                    if clean:
+                        if "[orchestrator] Final evidence check:" in clean:
+                            self.store.update_job(job_id, phase="audit", progress=0.93)
+                        self._event(job_id, "log", clean, phase=phase)
+                code = proc.wait()
+            finally:
+                if proc.poll() is None:
+                    targets = _terminate_tree(proc.pid, proc)
+                    try:
+                        proc.wait(timeout=3)
+                    except subprocess.TimeoutExpired:
                         _signal_processes(targets, signal.SIGKILL)
-                if output_ended and proc.poll() is not None:
-                    break
-                try:
-                    line = lines.get(timeout=0.25)
-                except queue.Empty:
-                    continue
-                if line is None:
-                    output_ended = True
-                    continue
-                clean = ANSI_RE.sub("", line.rstrip())
-                log.write(clean + "\n")
-                log.flush()
-                if clean:
-                    self._event(job_id, "log", clean, phase=phase)
-            reader.join(timeout=3)
-            code = proc.wait()
-            proc.stdout.close()
-            with self._lock:
-                self._processes.pop(job_id, None)
+                        proc.wait(timeout=3)
+                    else:
+                        # Descendants may outlive an exited parent.
+                        _signal_processes(targets, signal.SIGKILL)
+                if reader is not None:
+                    reader.join(timeout=3)
+                if proc.stdout is not None:
+                    proc.stdout.close()
+                with self._lock:
+                    self._processes.pop(job_id, None)
             self.store.update_job(job_id, pid=None)
         self._event(
             job_id,
@@ -516,9 +583,9 @@ class JobWorker:
 
     def _run_job(self, job: dict[str, Any]) -> None:
         job_id = job["id"]
-        self._event(job_id, "job", "Job started")
         code = 1
         try:
+            self._event(job_id, "job", "Job started")
             self._prepare_attachments(job)
             options = job["config"].get("options") or {}
             retry = job["config"].get("redispatch") or {}

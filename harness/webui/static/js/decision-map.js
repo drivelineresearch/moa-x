@@ -5,7 +5,7 @@
     setup: "Ready for dispatch",
     proposals: "Evidence collected",
     review: "Claims under review",
-    complete: "Decision complete",
+    complete: "Decision recorded",
   };
   const STATUS_LABELS = {
     unreviewed: "Not reviewed",
@@ -325,7 +325,7 @@
 
   function renderGates(map) {
     const quality = map.quality || pendingQuality();
-    const details = element("details", { class: "dm-gates" });
+    const details = element("details", { class: "dm-gates", open: (map.quality?.gates || []).some((gate) => gate.status === "fail") ? "" : undefined });
     details.append(element("summary", {
       text: `Quality gates · ${(quality.gates || []).filter((gate) => gate.status === "pass").length}/${(quality.gates || []).filter((gate) => gate.status !== "pending" && gate.status !== "n/a").length || 0} passing`,
     }));
@@ -481,11 +481,11 @@
         element("h3", { text: map.title || "Evidence-weighted decision" }),
         element("p", { text: map.summary || "Evidence, claims, and decisions share one trace." }),
       ]),
-      element("span", { class: `dm-stage is-${map.stage || "setup"}`, text: STAGE_LABELS[map.stage] || titleCase(map.stage) }),
+      element("span", { class: `dm-stage is-${map.stage || "setup"}${(map.quality?.gates || []).some((gate) => gate.status === "fail") ? " needs-review" : ""}`, text: STAGE_LABELS[map.stage] || titleCase(map.stage) }),
     ]);
     shell.append(header, renderQuality(map));
 
-    const network = element("div", { class: "dm-network" });
+    const network = element("div", { class: "dm-network", tabindex: "0", role: "region", "aria-label": "Evidence and decision network" });
     network.dataset.mapInstance = String(++instanceSequence);
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("class", "dm-edge-layer");

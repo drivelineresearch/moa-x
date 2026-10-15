@@ -147,31 +147,36 @@ class Store:
             )
 
     def reconcile_interrupted_jobs(self) -> list[str]:
-        """Mark jobs orphaned by a prior server exit as failed and recoverable."""
+        """Resume v2 checkpoints after an owned-worker restart; preserve legacy behavior."""
         now = time.time()
+        resumed, interrupted = [], []
         with self.connect() as conn:
-            rows = conn.execute(
-                "SELECT id FROM jobs WHERE status IN ('running', 'cancelling')"
-            ).fetchall()
-            job_ids = [row["id"] for row in rows]
-            if job_ids:
-                conn.execute(
-                    """
-                    UPDATE jobs
-                    SET status='failed', phase='interrupted', pid=NULL,
-                        summary='Web UI restarted while this job was active; inspect retained artifacts or redispatch the run.',
-                        finished_at=?, exit_code=-1
-                    WHERE status IN ('running', 'cancelling')
-                    """,
-                    (now,),
-                )
-        for job_id in job_ids:
-            self.append_event(
-                job_id,
-                "warning",
-                "Run marked interrupted after the Web UI restarted",
-            )
-        return job_ids
+            rows = conn.execute("SELECT id, config_json, cancel_requested FROM jobs WHERE status IN ('running', 'cancelling')").fetchall()
+            for row in rows:
+                config = json.loads(row["config_json"] or "{}")
+                options = config.setdefault("options", {})
+                count = options.get("restart_count", 0)
+                if type(count) is not int or count < 0:
+                    count = 2
+                session = conn.execute("SELECT session_dir FROM jobs WHERE id=?", (row["id"],)).fetchone()
+                try:
+                    scout = json.loads((Path(session["session_dir"]) / "scout-brief.json").read_text())
+                except (OSError, ValueError):
+                    scout = {}
+                resumable = scout.get("pipeline_version") == 2 and count < 2 and not row["cancel_requested"]
+                if resumable:
+                    options.update(resume_checkpoints=True, restart_count=count + 1)
+                    conn.execute("UPDATE jobs SET status='queued', phase='queued', pid=NULL, progress=0, finished_at=NULL, exit_code=NULL, config_json=?, summary=? WHERE id=?",
+                                 (json.dumps(config), 'Resuming retained lane checkpoints after worker restart.', row["id"]))
+                    resumed.append(row["id"])
+                else:
+                    conn.execute("UPDATE jobs SET status=?, phase=?, pid=NULL, finished_at=?, exit_code=-1, summary=? WHERE id=?",
+                                 ('cancelled' if row["cancel_requested"] else 'failed', 'cancelled' if row["cancel_requested"] else 'interrupted', now,
+                                  'Web UI restarted; inspect retained artifacts or redispatch the run.', row["id"]))
+                    interrupted.append(row["id"])
+        for job_id in resumed + interrupted:
+            self.append_event(job_id, "warning", "Resuming retained lane checkpoints after restart" if job_id in resumed else "Run marked interrupted after the Web UI restarted")
+        return resumed + interrupted
 
     @staticmethod
     def _decode(row: sqlite3.Row | None) -> dict[str, Any] | None:
@@ -527,8 +532,33 @@ class Store:
                 """,
                 (now, row["id"]),
             )
+            claimed = conn.execute("SELECT * FROM jobs WHERE id=?", (row["id"],)).fetchone()
+            # Decode before commit: malformed persisted data cannot strand a claim.
+            result = self._decode(claimed)
             conn.execute("COMMIT")
-        return self.get_job(row["id"])
+        return result
+
+    def queue_summary(self, job: dict[str, Any]) -> dict[str, Any]:
+        """Bounded historical range, explicitly not a promise or model estimate."""
+        depth = job.get("config", {}).get("options", {}).get("depth")
+        with self.connect() as conn:
+            ahead = conn.execute("SELECT count(*) FROM jobs WHERE status IN ('queued','running','cancelling') AND created_at<?", (job["created_at"],)).fetchone()[0] if job.get("status") == "queued" else 0
+            rows = conn.execute("SELECT started_at,finished_at,config_json FROM jobs WHERE status='completed' AND started_at IS NOT NULL AND finished_at>started_at ORDER BY finished_at DESC LIMIT 40").fetchall()
+        durations = []
+        for row in rows:
+            config = json.loads(row["config_json"] or "{}")
+            if depth and config.get("options", {}).get("depth") != depth:
+                continue
+            current = job.get("config", {})
+            if any(config.get(key) != current.get(key) for key in ("proposers", "refiners", "aggregator")):
+                continue
+            if any(config.get("options", {}).get(key) != current.get("options", {}).get(key)
+                   for key in ("model_overrides", "effort_overrides")):
+                continue
+            durations.append((row["finished_at"] - row["started_at"]) / 60)
+        durations.sort()
+        interval = [round(durations[len(durations)//4]), round(durations[(len(durations)*3)//4])] if len(durations) >= 3 else None
+        return {"runs_ahead": ahead, "historical_minutes": interval, "samples": len(durations)}
 
     def append_event(
         self,

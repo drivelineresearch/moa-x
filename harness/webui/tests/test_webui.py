@@ -1900,6 +1900,8 @@ class WebUITest(unittest.TestCase):
         (session / "final-plan.json").write_text(
             json.dumps({"version": 1}), encoding="utf-8"
         )
+        for name in ("final-audit.md", "final-audit.json"):
+            (session / name).write_text("Old evidence check")
         store.insert_job({
             "id": "failed-layer3-final",
             "profile_id": "browser_123",
@@ -1915,11 +1917,18 @@ class WebUITest(unittest.TestCase):
 
         job = self.client.get("/api/jobs/failed-layer3-final").get_json()
         self.assertNotIn("final_plan", job["artifacts"])
-        for filename in ("final-plan.md", "final-plan.json"):
+        self.assertNotIn("final_audit", job["artifacts"])
+        token = "a" * 48
+        store.create_run_share("failed-layer3-final", "browser_123", hashlib.sha256(token.encode()).hexdigest())
+        for filename in ("final-plan.md", "final-plan.json", "final-audit.md", "final-audit.json"):
             response = self.client.get(
                 f"/api/jobs/failed-layer3-final/artifacts/{filename}"
             )
             self.assertEqual(response.status_code, 404, filename)
+            shared = self.client.get(f"/shared/runs/{token}/artifacts/{filename}")
+            self.assertEqual(shared.status_code, 404, filename)
+        shared_status = self.client.get(f"/shared/runs/{token}/status").get_json()
+        self.assertNotIn("final_audit", shared_status["artifacts"])
 
     def test_restart_reconciles_an_orphaned_active_job(self):
         store = self.app.extensions["moa_store"]

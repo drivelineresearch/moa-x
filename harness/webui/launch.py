@@ -124,6 +124,12 @@ class LaunchService:
                     f"{names} {'is' if len(disallowed) == 1 else 'are'} "
                     f"not allowed in the {role} layer; {detail}"
                 )
+        options = dict(body.get("options")) if isinstance(body.get("options"), dict) else {}
+        for internal in ("restart_count", "resume_checkpoints"):
+            options.pop(internal, None)
+        depth = options.get("depth", body.get("preset", "balanced"))
+        if depth not in {"quick", "balanced", "thorough"}:
+            raise LaunchError("Choose quick, balanced, or thorough depth.")
         profile_id = profile["id"]
 
         job_id = job_id or (
@@ -212,6 +218,8 @@ class LaunchService:
                 )
         scout = {
             "session_id": job_id,
+            "pipeline_version": 2,
+            "depth": depth,
             "frozen_spec": goal,
             "repo_path": str(workspace),
             "source": source_info or {"type": "local"},
@@ -238,9 +246,7 @@ class LaunchService:
             "proposers": requested_proposers,
             "refiners": requested_refiners,
             "aggregator": requested_aggregator,
-            "options": (
-                body.get("options") if isinstance(body.get("options"), dict) else {}
-            ),
+            "options": options,
             "upload_ids": upload_ids,
         }
         job = store.insert_job(

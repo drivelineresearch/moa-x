@@ -56,7 +56,7 @@
               "properties": {
                 "type": {
                   "type": "string",
-                  "enum": ["code", "external"],
+                  "enum": ["code", "external", "attachment"],
                   "description": "code = citation from the local repo. external = citation from a web source."
                 },
                 "file": {
@@ -113,8 +113,8 @@
     },
     "research_sources": {
       "type": "array",
-      "description": "External sources you consulted while building this plan. Include at least 2 (aim for 5+). Mix of official docs, blog posts, GitHub repos, papers, Stack Overflow answers, anything authoritative.",
-      "minItems": 2,
+      "description": "External sources you consulted while building this plan. Include only sources needed to resolve this task; no source-count quota. Mix of official docs, blog posts, GitHub repos, papers, Stack Overflow answers, anything authoritative.",
+      "minItems": 0,
       "items": {
         "type": "object",
         "additionalProperties": false,

@@ -348,6 +348,9 @@
           <option value="running">Running</option>
           <option value="queued">Queued</option>
           <option value="completed">Completed</option>
+          <option value="ready">Ready for review</option>
+          <option value="needs_revision">Needs revision</option>
+          <option value="insufficient_evidence">Needs verification</option>
           <option value="failed">Failed</option>
           <option value="cancelled">Cancelled</option>
         </select>
@@ -409,6 +412,10 @@
             <p class="eyebrow" id="run-detail-kicker">RUN</p>
             <h1 id="run-detail-title">Loading run…</h1>
             <p class="lede" id="run-detail-meta"></p>
+            <p class="readiness-banner" id="run-readiness" role="status" hidden></p>
+            <p class="evidence-progress" id="run-evidence-progress" role="status"></p>
+            <ul class="readiness-reasons" id="run-readiness-reasons" hidden></ul>
+            <p class="queue-history" id="run-queue-history"></p>
             <div class="run-result-shortcuts" id="run-result-shortcuts" hidden></div>
           </div>
           <figure class="run-detail-visual">

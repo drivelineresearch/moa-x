@@ -162,8 +162,8 @@
     },
     "additional_research": {
       "type": "array",
-      "description": "External sources you consulted during refinement that no proposer cited. Include at least 2 fresh sources (aim for 5+).",
-      "minItems": 2,
+      "description": "External sources you consulted during refinement that no proposer cited. Include sources needed for material uncertainty; an empty array is valid for repository-local questions.",
+      "minItems": 0,
       "items": {
         "type": "object",
         "additionalProperties": false,

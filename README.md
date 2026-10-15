@@ -98,10 +98,10 @@ AGY is the curated Google route and reuses the account already signed into
 ## Architecture at a glance
 
 ```
-Layer 0 — Scout brief           (parent Claude, in-place)
+Layer 0 — Scout brief           (frozen task + bounded repository reconnaissance)
 Layer 1 — Proposers (parallel)    default: Gemini 4 Argon + Grok 4.7 + GPT-6 Luna
 Layer 2 — Broadcast refiners      default: DeepSeek V4.1 Flash + Opus, each sees ALL proposals
-Layer 3 — Aggregator              default: recorded GPT-6.1 Sol at xhigh
+Layer 3 — Structured decisions    default: GPT-6.1 Sol, followed by independent final check
 ```
 
 The roster is config-driven; every named route in the default pipeline comes
@@ -231,3 +231,5 @@ Kyle Boddy.
 Chat with the ensemble through an existing Slack bot: Luna interview, automatic
 model/depth selection, reference uploads, progress, cancellation and final results
 in the same thread. Setup and access rules: [docs/slack.md](docs/slack.md).
+
+New runs use a [bounded scout and evidence-first decision pipeline](docs/evidence-pipeline.md), including an independent final answer check.

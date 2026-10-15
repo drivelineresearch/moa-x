@@ -2445,3 +2445,13 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); outline
     transition-duration: .01ms !important;
   }
 }
+
+.evidence-progress { color: var(--ink, #25231f); font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; }
+.queue-history { color: var(--muted, #625e55); font-size: .85rem; line-height: 1.5; }
+
+.readiness-banner { padding: .8rem 1rem; border-left: 4px solid var(--accent, #d78d00); background: #fff8e8; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; }
+.readiness-banner[data-outcome="needs_revision"] { border-color: var(--bad, #ae3b36); background: #fff0ee; }
+.readiness-banner[data-outcome="ready"] { border-color: var(--good, #13825f); background: #f0faf5; }
+
+.status-tag.needs-review { color: #754b00; background: #fff5d9; border: 1px solid #bd8400; }
+.readiness-reasons { padding-left: 1.2rem; line-height: 1.5; max-width: 80ch; overflow-wrap: anywhere; }

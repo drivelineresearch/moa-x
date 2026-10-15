@@ -97,8 +97,9 @@ you whether the proposers converged or diverged. Walk them:
 - **If refiners report `diverge_strongly`**: the proposers disagreed on
   fundamentals. You must adjudicate. Use the refiners' evidence to pick the
   stronger side; if the refiners themselves disagree on who is right, go
-  with whichever side has more verified evidence and fewer contradicted
-  claims.
+  with the interpretation supported by the most relevant primary evidence.
+  Citation volume and model majority are not correctness measures. Record the
+  strongest minority argument and defer the choice when the evidence does not settle it.
 - **If refiners report `accept_best_with_minor_edits`**: one proposer is
   clearly strongest. Follow their plan with the tweaks the refiners
   suggested.
@@ -121,7 +122,7 @@ you whether the proposers converged or diverged. Walk them:
 #### Step 3: Drop contradicted claims
 Anything the refiners marked `contradicted` does not appear in your final
 plan. Anything marked `unverified` appears with a flag noting the gap.
-Anything `verified` is solid.
+A verified finding is a reviewer judgment backed by a receipt; inspect contrary evidence and scope before treating it as decisive.
 
 #### Step 4: Pull in missing steps
 Every successful refiner produced a `missing_steps` array. Walk them. Anything that is
@@ -202,9 +203,8 @@ and a tag like [codex-proposer], [deepseek-flash-refiner] indicating who cited i
 ## Confidence
 <your honest read of how confident this plan should make the user.
 Calibrate based on:
-- Convergence: if all successful proposers agreed on the approach, +confidence.
-- Refiner verdicts: if all successful refiners said `accept_with_changes` on the
-  winning plan, +confidence. If any said `reject`, -confidence.
+- Convergence identifies shared assumptions; it is not independent factual verification.
+- Refiner verdicts: weigh source-backed findings, counterexamples and resolved constraints; do not count endorsements as proof.
 - Verification rate: what fraction of evidence claims were `verified` vs
   `unverified` vs `contradicted`.
 - Open questions: more unresolved questions means lower confidence.>
@@ -324,3 +324,23 @@ Do not start executing without explicit user approval.
 - You handed back generic prose instead of an actionable plan
 - You overstated confidence ("everyone agreed" when the retained outputs did not)
 - You started executing without approval
+
+
+## V2 structured decisions
+
+When the subprocess contract supplies version 2, it supersedes the legacy file-writing
+and Markdown instructions above. Return the structured lineage and an empty
+`final_plan_markdown`; the runner renders the human answer from exactly those
+decisions. Use outcome `ready`, `needs_revision`, or `insufficient_evidence`.
+Every actionable decision must identify 1–3 exact `supporting_claims` pointers
+actually adopted, usually one or two essential factual premises. `proposer_refs`
+and `evidence_indices` retain origin attribution without selecting extra claims.
+Prefer facts already independently checked in the decision docket.
+Exclude discarded sibling assertions, even when adapting the same source step.
+New facts from reviewers or synthesis need their own receipt-bearing `evidence`.
+Do not turn a request for a future change into an unsupported assertion about
+current behavior. Include a counterargument, compatibility constraints, unresolved
+uncertainties, and concrete validation for each decision. A conflicting requirement
+or unverified essential premise must be deferred or explicitly qualify the outcome.
+Choose one compatible architecture; do not combine mutually exclusive alternatives.
+A separate independent final audit will check factual support and counterevidence.

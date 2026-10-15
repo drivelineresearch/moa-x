@@ -456,6 +456,7 @@ function renderProviders() {
 }
 
 function jobStatus(job) {
+  if (job.status === "completed" && ["needs_revision", "insufficient_evidence"].includes(job.evidence_status?.outcome)) return "needs-review";
   return ["running", "queued", "completed", "failed", "cancelled", "blocked"].includes(job.status) ? job.status : "queued";
 }
 
@@ -466,7 +467,10 @@ function jobContext(job) {
 }
 
 function stateVisual(job) {
-  if (job.status === "completed" || job.status === "imported") return { key: "complete", label: "Complete" };
+  if (job.status === "completed" || job.status === "imported") {
+    const outcome = job.evidence_status?.outcome;
+    return { key: "complete", label: outcome === "needs_revision" ? "Complete · needs revision" : outcome === "insufficient_evidence" ? "Complete · needs verification" : "Complete" };
+  }
   if (job.status === "queued") return { key: "queued", label: "Queued" };
   const phase = String(job.phase || "").toLowerCase();
   if (phase.includes("layer3") || phase.includes("synth") || phase.includes("aggreg") || phase.includes("decide")) {
@@ -512,14 +516,15 @@ function renderActiveJob() {
     <div class="active-card-head">
       <img class="active-state-art" src="${BASE}/static/images/state-${visual.key}.webp" alt="">
       <div><p class="eyebrow">${escapeHtml(String(job.phase).toUpperCase())}</p><h3>${escapeHtml(job.title)}</h3></div>
-      <span class="status-tag ${jobStatus(job)}">${escapeHtml(titleCase(job.status))}</span>
+      <span class="status-tag ${jobStatus(job)}">${escapeHtml(job.outcome_label || titleCase(job.status))}</span>
     </div>
-    <div class="progress-track" aria-label="${Math.round(job.progress)} percent complete"><i style="width:${job.progress}%"></i></div>
+    <p class="evidence-progress">${escapeHtml(job.evidence_summary || "Preparing independent evidence checks")}</p>
+    <div class="progress-track" aria-label="Stage progress; not a time estimate"><i style="width:${job.progress}%"></i></div>
     <div class="active-meta">
       <span>Context<strong>${escapeHtml(jobContext(job))}</strong></span>
       <span>Roster<strong>${escapeHtml(jobRosterText(job))}</strong></span>
       <span>Elapsed<strong data-elapsed="${escapeHtml(job.startedAt || job.createdAt)}">${escapeHtml(formatDuration(job.startedAt || job.createdAt))}</strong></span>
-      <span>Progress<strong>${Math.round(job.progress)}%</strong></span>
+      <span>Stage<strong>${escapeHtml(job.phase === "audit" ? "Final evidence check" : titleCase(job.phase))}</strong></span>
     </div>
     <div class="active-card-foot">
       <p>${escapeHtml(job.summary || `The ensemble is working through ${titleCase(job.phase)}.`)}</p>
@@ -542,7 +547,7 @@ function renderRecentRuns() {
       <img class="run-state-thumb" src="${BASE}/static/images/state-${stateVisual(job).key}.webp" alt="">
       <div><h3>${escapeHtml(job.title)}</h3><p>${escapeHtml(jobContext(job))} · ${escapeHtml(jobRosterText(job))}</p></div>
       <time datetime="${escapeHtml(job.finishedAt || job.createdAt || "")}">${escapeHtml(formatTime(job.finishedAt || job.createdAt))}</time>
-      <span class="status-tag ${jobStatus(job)}">${escapeHtml(titleCase(job.status))}</span>
+      <span class="status-tag ${jobStatus(job)}">${escapeHtml(job.outcome_label || titleCase(job.status))}</span>
     </a>
   `).join("");
 }
@@ -552,7 +557,7 @@ function filteredJobs() {
   const status = $("#run-status-filter")?.value || "";
   return state.jobs.filter((job) => {
     const haystack = `${job.title} ${job.goal} ${jobContext(job)} ${job.workspace} ${jobRosterText(job)}`.toLowerCase();
-    return (!term || haystack.includes(term)) && (!status || job.status === status);
+    return (!term || haystack.includes(term)) && (!status || job.status === status || job.evidence_status?.outcome === status);
   });
 }
 
@@ -567,7 +572,7 @@ function renderArchive() {
       <td>${escapeHtml(jobContext(job))}</td>
       <td>${escapeHtml(jobRosterText(job))}</td>
       <td>${escapeHtml(formatTime(job.startedAt || job.createdAt))}</td>
-      <td><span class="status-tag ${jobStatus(job)}">${escapeHtml(titleCase(job.status))}</span></td>
+      <td><span class="status-tag ${jobStatus(job)}">${escapeHtml(job.outcome_label || titleCase(job.status))}</span></td>
       <td><a class="table-link" href="${BASE}/runs/${encodeURIComponent(job.id)}" data-open-run="${escapeHtml(job.id)}">Open →</a></td>
     </tr>
   `).join("") : `<tr><td colspan="6">No runs match this view.</td></tr>`;
@@ -1435,6 +1440,7 @@ async function launchRun(event) {
     source_mode: state.sourceMode,
     github_repository: state.sourceMode === "github" ? repo?.fullName : undefined,
     options: {
+      depth: state.depthPreset,
       model_overrides: selectedModelOverrides(),
       effort_overrides: selectedEffortOverrides(),
     },
@@ -1565,7 +1571,7 @@ function trackAttachmentPreparation(job) {
 
 function phaseIndex(phase) {
   const value = String(phase || "").toLowerCase();
-  if (value.includes("layer3") || value.includes("aggregate") || value.includes("decide")) return 3;
+  if (value.includes("layer3") || value.includes("aggregate") || value.includes("decide") || value.includes("audit")) return 3;
   if (value.includes("layer2") || value.includes("refin")) return 2;
   if (value.includes("layer1") || value.includes("propos")) return 1;
   return 0;
@@ -1590,6 +1596,11 @@ function renderLivingDecisionMap(job) {
   }
   const agents = agentsFromJob(job);
   const retained = state.decisionMapJobId === job.id ? state.decisionMap : null;
+  if (!retained && job.status === "completed" && !job.artifacts?.decision_map) {
+    host.innerHTML = `<div class="empty-state compact"><div><h3>Evidence map unavailable</h3><p>The run finished, but a validated evidence map is unavailable. Read the final plan and independent check before relying on the result.</p></div></div>`;
+    host.setAttribute("aria-busy", "false");
+    return;
+  }
   const base = retained || window.MoaDecisionMap.createSetupMap({
     title: job.title || "Evidence-weighted implementation decision",
     summary: "The map updates at each retained orchestration checkpoint.",
@@ -1635,6 +1646,24 @@ function renderRunDetail(job = state.detailJob) {
   $("#run-detail-kicker").textContent = `RUN ${job.id.slice(0, 12).toUpperCase()}`;
   $("#run-detail-title").textContent = job.title;
   $("#run-detail-meta").textContent = `${jobContext(job)} · Started ${formatTime(job.startedAt || job.createdAt)} · ${jobRosterText(job)}`;
+  const readiness = $("#run-readiness");
+  const outcome = job.evidence_status?.outcome;
+  readiness.hidden = !outcome || !["completed", "imported"].includes(job.status);
+  readiness.dataset.outcome = outcome || "";
+  const nextReadiness = outcome === "needs_revision" ? "Needs revision — review the rejected assumptions before implementation."
+    : outcome === "insufficient_evidence" ? "Needs verification — review the evidence gaps and open questions before implementation."
+      : "Ready for human review — inspect the plan, evidence and validation steps.";
+  if (readiness.textContent !== nextReadiness) readiness.textContent = nextReadiness;
+  const evidenceCopy = job.evidence_summary || "Evidence checks appear at retained checkpoints.";
+  if ($("#run-evidence-progress").textContent !== evidenceCopy) $("#run-evidence-progress").textContent = evidenceCopy;
+  const reasons = $("#run-readiness-reasons");
+  reasons.innerHTML = (job.evidence_status?.reasons || []).map((reason) => `<li>${escapeHtml(reason)}</li>`).join("");
+  reasons.hidden = readiness.hidden || !reasons.childElementCount;
+  const queue = job.queue || {};
+  const range = queue.historical_minutes;
+  $("#run-queue-history").textContent = job.status === "queued"
+    ? `${queue.runs_ahead || 0} run(s) ahead in the queue.`
+    : range ? `Similar completed runs took ${range[0]}–${range[1]} minutes · ${queue.samples} observations, not a completion estimate.` : "Historical duration range will appear after three comparable runs.";
   const current = phaseIndex(job.phase);
   const done = job.status === "completed" ? 4 : current;
   const runArt = $("#run-detail-art");
@@ -1767,7 +1796,9 @@ function agentStateCopy(agent) {
   if (agent.summary) return agent.summary;
   if (agent.status === "running") return "Actively reading the task, checking evidence, and building its response.";
   if (agent.status === "queued") return "Ready and waiting for the preceding layer to finish.";
-  if (agent.status === "completed") return "Response captured. This lane is standing by while the ensemble continues.";
+  if (agent.status === "completed") return state.detailJob?.status === "completed"
+    ? "Response retained in the completed run and its decision trail."
+    : "Response captured. This lane is standing by while the ensemble continues.";
   if (agent.status === "failed") return "This lane did not return a usable response. Open the trace for the recorded cause.";
   if (agent.status === "blocked") return "This lane did not run because an earlier stage ended the workflow.";
   if (agent.status === "cancelled") return "This lane stopped when the run was cancelled.";
@@ -1978,14 +2009,14 @@ function renderEvents() {
           </details>` : ""}
       </div>
     </article>
-  `).join("") : `<div class="event-empty">Waiting for the first meaningful worker update. Connection heartbeats and repetitive setup logs stay hidden.</div>`;
+  `).join("") : `<div class="event-empty">${["completed", "failed", "cancelled"].includes(state.detailJob?.status) ? "No worker events were retained for this run. Use the final plan and final evidence check above." : "Waiting for the first meaningful worker update. Connection heartbeats and repetitive setup logs stay hidden."}</div>`;
 }
 
 function artifactEntries(artifacts) {
   const entries = Array.isArray(artifacts)
     ? artifacts.map((item) => typeof item === "string" ? [item.split("/").pop(), item] : [item.name || item.label, item.url || item.path])
     : Object.entries(artifacts || {}).map(([name, value]) => [name, typeof value === "string" ? value : value?.url || value?.path]);
-  const priority = { report: 0, decision_map: 1, final_plan: 2, synthesis: 3, manifest: 4 };
+  const priority = { report: 0, final_plan: 1, final_audit: 2, decision_map: 3, synthesis: 4, manifest: 5 };
   return entries.sort(([left], [right]) => (priority[left] ?? 20) - (priority[right] ?? 20));
 }
 
@@ -1996,6 +2027,7 @@ function artifactLabel(name, prominent = false) {
     final_plan: prominent ? "Read final plan" : "Final plan",
     synthesis: prominent ? "Read synthesis notes" : "Synthesis notes",
     manifest: prominent ? "View run data" : "Run data",
+    final_audit: "Final evidence check",
   };
   return labels[name] || titleCase(name);
 }
@@ -2018,7 +2050,7 @@ function renderResultShortcuts(job) {
   }
   shortcuts.hidden = false;
   shortcuts.innerHTML = `
-    <span>Final results</span>
+    <span>${job.status === "completed" ? "Final results" : "Live artifacts"}</span>
     <div class="run-result-links">
       ${job.status === "completed" && job.artifacts?.report
         ? `<button class="report-share-button" type="button" data-share-report aria-label="Create a shareable link for the final report"><span aria-hidden="true">↗</span> Share final report</button>`
@@ -2087,7 +2119,7 @@ function renderResult(job) {
   const artifacts = artifactEntries(job.artifacts).filter(([, url]) => url);
   panel.innerHTML = `
     <p class="eyebrow">${job.status === "completed" ? "FINAL OUTPUT" : "RUN OUTCOME"}</p>
-    <h2>${job.status === "completed" ? "The plan is ready" : titleCase(job.status)}</h2>
+    <h2>${job.status === "completed" ? (job.evidence_status?.outcome === "needs_revision" ? "The plan needs revision" : job.evidence_status?.outcome === "insufficient_evidence" ? "The result needs verification" : job.evidence_status?.outcome === "ready" ? "Ready for human review" : "Final plan available · readiness not recorded") : titleCase(job.status)}</h2>
     <p>${escapeHtml(job.summary || (job.status === "completed"
       ? "The ensemble finished and preserved the decision trail."
       : "Review the agent lanes and event trace for details."))}</p>

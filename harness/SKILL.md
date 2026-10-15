@@ -108,7 +108,7 @@ aggregated plan, and exact decision lineage are embedded too, then point the
 user at the file. See
 `docs/report.md`.
 
-Layer 0 happens in this Claude Code session. Layers 1 and 2 are spawned as
+This Claude Code session freezes the task; the runner adds bounded static reconnaissance. Layers 1 and 2 are spawned as
 external subprocesses. Layer 3 runs through the orchestrator's recorded Codex
 subprocess phase.
 
@@ -301,7 +301,7 @@ the whole point of the planning phase was deliberation.
    user approval after showing the scout brief. The 12-25 minute spend and
    the user's attention both matter.
 
-2. **Use the recorded Layer 3 path.** Layer 0 remains in the parent. Default
+2. **Use the recorded Layer 3 path.** The parent supplies the task and scope; the runner enriches repository context. Default
    GPT-6.1 Sol aggregation must run through `--phase layer3` at `xhigh` so
    schema validation, lineage checks, timing, logs, and report regeneration
    stay consistent.
@@ -390,10 +390,11 @@ planning rather than chat-answer ensembling. Differences from the paper:
 - **Recorded synthesis by default.** GPT-6.1 Sol at `xhigh` produces the final
   phase through the Codex adapter, preserving schema validation, exact
   lineage, timing, and logs in the run artifacts.
-- **Web research required.** All proposers and refiners are explicitly
-  instructed to do aggressive web search and cite at least 5 external
-  sources each. The cited sources are passed through to the aggregator.
+- **Task-dependent research.** Use relevant primary sources for external facts.
+  Local questions have no minimum web-search or bibliography size.
 - **Repo grounded.** All CLIs run with read-only discipline (filesystem
   sandbox for Codex, tool allowlist for Claude, permission-deny policy for
   OpenCode, and plan+sandbox for AGY/Gemini), and the scout brief tells them which
   files to focus on, bounding exploration cost.
+
+For new runs, follow the [v2 evidence contract](../docs/evidence-pipeline.md); archived v1 plans keep their original schema.
