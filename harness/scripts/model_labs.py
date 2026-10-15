@@ -80,7 +80,7 @@ ROUTE_META: dict[str, dict[str, Any]] = {
     "codex": {
         "label": "GPT-6 Astra",
         "lab_id": "openai",
-        "roles": ["proposer", "refiner"],
+        "roles": ["proposer", "refiner", "aggregator"],
     },
     "codex-sol": {
         "label": "GPT-6.1 Sol",
@@ -90,7 +90,7 @@ ROUTE_META: dict[str, dict[str, Any]] = {
     "codex-luna": {
         "label": "GPT-6 Luna",
         "lab_id": "openai",
-        "roles": ["proposer", "refiner"],
+        "roles": ["proposer", "refiner", "aggregator"],
     },
     "sonnet": {
         "label": "Claude Sonnet 5.5",
@@ -128,7 +128,7 @@ ROUTE_META: dict[str, dict[str, Any]] = {
     "agy-gemini-pro": {
         "label": "Gemini 4 Argon",
         "lab_id": "google",
-        "roles": ["proposer", "refiner"],
+        "roles": ["proposer", "refiner", "aggregator"],
     },
     "fable": {
         "label": "Fable 5.1 1M Thinking",
@@ -168,6 +168,14 @@ ROUTE_META: dict[str, dict[str, Any]] = {
         "roles": ["proposer", "refiner"],
     },
 }
+
+for _model, _label in (
+    ("gpt-6-sol", "GPT-6 Sol"), ("gpt-5.6-sol", "GPT-5.6 Sol"),
+    ("gpt-5.6-terra", "GPT-5.6 Terra"), ("gpt-5.6-luna", "GPT-5.6 Luna"),
+):
+    ROUTE_META["codex-" + _model.replace(".", "-")] = {
+        "label": _label, "lab_id": "openai", "roles": ["aggregator"],
+    }
 
 
 def model_lab(lab_id: str | None) -> dict[str, str]:

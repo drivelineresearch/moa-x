@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from . import github
 from .providers import harness_config, model_catalog
+from model_efforts import effort_options
 
 
 class LaunchError(ValueError):
@@ -112,9 +113,8 @@ class LaunchService:
         requested_proposers = _string_list(body.get("proposers"))
         requested_refiners = _string_list(body.get("refiners"))
         requested_aggregator = str(body.get("aggregator") or "codex-sol")
-        route_roles = {
-            str(item["id"]): set(item.get("roles") or []) for item in self.catalog()
-        }
+        catalog = {str(item["id"]): item for item in self.catalog()}
+        route_roles = {name: set(item.get("roles") or []) for name, item in catalog.items()}
         route_roles.update(
             {
                 name: set(roles)
@@ -148,6 +148,27 @@ class LaunchService:
         depth = options.get("depth", body.get("preset", "balanced"))
         if depth not in {"quick", "balanced", "thorough"}:
             raise LaunchError("Choose quick, balanced, or thorough depth.")
+        options["depth"] = depth
+        scoped = options.get("aggregator_options")
+        if scoped is not None and not isinstance(scoped, dict):
+            raise LaunchError("aggregator_options must be an object")
+        scoped = dict(scoped or {})
+        row = catalog.get(requested_aggregator)
+        if scoped and not row:
+            raise LaunchError("aggregator_options requires a selectable final model")
+        if row:
+            model = scoped.get("model") or (options.get("model_overrides") or {}).get(requested_aggregator) or row["model"]
+            if not isinstance(model, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_./:-]{0,299}", model):
+                raise LaunchError("aggregator model must be a valid model id")
+            levels = effort_options(row["harness"], model, row.get("effort") if model == row["model"] else None)
+            effort = scoped.get("effort", (options.get("effort_overrides") or {}).get(requested_aggregator))
+            if effort is None:
+                effort = levels[-1] if depth == "thorough" and levels else row.get("effort")
+            if effort is not None and effort not in levels:
+                raise LaunchError(f"{requested_aggregator} does not support {effort} effort")
+            if row["harness"] == "agy" and effort:
+                model = re.sub(r"-(low|medium|high)$", "-" + effort, model)
+            options["aggregator_options"] = {"model": model, "effort": effort}
         profile_id = profile["id"]
 
         job_id = job_id or (

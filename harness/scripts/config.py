@@ -59,6 +59,12 @@ _AGY_MODEL_DEPTH_RE = re.compile(
 )
 
 
+def agy_model_depth(model: str) -> str | None:
+    """AGY's model id is authoritative; a separate effort flag is ignored."""
+    match = _AGY_MODEL_DEPTH_RE.search(model)
+    return match.group(1).lower() if match else None
+
+
 # --- binary names ----------------------------------------------------------
 
 _DEFAULT_BINS = {
@@ -128,6 +134,15 @@ BUILTIN_PROVIDERS: dict[str, ResolvedProvider] = {
     "fable":          ResolvedProvider(name="fable",          harness="claude",   model="claude-fable-5-1", effort="xhigh"),
 }
 
+# Additional models selectable in the authenticated Codex catalog. These are
+# synthesis-only choices; the recommended proposal/review rosters stay intact.
+for _model in ("gpt-6-sol", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"):
+    _name = "codex-" + _model.replace(".", "-")
+    BUILTIN_PROVIDERS[_name] = ResolvedProvider(
+        name=_name, harness="codex", model=_model,
+        effort="max" if _model.endswith("-luna") else "ultra",
+    )
+
 PROVIDER_ALLOWED_ROLES: dict[str, frozenset[str]] = {
     "fable": frozenset({"aggregator"}),
     "minimax": frozenset({"proposer", "refiner"}),
@@ -137,6 +152,10 @@ PROVIDER_ALLOWED_ROLES: dict[str, frozenset[str]] = {
     "qwen-opencode": frozenset(),
     "deepseek": frozenset(),  # retired Pro route; archives retain its identity
 }
+
+for _name in BUILTIN_PROVIDERS:
+    if _name.startswith("codex-gpt-"):
+        PROVIDER_ALLOWED_ROLES[_name] = frozenset({"aggregator"})
 
 
 def provider_is_retired(name: str, model: str | None = None) -> bool:
@@ -269,13 +288,12 @@ def resolve_provider(name: str, *, user_providers: dict[str, dict]) -> ResolvedP
     # additional --effort produces an invalid model/effort pair (and can fail
     # before the model sees the prompt), so model depth is always authoritative.
     if rp.harness == "agy":
-        match = _AGY_MODEL_DEPTH_RE.search(rp.model)
         rp = ResolvedProvider(
             name=rp.name,
             harness=rp.harness,
             model=rp.model,
             timeout=rp.timeout,
-            effort=match.group(1).lower() if match else None,
+            effort=agy_model_depth(rp.model),
         )
 
     return rp

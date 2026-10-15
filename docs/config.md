@@ -14,10 +14,10 @@ Never commit `.env`, provider keys, or generated `harness/config.yaml`.
 
 | Route | Execution harness | Model | Roles | Effort |
 |---|---|---|---|---|
-| `agy-gemini-pro` | AGY | `gemini-4-argon-high` | proposer, refiner | model-depth selector |
+| `agy-gemini-pro` | AGY | `gemini-4-argon-high` | proposer, refiner, aggregator | model-depth selector |
 | `grok` | OpenCode | `opencode-go/grok-4.7` | proposer, refiner | provider-managed |
-| `codex-luna` | Codex | `gpt-6-luna` | proposer, refiner | adjustable; medium default |
-| `codex` | Codex | `gpt-6-astra` | proposer, refiner | adjustable; high default |
+| `codex-luna` | Codex | `gpt-6-luna` | proposer, refiner, aggregator | adjustable; medium default |
+| `codex` | Codex | `gpt-6-astra` | proposer, refiner, aggregator | adjustable; high default |
 | `minimax` | OpenCode | `opencode-go/minimax-m3` | optional proposer/refiner | provider-managed |
 | `muse-spark` | OpenCode | `opencode-go/muse-spark-1.3-contributor` | optional proposer/refiner | provider-managed |
 | `glm` | OpenCode | `opencode-go/glm-5.3` | proposer, refiner | provider-managed |
@@ -25,7 +25,7 @@ Never commit `.env`, provider keys, or generated `harness/config.yaml`.
 | `sonnet` | Claude Code | `claude-sonnet-5-5` | proposer, refiner | adjustable; high default |
 | `opus` | Claude Code | `claude-opus-5-5` | proposer, refiner, aggregator | adjustable; high default |
 | `codex-sol` | Codex | `gpt-6.1-sol` | proposer, refiner, aggregator | adjustable; xhigh default |
-| `fable` | Claude Code | `claude-fable-5-1` | aggregator only | fixed xhigh |
+| `fable` | Claude Code | `claude-fable-5-1` | aggregator only | adjustable; xhigh CLI default |
 
 Cursor is not a supported harness. GLM 5.3 is the fourth proposer in the
 Thorough Web UI preset. DeepSeek V4.1 Flash is the sole curated DeepSeek route
@@ -48,7 +48,7 @@ The browser and Slack share these server-side profiles:
 |---|---|---|---|
 | Quick | Gemini 4 Argon `low`; Grok 4.7 | DeepSeek V4.1 Flash | GPT-6.1 Sol `medium` |
 | Balanced | Gemini 4 Argon `high`; Grok 4.7; GPT-6 Luna `medium` | DeepSeek V4.1 Flash; Opus `high` | GPT-6.1 Sol `xhigh` |
-| Thorough | Gemini 4 Argon `high`; Grok 4.7; GPT-6 Astra `high`; GLM 5.3 | DeepSeek V4.1 Flash; Opus `max` | GPT-6.1 Sol `xhigh` |
+| Thorough | Gemini 4 Argon `high`; Grok 4.7; GPT-6 Astra `high`; GLM 5.3 | DeepSeek V4.1 Flash; Opus `max` | GPT-6.1 Sol `ultra` |
 
 Gemini Pro enters every mode for early web evidence. Grok enters every mode as
 an independent xAI proposer. DeepSeek V4.1 Flash is always a refiner; Opus joins
@@ -114,7 +114,36 @@ unknown custom routes use the neutral independent-lab visual.
 
 ## Aggregator alternatives
 
-`opus` and `fable` may replace `codex-sol`. Fable is rejected from proposer
+Thorough exposes all seven current selectable OpenAI models through Codex,
+plus Gemini 4 Argon, Claude Opus 5.5 and Fable 5.1:
+
+| Route | Model | Supported effort (lowest to highest) | Thorough default |
+|---|---|---|---|
+| `codex-sol` | GPT-6.1 Sol | low, medium, high, xhigh, max, ultra | ultra |
+| `codex` | GPT-6 Astra | low, medium, high, xhigh, max, ultra | ultra |
+| `codex-gpt-6-sol` | GPT-6 Sol | low, medium, high, xhigh, max, ultra | ultra |
+| `codex-luna` | GPT-6 Luna | low, medium, high, xhigh, max | max |
+| `codex-gpt-5-6-sol` | GPT-5.6 Sol | low, medium, high, xhigh, max, ultra | ultra |
+| `codex-gpt-5-6-terra` | GPT-5.6 Terra | low, medium, high, xhigh, max, ultra | ultra |
+| `codex-gpt-5-6-luna` | GPT-5.6 Luna | low, medium, high, xhigh, max | max |
+| `agy-gemini-pro` | Gemini 4 Argon | low, medium, high (model slug) | high |
+| `opus` | Claude Opus 5.5 | low, medium, high, xhigh, max | max |
+| `fable` | Fable 5.1 | low, medium, high, xhigh, max | max |
+
+The four additional Codex routes are synthesis-only. Quick and Balanced keep
+their existing picker and recommended efforts. Thorough defaults each final
+model to its highest supported setting; manual choices remain available.
+Model availability still depends on the authenticated native client/account.
+Catalog and effort support should be revalidated when clients change.
+
+Browser/Slack launches freeze final settings under
+`options.aggregator_options: {model, effort}`. The worker applies them only
+in Layer 3, independently of `model_overrides` and `effort_overrides` used by
+proposers/refiners. Older route-wide overrides remain accepted. Saved runs
+and targeted retries retain their original settings; changing presets does
+not alter an active run.
+
+`opus` and `fable` may replace `codex-sol` in any depth. Fable is rejected from proposer
 and refiner lists by both the config loader and Web API. The browser also
 shows a password warning before selecting it because the 1M-thinking route
 can consume extreme quota. The password is only a deliberate speed bump, not

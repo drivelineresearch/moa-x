@@ -154,11 +154,8 @@ def run(
         schema_path: Path to JSON Schema file. Codex enforces it via --output-schema.
         repo_path: Working directory for codex (--cd). Codex can read repo from here.
         model: Codex model id. Default gpt-6-astra.
-        reasoning_effort: low | medium | high | xhigh. Default high. Dropped from
-            xhigh in v0.2.2 after the first dogfood run showed xhigh + aggressive
-            web research blew past 900s. xhigh is still available via the
-            --codex-effort CLI flag for tasks where quality trumps latency
-            (e.g. refinement-only runs where the proposer output already exists).
+        reasoning_effort: low | medium | high | xhigh | max | ultra, subject
+            to model support. Luna supports up to max; Sol/Astra/Terra support ultra.
         timeout_seconds: Hard wall-clock cap. Default 900s.
         log_file: Optional path to write the full codex output to. ALWAYS
             written in every exit path so post-mortems never come up empty.

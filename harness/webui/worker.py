@@ -238,7 +238,7 @@ class JobWorker:
         return cmd
 
     @staticmethod
-    def _environment(job: dict[str, Any]) -> dict[str, str]:
+    def _environment(job: dict[str, Any], phase: str | None = None) -> dict[str, str]:
         config = job["config"]
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"
@@ -270,6 +270,23 @@ class JobWorker:
                 env[key] = str(effort)
                 if provider_name == config.get("aggregator") and provider and provider.harness == "codex":
                     env["MOA_AGGREGATOR_EFFORT"] = str(effort)
+        selected = config.get("options", {}).get("aggregator_options") or {}
+        name = config.get("aggregator", "")
+        provider = provider_catalog.get(name)
+        if provider and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,79}", name):
+            prefix = "MOA_" + name.upper().replace("-", "_")
+            model = selected.get("model")
+            effort = selected.get("effort")
+            # Global aggregator-only variables preserve its identity in every
+            # phase without overriding a same-route proposer or reviewer.
+            if isinstance(model, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_./:-]{0,299}", model):
+                env["MOA_AGGREGATOR_MODEL"] = model
+                if phase in (None, "layer3"):
+                    env[prefix + "_MODEL"] = str(selected["model"])[:300]
+            if isinstance(effort, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,39}", effort):
+                env["MOA_AGGREGATOR_EFFORT"] = effort
+                if phase in (None, "layer3") and provider.harness != "agy":
+                    env[prefix + "_EFFORT"] = effort
         return env
 
     def _run_phase(self, job: dict[str, Any], phase: str) -> int:
@@ -291,7 +308,7 @@ class JobWorker:
             job_id, phase=phase, progress=PHASE_PROGRESS[phase]
         )
         self._event(job_id, "phase", f"Starting {phase}", phase=phase)
-        env = self._environment(job)
+        env = self._environment(job, phase)
         with log_path.open("a", encoding="utf-8") as log:
             log.write(f"\n$ {' '.join(cmd)}\n")
             proc = subprocess.Popen(

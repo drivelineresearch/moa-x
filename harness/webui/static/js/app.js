@@ -588,12 +588,15 @@ function modelsForRole(role) {
     const id = String(model.id);
     const harness = model.harness || model.provider_id || model.provider || "cli";
     if (harness === "gemini" || id === "gemini-cli-pro") return false;
-    if (harness === "codex" && !["codex", "codex-sol", "codex-luna"].includes(id)) return false;
+    if (harness === "codex" && !(role === "aggregator" && state.depthPreset === "thorough")
+        && !["codex", "codex-sol", "codex-luna"].includes(id)) return false;
     if (["codex-reviewer", "codex-aggregator"].includes(id)) return false;
     const roles = model.roles || model.supported_roles || [];
     if (Array.isArray(roles) && roles.length && !roles.includes(role)) return false;
     if (role === "aggregator") {
-      return ["codex-sol", "opus", FABLE_ROUTE_ID].includes(id);
+      return state.depthPreset === "thorough"
+        ? harness === "codex" || ["agy-gemini-pro", "opus", FABLE_ROUTE_ID].includes(id)
+        : ["codex-sol", "opus", FABLE_ROUTE_ID].includes(id);
     }
     return id !== FABLE_ROUTE_ID;
   }).map((model) => {
@@ -753,6 +756,9 @@ function renderModelOptions(role, targetId, inputType) {
             const index = optionIndex++;
             const displayModel = displayModelName(option);
             const effort = effortPresentation(option);
+            if (role === "aggregator" && state.depthPreset === "thorough" && effort.adjustable) {
+              effort.initialEffort = effort.options.at(-1);
+            }
             const rowSearch = `${option.name} ${option.model} ${option.lab} ${option.harness}`.toLowerCase();
             return `
               <div class="model-option" data-model-row data-search="${escapeHtml(rowSearch)}">
@@ -817,7 +823,7 @@ function selectedValues(name) {
 
 function selectedModelOverrides() {
   const overrides = {};
-  $$('input[name="proposer"]:checked, input[name="refiner"]:checked, input[name="aggregator"]:checked', $("#launch-form"))
+  $$('input[name="proposer"]:checked, input[name="refiner"]:checked', $("#launch-form"))
     .forEach((input) => {
       if (!input.dataset.model) return;
       const effort = selectedEffortValue(input.closest(".model-option"));
@@ -828,15 +834,25 @@ function selectedModelOverrides() {
   return overrides;
 }
 
-function selectedEffortOverrides() {
+export function selectedEffortOverrides() {
   const overrides = {};
-  $$('input[name="proposer"]:checked, input[name="refiner"]:checked, input[name="aggregator"]:checked', $("#launch-form"))
+  $$('input[name="proposer"]:checked, input[name="refiner"]:checked', $("#launch-form"))
     .forEach((input) => {
       if (input.dataset.effortMode === "model_variant") return;
       const selected = selectedEffortValue(input.closest(".model-option"));
       if (selected) overrides[input.value] = selected;
     });
   return overrides;
+}
+
+export function selectedAggregatorOptions() {
+  const input = $('input[name="aggregator"]:checked', $("#launch-form"));
+  if (!input) return {};
+  const effort = selectedEffortValue(input.closest(".model-option"));
+  const model = input.dataset.effortMode === "model_variant" && effort
+    ? input.dataset.model.replace(/-(?:low|medium|high)$/i, `-${effort}`)
+    : input.dataset.model;
+  return { model, ...(effort ? { effort } : {}) };
 }
 
 function selectedEffortValue(card) {
@@ -957,7 +973,7 @@ function setSelectedEffort(mode, role = "", effortByRoute = {}) {
     const range = $("[data-effort-range]", route.closest(".model-option"));
     if (range) {
       const values = (range.dataset.effortValues || "").split(",").filter(Boolean);
-      const desired = effortByRoute[route.value]
+      const desired = (mode === "thorough" && role === "aggregator" ? values.at(-1) : effortByRoute[route.value])
         || (mode === "quick" ? "medium"
         : mode === "thorough" ? "high"
         : route.dataset.defaultEffort);
@@ -1009,6 +1025,7 @@ function applyOptimizedRole(role, announce = true) {
 function applyDepthPreset(preset, announce = true) {
   state.depthPreset = preset;
   syncDepthPresentation(preset);
+  renderModelOptions("aggregator", "#aggregator-options", "radio");
   ["proposer", "refiner", "aggregator"].forEach((role) => applyOptimizedRole(role, false));
   if (announce) showToast(`${titleCase(preset)} depth applied to the roster.`);
 }
@@ -1017,7 +1034,6 @@ function renderRoster() {
   if (state.loading.providers || state.loading.models) return;
   renderModelOptions("proposer", "#proposer-options", "checkbox");
   renderModelOptions("refiner", "#refiner-options", "checkbox");
-  renderModelOptions("aggregator", "#aggregator-options", "radio");
   applyDepthPreset(state.depthPreset, false);
   // Persisted/initially checked routes do not always emit a change event.
   // Run again after layout so their depth controls are never left hidden.
@@ -1480,6 +1496,7 @@ async function launchRun(event) {
       depth: state.depthPreset,
       model_overrides: selectedModelOverrides(),
       effort_overrides: selectedEffortOverrides(),
+      aggregator_options: selectedAggregatorOptions(),
     },
   };
   try {
@@ -1760,9 +1777,10 @@ function fallbackAgent(job, routeId, role, status) {
   const runOptions = job.options || job.config?.options || {};
   const modelOverrides = runOptions.model_overrides || job.model_overrides || {};
   const effortOverrides = runOptions.effort_overrides || job.effort_overrides || {};
-  const model = modelOverrides[routeId] || route?.model || routeId;
+  const finalOptions = role === "aggregator" ? runOptions.aggregator_options || {} : {};
+  const model = finalOptions.model || modelOverrides[routeId] || route?.model || routeId;
   const embeddedDepth = String(model).match(/-(low|medium|high|xhigh|max)$/i)?.[1]?.toLowerCase();
-  const effort = effortOverrides[routeId]
+  const effort = finalOptions.effort || effortOverrides[routeId]
     || (route?.effortControl === "model_variant" ? embeddedDepth : route?.effort);
   return {
     id: routeId,
@@ -2360,9 +2378,11 @@ function bindEvents() {
         if (!agents.length) throw new Error("Choose at least one agent to redispatch.");
         const retry = { phase, agents };
         if (phase === "layer3" && state.detailJob?.agents?.some((lane) => lane.role === "aggregator" && lane.harness === "codex")) {
-          const configuredEffort = state.detailJob.config?.options?.effort_overrides?.[roster.aggregator];
-          const recordedEffort = state.detailJob.agents.find((lane) => lane.role === "aggregator")?.model?.match(/\b(low|medium|high|xhigh) effort\b/i)?.[1];
-          const effort = window.prompt("Synthesis effort: low, medium, high or xhigh. Higher effort can take longer.", configuredEffort || recordedEffort?.toLowerCase() || "xhigh");
+          const configuredEffort = state.detailJob.config?.options?.aggregator_options?.effort
+            || state.detailJob.config?.options?.effort_overrides?.[roster.aggregator];
+          const recordedEffort = state.detailJob.agents.find((lane) => lane.role === "aggregator")?.model?.match(/\b(low|medium|high|xhigh|max|ultra) effort\b/i)?.[1];
+          const levels = state.models.find((model) => model.id === roster.aggregator)?.effort_options || ["low", "medium", "high", "xhigh"];
+          const effort = window.prompt(`Synthesis effort: ${levels.join(", ")}. Higher effort can take longer.`, configuredEffort || recordedEffort?.toLowerCase() || levels.at(-1));
           if (effort === null) return;
           retry.aggregator_effort = effort.trim().toLowerCase();
         }

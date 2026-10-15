@@ -20,6 +20,7 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 import config as harness_config  # noqa: E402
+from model_efforts import effort_options
 from model_labs import ROUTE_META, model_lab, route_lab_id  # noqa: E402
 from adapters import agy, claude, codex, opencode  # noqa: E402
 
@@ -81,17 +82,12 @@ LIVE_BLOCKED_ROUTES: dict[str, str] = {
 }
 
 EFFORT_OPTIONS = {
-    "codex": ["low", "medium", "high", "xhigh"],
+    "codex": ["low", "medium", "high", "xhigh", "max", "ultra"],
     "claude": ["low", "medium", "high", "xhigh", "max"],
     # AGY model slugs encode depth, so the UI changes the slug instead of
     # sending a separate effort flag.
     "agy": ["low", "medium", "high"],
 }
-ROUTE_EFFORT_OPTIONS = {
-    "agy-gemini-pro": ["low", "medium", "high"],
-    "fable": [],
-}
-
 
 def _effort_control(harness: str) -> str:
     """Describe whether depth is a CLI flag or part of a model id."""
@@ -142,9 +138,7 @@ def _route_records(harness: str) -> list[dict[str, Any]]:
                 "roles": roles,
                 "effort": item.effort,
                 "supports_effort": harness in EFFORT_OPTIONS,
-                "effort_options": ROUTE_EFFORT_OPTIONS.get(
-                    item.name, EFFORT_OPTIONS.get(harness, [])
-                ),
+                "effort_options": effort_options(item.harness, item.model, item.effort),
                 "effort_control": _effort_control(harness),
             }
         )
@@ -391,9 +385,7 @@ def model_catalog(*, probe: bool = True) -> list[dict[str, Any]]:
                 "supports_effort": (
                     item.harness in EFFORT_OPTIONS
                 ),
-                "effort_options": ROUTE_EFFORT_OPTIONS.get(
-                    item.name, EFFORT_OPTIONS.get(item.harness, [])
-                ),
+                "effort_options": effort_options(item.harness, item.model, item.effort),
                 "effort_control": _effort_control(item.harness),
                 "roles": roles,
                 "default_roles": default_roles,

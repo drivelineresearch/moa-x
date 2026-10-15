@@ -103,6 +103,7 @@ from adapters.failures import Failure, classify_failure  # noqa: E402
 from adapters.claude import TEMPERATURE_DIVERSITY_SHIM  # noqa: E402
 from attachments import AttachmentError, prepare_attachment_context  # noqa: E402
 import config as harness_config  # noqa: E402
+from model_efforts import CODEX_EFFORTS, effort_options
 import decision_map as decision_map_module  # noqa: E402
 import evidence_pipeline as pipeline  # noqa: E402
 import receipts  # noqa: E402
@@ -1977,7 +1978,7 @@ def write_synthesis_input(
 
 
 # ---------------------------------------------------------------------------
-# Layer 3 aggregation (optional Codex/Claude subprocess phase)
+# Layer 3 aggregation (optional native subprocess phase)
 # ---------------------------------------------------------------------------
 
 def _aggregation_output_schema(version: int = 1) -> dict:
@@ -2009,7 +2010,7 @@ def _build_aggregation_prompt(
     output_schema: dict,
     provider: "harness_config.ResolvedProvider",
 ) -> str:
-    """Build a host-neutral Layer 3 prompt for Codex or Claude Code."""
+    """Build a host-neutral Layer 3 prompt for a native model client."""
     protocol = (PROMPTS_DIR / "aggregator.md").read_text(encoding="utf-8")
     protected_input = synthesis_input.replace("</", "<\\/")
     return (
@@ -2140,7 +2141,7 @@ def run_layer3(
     layer1: list[LayerResult],
     layer2: list[LayerResult],
 ) -> LayerResult:
-    """Aggregate an existing synthesis input through Codex or Claude Code."""
+    """Aggregate an existing synthesis input through a native model client."""
     phase_started = time.monotonic()
     synthesis_path = session_dir / "synthesis-input.md"
     if not synthesis_path.exists():
@@ -2178,10 +2179,10 @@ def run_layer3(
         prompt += receipts.packet(repo_path, rows, session=session_dir, scout=scout,
                                   limit=pipeline.policy(scout)["packet_chars"])
 
-    if provider.harness not in {"codex", "claude"}:
+    if provider.harness not in {"codex", "claude", "agy"}:
         return LayerResult(
             agent_id=provider.name, layer=3, role="aggregator", success=False,
-            error=f"Layer 3 subprocess aggregation supports codex or claude; got {provider.harness!r}",
+            error=f"Layer 3 subprocess aggregation supports codex, claude or agy; got {provider.harness!r}",
         )
 
     checkpoint = session_dir / "lane-checkpoints" / f"layer3-{provider.name}.json"
@@ -2789,7 +2790,7 @@ def main() -> int:
     parser.add_argument("--codex-timeout", type=int,
                         default=_int_env("MOA_CODEX_TIMEOUT"),
                         help="Wall-clock cap for codex calls, in seconds. Default "
-                             "scales with --codex-effort: xhigh/high=2700, "
+                             "scales with --codex-effort: high through ultra=2700, "
                              "medium/low=900. A single --timeout overrides this.")
     parser.add_argument("--sonnet-timeout", type=int,
                         default=_int_env("MOA_SONNET_TIMEOUT") or 2700,
@@ -2803,14 +2804,14 @@ def main() -> int:
                         help="Model for the built-in codex-reviewer refiner.")
     parser.add_argument("--codex-effort",
                         default=os.environ.get("MOA_CODEX_EFFORT") or "high",
-                        choices=["low", "medium", "high", "xhigh"],
+                        choices=list(CODEX_EFFORTS),
                         help="Codex reasoning effort. Default 'high'. Pass "
-                             "--codex-effort xhigh if you need maximum quality "
+                             "--codex-effort ultra for maximum Sol/Astra quality "
                              "and can tolerate longer runs. The default "
                              "--codex-timeout scales with this flag.")
     parser.add_argument("--codex-reviewer-effort",
                         default=os.environ.get("MOA_CODEX_REVIEWER_EFFORT") or "high",
-                        choices=["low", "medium", "high", "xhigh"],
+                        choices=list(CODEX_EFFORTS),
                         help="Reasoning effort for codex-harness refiners. "
                              "Default 'high', independently of proposer effort.")
     parser.add_argument("--sonnet-model",
@@ -2827,8 +2828,8 @@ def main() -> int:
                              "Claude aggregation remains supported.")
     parser.add_argument("--aggregator-effort",
                         default=os.environ.get("MOA_AGGREGATOR_EFFORT") or None,
-                        choices=["low", "medium", "high", "xhigh"],
-                        help="Reasoning effort for a Codex Layer 3 subprocess. "
+                        choices=list(CODEX_EFFORTS),
+                        help="Reasoning effort for a Codex/Claude Layer 3 model; AGY uses its model slug. "
                              "Defaults to the resolved provider effort, then 'xhigh'.")
     parser.add_argument("--skip-layer2",
                         action="store_true",
@@ -2891,7 +2892,7 @@ def main() -> int:
 
     # Resolve per-agent timeouts. --timeout (master) wins over everything;
     # otherwise use the per-agent default, which for codex is effort-aware.
-    _codex_effort_defaults = {"low": 900, "medium": 900, "high": 2700, "xhigh": 2700}
+    _codex_effort_defaults = {"low": 900, "medium": 900, "high": 2700, "xhigh": 2700, "max": 2700, "ultra": 2700}
     if args.timeout is not None:
         codex_timeout = sonnet_timeout = args.timeout
     else:
@@ -3229,7 +3230,21 @@ def main() -> int:
                 effort=final_aggregator.effort,
             )
 
-        args.aggregator_effort = args.aggregator_effort or final_aggregator.effort or "xhigh"
+        levels = effort_options(final_aggregator.harness, final_aggregator.model, final_aggregator.effort)
+        if final_aggregator.harness == "agy":
+            args.aggregator_effort = harness_config.agy_model_depth(final_aggregator.model)
+        else:
+            args.aggregator_effort = args.aggregator_effort or final_aggregator.effort
+            if args.aggregator_effort is None and final_aggregator.harness == "codex":
+                args.aggregator_effort = "xhigh"
+            if levels and args.aggregator_effort is not None and args.aggregator_effort not in levels:
+                print(f"ERROR: {final_aggregator.model} does not support {args.aggregator_effort} effort", file=sys.stderr)
+                return 2
+        final_aggregator = harness_config.ResolvedProvider(
+            name=final_aggregator.name, harness=final_aggregator.harness, model=final_aggregator.model,
+            timeout=final_aggregator.timeout,
+            effort=args.aggregator_effort if levels else final_aggregator.effort,
+        )
 
         # ---------- Phase: layer3 only (aggregate retained synthesis) ----------
         if args.phase == "layer3":
@@ -3248,13 +3263,17 @@ def main() -> int:
                 return 4
             if final_aggregator.harness == "codex":
                 ok, msg = codex_adapter.check_available()
-                default_timeout = codex_timeout
+                default_timeout = (codex_timeout if args.timeout is not None or args.codex_timeout is not None
+                                   else _codex_effort_defaults[args.aggregator_effort])
             elif final_aggregator.harness == "claude":
                 ok, msg = claude_adapter.check_available()
                 default_timeout = sonnet_timeout
+            elif final_aggregator.harness == "agy":
+                ok, msg = agy_adapter.check_available()
+                default_timeout = _int_env("MOA_AGY_TIMEOUT") or sonnet_timeout
             else:
                 print(
-                    "ERROR: --phase layer3 supports aggregators on codex or claude; "
+                    "ERROR: --phase layer3 supports aggregators on codex, claude or agy; "
                     f"got {final_aggregator.harness!r}",
                     file=sys.stderr,
                 )

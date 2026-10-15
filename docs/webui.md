@@ -69,7 +69,7 @@ and the strongest synthesis route in every run:
 |---|---|---|---|
 | Quick | Gemini 4 Argon `low`; Grok 4.7 | DeepSeek V4.1 Flash | GPT-6.1 Sol `medium` |
 | Balanced | Gemini 4 Argon `high`; Grok 4.7; GPT-6 Luna `medium` | DeepSeek V4.1 Flash; Opus `high` | GPT-6.1 Sol `xhigh` |
-| Thorough | Gemini 4 Argon `high`; Grok 4.7; GPT-6 Astra `high`; GLM 5.3 | DeepSeek V4.1 Flash; Opus `max` | GPT-6.1 Sol `xhigh` |
+| Thorough | Gemini 4 Argon `high`; Grok 4.7; GPT-6 Astra `high`; GLM 5.3 | DeepSeek V4.1 Flash; Opus `max` | GPT-6.1 Sol `ultra` |
 
 Gemini Pro stays in the proposal layer because it contributes a
 Google-native research lane before the ensemble converges. Grok contributes
@@ -78,7 +78,16 @@ DeepSeek V4.1 Flash is the Quick reviewer and remains in the full broadcast-revi
 set alongside Opus at higher depths. Every named default lane comes
 from a distinct lab within its own layer, and all recommended refiners are
 lab-independent from the OpenAI aggregator. GPT-6.1 Sol uses `medium` synthesis
-effort for Quick and `xhigh` for Balanced and Thorough.
+effort for Quick, `xhigh` for Balanced, and `ultra` for Thorough.
+
+Thorough’s final-model picker includes all seven selectable OpenAI models,
+Gemini 4 Argon, Opus 5.5 and Fable 5.1. Every choice starts at its maximum
+supported effort, with the complete range available on its slider. Luna stops
+at Max; Sol/Astra/Terra reach Ultra; Claude reaches Max; Argon reaches High.
+The [model and effort table](config.md#aggregator-alternatives) lists exact
+routes. Final settings are saved separately from proposal/review settings,
+so using the same model twice does not couple their effort controls. Existing
+runs keep their frozen model and effort settings.
 
 Qwen, Moonshot/Kimi, MiMo and unqualified Hy4 are excluded from new launch
 choices, including custom aliases. Existing runs retain their historical model

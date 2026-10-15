@@ -631,6 +631,102 @@ class RecoveryTests(unittest.TestCase):
             self.assertEqual(run_moa.main(), 4)
         call.assert_not_called()
 
+    def test_cli_synthesis_accepts_gemini_and_maximum_codex_efforts(self):
+        scout = self.session / "scout-brief.json"
+        scout.write_text(json.dumps({"session_id": "fixture", "repo_path": str(self.root), "frozen_spec": "Review retained input."}))
+        (self.session / "synthesis-input.md").write_text("Retained input.")
+        for route, model, harness, effort in [
+            ("agy-gemini-pro", "gemini-4-argon-high", "agy", "high"),
+            ("codex-sol", "gpt-6.1-sol", "codex", "ultra"),
+            ("codex-luna", "gpt-6-luna", "codex", "max"),
+            ("opus", "claude-opus-5-5", "claude", "max"),
+        ]:
+            with self.subTest(route=route):
+                (self.session / "manifest.json").write_text(json.dumps({"layer1": [], "layer2": [], "layer3": [], "summary": {}}))
+                argv = ["run_moa.py", "--scout-brief", str(scout), "--repo", str(self.root),
+                        "--phase", "layer3", "--aggregator-provider", route, "--no-report"]
+                result = run_moa.LayerResult(agent_id=route, layer=3, role="aggregator", success=False, error="fixture stop")
+                env = {"MOA_AGGREGATOR_EFFORT": effort, "MOA_CODEX_EFFORT": "low", "MOA_CODEX_REVIEWER_EFFORT": "max"}
+                with (patch.object(sys, "argv", argv), patch.dict(run_moa.os.environ, env),
+                      patch.object(getattr(run_moa, harness + "_adapter"), "check_available", return_value=(True, "fixture")),
+                      patch.object(run_moa, "_global_lock", return_value=contextlib.nullcontext()),
+                      patch.object(run_moa, "run_layer3", return_value=result) as call,
+                      contextlib.redirect_stdout(io.StringIO())):
+                    self.assertEqual(run_moa.main(), 5)
+                self.assertEqual(call.call_args.kwargs["provider"].model, model)
+                self.assertEqual(call.call_args.kwargs["provider"].effort, effort)
+                self.assertEqual(call.call_args.kwargs["codex_effort"], effort)
+                self.assertEqual(call.call_args.kwargs["timeout"], 2700)
+
+    def test_early_manifest_retains_final_identity_without_changing_shared_proposer(self):
+        scout = self.session / "scout-brief.json"
+        scout.write_text(json.dumps({"session_id": "fixture", "repo_path": str(self.root), "frozen_spec": "Review retained input."}))
+        argv = ["run_moa.py", "--scout-brief", str(scout), "--repo", str(self.root), "--phase", "layer1",
+                "--proposers", "agy-gemini-pro", "--aggregator-provider", "agy-gemini-pro", "--skip-layer2", "--no-report"]
+        env = {"MOA_AGY_GEMINI_PRO_MODEL": "gemini-4-argon-low", "MOA_AGGREGATOR_MODEL": "gemini-4-argon-high", "MOA_AGGREGATOR_EFFORT": "high"}
+        result = run_moa.LayerResult(agent_id="agy-gemini-pro", layer=1, role="proposer", success=True,
+                                     payload=_make_valid_proposer("agy-gemini-pro"))
+        with (patch.object(sys, "argv", argv), patch.dict(run_moa.os.environ, env),
+              patch.object(run_moa.agy_adapter, "check_available", return_value=(True, "fixture")),
+              patch.object(run_moa, "_global_lock", return_value=contextlib.nullcontext()),
+              patch.object(run_moa, "run_layer1", return_value=[result]) as call,
+              contextlib.redirect_stdout(io.StringIO())):
+            self.assertEqual(run_moa.main(), 0)
+        self.assertEqual(call.call_args.kwargs["proposers"][0].model, "gemini-4-argon-low")
+        manifest = json.loads((self.session / "layer1-manifest.json").read_text())
+        self.assertEqual(manifest["config"]["aggregator"]["model"], "gemini-4-argon-high")
+        self.assertEqual(manifest["config"]["aggregator"]["effort"], "high")
+
+    def test_cli_rejects_unsupported_luna_ultra_before_dispatch(self):
+        scout = self.session / "scout-brief.json"
+        scout.write_text(json.dumps({"session_id": "fixture", "repo_path": str(self.root), "frozen_spec": "Review."}))
+        for flags in (["--aggregator-provider", "codex-luna"], ["--aggregator-provider", "codex-sol", "--aggregator-model", "gpt-6-luna"]):
+            argv = ["run_moa.py", "--scout-brief", str(scout), "--repo", str(self.root), "--phase", "layer3",
+                    "--aggregator-effort", "ultra", "--no-report", *flags]
+            with (patch.object(sys, "argv", argv), patch.object(run_moa, "_global_lock", return_value=contextlib.nullcontext()),
+                  patch.object(run_moa.codex_adapter, "check_available") as check,
+                  contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO())):
+                self.assertEqual(run_moa.main(), 2)
+            check.assert_not_called()
+
+    def test_cli_agy_final_model_overrides_are_authoritative(self):
+        scout = self.session / "scout-brief.json"
+        scout.write_text(json.dumps({"session_id": "fixture", "repo_path": str(self.root), "frozen_spec": "Review."}))
+        (self.session / "synthesis-input.md").write_text("Retained input.")
+        for model, expected in [("gemini-4-argon-medium", "medium"), ("legacy-AGY-MAX", "max"), ("gemini-4-flash", None)]:
+            (self.session / "manifest.json").write_text(json.dumps({"layer1": [], "layer2": [], "summary": {}}))
+            argv = ["run_moa.py", "--scout-brief", str(scout), "--repo", str(self.root), "--phase", "layer3",
+                    "--aggregator-provider", "agy-gemini-pro", "--aggregator-model", model, "--no-report"]
+            env = {"MOA_AGY_GEMINI_PRO_MODEL": "gemini-4-argon-low", "MOA_AGGREGATOR_EFFORT": ""}
+            result = run_moa.LayerResult(agent_id="agy-gemini-pro", layer=3, role="aggregator", success=False, error="fixture stop")
+            with (patch.object(sys, "argv", argv), patch.dict(run_moa.os.environ, env),
+                  patch.object(run_moa, "_global_lock", return_value=contextlib.nullcontext()),
+                  patch.object(run_moa.agy_adapter, "check_available", return_value=(True, "fixture")),
+                  patch.object(run_moa, "run_layer3", return_value=result) as call,
+                  contextlib.redirect_stdout(io.StringIO())):
+                self.assertEqual(run_moa.main(), 5)
+            self.assertEqual(call.call_args.kwargs["provider"].model, model)
+            self.assertEqual(call.call_args.kwargs["provider"].effort, expected)
+
+    def test_cli_custom_claude_without_effort_keeps_native_default(self):
+        scout = self.session / "scout-brief.json"
+        scout.write_text(json.dumps({"session_id": "fixture", "repo_path": str(self.root), "frozen_spec": "Review."}))
+        (self.session / "synthesis-input.md").write_text("Retained input.")
+        (self.session / "manifest.json").write_text(json.dumps({"layer1": [], "layer2": [], "summary": {}}))
+        custom = run_moa.harness_config.ResolvedProvider("custom-final", "claude", "claude-opus-5-5")
+        catalog = {**run_moa.harness_config.load_provider_catalog(), "custom-final": custom}
+        argv = ["run_moa.py", "--scout-brief", str(scout), "--repo", str(self.root), "--phase", "layer3",
+                "--aggregator-provider", "custom-final", "--no-report"]
+        result = run_moa.LayerResult(agent_id="custom-final", layer=3, role="aggregator", success=False, error="fixture stop")
+        with (patch.object(sys, "argv", argv), patch.dict(run_moa.os.environ, {"MOA_AGGREGATOR_EFFORT": ""}),
+              patch.object(run_moa.harness_config, "load_provider_catalog", return_value=catalog),
+              patch.object(run_moa, "_global_lock", return_value=contextlib.nullcontext()),
+              patch.object(run_moa.claude_adapter, "check_available", return_value=(True, "fixture")),
+              patch.object(run_moa, "run_layer3", return_value=result) as call,
+              contextlib.redirect_stdout(io.StringIO())):
+            self.assertEqual(run_moa.main(), 5)
+        self.assertIsNone(call.call_args.kwargs["provider"].effort)
+
     def test_synthesis_preserves_workspace_mutation_warnings(self):
         manifest = {
             "layer1": [

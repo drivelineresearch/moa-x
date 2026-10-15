@@ -47,7 +47,7 @@ DEPTH_PROFILES = {
         "aggregator": {
             "preferred": ["codex-sol"],
             "limit": 1,
-            "efforts": {"codex-sol": "xhigh"},
+            "max_effort": True,
         },
     },
 }
@@ -81,15 +81,19 @@ def resolve_roster(depth="balanced", *, effort_overrides=None, catalog=None):
             effort = overrides.get(
                 name, settings.get("efforts", {}).get(name, row.get("effort"))
             )
+            if settings.get("max_effort") and name not in overrides and row.get("effort_options"):
+                effort = row["effort_options"][-1]
             model = row["model"]
             if name in overrides and effort not in row.get("effort_options", []):
                 raise ValueError(f"{name} does not support {effort} effort.")
             if row["harness"] == "agy" and effort:
                 model = model.rsplit("-", 1)[0] + "-" + effort
-                result["options"]["model_overrides"][name] = model
-            elif effort and row.get("supports_effort"):
+            elif role != "aggregator" and effort and row.get("supports_effort"):
                 result["options"]["effort_overrides"][name] = effort
-            result["options"]["model_overrides"][name] = model
+            if role == "aggregator":
+                result["options"]["aggregator_options"] = {"model": model, "effort": effort}
+            else:
+                result["options"]["model_overrides"][name] = model
             result["models"].append(
                 {
                     "route": name,
