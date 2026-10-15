@@ -204,7 +204,7 @@ export async function getProfile(id) {
 
 export async function getGithubRepos() {
   try {
-    const payload = await request("/api/github/repos");
+    const payload = await request("/api/github/repos", { cache: "no-store" });
     return arrayFrom(payload, "repositories").map((repo) => ({
       ...repo,
       id: repo.id || repo.nameWithOwner || repo.full_name || repo.name,

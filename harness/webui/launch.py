@@ -172,6 +172,8 @@ class LaunchService:
                 "type": "github",
                 "repository": github_pointer,
                 "ref": result.get("git_ref") or git_ref,
+                "commit": result.get("commit"),
+                "fetched_at": result.get("fetched_at"),
                 "remote_url": result["remote_url"],
             }
         else:
@@ -248,6 +250,7 @@ class LaunchService:
             "aggregator": requested_aggregator,
             "options": options,
             "upload_ids": upload_ids,
+            "source": source_info or {"type": "local"},
         }
         job = store.insert_job(
             {
@@ -262,6 +265,11 @@ class LaunchService:
                 "created_at": time.time(),
             }
         )
+        if source_info and source_info.get("commit"):
+            store.append_event(
+                job_id, "source", "Fresh GitHub snapshot pinned at " + source_info["commit"][:12],
+                source_info,
+            )
         if uploaded_files:
             store.append_event(
                 job_id,

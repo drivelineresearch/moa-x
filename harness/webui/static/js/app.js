@@ -114,6 +114,7 @@ const state = {
   jobs: [],
   workspaces: [],
   githubRepos: [],
+  githubRefreshVersion: 0,
   pendingFiles: [],
   uploadedFiles: [],
   sourceMode: "brief",
@@ -462,7 +463,10 @@ function jobStatus(job) {
 
 function jobContext(job) {
   if (job.source?.type === "brief") return "Task only";
-  if (job.source?.type === "github") return job.source.repository || "GitHub repository";
+  if (job.source?.type === "github") {
+    const name = job.source.repository || "GitHub repository";
+    return job.source.commit ? `${name} @ ${job.source.commit.slice(0, 12)}` : name;
+  }
   return shortPath(job.workspace);
 }
 
@@ -1060,6 +1064,7 @@ function setSourceMode(mode) {
 
 function renderGithubRepos() {
   const select = $("#github-repo");
+  const selected = select.value;
   if (!state.githubRepos.length) {
     select.innerHTML = `<option value="">GitHub source unavailable</option>`;
     $("#github-repo-meta").textContent = `Connect GitHub CLI to browse ${bootstrap.github_owner || "the configured owner"} repositories.`;
@@ -1068,7 +1073,37 @@ function renderGithubRepos() {
   select.innerHTML = `<option value="">Choose a repository…</option>${state.githubRepos.map((repo) => `
     <option value="${escapeHtml(repo.fullName)}">${escapeHtml(repo.name)}${repo.private ? " · private" : ""}</option>
   `).join("")}`;
+  select.value = state.githubRepos.some((repo) => repo.fullName === selected) ? selected : "";
   updateGithubMeta();
+}
+
+async function refreshGithubRepos({ notify = true } = {}) {
+  const version = ++state.githubRefreshVersion;
+  const button = $("#github-refresh");
+  const status = $("#github-refresh-status");
+  button.disabled = true;
+  button.setAttribute("aria-busy", "true");
+  status.textContent = "Refreshing repository list from GitHub…";
+  try {
+    const repos = await getGithubRepos();
+    if (version !== state.githubRefreshVersion) return;
+    state.githubRepos = repos;
+    renderGithubRepos();
+    status.textContent = `Repository list refreshed at ${new Date().toLocaleTimeString()}.`;
+    if (notify) showToast("Repository list refreshed from GitHub.");
+  } catch (error) {
+    if (version !== state.githubRefreshVersion) return;
+    if (!state.githubRepos.length) renderGithubRepos();
+    status.textContent = "Refresh failed. The previous list is retained; try again.";
+    if (notify) showToast(error.message, "error");
+    throw error;
+  } finally {
+    if (version === state.githubRefreshVersion) {
+      state.loading.githubRepos = false;
+      button.disabled = false;
+      button.setAttribute("aria-busy", "false");
+    }
+  }
 }
 
 function selectedGithubRepo() {
@@ -1078,7 +1113,7 @@ function selectedGithubRepo() {
 function updateGithubMeta() {
   const repo = selectedGithubRepo();
   if (!repo) {
-    $("#github-repo-meta").textContent = "Repository metadata comes from the connected GitHub service.";
+    $("#github-repo-meta").textContent = "Each new run fetches the latest branch into a separate snapshot.";
     return;
   }
   $("#github-repo-meta").textContent = `${repo.description || "No description"}${repo.pushedAt ? ` · Updated ${formatTime(repo.pushedAt)}` : ""}`;
@@ -2227,7 +2262,7 @@ async function refreshData() {
       renderArchive();
     }),
     settle("workspaces", getWorkspaces(), (workspaces) => { state.workspaces = workspaces; }, () => {}),
-    settle("githubRepos", getGithubRepos(), (repos) => { state.githubRepos = repos; }, renderGithubRepos),
+    refreshGithubRepos({ notify: false }),
   ]);
   const failures = results.filter((result) => result.status === "rejected");
   if (failures.length && failures.length < results.length) {
@@ -2374,6 +2409,7 @@ function bindEvents() {
     setSourceMode(button.dataset.sourceMode);
   }));
   $("#github-repo").addEventListener("change", updateGithubMeta);
+  $("#github-refresh").addEventListener("click", () => refreshGithubRepos().catch(() => {}));
   $("#run-files").addEventListener("change", (event) => {
     addFiles(event.target.files);
     event.target.value = "";

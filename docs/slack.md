@@ -39,7 +39,10 @@ run even if Luna rewrites the task text. Explicit pointers take precedence over
 incidental names; repository names supplied in interview answers are also resolved.
 Two candidate repositories require choosing one. Unauthorized
 private repositories fail before coaching instead of running with task-only
-context. The ensemble reads a managed clone; it does not modify the source repo.
+context. Each new run fetches a separate managed snapshot at the latest remote
+default-branch commit. Fetch failures stop launch; old clones are never a
+fallback. The scout and dashboard retain the exact commit. Checkpoint retries
+retain their original snapshot; start a new run to pick up later commits.
 
 The request’s inputs and resolved model versions freeze at launch. The existing
 single-worker queue prepares references, runs proposals, broadcast review and

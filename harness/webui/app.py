@@ -486,6 +486,7 @@ def _job_view(job: dict[str, Any]) -> dict[str, Any]:
     job["artifacts"] = artifacts
     job["active"] = job["status"] in ACTIVE_STATES
     config = job.get("config") or {}
+    job["source"] = config.get("source")
     job["roster"] = {
         "proposers": config.get("proposers") or [],
         "refiners": config.get("refiners") or [],
@@ -942,9 +943,11 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                     "local_path": local_by_id.get(full_name),
                 }
             )
-        return jsonify(
+        response = jsonify(
             {"owner": app.config["GITHUB_OWNER"], "repositories": repos}
         )
+        response.headers["Cache-Control"] = "private, no-store"
+        return response
 
     @app.post("/api/workspaces/github")
     @require_profile
@@ -985,6 +988,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         response = _dated_view(workspace)
         response["path"] = response.pop("local_path")
         response["created"] = result["created"]
+        response.update({key: result.get(key) for key in ("commit", "git_ref", "fetched_at")})
         return jsonify(response), 201 if result["created"] else 200
 
     @app.get("/api/providers")
