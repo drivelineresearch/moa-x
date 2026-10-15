@@ -729,7 +729,7 @@ def _v2_evidence_receipt(item, repo_path, session_dir, scout, repository_matches
         source_key = f"external:{_source_identity_url(url) or 'unknown'}"
         label = _source_domain(url) or url or "External source"
     evidence_id = _content_id("evidence", {"type": kind, "source": source_key,
-                                           "locator": locator, "snippet": _text_key(snippet)})
+                                           "locator": locator, "snippet": " ".join(str(snippet or "").split()) if kind == "code" else _text_key(snippet)})
     previous = prior_evidence.get(evidence_id, {})
     if kind == "code" and not repository_matches:
         source = {"state": "repository_drift" if previous.get("file_sha256") else "unavailable_legacy",

@@ -339,7 +339,7 @@ def code_snippet_matches(snippet: str | None, numbered_text: str) -> bool:
     import re
 
     plain = re.sub(r"(?m)^[0-9]+: ?", "", numbered_text)
-    normalize = lambda value: " ".join(str(value or "").split()).casefold()
+    normalize = lambda value: " ".join(str(value or "").split())
     return bool(snippet and normalize(snippet) in normalize(plain))
 
 

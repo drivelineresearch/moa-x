@@ -761,6 +761,7 @@ class EvidenceTests(unittest.TestCase):
             )
         )
         self.assertFalse(receipts.code_snippet_matches("return now >= expires", text))
+        self.assertFalse(receipts.code_snippet_matches("return NOW > expires", text))
 
     def test_valid_independent_receipt_supports_claim_with_bad_proposer_quote(self):
         self.proposer.payload["plan"][0]["evidence"][0]["snippet"] = (
