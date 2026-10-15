@@ -1107,11 +1107,16 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                 options = dict(config.get("options") or {})
                 selected = options.get("aggregator_options") or {}
                 model = selected.get("model") or (options.get("model_overrides") or {}).get(aggregator)
+                supported_efforts = set()
+                if provider:
+                    model = model or provider.model
+                    declared = provider.effort if model == provider.model else None
+                    supported_efforts.update(effort_options(provider.harness, model, declared))
+                    supported_efforts.update(effort_options(provider.harness, model, selected.get("effort")))
                 if (
                     not provider or provider.harness != "codex"
                     or not isinstance(effort, str)
-                    or effort not in effort_options(provider.harness, model or provider.model,
-                                                    selected.get("effort") or provider.effort)
+                    or effort not in supported_efforts
                 ):
                     return _error("choose a supported Codex synthesis effort")
                 options["aggregator_options"] = {**(options.get("aggregator_options") or {}), "effort": effort}

@@ -708,6 +708,25 @@ class RecoveryTests(unittest.TestCase):
             self.assertEqual(call.call_args.kwargs["provider"].model, model)
             self.assertEqual(call.call_args.kwargs["provider"].effort, expected)
 
+    def test_cli_custom_claude_without_effort_keeps_native_default(self):
+        scout = self.session / "scout-brief.json"
+        scout.write_text(json.dumps({"session_id": "fixture", "repo_path": str(self.root), "frozen_spec": "Review."}))
+        (self.session / "synthesis-input.md").write_text("Retained input.")
+        (self.session / "manifest.json").write_text(json.dumps({"layer1": [], "layer2": [], "summary": {}}))
+        custom = run_moa.harness_config.ResolvedProvider("custom-final", "claude", "claude-opus-5-5")
+        catalog = {**run_moa.harness_config.load_provider_catalog(), "custom-final": custom}
+        argv = ["run_moa.py", "--scout-brief", str(scout), "--repo", str(self.root), "--phase", "layer3",
+                "--aggregator-provider", "custom-final", "--no-report"]
+        result = run_moa.LayerResult(agent_id="custom-final", layer=3, role="aggregator", success=False, error="fixture stop")
+        with (patch.object(sys, "argv", argv), patch.dict(run_moa.os.environ, {"MOA_AGGREGATOR_EFFORT": ""}),
+              patch.object(run_moa.harness_config, "load_provider_catalog", return_value=catalog),
+              patch.object(run_moa, "_global_lock", return_value=contextlib.nullcontext()),
+              patch.object(run_moa.claude_adapter, "check_available", return_value=(True, "fixture")),
+              patch.object(run_moa, "run_layer3", return_value=result) as call,
+              contextlib.redirect_stdout(io.StringIO())):
+            self.assertEqual(run_moa.main(), 5)
+        self.assertIsNone(call.call_args.kwargs["provider"].effort)
+
     def test_synthesis_preserves_workspace_mutation_warnings(self):
         manifest = {
             "layer1": [

@@ -2025,6 +2025,15 @@ class WebUITest(unittest.TestCase):
         phase.assert_called_once_with(job, "layer3")
         self.assertEqual(store.get_job(job["id"])["status"], "completed")
         self.assertEqual((session / "final-plan.md").read_text(), "Stale synthesis.")
+        source = store.get_job(scout["session_id"])
+        custom = web_providers.harness_config.ResolvedProvider("codex-sol", "codex", "future-model", effort="max")
+        catalog = {**web_providers.harness_config.load_provider_catalog(), "codex-sol": custom}
+        config = {**source["config"], "options": {"aggregator_options": {"model": "future-model", "effort": "high"}}}
+        store.update_job(source["id"], config_json=json.dumps(config))
+        with patch.object(web_providers.harness_config, "load_provider_catalog", return_value=catalog):
+            response = self.client.post(endpoint, json={"phase": "layer3", "aggregator_effort": "max"})
+        self.assertEqual(response.status_code, 201, response.get_json())
+        self.assertEqual(response.get_json()["config"]["options"]["aggregator_options"]["effort"], "max")
         checkpoint["summary"]["workspace_mutation_failures"] = ["codex-sol"]
         (session / "manifest.json").write_text(json.dumps(checkpoint))
         self.assertEqual(self.client.post(endpoint, json={"phase": "layer3"}).status_code, 409)

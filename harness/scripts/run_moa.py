@@ -3234,8 +3234,10 @@ def main() -> int:
         if final_aggregator.harness == "agy":
             args.aggregator_effort = harness_config.agy_model_depth(final_aggregator.model)
         else:
-            args.aggregator_effort = args.aggregator_effort or final_aggregator.effort or "xhigh"
-            if levels and args.aggregator_effort not in levels:
+            args.aggregator_effort = args.aggregator_effort or final_aggregator.effort
+            if args.aggregator_effort is None and final_aggregator.harness == "codex":
+                args.aggregator_effort = "xhigh"
+            if levels and args.aggregator_effort is not None and args.aggregator_effort not in levels:
                 print(f"ERROR: {final_aggregator.model} does not support {args.aggregator_effort} effort", file=sys.stderr)
                 return 2
         final_aggregator = harness_config.ResolvedProvider(
