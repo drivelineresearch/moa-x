@@ -1468,7 +1468,7 @@ __DECISION_MAP_SCRIPT__
       if (retryCount) {
         stage.appendChild(el("div", {
           class: "timeline-retry-summary",
-          text: retryCount + " lane" + (retryCount === 1 ? " was" : "s were") + " recovered after a provider or validation failure; each interval shows one attempt."
+          text: retryCount + " lane" + (retryCount === 1 ? " used" : "s used") + " recovery after a provider or validation failure; each interval shows one attempt."
         }));
       }
 
@@ -1491,17 +1491,21 @@ __DECISION_MAP_SCRIPT__
           }
         }
         var barClass = "timeline-bar" + (span.attempt.success ? "" : (span.attempt.transient_empty ? " transient" : " failed")) + (span.previous ? " previous" : "") + (retry ? " retry" : "");
-        var rowStatus = (span.attempt.kind === "repair" ? "structure repair · " : "") + state;
+        var isRepair = String(span.attempt.kind || "").indexOf("repair") === 0;
+        if (span.attempt.kind === "repair-unavailable") state = "formatter unavailable";
+        var executor = [span.attempt.harness, span.attempt.model].filter(Boolean).join(" / ");
+        var rowStatus = (isRepair ? "structure repair · " : "") + state + (executor ? " · " + executor : "");
+        var waitLabel = isRepair ? "Structure repair queued" : "Retry queued after a provider failure";
         var track = el("div", {
           class: "timeline-track",
           role: "img",
-          "aria-label": span.r.agent_id + " attempt " + (span.attempt.attempt || 1) + " " + state + " in " + fmtDur(span.dur) + (retryWait ? "; retry queued for " + fmtDur(retryWait.duration) + " after a provider failure" : "")
+          "aria-label": span.r.agent_id + " attempt " + (span.attempt.attempt || 1) + " " + rowStatus + " in " + fmtDur(span.dur) + (retryWait ? "; " + waitLabel + " for " + fmtDur(retryWait.duration) : "")
         });
-        if (retryWait) track.appendChild(el("span", { class: "timeline-retry-wait", title: "Retry queued after a provider failure: " + fmtDur(retryWait.duration), style: "left:" + retryWait.left.toFixed(2) + "%;width:" + retryWait.width.toFixed(2) + "%" }));
+        if (retryWait) track.appendChild(el("span", { class: "timeline-retry-wait", title: waitLabel + ": " + fmtDur(retryWait.duration), style: "left:" + retryWait.left.toFixed(2) + "%;width:" + retryWait.width.toFixed(2) + "%" }));
         track.appendChild(el("span", { class: barClass, style: "left:" + left.toFixed(2) + "%;width:" + width.toFixed(2) + "%" }));
         rows.appendChild(el("div", { class: "timeline-row" + (retry || span.previous ? " is-retry" : "") }, [
           el("div", { class: "timeline-who" }, [
-            labPortrait(span.r, "avatar", " timeline contributor"),
+            labPortrait(isRepair && span.attempt.lab_id ? span.attempt : span.r, "avatar", " timeline contributor"),
             el("div", { class: "name", text: span.r.agent_id + ((span.attempt.attempt || 1) > 1 || span.previous ? " · attempt " + (span.attempt.attempt || 1) : "") }),
             el("div", { class: "role", text: String(span.r.role || "contributor").replace(/-/g, " ") + " · " + rowStatus })
           ]),

@@ -15,7 +15,7 @@ from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import run_moa
-from adapters import agy, remaining_timeout, drain_after_timeout
+from adapters import agy, claude, remaining_timeout, drain_after_timeout
 from adapters.failures import classify_failure
 from test_offline import _make_valid_proposer, _make_valid_broadcast_refiner
 
@@ -80,6 +80,30 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(result.duration_seconds, 1150)
         for message in ("provider.invalid-output (HTTP 200): unexpected shape", "HTTP 403 stream ended without finish_reason", "insufficient_quota stream ended without finish_reason"):
             self.assertFalse(classify_failure(message).retryable)
+
+    def test_internal_http_200_error_retries_inside_the_shared_budget(self):
+        message = "opencode provider error: provider.internal (HTTP 200): server_error: The model failed to generate a response."
+        with patch.object(run_moa.opencode_adapter, "run", side_effect=[output(error=message), output(self.valid)]) as call, patch.object(run_moa, "retry_sleep") as sleep:
+            result = self.run_lane(harness="opencode", model="opencode-go/muse-spark-1.3-contributor")
+        self.assertTrue(result.success)
+        self.assertEqual(call.call_count, 2)
+        self.assertEqual([a['kind'] for a in result.attempts], ['research', 'research'])
+        self.assertEqual(result.attempts[0]['failure_kind'], 'transport')
+        sleep.assert_called_once()
+        with patch.object(run_moa.opencode_adapter, "run", return_value=output(error=message)) as call, patch.object(run_moa, "retry_sleep") as sleep:
+            result = self.run_lane(harness="opencode", model="opencode-go/muse-spark-1.3-contributor")
+        self.assertFalse(result.success)
+        self.assertEqual(call.call_count, 3)
+        self.assertEqual(sleep.call_count, 2)
+        self.assertEqual(result.stop_reason, 'retry_limit')
+        for error in ('provider.internal (HTTP 403): invalid token',
+                      'provider.internal (HTTP 200): insufficient_quota',
+                      'provider.invalid-request (HTTP 400): server_error: unsupported model'):
+            self.assertFalse(classify_failure(error).retryable)
+        self.assertFalse(classify_failure('codex exited with code 1', 'Echoed prompt mentions provider.internal server_error').retryable)
+        self.assertTrue(classify_failure('codex exited with code 1', 'Echoed prompt\nERROR: server_error: retry the upstream request').retryable)
+        self.assertFalse(classify_failure('codex exited with code 1',
+            'ERROR: server_error quoted in a prompt\nERROR: terminal failure A\nERROR: terminal failure B\nERROR: terminal failure C').retryable)
 
     def test_long_research_reserves_the_full_repair_window(self):
         invalid = json.loads(json.dumps(self.valid))
@@ -404,21 +428,126 @@ class RecoveryTests(unittest.TestCase):
 
     def test_failed_repair_never_restarts_research_or_repairs_recursively(self):
         invalid = json.loads(json.dumps(self.valid));invalid["plan"][0].pop("risks")
-        with patch.object(run_moa.opencode_adapter, "run", return_value=output(invalid)) as call, patch.object(run_moa, "retry_sleep") as sleep:
+        with patch.object(run_moa.opencode_adapter, "run", return_value=output(invalid)) as call, patch.object(run_moa.claude_adapter, 'check_available', return_value=(True, 'fixture')), patch.object(run_moa.claude_adapter, 'run', return_value=output(invalid)) as repair, patch.object(run_moa, "retry_sleep") as sleep:
             result = self.run_lane(harness="opencode", model="opencode-go/grok-4.7")
         self.assertFalse(result.success)
-        self.assertEqual(call.call_count, 2)
+        self.assertEqual(call.call_count, 1)
+        self.assertEqual(repair.call_count, 1)
         self.assertIn("bounded schema repair failed", result.error)
         sleep.assert_not_called()
         self.assertFalse((self.session / "layer1/fixture-proposer.json").exists())
 
     def test_incomplete_output_retries_then_repairs_inside_same_budget(self):
         invalid = json.loads(json.dumps(self.valid));invalid["plan"][0].pop("risks")
-        with patch.object(run_moa.opencode_adapter, "run", side_effect=[output(error="could not extract JSON payload", incomplete=True), output(invalid), output(self.valid)]) as call, patch.object(run_moa, "retry_sleep"):
+        with patch.object(run_moa.opencode_adapter, "run", side_effect=[output(error="could not extract JSON payload", incomplete=True), output(invalid)]) as call, patch.object(run_moa.claude_adapter, 'check_available', return_value=(True, 'fixture')), patch.object(run_moa.claude_adapter, 'run', return_value=output(self.valid)) as repair, patch.object(run_moa, "retry_sleep"):
             result = self.run_lane(harness="opencode", model="opencode-go/grok-4.7")
         self.assertTrue(result.success)
-        self.assertEqual(call.call_count, 3)
+        self.assertEqual(call.call_count, 2)
+        self.assertFalse(repair.call_args.kwargs['allow_research'])
+        self.assertEqual(result.repaired_by['model'], 'claude-opus-5-5')
         self.assertEqual([x["kind"] for x in result.attempts], ["research", "research", "repair"])
+
+    def test_opencode_repair_can_use_its_own_backend_without_claude(self):
+        invalid = json.loads(json.dumps(self.valid));invalid['plan'][0].pop('risks')
+        with patch.object(run_moa.claude_adapter, 'check_available', return_value=(False, 'not installed')), patch.object(run_moa.claude_adapter, 'run') as claude, patch.object(run_moa.opencode_adapter, 'run', side_effect=[output(invalid), output(self.valid)]) as call:
+            result = self.run_lane(harness='opencode', model='opencode-go/minimax-m3')
+        self.assertTrue(result.success)
+        self.assertEqual(call.call_count, 2)
+        self.assertFalse(call.call_args.kwargs['allow_tools'])
+        self.assertEqual(result.repaired_by['harness'], 'opencode')
+        claude.assert_not_called()
+
+    def test_unavailable_native_formatter_falls_back_inside_one_repair_window(self):
+        for error in ('HTTP 401 invalid token', 'unknown model claude-opus-5-5', 'Unrecognized flag: --safe-mode', 'model not eligible for this account tier'):
+            invalid = json.loads(json.dumps(self.valid));invalid['plan'][0].pop('risks')
+            with (self.subTest(error=error),
+                  patch.object(run_moa.claude_adapter, 'check_available', return_value=(True, 'cached credentials')),
+                  patch.object(run_moa.claude_adapter, 'run', return_value=output(error='claude exited with code 1', stderr=error)) as formatter,
+                  patch.object(run_moa.opencode_adapter, 'run', side_effect=[output(invalid), output(self.valid)]) as original,
+                  patch.object(run_moa.time, 'monotonic', side_effect=[0, 0, 100, 130, 140])):
+                result = self.run_lane(harness='opencode', model='opencode-go/minimax-m3')
+            self.assertTrue(result.success, result.error)
+            self.assertEqual(formatter.call_count, 1)
+            self.assertEqual(original.call_count, 2)
+            self.assertEqual(formatter.call_args.kwargs['timeout_seconds'], 240)
+            self.assertEqual(original.call_args.kwargs['timeout_seconds'], 210)
+            self.assertFalse(original.call_args.kwargs['allow_tools'])
+            self.assertEqual([a['kind'] for a in result.attempts], ['research', 'repair-unavailable', 'repair'])
+            self.assertEqual(result.repaired_by['harness'], 'opencode')
+
+    def test_formatter_fallback_cannot_reset_the_repair_deadline(self):
+        invalid = json.loads(json.dumps(self.valid));invalid['plan'][0].pop('risks')
+        with (patch.object(run_moa.claude_adapter, 'check_available', return_value=(True, 'cached credentials')),
+              patch.object(run_moa.claude_adapter, 'run', return_value=output(error='HTTP 401 invalid token')),
+              patch.object(run_moa.opencode_adapter, 'run', return_value=output(invalid)) as original,
+              patch.object(run_moa.time, 'monotonic', side_effect=[0, 0, 100, 341, 342])):
+            result = self.run_lane(harness='opencode', model='opencode-go/minimax-m3')
+        self.assertFalse(result.success)
+        self.assertEqual(result.stop_reason, 'deadline')
+        self.assertIn('required field missing', result.error)
+        self.assertEqual(result.failure_kind, 'schema')
+        self.assertEqual(original.call_count, 1)
+
+    def test_deadline_before_first_repair_does_not_claim_a_repair_ran(self):
+        invalid = json.loads(json.dumps(self.valid));invalid['plan'][0].pop('risks')
+        with (patch.object(run_moa.codex_adapter, 'run', return_value=output(invalid)) as call,
+              patch.object(run_moa.time, 'monotonic', side_effect=[0, 0, 45, 46])):
+            result = self.run_lane(timeout=50)
+        self.assertFalse(result.success)
+        self.assertEqual(result.stop_reason, 'deadline')
+        self.assertEqual(result.failure_kind, 'schema')
+        self.assertEqual(call.call_count, 1)
+        self.assertEqual([a['kind'] for a in result.attempts], ['research'])
+        self.assertNotIn('bounded schema repair failed', result.error)
+        self.assertEqual(result.error.count('required field missing'), 1)
+
+    def test_formatter_generated_output_and_policy_failures_never_fall_back(self):
+        invalid = json.loads(json.dumps(self.valid));invalid['plan'][0].pop('risks')
+        altered = json.loads(json.dumps(self.valid));altered['summary'] = 'A new unsupplied factual statement.'
+        partial = output(error='HTTP 401 invalid token')
+        partial.raw_stdout = json.dumps({'type': 'result', 'usage': {'output_tokens': 10}, 'result': 'Partial model response.'})
+        for value in (output(error='claude exited with code 1', stderr='HTTP 403 content policy refusal'),
+                      output(error='claude exited with code 1', stderr='HTTP 403 blocked by policy'),
+                      output(error='claude exited with code 1', stderr='HTTP 403 credit balance is too low'),
+                      output(error='claude exited with code 1', stderr='HTTP 401 insufficient_quota'), output(error='HTTP 429 insufficient_quota'),
+                      output(error='timeout after 240s'), output(invalid), output(altered), partial):
+            with (self.subTest(error=value.error_message),
+                  patch.object(run_moa.claude_adapter, 'check_available', return_value=(True, 'fixture')),
+                  patch.object(run_moa.claude_adapter, 'run', return_value=value) as formatter,
+                  patch.object(run_moa.opencode_adapter, 'run', return_value=output(invalid)) as original):
+                result = self.run_lane(harness='opencode', model='opencode-go/minimax-m3')
+            self.assertFalse(result.success)
+            self.assertEqual(result.failure_kind, 'schema')
+            self.assertEqual(original.call_count, 1)
+            self.assertEqual(formatter.call_count, 1)
+
+    def test_claude_error_envelopes_surface_the_cause_even_with_zero_exit(self):
+        for code in (0, 1):
+            envelope = json.dumps({'is_error': True, 'api_error_status': 401,
+                                   'result': 'Invalid token', 'structured_output': self.valid})
+            process = Mock(returncode=code);process.communicate.return_value = (envelope, '')
+            with self.subTest(code=code), patch.object(claude.subprocess, 'Popen', return_value=process):
+                result = claude.run(prompt='fixture', repo_path=self.root, schema_path=run_moa.PROPOSER_SCHEMA_PATH)
+            self.assertFalse(result.success)
+            self.assertIsNone(result.payload)
+            self.assertEqual(classify_failure(result.error_message).kind, 'auth')
+            self.assertIsNone(claude._extract_structured_output(envelope))
+        self.assertIsNone(claude._envelope_error(json.dumps({'result': 'HTTP 401 invalid token', 'structured_output': self.valid})))
+
+    def test_formatter_stdout_error_envelope_uses_the_real_claude_adapter(self):
+        invalid = json.loads(json.dumps(self.valid));invalid['plan'][0].pop('risks')
+        process = Mock(returncode=1)
+        process.communicate.return_value = (json.dumps({'is_error': True, 'api_error_status': 401, 'result': 'Invalid token'}), '')
+        real_popen = subprocess.Popen
+        def spawn(command, *args, **kwargs):
+            return process if command[0] == claude._claude_bin() else real_popen(command, *args, **kwargs)
+        with (patch.object(claude.subprocess, 'Popen', side_effect=spawn),
+              patch.object(claude, 'check_available', return_value=(True, 'cached credentials')),
+              patch.object(run_moa.opencode_adapter, 'run', side_effect=[output(invalid), output(self.valid)]) as original):
+            result = self.run_lane(harness='opencode', model='opencode-go/minimax-m3')
+        self.assertTrue(result.success, result.error)
+        self.assertEqual(original.call_count, 2)
+        self.assertEqual(result.attempts[1]['kind'], 'repair-unavailable')
 
     def test_retry_after_is_respected(self):
         with patch.object(run_moa.codex_adapter, "run", side_effect=[output(error="HTTP 429 Retry-After: 30"), output(self.valid)]), patch.object(run_moa, "retry_sleep") as sleep:

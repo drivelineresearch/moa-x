@@ -117,7 +117,8 @@ cannot leave locks or worktree registrations in the source repository.
 
 - Capacity/rate limits, temporary transport failures and incomplete output can
   receive two retries, for at most three research invocations. This includes an
-  OpenCode HTTP 200 stream that terminates without `finish_reason`; its partial
+  OpenCode HTTP 200 stream that terminates without `finish_reason`, or a typed
+  `provider.internal` / `server_error` failure inside a successful HTTP response; its partial
   text is retained in logs and never accepted as a completed response. Backoff starts at
   five seconds, then fifteen seconds, with jitter. Provider retry hints in
   seconds, milliseconds, minutes or HTTP-date form can extend backoff within
@@ -132,10 +133,22 @@ cannot leave locks or worktree registrations in the source repository.
   medium effort, independently recorded, so high/max research reasoning does
   not consume the formatting window. AGY/Gemini use authenticated Claude Opus
   for this mechanical repair because their CLIs lack a tool-free invocation
-  mode. The repair receives only the original object, errors and schema; its
+  mode. OpenCode prefers the same native Claude repair when that client is
+  authenticated, retaining its own tool-free backend when Claude is unavailable.
+  If cached Claude credentials or CLI/model compatibility fail before any payload
+  is produced, one fallback dispatch can use the original backend inside the
+  same 240-second repair window. This never restarts research, resets a deadline,
+  or retries generated content, evidence failures, safety refusals or billing errors.
+  The repair receives only the original object, errors and schema; its
   harness and model are recorded separately from the originating lane. A local
   guard rejects invented text/citations, recombined evidence records and
   changed decision lineage.
+
+OpenCode plan-boundary recovery reads complete JSON string tokens and changes
+only punctuation between a risks array and the next step/root collection.
+It preserves all supplied scalar values and citation records, including the
+final plan item, rather than sending a truncated prefix to schema repair.
+Quoted JSON examples and risks ordered before a step remain untouched.
 
 AGY also receives its native `--json-schema` contract through a file inside the
 isolated workspace. Invalid output never enters refinement. A failed repair

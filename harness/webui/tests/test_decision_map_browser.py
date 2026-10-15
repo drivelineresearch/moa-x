@@ -225,6 +225,11 @@ def _seed_complete(session: Path, manifest: dict) -> None:
     )
     _write_json(session / "codex-sol.json", {"agent_id": "codex-sol", "summary": "Final plan retained."})
     manifest = json.loads(json.dumps(manifest))
+    manifest["layer1"][0]["attempts"] = [
+        {"attempt": 1, "kind": "research", "harness": "codex", "model": "gpt-5.6-terra", "success": False, "started_at": 100.0, "duration_seconds": 3.5},
+        {"attempt": 2, "kind": "repair-unavailable", "harness": "claude", "model": "claude-opus-5-5", "success": False, "started_at": 110.0, "duration_seconds": 1},
+        {"attempt": 3, "kind": "repair", "harness": "codex", "model": "gpt-5.6-terra", "success": True, "started_at": 120.0, "duration_seconds": 3.5},
+    ]
     manifest["layer3"] = [_result("codex-sol", "gpt-5.6-sol", "codex-sol.json")]
     manifest["finished_at"] = 160.0
     manifest["duration_seconds"] = 60.0
@@ -386,6 +391,10 @@ class DecisionMapBrowserTest(unittest.TestCase):
             page.locator(".report-decision-map .dm-shell").wait_for()
             self.assertEqual(page.locator(".report-decision-map .dm-stage").text_content(), "Decision recorded")
             self.assertEqual(page.locator(".lineage-shell").count(), 1)
+            helper = page.locator(".timeline-row").filter(has_text="claude-opus-5-5")
+            self.assertIn("structure repair · formatter unavailable · claude / claude-opus-5-5", helper.text_content())
+            self.assertEqual(helper.locator(".lab-avatar").get_attribute("alt"), "Anthropic timeline contributor")
+            self.assertIn("Structure repair queued", helper.locator(".timeline-track").get_attribute("aria-label"))
             self.assertEqual(page.locator("script[src], link[rel='stylesheet']").count(), 0)
             self._assert_no_body_overflow(page)
             self._capture(page, capture_dir, "05-self-contained-report.png")

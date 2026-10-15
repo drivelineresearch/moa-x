@@ -34,7 +34,8 @@ def _retry_delay(text: str) -> float:
     return 0
 
 
-def classify_failure(error: str | None, stderr: str = "", *, incomplete: bool = False) -> Failure:
+def failure_diagnostics(error: str | None, stderr: str = "", *, incomplete: bool = False) -> str:
+    """Use the same bounded provider diagnostics for classification and recovery."""
     # stdout often contains the entire research prompt, including quoted errors.
     # Never use it to decide whether another billable invocation is safe.
     # Adapters mark incomplete output only after a clean model response. Its
@@ -45,7 +46,11 @@ def classify_failure(error: str | None, stderr: str = "", *, incomplete: bool = 
         # Codex echoes the whole prompt to stderr before its terminal errors.
         # A source fixture mentioning auth/quota must not override the cause.
         diagnostics = "\n".join(terminal_lines[-3:])
-    text = ((error or "") + "\n" + diagnostics).lower()
+    return ((error or "") + "\n" + diagnostics).lower()
+
+
+def classify_failure(error: str | None, stderr: str = "", *, incomplete: bool = False) -> Failure:
+    text = failure_diagnostics(error, stderr, incomplete=incomplete)
     permanent = {
         "auth": r"(?:http(?:/\S+)?\s+|status(?: code)?\s*[:=]?\s*)(?:401|403)\b|unauthorized|unauthenticated|invalid api.?key|invalid token|login required|not authenticated|authentication error|access is disabled|no credentials",
         "quota": r"insufficient_quota|insufficient (?:credits?|balance)|(?:billing|spending) limit|credit balance|budget (?:exceeded|exhausted)|payment required|monthly spending limit|account[^\n]{0,80}suspended",
@@ -61,6 +66,13 @@ def classify_failure(error: str | None, stderr: str = "", *, incomplete: bool = 
     retry_after = _retry_delay(text)
     if re.search(r"\b429\b|rate.?limit|too many requests|at capacity|overloaded|resource_exhausted", text):
         return Failure("capacity", True, retry_after)
+    # Streaming APIs can report an internal failure inside an HTTP 200 body.
+    # The adapter's typed diagnostic remains a server failure, not success or
+    # an unknown permanent error. Auth/billing/config causes above still win.
+    terminal_lines = re.findall(r"^ERROR:\s*(.+)$", "" if incomplete else (stderr or "")[-8000:], re.MULTILINE)
+    trusted_error = (error or "").lower() + "\n" + "\n".join(terminal_lines[-3:]).lower()
+    if re.search(r"\bprovider\.internal\b|\bserver_error\b", trusted_error):
+        return Failure("transport", True, retry_after)
     if re.search(r"\b(?:500|502|503|504)\b|connection (?:reset|closed|refused)|econnreset|etimedout|stream disconnected|stream.*(?:closed|interrupted)|temporarily unavailable|service unavailable|upstream error|network error", text):
         return Failure("transport", True, retry_after)
     if "timeout after" in text or "timed out" in text:

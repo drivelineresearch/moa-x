@@ -164,6 +164,12 @@ failures and workspace mutations never retry. Record every attempt's log,
 harness, model, timing and outcome. The web/Slack worker must not multiply these
 attempts with another retry loop. AGY's native schema file must stay inside its
 isolated workspace; AGY/Gemini mechanical repairs use tool-free Claude Opus.
+OpenCode also prefers authenticated native Opus for mechanical repair, with its
+own tool-free backend as the fallback. A native helper rejected before producing
+any payload can fall back once for auth/access or local CLI/model compatibility,
+within the same 240-second repair window. Generated output, evidence failures,
+safety refusals and billing errors never trigger that switch. Internal errors inside HTTP 200 responses
+remain retryable; malformed plan-boundary recovery must preserve source literals.
 Run `python3 harness/scripts/test_recovery.py` with the existing offline tests.
 
 New v2 decisions use `final-plan-v2.schema.json`; archives retain v1. Read

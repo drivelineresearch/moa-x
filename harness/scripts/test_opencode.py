@@ -1,5 +1,6 @@
 """Offline tests for the OpenCode V2 transport and read-only contract."""
 import json
+import re
 import tempfile
 import unittest
 from contextlib import contextmanager
@@ -12,6 +13,68 @@ from adapters.failures import classify_failure
 
 
 class OpenCodeV2Test(unittest.TestCase):
+    def test_internal_http_200_failure_rejects_text_and_remains_retryable(self):
+        events = [
+            {"type": "error", "error": {"type": "provider.internal", "status": 200,
+                "message": "server_error: The model failed to generate a response."}},
+            {"type": "text", "part": {"text": '{"agent_id":"fixture","result":42}'}},
+        ]
+        process = Mock(returncode=0)
+        process.communicate.return_value = ('\n'.join(map(json.dumps, events)), '')
+        with tempfile.TemporaryDirectory() as raw:
+            with patch.object(oc, '_cli_major_version', return_value=2), patch.object(oc.subprocess, 'Popen', return_value=process):
+                result = oc.run(prompt="Return fixture JSON.", repo_path=Path(raw),
+                                model="opencode-go/muse-spark-1.3-contributor", allow_tools=False)
+        self.assertFalse(result.success)
+        self.assertIsNone(result.payload)
+        self.assertEqual(classify_failure(result.error_message, result.raw_stderr).kind, "transport")
+        self.assertTrue(classify_failure(result.error_message, result.raw_stderr).retryable)
+
+    def test_plan_boundary_recovery_preserves_all_steps_and_literal_values(self):
+        payload = {"agent_id": "fixture", "summary": "Keep the complete supplied plan and its original citations.",
+            "plan": [{"step": name, "why": "Preserve this exact reasoning.", "files_touched": ["service.py"],
+                      "evidence": [{"file": "service.py", "line": i + 1, "claim": name}],
+                      "risks": ['Literal JSON: {"step":"quoted"}, ]} — unchanged.']}
+                     for i, name in enumerate(("Inspect inputs", "Check outputs", "Validate receipts"))],
+            "open_questions": ["Which inputs are retained?"], "alternatives_rejected": [],
+            "research_sources": [{"url": "https://example.org/source", "summary": "Copy this exact source summary."}]}
+        raw = json.dumps(payload, separators=(',', ':'), ensure_ascii=False)
+        risk = json.dumps(payload['plan'][0]['risks'][0], ensure_ascii=False)
+        broken = raw.replace(risk + ']},{"step":', risk + '}] ,"step":', 1)
+        broken = broken.replace(risk + ']}],"open_questions":', risk + '}],"open_questions":')
+        # Exercise compact and pretty streams without changing string values.
+        parts = re.split(r'("(?:[^"\\]|\\.)*")', broken)
+        pretty = ''.join(part if i % 2 else re.sub(r'([,{}\[\]:])', r'\1\n ', part)
+                         for i, part in enumerate(parts))
+        for text in (broken, pretty):
+            with self.subTest(pretty=text == pretty):
+                recovered = oc._extract_schema_candidate(text, set(payload))
+                self.assertEqual(recovered, payload)
+
+    def test_boundary_recovery_does_not_change_quoted_examples_or_unknown_fields(self):
+        payload = {"risks": ['Example: {"step":"stay quoted"}, "research_sources": []'],
+                   "other": {"step": "Keep this nested object."}}
+        text = json.dumps(payload)
+        self.assertEqual(oc._restore_plan_boundaries(text), text)
+        self.assertIsNone(oc._extract_schema_candidate('{"agent_id":"fixture","summary":"truncated',
+            {"agent_id", "summary", "plan", "open_questions", "alternatives_rejected", "research_sources"}))
+
+    def test_empty_risks_and_different_root_collection_order_recover(self):
+        payload = {"agent_id": "fixture", "summary": "Retain all supplied steps.",
+                   "plan": [{"step": "First", "risks": []}, {"step": "Second", "risks": []}],
+                   "research_sources": [], "open_questions": [], "alternatives_rejected": []}
+        raw = json.dumps(payload, separators=(',', ':'))
+        broken = raw.replace('"risks":[]},{"step":', '"risks":[]}],"step":')
+        broken = broken.replace('"risks":[]}],"research_sources":', '"risks":[}],"research_sources":')
+        self.assertEqual(oc._extract_schema_candidate(broken, set(payload)), payload)
+
+    def test_risks_before_step_stay_attached_to_the_same_item(self):
+        payload = {"agent_id": "fixture", "summary": "A root missing other collections.",
+                   "plan": [{"risks": ["This risk belongs to this step."], "step": "Inspect this item."}],
+                   "open_questions": []}
+        raw = json.dumps(payload)
+        self.assertEqual(oc._restore_plan_boundaries(raw), raw)
+
     def test_policy_error_survives_clean_exit_and_is_not_retried(self):
         cause = "This Go model trains on request data. Allow paid endpoints that train on request data in your workspace's Privacy settings to use it."
         process = Mock(returncode=0)

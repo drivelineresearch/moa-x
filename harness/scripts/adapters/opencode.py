@@ -393,31 +393,58 @@ def _write_log_file(log_file: Optional[Path], stdout: str, stderr: str) -> None:
         print(f"[opencode adapter] failed to write log {log_file}: {e}", file=_sys.stderr)
 
 
+def _restore_plan_boundaries(text: str) -> str:
+    """Restore only punctuation between risks and the next plan/root field.
+
+    Some streams close the plan early or omit a risks-array close. Reading
+    whole string tokens prevents quoted JSON examples from becoming edits;
+    only punctuation gaps can change, never scalar values or citation records.
+    """
+    edits = []
+    previous_field = None
+    value_start = 0
+    last_value_end = None
+    root_fields = {"open_questions", "alternatives_rejected", "research_sources"}
+    for token in re.finditer(r'"(?:[^"\\\r\n]|\\.)*"', text):
+        after = token.end()
+        while after < len(text) and text[after].isspace():
+            after += 1
+        if after >= len(text) or text[after] != ":":
+            last_value_end = token.end()
+            continue
+        try:
+            field = json.loads(token.group())
+        except ValueError:
+            previous_field = None
+            continue
+        if previous_field == "risks" and (field == "step" or field in root_fields):
+            start = last_value_end if last_value_end is not None else value_start
+            gap = text[start:token.start()]
+            if re.fullmatch(r"[\s,{}\[\]]+", gap) and (field != "step" or re.search(r"[{}]", gap)):
+                close = "]" if last_value_end is not None else "[]"
+                replacement = close + ("},{" if field == "step" else "}],")
+                edits.append((start, token.start(), replacement))
+        previous_field, value_start, last_value_end = field, after + 1, None
+    for start, end, replacement in reversed(edits):
+        text = text[:start] + replacement + text[end:]
+    return text
+
+
 def _extract_schema_candidate(stdout: str, required_keys: set[str]) -> Optional[dict]:
     """Extract the response root even when it is missing required fields."""
     payload = extract_json_from_text(stdout, required_keys=required_keys)
     if payload is not None or not required_keys:
         return payload
 
-    # GLM occasionally emits each subsequent proposer plan item after closing
-    # the surrounding plan/root brackets, even though the fields and remaining
-    # top-level collections are present. Re-open those item boundaries, then
+    # GLM and MiniMax occasionally close plan/root brackets early or leave a
+    # risks array open, even though the remaining fields are present. Restore
+    # those punctuation boundaries, then
     # discard only an incomplete final research-source object if generation
     # stopped midway through it. Accept the recovery only when the repaired
     # object has every required proposer root key; strict schema and evidence
     # validation still run in the orchestrator.
     if {"plan", "research_sources"}.issubset(required_keys):
-        step_boundary = re.compile(
-            r'}(?:\]\})*\]*,?\{?"step":'
-        )
-
-        def restore_step_boundary(match: re.Match[str]) -> str:
-            previous = stdout[match.start() - 1] if match.start() else ""
-            # Some malformed boundaries retain the risks-array close outside
-            # the match; others consume it in the extra closing-bracket run.
-            return '},{"step":' if previous == "]" else ']},{"step":'
-
-        repaired = step_boundary.sub(restore_step_boundary, stdout)
+        repaired = _restore_plan_boundaries(stdout)
         recovered = extract_json_from_text(
             repaired, required_keys=required_keys
         )

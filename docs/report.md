@@ -194,5 +194,8 @@ Provider recovery records every invocation in `attempts`. The timeline renders
 research, retry and structure-repair intervals separately, and technical logs
 include each retained attempt. `repaired_by` identifies mechanical repairs by a
 second harness without changing the originating research model's attribution.
+Unavailable optional formatters appear as structure repairs with their own
+harness, model and lab portrait. If the original backend completes the repair,
+both calls remain visible; a failed helper is never labeled a research retry.
 
 V2 reports render the same structured decisions as the portal and retain the independent final check in the human plan. See the [evidence contract](evidence-pipeline.md#final-decisions-and-audit) for exact supporting-claim pointers and legacy compatibility.
