@@ -81,6 +81,30 @@ class RecoveryTests(unittest.TestCase):
         for message in ("provider.invalid-output (HTTP 200): unexpected shape", "HTTP 403 stream ended without finish_reason", "insufficient_quota stream ended without finish_reason"):
             self.assertFalse(classify_failure(message).retryable)
 
+    def test_internal_http_200_error_retries_inside_the_shared_budget(self):
+        message = "opencode provider error: provider.internal (HTTP 200): server_error: The model failed to generate a response."
+        with patch.object(run_moa.opencode_adapter, "run", side_effect=[output(error=message), output(self.valid)]) as call, patch.object(run_moa, "retry_sleep") as sleep:
+            result = self.run_lane(harness="opencode", model="opencode-go/muse-spark-1.3-contributor")
+        self.assertTrue(result.success)
+        self.assertEqual(call.call_count, 2)
+        self.assertEqual([a['kind'] for a in result.attempts], ['research', 'research'])
+        self.assertEqual(result.attempts[0]['failure_kind'], 'transport')
+        sleep.assert_called_once()
+        with patch.object(run_moa.opencode_adapter, "run", return_value=output(error=message)) as call, patch.object(run_moa, "retry_sleep") as sleep:
+            result = self.run_lane(harness="opencode", model="opencode-go/muse-spark-1.3-contributor")
+        self.assertFalse(result.success)
+        self.assertEqual(call.call_count, 3)
+        self.assertEqual(sleep.call_count, 2)
+        self.assertEqual(result.stop_reason, 'retry_limit')
+        for error in ('provider.internal (HTTP 403): invalid token',
+                      'provider.internal (HTTP 200): insufficient_quota',
+                      'provider.invalid-request (HTTP 400): server_error: unsupported model'):
+            self.assertFalse(classify_failure(error).retryable)
+        self.assertFalse(classify_failure('codex exited with code 1', 'Echoed prompt mentions provider.internal server_error').retryable)
+        self.assertTrue(classify_failure('codex exited with code 1', 'Echoed prompt\nERROR: server_error: retry the upstream request').retryable)
+        self.assertFalse(classify_failure('codex exited with code 1',
+            'ERROR: server_error quoted in a prompt\nERROR: terminal failure A\nERROR: terminal failure B\nERROR: terminal failure C').retryable)
+
     def test_long_research_reserves_the_full_repair_window(self):
         invalid = json.loads(json.dumps(self.valid))
         invalid["plan"][0].pop("risks")
@@ -404,21 +428,34 @@ class RecoveryTests(unittest.TestCase):
 
     def test_failed_repair_never_restarts_research_or_repairs_recursively(self):
         invalid = json.loads(json.dumps(self.valid));invalid["plan"][0].pop("risks")
-        with patch.object(run_moa.opencode_adapter, "run", return_value=output(invalid)) as call, patch.object(run_moa, "retry_sleep") as sleep:
+        with patch.object(run_moa.opencode_adapter, "run", return_value=output(invalid)) as call, patch.object(run_moa.claude_adapter, 'check_available', return_value=(True, 'fixture')), patch.object(run_moa.claude_adapter, 'run', return_value=output(invalid)) as repair, patch.object(run_moa, "retry_sleep") as sleep:
             result = self.run_lane(harness="opencode", model="opencode-go/grok-4.7")
         self.assertFalse(result.success)
-        self.assertEqual(call.call_count, 2)
+        self.assertEqual(call.call_count, 1)
+        self.assertEqual(repair.call_count, 1)
         self.assertIn("bounded schema repair failed", result.error)
         sleep.assert_not_called()
         self.assertFalse((self.session / "layer1/fixture-proposer.json").exists())
 
     def test_incomplete_output_retries_then_repairs_inside_same_budget(self):
         invalid = json.loads(json.dumps(self.valid));invalid["plan"][0].pop("risks")
-        with patch.object(run_moa.opencode_adapter, "run", side_effect=[output(error="could not extract JSON payload", incomplete=True), output(invalid), output(self.valid)]) as call, patch.object(run_moa, "retry_sleep"):
+        with patch.object(run_moa.opencode_adapter, "run", side_effect=[output(error="could not extract JSON payload", incomplete=True), output(invalid)]) as call, patch.object(run_moa.claude_adapter, 'check_available', return_value=(True, 'fixture')), patch.object(run_moa.claude_adapter, 'run', return_value=output(self.valid)) as repair, patch.object(run_moa, "retry_sleep"):
             result = self.run_lane(harness="opencode", model="opencode-go/grok-4.7")
         self.assertTrue(result.success)
-        self.assertEqual(call.call_count, 3)
+        self.assertEqual(call.call_count, 2)
+        self.assertFalse(repair.call_args.kwargs['allow_research'])
+        self.assertEqual(result.repaired_by['model'], 'claude-opus-5-5')
         self.assertEqual([x["kind"] for x in result.attempts], ["research", "research", "repair"])
+
+    def test_opencode_repair_can_use_its_own_backend_without_claude(self):
+        invalid = json.loads(json.dumps(self.valid));invalid['plan'][0].pop('risks')
+        with patch.object(run_moa.claude_adapter, 'check_available', return_value=(False, 'not installed')), patch.object(run_moa.claude_adapter, 'run') as claude, patch.object(run_moa.opencode_adapter, 'run', side_effect=[output(invalid), output(self.valid)]) as call:
+            result = self.run_lane(harness='opencode', model='opencode-go/minimax-m3')
+        self.assertTrue(result.success)
+        self.assertEqual(call.call_count, 2)
+        self.assertFalse(call.call_args.kwargs['allow_tools'])
+        self.assertEqual(result.repaired_by['harness'], 'opencode')
+        claude.assert_not_called()
 
     def test_retry_after_is_respected(self):
         with patch.object(run_moa.codex_adapter, "run", side_effect=[output(error="HTTP 429 Retry-After: 30"), output(self.valid)]), patch.object(run_moa, "retry_sleep") as sleep:

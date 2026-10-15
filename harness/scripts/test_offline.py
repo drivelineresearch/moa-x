@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -27,6 +28,37 @@ from adapters import claude as claude_adapter  # noqa: E402
 
 PASS = "\033[32mPASS\033[0m"
 FAIL = "\033[31mFAIL\033[0m"
+
+
+@contextmanager
+def _block_model_processes():
+    """Fail closed if an offline fixture forgets to stub a model client."""
+    import os
+    import subprocess
+    from unittest import mock
+    names = {"codex", "claude", "opencode", "agy", "gemini"}
+    original = subprocess.Popen
+    blocked = []
+
+    def guarded(command, *args, **kwargs):
+        model_names = names | {Path(os.environ.get(f"MOA_{name.upper()}_BIN") or name).name for name in names}
+        if isinstance(command, (list, tuple)) and command and Path(str(command[0])).name in model_names:
+            blocked.append(Path(str(command[0])).name)
+            raise AssertionError("Offline tests must mock model process launches")
+        return original(command, *args, **kwargs)
+
+    with mock.patch.object(subprocess, "Popen", guarded):
+        yield blocked
+
+
+def test_offline_guard_blocks_unmocked_model_processes() -> bool:
+    import subprocess
+    with _block_model_processes() as blocked:
+        try:
+            subprocess.Popen(["claude", "-p", "Never execute this request."])
+        except AssertionError:
+            pass
+    return _ok(blocked == ["claude"], "unmocked model clients cannot launch")
 
 
 # ---------------------------------------------------------------------------
@@ -2655,12 +2687,21 @@ def test_opencode_result_carries_transient_empty_field() -> bool:
 
 
 def test_opencode_check_available_returns_tuple() -> bool:
-    print("\n[N] opencode.check_available returns (bool, str) tuple")
+    print("\n[N] OpenCode preflight is deterministic with and without a binary")
     from adapters import opencode as opencode_adapter
-    result = opencode_adapter.check_available()
-    ok = (isinstance(result, tuple) and len(result) == 2
-          and isinstance(result[0], bool) and isinstance(result[1], str))
-    return _ok(ok, f"got {result}")
+    from types import SimpleNamespace
+    from unittest import mock
+    with mock.patch.object(opencode_adapter.shutil, "which", return_value="/usr/bin/opencode"), mock.patch.object(
+        opencode_adapter.subprocess, "run", return_value=SimpleNamespace(returncode=0, stdout="OpenCode Go")
+    ) as probe:
+        available = opencode_adapter.check_available()
+    with mock.patch.object(opencode_adapter.shutil, "which", return_value=None), mock.patch.object(
+        opencode_adapter.subprocess, "run"
+    ) as absent_probe:
+        missing = opencode_adapter.check_available()
+    absent_probe.assert_not_called()
+    ok = available[0] and not missing[0] and isinstance(available[1], str) and probe.call_count == 1
+    return _ok(ok, "No native preflight process was launched")
 
 
 def test_opencode_model_readiness_is_route_specific() -> bool:
@@ -2882,9 +2923,11 @@ def test_opencode_schema_repair_is_bounded_and_offline() -> bool:
         root = Path(raw)
         session = root / ".moa" / "repair"
         (session / "layer1").mkdir(parents=True)
-        with mock.patch.object(
-            run_moa.opencode_adapter, "run", side_effect=[first, second]
-        ) as adapter_run:
+        with (
+            mock.patch.object(run_moa.claude_adapter, "check_available", return_value=(False, "offline fixture")),
+            mock.patch.object(run_moa.claude_adapter, "run") as claude_run,
+            mock.patch.object(run_moa.opencode_adapter, "run", side_effect=[first, second]) as adapter_run,
+        ):
             result = run_moa._run_opencode(
                 layer=1,
                 role="proposer",
@@ -2897,6 +2940,7 @@ def test_opencode_schema_repair_is_bounded_and_offline() -> bool:
                 agent_id="kimi",
                 reasoning_effort="high",
             )
+        claude_run.assert_not_called()
         repair_call = adapter_run.call_args_list[1].kwargs
         ok = (
             result.success
@@ -3090,7 +3134,7 @@ def test_refiner_verification_repair_is_harness_independent() -> bool:
                 exit_code=0,
                 duration_seconds=0.5,
             )
-            with mock.patch.object(adapter, "run", side_effect=[first, second]) as call:
+            with mock.patch.object(run_moa.claude_adapter, "check_available", return_value=(False, "offline fixture")), mock.patch.object(adapter, "run", side_effect=[first, second]) as call:
                 result = runner(
                     layer=2,
                     role="refiner-broadcast",
@@ -4393,6 +4437,7 @@ def main() -> int:
     print("Mixture-of-Agents — offline smoke test (v2: 3 proposers + broadcast refiners)")
     print("=" * 72)
     tests = [
+        test_offline_guard_blocks_unmocked_model_processes,
         test_schema_validator_accepts_valid_codex_payload,
         test_schema_validator_accepts_valid_sonnet_payload,
         test_schema_validator_rejects_missing_field,
@@ -4534,7 +4579,11 @@ def main() -> int:
         test_layer3_codex_phase_writes_plan_and_lineage,
         test_layer3_fable_phase_uses_claude_and_writes_artifacts,
     ]
-    results = [t() for t in tests]
+    with _block_model_processes() as blocked:
+        results = [t() for t in tests]
+    if blocked:
+        results.append(False)
+        print(f"Unmocked model client attempts blocked: {blocked}")
     print("\n" + "=" * 72)
     passed = sum(1 for r in results if r)
     total = len(results)

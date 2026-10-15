@@ -61,6 +61,12 @@ def classify_failure(error: str | None, stderr: str = "", *, incomplete: bool = 
     retry_after = _retry_delay(text)
     if re.search(r"\b429\b|rate.?limit|too many requests|at capacity|overloaded|resource_exhausted", text):
         return Failure("capacity", True, retry_after)
+    # Streaming APIs can report an internal failure inside an HTTP 200 body.
+    # The adapter's typed diagnostic remains a server failure, not success or
+    # an unknown permanent error. Auth/billing/config causes above still win.
+    trusted_error = (error or "").lower() + "\n" + "\n".join(terminal_lines[-3:]).lower()
+    if re.search(r"\bprovider\.internal\b|\bserver_error\b", trusted_error):
+        return Failure("transport", True, retry_after)
     if re.search(r"\b(?:500|502|503|504)\b|connection (?:reset|closed|refused)|econnreset|etimedout|stream disconnected|stream.*(?:closed|interrupted)|temporarily unavailable|service unavailable|upstream error|network error", text):
         return Failure("transport", True, retry_after)
     if "timeout after" in text or "timed out" in text:
