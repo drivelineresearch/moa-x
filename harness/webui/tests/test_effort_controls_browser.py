@@ -98,7 +98,7 @@ class EffortControlsBrowserTest(unittest.TestCase):
             "thorough": {
                 "agy-gemini-pro": "High",
                 "opus": "Max",
-                "codex-sol": "Xhigh",
+                "codex-sol": "Ultra",
             },
         }
         with sync_playwright() as playwright:
@@ -213,14 +213,49 @@ class EffortControlsBrowserTest(unittest.TestCase):
             fable = page.locator(
                 'input[name="aggregator"][value="fable"]'
             ).locator("xpath=..")
-            self.assertEqual(
-                fable.locator("fieldset[data-effort-control]").count(),
-                0,
-            )
-            self.assertIn(
-                "Fixed Xhigh effort",
-                fable.locator(".model-row-copy small").inner_text(),
-            )
+            self.assertEqual(fable.locator("fieldset[data-effort-control]").count(), 1)
+            self.assertIn("Adjust reasoning effort", fable.locator(".model-row-copy small").inner_text())
+            page.locator("#run-goal").fill("Review the supplied recommendations.")
+            page.locator('[data-step-target="2"]').click()
+            page.locator('[data-roster-step="4"]').click()
+            aggregator_routes = page.locator('input[name="aggregator"]')
+            self.assertEqual(aggregator_routes.count(), 10)
+            for route_id, maximum, levels in [
+                ("codex-sol", "Ultra", 6), ("codex", "Ultra", 6),
+                ("codex-luna", "Max", 5), ("codex-gpt-6-sol", "Ultra", 6),
+                ("codex-gpt-5-6-sol", "Ultra", 6), ("codex-gpt-5-6-terra", "Ultra", 6),
+                ("codex-gpt-5-6-luna", "Max", 5), ("agy-gemini-pro", "High", 3),
+                ("opus", "Max", 5), ("fable", "Max", 5),
+            ]:
+                route = page.locator(f'input[name="aggregator"][value="{route_id}"]')
+                # Acknowledge the existing quota warning for this fixture.
+                if route_id == "fable":
+                    route.evaluate("node => node.dataset.fableAuthorized = 'true'")
+                route.locator("xpath=../../..").evaluate("node => node.open = true")
+                route.locator("xpath=..").locator("label.model-row-main").click()
+                slider = route.locator("xpath=..").locator("[data-effort-range]")
+                self.assertTrue(slider.is_enabled(), route_id)
+                self.assertEqual(slider.get_attribute("aria-valuetext"), maximum, route_id)
+                values = slider.get_attribute("data-effort-values").split(",")
+                self.assertEqual(len(values), levels, route_id)
+                for index, value in enumerate(values):
+                    slider.fill(str(index))
+                    slider.dispatch_event("input")
+                    self.assertEqual(slider.get_attribute("aria-valuetext"), value.title(), route_id)
+                selected = page.evaluate("""async () => {
+                    const app = await import('/static/js/app.js');
+                    return {aggregator: app.selectedAggregatorOptions(), upstream: app.selectedEffortOverrides()};
+                }""")
+                self.assertEqual(selected["aggregator"]["effort"], maximum.lower())
+                if route_id == "codex":
+                    self.assertEqual(selected["upstream"]["codex"], "high")
+                if route_id == "agy-gemini-pro":
+                    self.assertTrue(selected["aggregator"]["model"].endswith("-high"))
+            # Preset changes restore the narrower Balanced picker.
+            page.locator('[data-step-target="1"]').click()
+            depth.fill("1")
+            depth.dispatch_event("change")
+            self.assertEqual(page.locator('input[name="aggregator"]').count(), 3)
             progress_values = page.evaluate(
                 """async () => {
                   const { attachmentProgressPercent } = await import(
@@ -400,7 +435,7 @@ class EffortControlsBrowserTest(unittest.TestCase):
             self.assertEqual(response.value.status, 201)
             retried = store.get_job(response.value.json()["id"])
             self.assertEqual(retried["config"]["redispatch"], {"phase": "layer3", "agents": ["codex-sol"]})
-            self.assertEqual(retried["config"]["options"]["effort_overrides"]["codex-sol"], "medium")
+            self.assertEqual(retried["config"]["options"]["aggregator_options"]["effort"], "medium")
             self.assertEqual(len(dialogs), 2)
             page.goto("about:blank")
             page.wait_for_timeout(150)

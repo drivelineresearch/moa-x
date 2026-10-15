@@ -15,6 +15,7 @@ from harness.webui.store import Store
 from harness.webui.rosters import resolve_roster
 from harness.webui.worker import JobWorker
 from harness.scripts.config import BUILTIN_PROVIDERS
+from harness.scripts.model_efforts import effort_options
 from harness.scripts.attachments import prepare_attachment_context
 
 TEAM = "T_TEST"
@@ -26,11 +27,7 @@ def catalog():
     out = []
     for name, row in BUILTIN_PROVIDERS.items():
         roles = [] if name == "kimi" else ["proposer", "refiner", "aggregator"]
-        levels = {
-            "agy": ["low", "medium", "high"],
-            "claude": ["low", "medium", "high", "xhigh", "max"],
-            "codex": ["low", "medium", "high", "xhigh"],
-        }.get(row.harness, [])
+        levels = effort_options(row.harness, row.model)
         out.append(
             {
                 "id": name,
@@ -610,7 +607,7 @@ class SlackTest(unittest.TestCase):
         )
         c = self.bot.db.get(c["id"])
         self.assertEqual(
-            c["data"]["roster"]["options"]["effort_overrides"]["codex-sol"], "high"
+            c["data"]["roster"]["options"]["aggregator_options"]["effort"], "high"
         )
 
     def test_preview_text_edit_restarts_interview(self):

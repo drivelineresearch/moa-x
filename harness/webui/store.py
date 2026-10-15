@@ -553,7 +553,7 @@ class Store:
             if any(config.get(key) != current.get(key) for key in ("proposers", "refiners", "aggregator")):
                 continue
             if any(config.get("options", {}).get(key) != current.get("options", {}).get(key)
-                   for key in ("model_overrides", "effort_overrides")):
+                   for key in ("model_overrides", "effort_overrides", "aggregator_options")):
                 continue
             durations.append((row["finished_at"] - row["started_at"]) / 60)
         durations.sort()

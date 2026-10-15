@@ -631,6 +631,31 @@ class RecoveryTests(unittest.TestCase):
             self.assertEqual(run_moa.main(), 4)
         call.assert_not_called()
 
+    def test_cli_synthesis_accepts_gemini_and_maximum_codex_efforts(self):
+        scout = self.session / "scout-brief.json"
+        scout.write_text(json.dumps({"session_id": "fixture", "repo_path": str(self.root), "frozen_spec": "Review retained input."}))
+        (self.session / "synthesis-input.md").write_text("Retained input.")
+        for route, model, harness, effort in [
+            ("agy-gemini-pro", "gemini-4-argon-high", "agy", "high"),
+            ("codex-sol", "gpt-6.1-sol", "codex", "ultra"),
+            ("codex-luna", "gpt-6-luna", "codex", "max"),
+        ]:
+            with self.subTest(route=route):
+                (self.session / "manifest.json").write_text(json.dumps({"layer1": [], "layer2": [], "layer3": [], "summary": {}}))
+                argv = ["run_moa.py", "--scout-brief", str(scout), "--repo", str(self.root),
+                        "--phase", "layer3", "--aggregator-provider", route, "--no-report"]
+                result = run_moa.LayerResult(agent_id=route, layer=3, role="aggregator", success=False, error="fixture stop")
+                env = {"MOA_AGGREGATOR_EFFORT": effort, "MOA_CODEX_EFFORT": "ultra", "MOA_CODEX_REVIEWER_EFFORT": "max"}
+                with (patch.object(sys, "argv", argv), patch.dict(run_moa.os.environ, env),
+                      patch.object(getattr(run_moa, harness + "_adapter"), "check_available", return_value=(True, "fixture")),
+                      patch.object(run_moa, "_global_lock", return_value=contextlib.nullcontext()),
+                      patch.object(run_moa, "run_layer3", return_value=result) as call,
+                      contextlib.redirect_stdout(io.StringIO())):
+                    self.assertEqual(run_moa.main(), 5)
+                self.assertEqual(call.call_args.kwargs["provider"].model, model)
+                self.assertEqual(call.call_args.kwargs["codex_effort"], effort)
+                self.assertEqual(call.call_args.kwargs["timeout"], 2700)
+
     def test_synthesis_preserves_workspace_mutation_warnings(self):
         manifest = {
             "layer1": [

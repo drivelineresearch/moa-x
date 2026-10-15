@@ -1483,6 +1483,112 @@ class WebUITest(unittest.TestCase):
         self.assertNotIn("MOA_AGY_GEMINI_PRO_EFFORT", env)
         self.assertNotIn("MOA_UNSAFE_EFFORT", env)
 
+    def test_thorough_synthesis_defaults_to_each_models_maximum(self):
+        from harness.scripts.model_efforts import OPENAI_MODELS
+        models = web_providers.model_catalog(probe=False)
+        rows = [row for row in models if "aggregator" in row["roles"]
+                and (row["harness"] == "codex" or row["id"] in {"opus", "fable", "agy-gemini-pro"})]
+        self.assertEqual({row["model"] for row in rows if row["harness"] == "codex"}, set(OPENAI_MODELS))
+        self.assertEqual(len(rows), 10)
+        for row in rows:
+            with self.subTest(model=row["model"]):
+                response = self.client.post("/api/jobs", json={
+                    "goal": "Compare the supplied recommendations.", "source_mode": "brief",
+                    "aggregator": row["id"], "options": {"depth": "thorough"},
+                })
+                self.assertEqual(response.status_code, 201, response.get_json())
+                selected = response.get_json()["config"]["options"]["aggregator_options"]
+                expected = "high" if row["harness"] == "agy" else "max" if row["harness"] == "claude" or row["model"].endswith("-luna") else "ultra"
+                self.assertEqual(selected, {"model": row["model"], "effort": expected})
+                lane = next(lane for lane in response.get_json()["agents"] if lane["role"] == "aggregator")
+                self.assertEqual(lane["model"], row["model"] + " · " + expected.title() + " effort")
+
+    def test_synthesis_effort_is_scoped_and_manual_choices_survive(self):
+        for route, model, upstream, final in [
+            ("codex", "gpt-6-astra", "high", "ultra"),
+            ("opus", "claude-opus-5-5", "high", "max"),
+            ("agy-gemini-pro", "gemini-4-argon-high", "low", "medium"),
+        ]:
+            with self.subTest(route=route):
+                response = self.client.post("/api/jobs", json={
+                    "goal": "Preserve independent stage settings.", "source_mode": "brief",
+                    "proposers": [route], "aggregator": route,
+                    "options": {"depth": "thorough", "model_overrides": {route: model.replace("-high", "-low") if route.startswith("agy") else model},
+                                "effort_overrides": {route: upstream},
+                                "aggregator_options": {"model": model, "effort": final}},
+                })
+                self.assertEqual(response.status_code, 201, response.get_json())
+                job = response.get_json()
+                prefix = "MOA_" + route.upper().replace("-", "_")
+                early = JobWorker._environment(job, "layer1")
+                late = JobWorker._environment(job, "layer3")
+                if route.startswith("agy"):
+                    self.assertTrue(early[prefix + "_MODEL"].endswith("-low"))
+                    self.assertTrue(late[prefix + "_MODEL"].endswith("-medium"))
+                    self.assertNotIn(prefix + "_EFFORT", late)
+                else:
+                    self.assertEqual(early[prefix + "_EFFORT"], upstream)
+                    self.assertEqual(late[prefix + "_EFFORT"], final)
+                self.assertEqual(job["config"]["options"]["aggregator_options"]["effort"], final)
+
+    def test_synthesis_rejects_unsupported_effort_and_retains_legacy_override(self):
+        for route, effort in [("codex-luna", "ultra"), ("opus", "ultra"), ("agy-gemini-pro", "max"), ("codex", 0)]:
+            response = self.client.post("/api/jobs", json={
+                "goal": "Validate effort.", "source_mode": "brief", "aggregator": route,
+                "options": {"depth": "thorough", "aggregator_options": {"effort": effort}},
+            })
+            self.assertEqual(response.status_code, 400, route)
+        response = self.client.post("/api/jobs", json={
+            "goal": "Honor an earlier client.", "source_mode": "brief", "aggregator": "codex-sol",
+            "options": {"depth": "thorough", "effort_overrides": {"codex-sol": "medium"}},
+        })
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json()["config"]["options"]["aggregator_options"]["effort"], "medium")
+
+    def test_thorough_shared_roster_and_duration_samples_use_final_settings(self):
+        from harness.webui.rosters import resolve_roster
+        models = web_providers.model_catalog(probe=False)
+        for model in models:
+            model["available"] = True
+        roster = resolve_roster("thorough", catalog=models)
+        self.assertEqual(roster["options"]["aggregator_options"], {"model": "gpt-6.1-sol", "effort": "ultra"})
+        store = self.app.extensions["moa_store"]
+        for index, effort in enumerate(("medium", "medium", "medium", "ultra")):
+            store.insert_job({"id": "history-" + str(index), "profile_id": "browser_123",
+                              "title": "History", "workspace": str(self.root), "session_dir": str(self.root / str(index)),
+                              "goal": "Review", "status": "completed", "created_at": index,
+                              "config": {**roster, "options": {**roster["options"], "aggregator_options": {"model": "gpt-6.1-sol", "effort": effort}}}})
+            store.update_job("history-" + str(index), started_at=index, finished_at=index + 600)
+        sample = store.get_job("history-3")
+        self.assertEqual(store.queue_summary(sample)["samples"], 1)
+
+    def test_every_final_model_dispatches_and_writes_validated_artifacts(self):
+        from dataclasses import replace
+        for row in web_providers.model_catalog(probe=False):
+            if "aggregator" not in row["roles"] or row["harness"] not in {"codex", "claude", "agy"}:
+                continue
+            with self.subTest(model=row["model"]):
+                session = self.root / row["id"]
+                session.mkdir()
+                (session / "synthesis-input.md").write_text("Retained review input.")
+                lineage = {"version": 1, "title": "Small documentation improvement", "summary": "Add a concise usage note.",
+                           "confidence": {"level": "high", "rationale": "All reviewers agree."}, "steps": [], "rejected_inputs": []}
+                markdown = "# Final Plan: Small documentation improvement\n\n" + "Retain the supplied evidence. " * 10
+                adapter = getattr(run_moa, row["harness"] + "_adapter")
+                result_class = getattr(adapter, {"codex": "CodexResult", "claude": "ClaudeResult", "agy": "AgyResult"}[row["harness"]])
+                captured = result_class(success=True, payload={"final_plan_markdown": markdown, "lineage": lineage},
+                                        raw_stdout="{}", raw_stderr="", exit_code=0, duration_seconds=1)
+                provider = replace(run_moa.harness_config.resolve_provider(row["id"], user_providers={}), effort=row["effort_options"][-1])
+                with patch.object(adapter, "run", return_value=captured) as call:
+                    result = run_moa.run_layer3(provider=provider, repo_path=self.root, session_dir=session,
+                                               timeout=2700, codex_effort=provider.effort, layer1=[], layer2=[])
+                self.assertTrue(result.success, result.error)
+                self.assertTrue(result.schema_valid)
+                self.assertEqual(call.call_args.kwargs["model"], row["model"])
+                self.assertEqual(call.call_args.kwargs["reasoning_effort"], provider.effort)
+                self.assertEqual((session / "final-plan.md").read_text(), markdown)
+                self.assertEqual(json.loads((session / "final-plan.json").read_text()), lineage)
+
     def test_worker_explains_zero_success_layer1_before_review(self):
         session = self.root / ".moa" / "failed-layer1"
         session.mkdir(parents=True)

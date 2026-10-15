@@ -46,6 +46,7 @@ from .providers import (
 from .prompt_coach import PromptCoachError, analyze as analyze_prompt
 from .prompt_coach import finalize as finalize_prompt
 from .store import Store, redact_event_text
+from model_efforts import effort_options
 from .worker import JobWorker
 from .launch import LaunchService, LaunchError
 from .rosters import DEPTH_PROFILES
@@ -358,13 +359,16 @@ def _agent_views(job: dict[str, Any], session: Path) -> tuple[list[dict[str, Any
             # lane is queued or rerunning.
             result = None
         route_config = configured.get((layer, agent_id), {})
+        final_options = (options.get("aggregator_options") or {}) if layer == 3 else {}
         model = (
-            model_overrides.get(agent_id)
+            final_options.get("model")
+            or model_overrides.get(agent_id)
             or route_config.get("model")
             or agent_id
         )
         effort = (
-            effort_overrides.get(agent_id)
+            final_options.get("effort")
+            or effort_overrides.get(agent_id)
             or route_config.get("effort")
             or route_config.get("reasoning_effort")
         )
@@ -1100,14 +1104,16 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             effort = body.get("aggregator_effort")
             if effort is not None:
                 provider = harness_config.load_provider_catalog().get(aggregator)
+                options = dict(config.get("options") or {})
+                selected = options.get("aggregator_options") or {}
+                model = selected.get("model") or (options.get("model_overrides") or {}).get(aggregator)
                 if (
                     not provider or provider.harness != "codex"
                     or not isinstance(effort, str)
-                    or effort not in {"low", "medium", "high", "xhigh"}
+                    or effort not in effort_options(provider.harness, model or provider.model)
                 ):
                     return _error("choose a supported Codex synthesis effort")
-                options = dict(config.get("options") or {})
-                options["effort_overrides"] = {**(options.get("effort_overrides") or {}), aggregator: effort}
+                options["aggregator_options"] = {**(options.get("aggregator_options") or {}), "effort": effort}
                 config["options"] = options
         elif "aggregator_effort" in body:
             return _error("aggregator_effort is only supported for synthesis retries")

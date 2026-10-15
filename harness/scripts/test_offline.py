@@ -3250,7 +3250,7 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
         and by_id["agy-gemini-pro"]["effort_options"] == ["low", "medium", "high"]
         and by_id["agy-gemini-pro"]["effort_control"] == "model_variant"
         and by_id["fable"]["effort"] == "xhigh"
-        and by_id["fable"]["effort_options"] == []
+        and by_id["fable"]["effort_options"] == ["low", "medium", "high", "xhigh", "max"]
     )
     grouped_ok = (
         groups["claude"]["lab"] == "Anthropic"
@@ -3262,7 +3262,7 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
     )
     role_ok = (
         {item["id"] for item in models if "aggregator" in item["roles"]}
-        == {"codex-sol", "opus", "fable"}
+        == {"codex-sol", "codex", "codex-luna", "codex-gpt-6-sol", "codex-gpt-5-6-sol", "codex-gpt-5-6-terra", "codex-gpt-5-6-luna", "agy-gemini-pro", "opus", "fable"}
         and by_id["fable"]["roles"] == ["aggregator"]
         and by_id["opus"]["roles"] == ["proposer", "refiner", "aggregator"]
         and by_id["muse-spark"]["roles"] == ["proposer", "refiner"]
@@ -3298,7 +3298,8 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
         and profiles["thorough"]["refiner"]["preferred"] == ["deepseek-flash", "opus"]
         and profiles["thorough"]["refiner"]["efforts"]["opus"] == "max"
         and all(profile["aggregator"]["preferred"] == ["codex-sol"] for profile in profiles.values())
-        and [profiles[depth]["aggregator"]["efforts"]["codex-sol"] for depth in ("quick", "balanced", "thorough")] == ["medium", "xhigh", "xhigh"]
+        and [profiles[depth]["aggregator"]["efforts"]["codex-sol"] for depth in ("quick", "balanced")] == ["medium", "xhigh"]
+        and profiles["thorough"]["aggregator"]["max_effort"] is True
         and all(snippet in app_js for snippet in (
             "bootstrap.depth_profiles", '["codex-sol", "opus", FABLE_ROUTE_ID].includes(id)',
             'const FABLE_WARNING_PASSWORD = "driveline11";', "syncSelectedProviderGroups();"))
