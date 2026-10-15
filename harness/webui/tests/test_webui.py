@@ -1385,8 +1385,8 @@ class WebUITest(unittest.TestCase):
                     "aggregator": "opus",
                 },
             )
-        self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.get_json()["path"], str(target))
+        self.assertEqual(response.status_code, 410)
+        self.assertIn("source_mode=github", response.get_json()["error"])
         self.assertEqual(job_response.status_code, 201)
         job = job_response.get_json()
         self.assertEqual(job["workspace"], str(target))
@@ -1397,10 +1397,10 @@ class WebUITest(unittest.TestCase):
             scout["source"]["repository"],
             "drivelineresearch/player-benchmark",
         )
-        rejected = self.client.post(
-            "/api/workspaces/github", json={"repo": "evil/player-benchmark"}
-        )
-        self.assertEqual(rejected.status_code, 400)
+        with patch("harness.webui.app.clone_repository") as clone:
+            retired = self.client.post("/api/workspaces/github", json={"repo": "example-org/sample"})
+        self.assertEqual(retired.status_code, 410)
+        clone.assert_not_called()
 
     def test_github_revision_is_shared_without_paths_and_snapshots_are_not_local_choices(self):
         result = self.client.post("/api/jobs", json={"goal": "Review", "source_mode": "brief"})

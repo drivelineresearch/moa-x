@@ -344,7 +344,10 @@ Use **Refresh repositories** beside the GitHub picker to request the current
 repository list without browser caching. It preserves the selected repository
 if it remains available, reports refresh failures, and leaves the last good
 list intact on failure. This refreshes discovery; source code is always fetched
-again when starting a new run. Checkpoint retries retain the original source
+again when starting a new run. The legacy `POST /api/workspaces/github`
+pre-clone endpoint returns HTTP 410 without cloning; API clients should submit
+`source_mode: "github"` and `github_repository: "owner/repo"` to `POST /api/jobs`.
+Checkpoint retries retain the original source
 snapshot; start a new run to analyze a newer revision.
 
 Old shared clones are no longer used for new launches. Keep directories that

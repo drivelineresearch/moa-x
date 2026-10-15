@@ -246,13 +246,6 @@ export async function uploadFiles(files, metadata = {}) {
   return payload.uploads || [];
 }
 
-export async function checkoutGithubRepo(repo, profileId) {
-  return request("/api/workspaces/github", {
-    method: "POST",
-    body: JSON.stringify({ repo, profile_id: profileId }),
-  });
-}
-
 export async function cancelJob(id) {
   return request(`/api/jobs/${encodeURIComponent(id)}/cancel`, { method: "POST", body: "{}" });
 }

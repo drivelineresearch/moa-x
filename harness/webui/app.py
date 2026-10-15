@@ -940,44 +940,10 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     @app.post("/api/workspaces/github")
     @require_profile
     def github_workspace(profile: dict[str, Any]):
-        body = request.get_json(silent=True) or {}
-        pointer = str(body.get("repo") or "").strip()
-        git_ref = (
-            str(body.get("ref") or body.get("github_ref") or "").strip() or None
+        return _error(
+            "Start a run with source_mode=github and github_repository via /api/jobs; "
+            "separate pre-cloning is no longer supported.", 410
         )
-        try:
-            owner, repo = parse_repo_pointer(
-                pointer, app.config["GITHUB_OWNER"]
-            )
-        except ValueError as exc:
-            return _error(str(exc))
-        try:
-            result = clone_repository(
-                pointer,
-                github_workspace_dir,
-                git_ref=git_ref,
-                owner_allowlist=app.config["GITHUB_OWNER"],
-            )
-        except (GitHubWorkspaceError, ValueError) as exc:
-            if isinstance(exc, GitHubWorkspaceError):
-                capture_operational_error(
-                    exc,
-                    operation="github.clone_workspace",
-                    context={"owner": app.config["GITHUB_OWNER"]},
-                )
-            return _error(str(exc), 502)
-        workspace = store.upsert_github_workspace(
-            owner=owner,
-            repo=repo,
-            profile_id=profile["id"],
-            local_path=result["path"],
-            remote_url=result["remote_url"],
-        )
-        response = _dated_view(workspace)
-        response["path"] = response.pop("local_path")
-        response["created"] = result["created"]
-        response.update({key: result.get(key) for key in ("commit", "git_ref", "fetched_at")})
-        return jsonify(response), 201 if result["created"] else 200
 
     @app.get("/api/providers")
     def providers():
