@@ -28,6 +28,8 @@ def _ready_catalogs() -> tuple[list[dict], list[dict]]:
     models = web_providers.model_catalog(probe=False)
     for model in models:
         model.update(available=True, availability_detail="ready")
+    models.append({**next(model for model in models if model["id"] == "codex"),
+                   "id": "custom-codex", "name": "Custom Astra"})
     return providers, models
 
 
@@ -119,6 +121,7 @@ class EffortControlsBrowserTest(unittest.TestCase):
             )
 
             rows = page.locator(".model-option")
+            self.assertEqual(page.locator('input[name="proposer"][value="custom-codex"], input[name="refiner"][value="custom-codex"]').count(), 0)
             self.assertGreater(rows.count(), 10)
             group_images = page.locator(
                 ".model-provider-group .chooser-avatar img"
@@ -219,7 +222,8 @@ class EffortControlsBrowserTest(unittest.TestCase):
             page.locator('[data-step-target="2"]').click()
             page.locator('[data-roster-step="4"]').click()
             aggregator_routes = page.locator('input[name="aggregator"]')
-            self.assertEqual(aggregator_routes.count(), 10)
+            self.assertEqual(aggregator_routes.count(), 11)  # Ten curated plus the custom synthesis route.
+            self.assertEqual(page.locator('input[name="proposer"][value="custom-codex"], input[name="refiner"][value="custom-codex"]').count(), 0)
             for route_id, maximum, levels in [
                 ("codex-sol", "Ultra", 6), ("codex", "Ultra", 6),
                 ("codex-luna", "Max", 5), ("codex-gpt-6-sol", "Ultra", 6),

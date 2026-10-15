@@ -103,7 +103,7 @@ from adapters.failures import Failure, classify_failure  # noqa: E402
 from adapters.claude import TEMPERATURE_DIVERSITY_SHIM  # noqa: E402
 from attachments import AttachmentError, prepare_attachment_context  # noqa: E402
 import config as harness_config  # noqa: E402
-from model_efforts import CODEX_EFFORTS
+from model_efforts import CODEX_EFFORTS, effort_options
 import decision_map as decision_map_module  # noqa: E402
 import evidence_pipeline as pipeline  # noqa: E402
 import receipts  # noqa: E402
@@ -2829,7 +2829,7 @@ def main() -> int:
     parser.add_argument("--aggregator-effort",
                         default=os.environ.get("MOA_AGGREGATOR_EFFORT") or None,
                         choices=list(CODEX_EFFORTS),
-                        help="Reasoning effort for a Codex Layer 3 subprocess. "
+                        help="Reasoning effort for a Codex/Claude Layer 3 model; AGY uses its model slug. "
                              "Defaults to the resolved provider effort, then 'xhigh'.")
     parser.add_argument("--skip-layer2",
                         action="store_true",
@@ -3230,7 +3230,19 @@ def main() -> int:
                 effort=final_aggregator.effort,
             )
 
-        args.aggregator_effort = args.aggregator_effort or final_aggregator.effort or "xhigh"
+        levels = effort_options(final_aggregator.harness, final_aggregator.model, final_aggregator.effort)
+        if final_aggregator.harness == "agy":
+            args.aggregator_effort = harness_config.agy_model_depth(final_aggregator.model)
+        else:
+            args.aggregator_effort = args.aggregator_effort or final_aggregator.effort or "xhigh"
+            if levels and args.aggregator_effort not in levels:
+                print(f"ERROR: {final_aggregator.model} does not support {args.aggregator_effort} effort", file=sys.stderr)
+                return 2
+        final_aggregator = harness_config.ResolvedProvider(
+            name=final_aggregator.name, harness=final_aggregator.harness, model=final_aggregator.model,
+            timeout=final_aggregator.timeout,
+            effort=args.aggregator_effort if levels else final_aggregator.effort,
+        )
 
         # ---------- Phase: layer3 only (aggregate retained synthesis) ----------
         if args.phase == "layer3":
@@ -3249,7 +3261,8 @@ def main() -> int:
                 return 4
             if final_aggregator.harness == "codex":
                 ok, msg = codex_adapter.check_available()
-                default_timeout = codex_timeout
+                default_timeout = (codex_timeout if args.timeout is not None or args.codex_timeout is not None
+                                   else _codex_effort_defaults[args.aggregator_effort])
             elif final_aggregator.harness == "claude":
                 ok, msg = claude_adapter.check_available()
                 default_timeout = sonnet_timeout

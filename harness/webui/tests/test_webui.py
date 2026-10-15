@@ -1522,6 +1522,8 @@ class WebUITest(unittest.TestCase):
                 prefix = "MOA_" + route.upper().replace("-", "_")
                 early = JobWorker._environment(job, "layer1")
                 late = JobWorker._environment(job, "layer3")
+                self.assertEqual(early["MOA_AGGREGATOR_EFFORT"], final)
+                self.assertEqual(early["MOA_AGGREGATOR_MODEL"], late[prefix + "_MODEL"])
                 if route.startswith("agy"):
                     self.assertTrue(early[prefix + "_MODEL"].endswith("-low"))
                     self.assertTrue(late[prefix + "_MODEL"].endswith("-medium"))
@@ -1544,6 +1546,15 @@ class WebUITest(unittest.TestCase):
         })
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.get_json()["config"]["options"]["aggregator_options"]["effort"], "medium")
+        for route, settings in [("codex-aggregator", {"effort": "bad\x00value"}),
+                                ("codex-sol", {"model": "bad\x00value"})]:
+            response = self.client.post("/api/jobs", json={"goal": "Validate settings.", "source_mode": "brief",
+                "aggregator": route, "options": {"aggregator_options": settings}})
+            self.assertEqual(response.status_code, 400)
+        env = JobWorker._environment({"config": {"aggregator": "codex-sol", "options": {
+            "aggregator_options": {"effort": "bad\x00value", "model": "bad\x00value"}}}}, "layer3")
+        self.assertNotEqual(env.get("MOA_CODEX_SOL_EFFORT"), "bad\x00value")
+        self.assertNotEqual(env.get("MOA_AGGREGATOR_MODEL"), "bad\x00value")
 
     def test_thorough_shared_roster_and_duration_samples_use_final_settings(self):
         from harness.webui.rosters import resolve_roster
@@ -1561,6 +1572,20 @@ class WebUITest(unittest.TestCase):
             store.update_job("history-" + str(index), started_at=index, finished_at=index + 600)
         sample = store.get_job("history-3")
         self.assertEqual(store.queue_summary(sample)["samples"], 1)
+
+    def test_custom_codex_route_keeps_declared_maximum_effort(self):
+        from harness.scripts.model_efforts import effort_options
+        for effort in ("max", "ultra"):
+            with self.subTest(effort=effort):
+                custom = web_providers.harness_config.ResolvedProvider("custom-final", "codex", "future-model", effort=effort)
+                catalog = {**web_providers.harness_config.load_provider_catalog(), "custom-final": custom}
+                with patch.object(web_providers.harness_config, "load_provider_catalog", return_value=catalog):
+                    response = self.client.post("/api/jobs", json={"goal": "Honor custom configuration.",
+                        "source_mode": "brief", "aggregator": "custom-final", "options": {"depth": "thorough"}})
+                self.assertEqual(response.status_code, 201, response.get_json())
+                self.assertEqual(response.get_json()["config"]["options"]["aggregator_options"]["effort"], effort)
+        self.assertNotIn("ultra", effort_options("codex", "gpt-6-luna", "ultra"))
+        self.assertNotIn("ultra", effort_options("codex", "future-model", "max"))
 
     def test_every_final_model_dispatches_and_writes_validated_artifacts(self):
         from dataclasses import replace

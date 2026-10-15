@@ -270,18 +270,23 @@ class JobWorker:
                 env[key] = str(effort)
                 if provider_name == config.get("aggregator") and provider and provider.harness == "codex":
                     env["MOA_AGGREGATOR_EFFORT"] = str(effort)
-        if phase in (None, "layer3"):
-            selected = config.get("options", {}).get("aggregator_options") or {}
-            name = config.get("aggregator", "")
-            provider = provider_catalog.get(name)
-            if provider and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,79}", name):
-                prefix = "MOA_" + name.upper().replace("-", "_")
-                if selected.get("model"):
+        selected = config.get("options", {}).get("aggregator_options") or {}
+        name = config.get("aggregator", "")
+        provider = provider_catalog.get(name)
+        if provider and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,79}", name):
+            prefix = "MOA_" + name.upper().replace("-", "_")
+            model = selected.get("model")
+            effort = selected.get("effort")
+            # Global aggregator-only variables preserve its identity in every
+            # phase without overriding a same-route proposer or reviewer.
+            if isinstance(model, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_./:-]{0,299}", model):
+                env["MOA_AGGREGATOR_MODEL"] = model
+                if phase in (None, "layer3"):
                     env[prefix + "_MODEL"] = str(selected["model"])[:300]
-                if selected.get("effort") and provider.harness != "agy":
-                    env[prefix + "_EFFORT"] = str(selected["effort"])
-                    if provider.harness == "codex":
-                        env["MOA_AGGREGATOR_EFFORT"] = str(selected["effort"])
+            if isinstance(effort, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,39}", effort):
+                env["MOA_AGGREGATOR_EFFORT"] = effort
+                if phase in (None, "layer3") and provider.harness != "agy":
+                    env[prefix + "_EFFORT"] = effort
         return env
 
     def _run_phase(self, job: dict[str, Any], phase: str) -> int:

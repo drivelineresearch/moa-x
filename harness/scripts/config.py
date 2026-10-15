@@ -59,6 +59,12 @@ _AGY_MODEL_DEPTH_RE = re.compile(
 )
 
 
+def agy_model_depth(model: str) -> str | None:
+    """AGY's model id is authoritative; a separate effort flag is ignored."""
+    match = _AGY_MODEL_DEPTH_RE.search(model)
+    return match.group(1).lower() if match else None
+
+
 # --- binary names ----------------------------------------------------------
 
 _DEFAULT_BINS = {
@@ -282,13 +288,12 @@ def resolve_provider(name: str, *, user_providers: dict[str, dict]) -> ResolvedP
     # additional --effort produces an invalid model/effort pair (and can fail
     # before the model sees the prompt), so model depth is always authoritative.
     if rp.harness == "agy":
-        match = _AGY_MODEL_DEPTH_RE.search(rp.model)
         rp = ResolvedProvider(
             name=rp.name,
             harness=rp.harness,
             model=rp.model,
             timeout=rp.timeout,
-            effort=match.group(1).lower() if match else None,
+            effort=agy_model_depth(rp.model),
         )
 
     return rp

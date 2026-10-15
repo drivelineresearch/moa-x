@@ -154,11 +154,13 @@ class LaunchService:
             raise LaunchError("aggregator_options must be an object")
         scoped = dict(scoped or {})
         row = catalog.get(requested_aggregator)
+        if scoped and not row:
+            raise LaunchError("aggregator_options requires a selectable final model")
         if row:
             model = scoped.get("model") or (options.get("model_overrides") or {}).get(requested_aggregator) or row["model"]
-            if not isinstance(model, str):
-                raise LaunchError("aggregator model must be a string")
-            levels = effort_options(row["harness"], model)
+            if not isinstance(model, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_./:-]{0,299}", model):
+                raise LaunchError("aggregator model must be a valid model id")
+            levels = effort_options(row["harness"], model, row.get("effort") if model == row["model"] else None)
             effort = scoped.get("effort", (options.get("effort_overrides") or {}).get(requested_aggregator))
             if effort is None:
                 effort = levels[-1] if depth == "thorough" and levels else row.get("effort")

@@ -588,6 +588,8 @@ function modelsForRole(role) {
     const id = String(model.id);
     const harness = model.harness || model.provider_id || model.provider || "cli";
     if (harness === "gemini" || id === "gemini-cli-pro") return false;
+    if (harness === "codex" && !(role === "aggregator" && state.depthPreset === "thorough")
+        && !["codex", "codex-sol", "codex-luna"].includes(id)) return false;
     if (["codex-reviewer", "codex-aggregator"].includes(id)) return false;
     const roles = model.roles || model.supported_roles || [];
     if (Array.isArray(roles) && roles.length && !roles.includes(role)) return false;

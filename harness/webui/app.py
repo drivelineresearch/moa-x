@@ -1110,7 +1110,8 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                 if (
                     not provider or provider.harness != "codex"
                     or not isinstance(effort, str)
-                    or effort not in effort_options(provider.harness, model or provider.model)
+                    or effort not in effort_options(provider.harness, model or provider.model,
+                                                    selected.get("effort") or provider.effort)
                 ):
                     return _error("choose a supported Codex synthesis effort")
                 options["aggregator_options"] = {**(options.get("aggregator_options") or {}), "effort": effort}

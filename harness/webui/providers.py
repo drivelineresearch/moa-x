@@ -138,7 +138,7 @@ def _route_records(harness: str) -> list[dict[str, Any]]:
                 "roles": roles,
                 "effort": item.effort,
                 "supports_effort": harness in EFFORT_OPTIONS,
-                "effort_options": effort_options(item.harness, item.model),
+                "effort_options": effort_options(item.harness, item.model, item.effort),
                 "effort_control": _effort_control(harness),
             }
         )
@@ -385,7 +385,7 @@ def model_catalog(*, probe: bool = True) -> list[dict[str, Any]]:
                 "supports_effort": (
                     item.harness in EFFORT_OPTIONS
                 ),
-                "effort_options": effort_options(item.harness, item.model),
+                "effort_options": effort_options(item.harness, item.model, item.effort),
                 "effort_control": _effort_control(item.harness),
                 "roles": roles,
                 "default_roles": default_roles,
