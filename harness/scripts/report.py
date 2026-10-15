@@ -104,6 +104,11 @@ def _load_agent(entry: dict, session_dir: Path) -> dict:
             log = _split_log(log_file.read_text(encoding="utf-8", errors="replace"))
     # Include every retained attempt, without counting the latest log twice.
     history = entry.get("attempts") or []
+    if history:
+        out["attempts"] = [
+            {**attempt, "lab_id": route_lab_id("", attempt["model"]) if attempt.get("model") else out["lab_id"]}
+            for attempt in history
+        ]
     if len(history) > 1:
         streams = {"stdout": [], "stderr": []}
         for attempt in history:

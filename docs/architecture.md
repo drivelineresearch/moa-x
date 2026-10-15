@@ -135,6 +135,10 @@ cannot leave locks or worktree registrations in the source repository.
   for this mechanical repair because their CLIs lack a tool-free invocation
   mode. OpenCode prefers the same native Claude repair when that client is
   authenticated, retaining its own tool-free backend when Claude is unavailable.
+  If cached Claude credentials or CLI/model compatibility fail before any payload
+  is produced, one fallback dispatch can use the original backend inside the
+  same 240-second repair window. This never restarts research, resets a deadline,
+  or retries generated content, evidence failures, safety refusals or billing errors.
   The repair receives only the original object, errors and schema; its
   harness and model are recorded separately from the originating lane. A local
   guard rejects invented text/citations, recombined evidence records and

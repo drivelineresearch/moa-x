@@ -342,12 +342,13 @@ def run(
                 error_message=f"OSError launching claude: {e}",
             )
 
-        if proc.returncode != 0:
+        envelope_error = _envelope_error(stdout_captured)
+        if proc.returncode != 0 or envelope_error:
             return ClaudeResult(
                 success=False, payload=None, raw_stdout=stdout_captured,
                 raw_stderr=stderr_captured, exit_code=proc.returncode,
                 duration_seconds=duration,
-                error_message=f"claude exited with code {proc.returncode}",
+                error_message=envelope_error or f"claude exited with code {proc.returncode}",
             )
 
         try:
@@ -381,6 +382,19 @@ def run(
             shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+def _envelope_error(stdout: str) -> Optional[str]:
+    """Surface only an explicit CLI error envelope, never model response text."""
+    outer = extract_json_from_text(stdout)
+    if not isinstance(outer, dict) or outer.get("is_error") is not True:
+        return None
+    detail = outer.get("error") or outer.get("result") or "Claude returned an error envelope"
+    if not isinstance(detail, str):
+        detail = json.dumps(detail)
+    status = outer.get("api_error_status")
+    prefix = f"HTTP {status}: " if type(status) is int and 100 <= status < 600 else ""
+    return prefix + detail[:1000]
+
+
 def _extract_structured_output(
     stdout: str, *, required_keys: Optional[set[str]] = None
 ) -> Optional[dict]:
@@ -411,7 +425,7 @@ def _extract_structured_output(
 
     outer = extract_json_from_text(stdout)
 
-    if not isinstance(outer, dict):
+    if not isinstance(outer, dict) or outer.get("is_error") is True:
         return None
 
     # Preferred path: structured_output field populated by --json-schema
