@@ -6,6 +6,7 @@ import re
 import shutil
 import time
 import uuid
+from contextlib import ExitStack
 from datetime import datetime
 from pathlib import Path
 from . import github
@@ -74,6 +75,23 @@ class LaunchService:
             folder.mkdir(parents=True, exist_ok=True, mode=0o700)
 
     def launch(self, profile, body, *, job_id=None, prepared_context=None):
+        with ExitStack() as pending:
+            return self._launch(profile, body, job_id=job_id,
+                                prepared_context=prepared_context, pending=pending)
+
+    def _discard_unqueued_snapshot(self, path):
+        # A write may have committed before its caller raised. Never delete a
+        # source tree unless persistence confirms that no job references it.
+        try:
+            with self.store.connect() as conn:
+                if conn.execute("SELECT 1 FROM jobs WHERE workspace=? LIMIT 1", (str(path),)).fetchone():
+                    return
+                conn.execute("DELETE FROM github_workspaces WHERE local_path=?", (str(path),))
+        except Exception:
+            return  # Uncertain persistence: preserve the tree for recovery.
+        shutil.rmtree(path, ignore_errors=True)
+
+    def _launch(self, profile, body, *, job_id, prepared_context, pending):
         if job_id:
             if not re.fullmatch(r"[A-Za-z0-9_-]{6,80}", job_id):
                 raise LaunchError("invalid job id")
@@ -135,6 +153,20 @@ class LaunchService:
         job_id = job_id or (
             datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:8]
         )
+        attachment_ids = body.get("upload_ids")
+        if attachment_ids is None:
+            attachment_ids = body.get("attachments")
+        upload_ids = _string_list(attachment_ids)
+        selected_uploads = []
+        for upload_id in upload_ids:
+            upload = store.get_upload(upload_id)
+            if not upload or upload.get("profile_id") != profile_id:
+                raise LaunchError(f"upload not found: {upload_id}")
+            source = Path(upload["stored_path"]).resolve()
+            if not source.is_file() or upload_dir not in source.parents:
+                raise LaunchError(f"upload is unavailable: {upload_id}", 409)
+            selected_uploads.append((upload, source))
+
         source_info = None
         source_mode = str(body.get("source_mode") or "").strip().lower()
         github_pointer = str(body.get("github_repository") or "").strip()
@@ -160,6 +192,10 @@ class LaunchService:
                 raise LaunchError(
                     str(exc), 400 if isinstance(exc, ValueError) else 502
                 ) from exc
+            workspace = Path(result["path"]).resolve()
+            if (result.get("created") and result.get("commit")
+                    and (github_workspace_dir / "snapshots") in workspace.parents):
+                pending.callback(self._discard_unqueued_snapshot, workspace)
             store.upsert_github_workspace(
                 owner=owner,
                 repo=repo,
@@ -167,7 +203,6 @@ class LaunchService:
                 local_path=result["path"],
                 remote_url=result["remote_url"],
             )
-            workspace = Path(result["path"]).resolve()
             source_info = {
                 "type": "github",
                 "repository": github_pointer,
@@ -182,22 +217,10 @@ class LaunchService:
                     str(body.get("workspace") or ""),
                     self.workspace_roots,
                 )
+                if workspace == github_workspace_dir or github_workspace_dir in workspace.parents:
+                    raise LaunchError("Choose the GitHub source to fetch a fresh snapshot; managed snapshots are retained for history and retries.")
             except ValueError as exc:
                 raise LaunchError(str(exc))
-
-        attachment_ids = body.get("upload_ids")
-        if attachment_ids is None:
-            attachment_ids = body.get("attachments")
-        upload_ids = _string_list(attachment_ids)
-        selected_uploads = []
-        for upload_id in upload_ids:
-            upload = store.get_upload(upload_id)
-            if not upload or upload.get("profile_id") != profile_id:
-                raise LaunchError(f"upload not found: {upload_id}")
-            source = Path(upload["stored_path"]).resolve()
-            if not source.is_file() or upload_dir not in source.parents:
-                raise LaunchError(f"upload is unavailable: {upload_id}", 409)
-            selected_uploads.append((upload, source))
 
         session_dir = workspace / ".moa" / job_id
         session_dir.mkdir(parents=True, exist_ok=True)

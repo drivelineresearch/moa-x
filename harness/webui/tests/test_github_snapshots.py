@@ -135,6 +135,47 @@ class GitHubSnapshotsTest(unittest.TestCase):
                 service.launch(profile, body, job_id="failed-job")
         self.assertIsNone(store.get_job("failed-job"))
 
+    def test_failed_launch_cleans_unreferenced_snapshot_but_retains_committed_job(self):
+        store = Store(self.root / "failure.sqlite3")
+        profile = store.upsert_profile("test-owner", "Test")
+        service = LaunchService(store, upload_dir=self.root / "uploads",
+                                github_workspace_dir=self.managed,
+                                brief_workspace_dir=self.root / "brief",
+                                github_owner="example-org", workspace_roots=[self.root],
+                                catalog=lambda: [])
+        body = {"goal": "Review", "source_mode": "github",
+                "github_repository": "example-org/sample"}
+        with patch.object(service, "clone") as clone:
+            with self.assertRaisesRegex(LaunchError, "upload not found"):
+                service.launch(profile, {**body, "upload_ids": ["missing"]})
+            clone.assert_not_called()
+        with patch.object(store, "insert_job", side_effect=RuntimeError("before commit")):
+            with self.assertRaisesRegex(RuntimeError, "before commit"):
+                service.launch(profile, body, job_id="uncommitted-job")
+        self.assertEqual(list((self.managed / "snapshots/example-org/sample").iterdir()), [])
+        self.assertEqual(store.list_github_workspaces(), [])
+        original = store.insert_job
+        def commit_then_error(job):
+            original(job)
+            raise RuntimeError("after commit")
+        with patch.object(store, "insert_job", side_effect=commit_then_error):
+            with self.assertRaisesRegex(RuntimeError, "after commit"):
+                service.launch(profile, body, job_id="committed-job")
+        saved = store.get_job("committed-job")
+        self.assertTrue((Path(saved["workspace"]) / "answer.txt").is_file())
+
+    def test_old_managed_snapshot_cannot_be_selected_as_local_source(self):
+        store = Store(self.root / "local.sqlite3")
+        profile = store.upsert_profile("test-owner", "Test")
+        service = LaunchService(store, upload_dir=self.root / "uploads",
+                                github_workspace_dir=self.managed,
+                                brief_workspace_dir=self.root / "brief",
+                                github_owner="example-org", workspace_roots=[self.root],
+                                catalog=lambda: [])
+        old = self.snapshot()
+        with self.assertRaisesRegex(LaunchError, "fresh snapshot"):
+            service.launch(profile, {"goal": "Review", "workspace": old["path"]})
+
 
 if __name__ == "__main__":
     unittest.main()

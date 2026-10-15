@@ -707,31 +707,19 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         seen = set()
         for job in store.list_jobs(limit=100, profile_id=profile["id"]):
             workspace = job["workspace"]
+            if (Path(workspace).resolve() == github_workspace_dir
+                    or github_workspace_dir in Path(workspace).resolve().parents):
+                continue
             if workspace not in seen:
                 seen.add(workspace)
                 recent.append(workspace)
-        github_workspaces = store.list_github_workspaces(
-            profile_id=profile["id"]
-        )
-        for workspace in github_workspaces:
-            path = workspace["local_path"]
-            if path not in seen and Path(path).is_dir():
-                seen.add(path)
-                recent.append(path)
         return jsonify(
             {
                 "workspaces": [
                     {
                         "path": path,
                         "name": Path(path).name or path,
-                        "source": (
-                            "github"
-                            if any(
-                                item["local_path"] == path
-                                for item in github_workspaces
-                            )
-                            else "local"
-                        ),
+                        "source": "local",
                     }
                     for path in dict.fromkeys([str(REPO_ROOT), *recent])
                     if any(
@@ -1400,6 +1388,10 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                 return {key: redact(item) for key, item in value.items()}
             return value
         public = redact(public)
+        source = job.get("source") or {}
+        if source.get("type") == "github" and source.get("commit"):
+            # Share only revision metadata, never local paths or remote URLs.
+            public["source"] = {key: source.get(key) for key in ("type", "commit", "ref", "fetched_at")}
         public["artifacts"] = {key: f"{request.script_root}/shared/runs/{token}/artifacts/{Path(url).name}"
                                for key, url in job["artifacts"].items()
                                if Path(url).name in {"report.html", "decision-map.json", "final-plan.md", "final-plan.json", "final-audit.json", "final-audit.md"}}

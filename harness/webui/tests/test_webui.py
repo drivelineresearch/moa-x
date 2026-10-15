@@ -1402,6 +1402,29 @@ class WebUITest(unittest.TestCase):
         )
         self.assertEqual(rejected.status_code, 400)
 
+    def test_github_revision_is_shared_without_paths_and_snapshots_are_not_local_choices(self):
+        result = self.client.post("/api/jobs", json={"goal": "Review", "source_mode": "brief"})
+        self.assertEqual(result.status_code, 201)
+        job = result.get_json()
+        store = self.app.extensions["moa_store"]
+        source = {"type": "github", "repository": "example-org/sample", "commit": "a" * 40,
+                  "ref": "main", "fetched_at": "2026-01-01T00:00:00+00:00",
+                  "remote_url": "https://github.com/example-org/sample", "path": "/private/workspace"}
+        managed = self.root / "data/workspaces/github/snapshots/example-org/sample/old"
+        managed.mkdir(parents=True)
+        store.update_job(job["id"], config_json=json.dumps({**job["config"], "source": source}))
+        with store.connect() as conn:
+            conn.execute("UPDATE jobs SET workspace=? WHERE id=?", (str(managed), job["id"]))
+        token = "s" * 48
+        store.create_run_share(job_id=job["id"], profile_id="browser_123",
+                               token_hash=hashlib.sha256(token.encode()).hexdigest())
+        shared = self.client.get(f"/shared/runs/{token}/status").get_json()
+        self.assertEqual(shared["source"], {k: source[k] for k in ("type", "commit", "ref", "fetched_at")})
+        self.assertNotIn("/private/workspace", json.dumps(shared))
+        local = self.client.get("/api/workspaces").get_json()
+        self.assertNotIn(str(managed), local["recent"])
+        self.assertNotIn(str(managed), [x["path"] for x in local["workspaces"]])
+
     def test_github_owner_allowlist_is_configurable(self):
         self.assertEqual(
             parse_repo_pointer("example-org/public-repo", "example-org"),

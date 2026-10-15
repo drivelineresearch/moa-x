@@ -1094,7 +1094,9 @@ async function refreshGithubRepos({ notify = true } = {}) {
   } catch (error) {
     if (version !== state.githubRefreshVersion) return;
     if (!state.githubRepos.length) renderGithubRepos();
-    status.textContent = "Refresh failed. The previous list is retained; try again.";
+    status.textContent = state.githubRepos.length
+      ? "Refresh failed. The previous list is retained; try again."
+      : "Refresh failed. No repository list is available; try again.";
     if (notify) showToast(error.message, "error");
     throw error;
   } finally {

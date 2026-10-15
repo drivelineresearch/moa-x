@@ -1,6 +1,7 @@
 """Exercise repository refresh success, failures and selection in the live UI."""
 
 import tempfile
+import hashlib
 import threading
 import unittest
 from pathlib import Path
@@ -84,6 +85,30 @@ class GitHubRefreshBrowserTest(unittest.TestCase):
                         page.set_viewport_size({"width": 390, "height": 844})
                         self.assertTrue(button.is_visible())
                         self.assertFalse(page.evaluate("document.documentElement.scrollWidth > innerWidth"))
+                        page.route("**/api/github/repos", lambda route: route.fulfill(
+                            status=502, content_type="application/json", body='{"error":"offline"}'))
+                        page.reload(wait_until="networkidle")
+                        page.locator('[data-source-mode="github"]').click()
+                        self.assertIn("No repository list is available", page.locator("#github-refresh-status").inner_text())
+                        self.assertTrue(button.is_enabled())
+                        page.unroute("**/api/github/repos")
+                        button.click()
+                        page.wait_for_function("document.querySelector('#github-repo').options.length === 2")
+                        store = app.extensions["moa_store"]
+                        store.upsert_profile("shared-owner", "Test")
+                        session = root / "shared-session"
+                        session.mkdir()
+                        store.insert_job({"id": "shared-commit", "profile_id": "shared-owner",
+                                          "title": "Source revision", "goal": "Review",
+                                          "workspace": str(root), "session_dir": str(session),
+                                          "status": "completed", "config": {"source": {
+                                              "type": "github", "commit": "a" * 40, "ref": "main"}}})
+                        token = "s" * 48
+                        store.create_run_share(job_id="shared-commit", profile_id="shared-owner",
+                                               token_hash=hashlib.sha256(token.encode()).hexdigest())
+                        page.goto(f"http://127.0.0.1:{server.server_port}/shared/runs/{token}")
+                        page.wait_for_function("document.querySelector('#source').textContent.includes('aaaaaaaaaaaa')")
+                        self.assertEqual(page.locator("#source").inner_text(), "Source commit " + "a" * 40 + " · main")
                         self.assertEqual(failures, [])
                         browser.close()
                 finally:
