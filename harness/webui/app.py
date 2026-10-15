@@ -474,7 +474,7 @@ def _job_view(job: dict[str, Any]) -> dict[str, Any]:
             continue
         if name == "decision_map" and not decision_map_available:
             continue
-        if name == "final_plan" and stale_final_output:
+        if name in {"final_plan", "final_audit"} and stale_final_output:
             continue
         if (session / filename).exists():
             artifacts[name] = f"{request.script_root}/api/jobs/{job['id']}/artifacts/{filename}"
@@ -1311,7 +1311,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             return Response(payload, mimetype="application/json")
         if not path.is_file():
             abort(404)
-        if filename in {"final-plan.md", "final-plan.json"} and (
+        if filename in {"final-plan.md", "final-plan.json", "final-audit.md", "final-audit.json"} and (
             decision_map_module.final_artifact_staleness(
                 Path(job["session_dir"])
             )
@@ -1414,7 +1414,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             if payload is None: abort(404)
             return private_response(Response(payload, mimetype="application/json"))
         if filename not in {"final-plan.md", "final-plan.json", "final-audit.json", "final-audit.md"}: abort(404)
-        if filename.startswith("final-plan") and decision_map_module.final_artifact_staleness(session) is not None: abort(404)
+        if filename in {"final-plan.md", "final-plan.json", "final-audit.md", "final-audit.json"} and decision_map_module.final_artifact_staleness(session) is not None: abort(404)
         if not (session / filename).is_file(): abort(404)
         return private_response(send_file(session / filename))
 

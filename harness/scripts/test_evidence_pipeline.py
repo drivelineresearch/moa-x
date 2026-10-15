@@ -994,6 +994,126 @@ class EvidenceTests(unittest.TestCase):
             worker._loop()
         self.assertTrue(store.repaired)
 
+    def _assert_terminal_layer3_mutation(self, role):
+        from adapters.codex import CodexResult
+
+        provider = run_moa.harness_config.ResolvedProvider(
+            "codex-sol", "codex", "gpt-6.1-sol", 900
+        )
+        (self.session / "synthesis-input.md").write_text("Frozen input")
+        output = {"final_plan_markdown": "", "lineage": self.lineage}
+
+        def invoke(harness, **kwargs):
+            is_audit = "final-audit" in kwargs["schema_path"].name
+            if is_audit == (role == "audit"):
+                (self.repo / "cache.py").write_text(
+                    "def expired(now, expires):\n    return now >= expires\n"
+                )
+            payload = (
+                {
+                    "findings": [
+                        {
+                            "step_id": "fix-expiry",
+                            "status": "supported",
+                            "finding": "Source inspected",
+                            "source_url": "cache.py:2",
+                        }
+                    ]
+                }
+                if is_audit
+                else copy.deepcopy(output)
+            )
+            return CodexResult(True, payload, "{}", "", 0, 0.01)
+
+        args = dict(
+            provider=provider,
+            repo_path=self.repo,
+            session_dir=self.session,
+            timeout=900,
+            codex_effort="medium",
+            layer1=[self.proposer],
+            layer2=[
+                SimpleNamespace(
+                    agent_id="deepseek-flash",
+                    success=True,
+                    payload={"overall_verdict": "accept"},
+                )
+            ],
+        )
+        with patch.object(run_moa, "_invoke_adapter", side_effect=invoke) as native:
+            result = run_moa.run_layer3(**args)
+        self.assertFalse(result.success)
+        self.assertTrue(result.workspace_mutations)
+        self.assertEqual(native.call_count, 2 if role == "audit" else 1)
+        self.assertFalse((self.session / "final-plan.md").exists())
+        with (
+            patch.dict(os.environ, {"MOA_RESUME_CHECKPOINTS": "1"}),
+            patch.object(run_moa, "_invoke_adapter") as native,
+        ):
+            retained = run_moa.run_layer3(**args)
+        native.assert_not_called()
+        self.assertFalse(retained.success)
+        self.assertTrue(retained.checkpoint_reused)
+        self.assertEqual(retained.workspace_mutations, result.workspace_mutations)
+
+    def test_aggregator_mutation_remains_terminal_after_restart(self):
+        self._assert_terminal_layer3_mutation("aggregator")
+
+    def test_auditor_mutation_fails_entire_run_and_remains_terminal(self):
+        self._assert_terminal_layer3_mutation("audit")
+
+    def test_evaluation_excludes_superseded_final_results(self):
+        import evaluate
+
+        (self.session / "manifest.json").write_text(
+            json.dumps({"layer3": [{"success": False}]})
+        )
+        (self.session / "final-plan.json").write_text(json.dumps({"outcome": "ready"}))
+        (self.session / "final-plan.md").write_text(
+            "This expired result mentions the answer"
+        )
+        (self.session / "final-audit.json").write_text(
+            json.dumps({"success": True, "findings": [{"status": "supported"}]})
+        )
+        (self.session / "decision-map.json").write_text(
+            json.dumps(
+                {"quality": {"effective_confidence": "high", "critical_claims": 99}}
+            )
+        )
+        summary = evaluate.summarize(
+            self.session, {"contract_mentions": {"answer": ["answer"]}}
+        )
+        self.assertEqual(summary["outcome"], "stale")
+        self.assertEqual(summary["final_artifact_staleness"], "layer3_failed")
+        self.assertIsNone(summary["audit_success"])
+        self.assertIsNone(summary["effective_confidence"])
+        self.assertIsNone(summary["critical_claims"])
+        self.assertEqual(summary["audit_supported_steps"], 0)
+        self.assertFalse(summary["contract_mentions"]["answer"])
+
+    def test_audit_repair_cannot_reassign_findings_between_decisions(self):
+        original = {
+            "findings": [
+                {
+                    "step_id": "first",
+                    "status": "supported",
+                    "finding": "First checked",
+                    "source_url": "cache.py:1",
+                },
+                {
+                    "step_id": "second",
+                    "status": "unverified",
+                    "finding": "Second unchecked",
+                    "source_url": None,
+                },
+            ]
+        }
+        repaired = copy.deepcopy(original)
+        repaired["findings"][0]["step_id"] = "second"
+        repaired["findings"][1]["step_id"] = "first"
+        self.assertTrue(run_moa._repair_evidence_errors(original, repaired))
+        self.assertEqual(run_moa._repair_evidence_errors(original, original), [])
+
 
 if __name__ == "__main__":
     unittest.main()

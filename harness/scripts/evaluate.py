@@ -8,6 +8,11 @@ from pathlib import Path
 import re
 import statistics
 
+try:
+    from . import decision_map
+except ImportError:
+    import decision_map
+
 
 def summarize(session: Path, case: dict | None = None) -> dict:
     def read(name):
@@ -16,12 +21,13 @@ def summarize(session: Path, case: dict | None = None) -> dict:
         except (OSError, ValueError):
             return {}
 
-    manifest = read("manifest.json")
-    graph = read("decision-map.json")
-    lineage = read("final-plan.json")
-    audit = read("final-audit.json")
+    manifest = decision_map.active_manifest_for_session(session)[1]
+    stale = decision_map.final_artifact_staleness(session, manifest)
+    graph = {} if stale else read("decision-map.json")
+    lineage = {} if stale else read("final-plan.json")
+    audit = {} if stale else read("final-audit.json")
     try:
-        text = (session / "final-plan.md").read_text().casefold()
+        text = "" if stale else (session / "final-plan.md").read_text().casefold()
     except OSError:
         text = ""
     rows = [
@@ -45,7 +51,8 @@ def summarize(session: Path, case: dict | None = None) -> dict:
     return {
         "session_id": session.name,
         "case": (case or {}).get("id"),
-        "outcome": lineage.get("outcome", "legacy"),
+        "outcome": "stale" if stale else lineage.get("outcome", "legacy"),
+        "final_artifact_staleness": stale,
         "lanes": len(rows),
         "accepted_lanes": sum(bool(r.get("success")) for r in rows),
         "duration_seconds": manifest.get("duration_seconds"),

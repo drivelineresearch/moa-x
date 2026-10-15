@@ -996,9 +996,9 @@ def _build_bounded_repair_prompt(
 def _repair_evidence_errors(original: dict, repaired: dict) -> list[str]:
     """A structure repair cannot introduce research facts absent from its input."""
     allowed: set[tuple[type, Any]] = set()
-    citation_keys = {"file", "line", "url", "snippet", "claim", "source_url", "actual_finding", "summary", "step", "why"}
+    citation_keys = {"file", "line", "url", "snippet", "claim", "source_url", "actual_finding", "summary", "step", "why", "step_id", "finding"}
     records: list[dict] = []
-    evidence_keys = {"file", "line", "url", "snippet", "claim", "source_url", "actual_finding", "proposer", "claim_index_path", "status"}
+    evidence_keys = {"file", "line", "url", "snippet", "claim", "source_url", "actual_finding", "proposer", "claim_index_path", "status", "step_id", "finding"}
 
     def visit(value: Any, check: bool = False, key: str = "") -> list[str]:
         errors = []
@@ -2118,6 +2118,7 @@ def _audit_final_decisions(lineage, layer1, repo_path, session_dir, scout, remai
         audit = {"success": result.success, "reviewer": provider.name, "model": provider.model,
                  "lab_id": route_lab_id(provider.name, provider.model),
                  "duration_seconds": result.duration_seconds, "attempts": result.attempts,
+                 "workspace_mutations": result.workspace_mutations,
                  "log_path": result.log_path, "error": result.error,
                  "findings": result.payload.get("findings", []) if result.success and result.payload else []}
     _write_text_atomic(session_dir / "final-audit.json", json.dumps(audit, indent=2))
@@ -2192,13 +2193,13 @@ def run_layer3(
     if version == 2 and os.environ.get("MOA_RESUME_CHECKPOINTS") == "1" and checkpoint.is_file() and not checkpoint.is_symlink():
         try:
             saved = json.loads(checkpoint.read_text())
-            if saved.get("fingerprint") == checkpoint_key:
+            if saved.get("result", {}).get("workspace_mutations") or (source is not None and saved.get("fingerprint") == checkpoint_key):
                 from dataclasses import fields
                 retained = LayerResult(**{k: v for k, v in saved["result"].items() if k in {f.name for f in fields(LayerResult)}})
                 if retained.success and _validate_against_schema(retained.payload, schema):
                     raise ValueError("Invalid final checkpoint")
                 if retained.workspace_mutations:
-                    raise ValueError("Workspace mutation is not resumable")
+                    retained.success = False
                 if retained.success:
                     _write_text_atomic(json_path, json.dumps(retained.payload, indent=2))
                     _write_text_atomic(session_dir / "final-plan.json", json.dumps(retained.payload["lineage"], indent=2))
@@ -2263,6 +2264,15 @@ def run_layer3(
     lineage = result.payload["lineage"]
     if version == 2:
         audit = _audit_final_decisions(lineage, layer1, repo_path, session_dir, scout, timeout - (time.monotonic() - phase_started), aggregator=provider, reviews=layer2)
+        if audit.get("workspace_mutations"):
+            # A provider changing source files is terminal for the entire run,
+            # regardless of which stage detected it. Never publish readiness.
+            result.success = False
+            result.schema_valid = False
+            result.workspace_mutations = audit["workspace_mutations"]
+            result.error = "Final evidence checker changed the workspace: " + str(audit.get("error") or ", ".join(result.workspace_mutations))
+            save_final_checkpoint(result)
+            return result
         if any(x.get("status") == "contradicted" for x in audit.get("findings", [])):
             lineage["outcome"] = "needs_revision"
         elif not audit.get("success") or any(x.get("status") == "unverified" for x in audit.get("findings", [])):
