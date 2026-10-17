@@ -1483,6 +1483,23 @@ class WebUITest(unittest.TestCase):
         self.assertNotIn("MOA_AGY_GEMINI_PRO_EFFORT", env)
         self.assertNotIn("MOA_UNSAFE_EFFORT", env)
 
+    def test_aggregation_budget_is_frozen_and_forwarded_without_capping_research(self):
+        for budget in (7200, 10800):
+            response = self.client.post("/api/jobs", json={
+                "goal": "Check aggregation budget.", "source_mode": "brief",
+                "aggregator": "fable", "options": {"aggregator_timeout": budget}})
+            self.assertEqual(response.status_code, 201, response.get_json())
+            job = response.get_json()
+            self.assertEqual(job["config"]["options"]["aggregator_timeout"], budget)
+            cmd = self.app.extensions["moa_worker"]._command(job, "layer3")
+            self.assertEqual(cmd[cmd.index("--aggregator-timeout") + 1], str(budget))
+            self.assertNotIn("--timeout", cmd)
+        for budget in (0, -1, True, "7200", 21601):
+            response = self.client.post("/api/jobs", json={
+                "goal": "Reject invalid budget.", "source_mode": "brief",
+                "options": {"aggregator_timeout": budget}})
+            self.assertEqual(response.status_code, 400)
+
     def test_thorough_synthesis_defaults_to_each_models_maximum(self):
         from harness.scripts.model_efforts import OPENAI_MODELS
         models = web_providers.model_catalog(probe=False)
@@ -1498,7 +1515,7 @@ class WebUITest(unittest.TestCase):
                 })
                 self.assertEqual(response.status_code, 201, response.get_json())
                 selected = response.get_json()["config"]["options"]["aggregator_options"]
-                expected = "high" if row["harness"] == "agy" else "max" if row["harness"] == "claude" or row["model"].endswith("-luna") else "ultra"
+                expected = "high" if row["harness"] == "agy" or row["id"] == "fable" else "max" if row["harness"] == "claude" or row["model"].endswith("-luna") else "ultra"
                 self.assertEqual(selected, {"model": row["model"], "effort": expected})
                 lane = next(lane for lane in response.get_json()["agents"] if lane["role"] == "aggregator")
                 self.assertEqual(lane["model"], row["model"] + " · " + expected.title() + " effort")

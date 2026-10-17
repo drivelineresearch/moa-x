@@ -229,7 +229,7 @@ class EffortControlsBrowserTest(unittest.TestCase):
                 ("codex-luna", "Max", 5), ("codex-gpt-6-sol", "Ultra", 6),
                 ("codex-gpt-5-6-sol", "Ultra", 6), ("codex-gpt-5-6-terra", "Ultra", 6),
                 ("codex-gpt-5-6-luna", "Max", 5), ("agy-gemini-pro", "High", 3),
-                ("opus", "Max", 5), ("fable", "Max", 5),
+                ("opus", "Max", 5), ("fable", "High", 5),
             ]:
                 route = page.locator(f'input[name="aggregator"][value="{route_id}"]')
                 # Acknowledge the existing quota warning for this fixture.
@@ -250,7 +250,7 @@ class EffortControlsBrowserTest(unittest.TestCase):
                     const app = await import('/static/js/app.js');
                     return {aggregator: app.selectedAggregatorOptions(), upstream: app.selectedEffortOverrides()};
                 }""")
-                self.assertEqual(selected["aggregator"]["effort"], maximum.lower())
+                self.assertEqual(selected["aggregator"]["effort"], values[-1])
                 if route_id == "codex":
                     self.assertEqual(selected["upstream"]["codex"], "high")
                 if route_id == "agy-gemini-pro":

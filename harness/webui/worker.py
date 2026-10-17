@@ -228,6 +228,8 @@ class JobWorker:
             cmd.extend(["--aggregator-provider", aggregator])
         if options.get("timeout"):
             cmd.extend(["--timeout", str(int(options["timeout"]))])
+        if options.get("aggregator_timeout"):
+            cmd.extend(["--aggregator-timeout", str(int(options["aggregator_timeout"]))])
         if options.get("skip_layer2"):
             cmd.append("--skip-layer2")
         if options.get("no_report"):

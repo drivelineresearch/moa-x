@@ -701,7 +701,7 @@ function effortPresentation(option) {
       adjustable: true,
       initialEffort,
       label: mode === "model_variant" ? "Adjust model depth" : "Adjust reasoning effort",
-      legend: mode === "model_variant" ? "Model depth" : "Reasoning effort",
+      legend: option?.model?.startsWith("claude-fable-") ? "Intelligence / reasoning effort" : mode === "model_variant" ? "Model depth" : "Reasoning effort",
       mode,
       options,
     };
@@ -757,7 +757,7 @@ function renderModelOptions(role, targetId, inputType) {
             const displayModel = displayModelName(option);
             const effort = effortPresentation(option);
             if (role === "aggregator" && state.depthPreset === "thorough" && effort.adjustable) {
-              effort.initialEffort = effort.options.at(-1);
+              effort.initialEffort = option.model.startsWith("claude-fable-") ? "high" : effort.options.at(-1);
             }
             const rowSearch = `${option.name} ${option.model} ${option.lab} ${option.harness}`.toLowerCase();
             return `
@@ -806,6 +806,7 @@ function renderModelOptions(role, targetId, inputType) {
                     <div class="effort-slider-stops" aria-hidden="true">
                       ${effort.options.map((value) => `<span>${escapeHtml(titleCase(value))}</span>`).join("")}
                     </div>
+                    ${option.model.startsWith("claude-fable-") ? `<p class="muted">High is recommended. Xhigh and Max can spend much longer thinking before answering. Aggregation has a two-hour budget.</p>` : ""}
                   </fieldset>
                 ` : ""}
               </div>
@@ -973,7 +974,7 @@ function setSelectedEffort(mode, role = "", effortByRoute = {}) {
     const range = $("[data-effort-range]", route.closest(".model-option"));
     if (range) {
       const values = (range.dataset.effortValues || "").split(",").filter(Boolean);
-      const desired = (mode === "thorough" && role === "aggregator" ? values.at(-1) : effortByRoute[route.value])
+      const desired = (mode === "thorough" && role === "aggregator" ? (route.dataset.model.startsWith("claude-fable-") ? "high" : values.at(-1)) : effortByRoute[route.value])
         || (mode === "quick" ? "medium"
         : mode === "thorough" ? "high"
         : route.dataset.defaultEffort);

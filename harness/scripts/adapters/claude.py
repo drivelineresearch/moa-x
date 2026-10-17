@@ -17,7 +17,7 @@ Key differences from the other adapters:
   instead. Safe mode preserves auth while preventing machine/user/project
   hooks from writing bookkeeping files into the repository during a
   read-only planning run.
-- Claude Code emits an outer JSON envelope that includes:
+- Claude Code emits a terminal result event in its JSONL stream that includes:
     {
       "type": "result",
       "result": "<free-text response>",
@@ -170,7 +170,7 @@ def _build_cmd(
         CLAUDE_ISOLATION_FLAG,
         "--model", model,
         "--dangerously-skip-permissions",
-        "--output-format", "json",
+        "--output-format", "stream-json", "--verbose",
         "--json-schema", schema_json,
         "--append-system-prompt", system_prompt_suffix,
         "--tools", tools,
@@ -257,6 +257,14 @@ def run(
         # parent session's telemetry clean. The parent still reports the MoA
         # wrapper call normally.
         env.setdefault("CLAUDE_CODE_DISABLE_TELEMETRY", "1")
+        if model.startswith("claude-fable-"):
+            # Fable Max can exhaust the CLI's 64k default on thinking alone.
+            # Preserve a deliberately configured lower limit.
+            env.setdefault("CLAUDE_CODE_MAX_OUTPUT_TOKENS", "128000")
+            limit = env["CLAUDE_CODE_MAX_OUTPUT_TOKENS"]
+            prompt += (f"\nThinking and the final answer share one response limit of {limit} tokens. "
+                       "Use reasoning to settle decisions, then write the deliverable once in the final output. "
+                       "Do not draft the entire deliverable in thinking and repeat it in the answer.\n")
 
         # The prompt is deliberately not placed on argv. Large synthesis
         # payloads can exceed Linux MAX_ARG_STRLEN even when total ARG_MAX has
@@ -382,9 +390,33 @@ def run(
             shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+def _result_envelope(stdout: str) -> Optional[dict]:
+    """Only a terminal result may supply payload or failure diagnostics.
+
+    Streaming preserves tool/progress/usage events on timeout; those events
+    must never be mistaken for the final answer.
+    """
+    try:
+        value = json.loads(stdout)
+        if isinstance(value, dict) and (value.get("type") == "result" or
+                ("type" not in value and any(key in value for key in ("result", "structured_output", "is_error")))):
+            return value
+    except ValueError:
+        pass
+    result = None
+    for line in stdout.splitlines():
+        try:
+            value = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(value, dict) and value.get("type") == "result":
+            result = value
+    return result
+
+
 def _envelope_error(stdout: str) -> Optional[str]:
     """Surface only an explicit CLI error envelope, never model response text."""
-    outer = extract_json_from_text(stdout)
+    outer = _result_envelope(stdout)
     if not isinstance(outer, dict) or outer.get("is_error") is not True:
         return None
     detail = outer.get("error") or outer.get("result") or "Claude returned an error envelope"
@@ -423,7 +455,7 @@ def _extract_structured_output(
     if not stdout:
         return None
 
-    outer = extract_json_from_text(stdout)
+    outer = _result_envelope(stdout)
 
     if not isinstance(outer, dict) or outer.get("is_error") is True:
         return None

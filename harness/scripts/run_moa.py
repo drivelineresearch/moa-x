@@ -2184,6 +2184,14 @@ def _audit_final_decisions(lineage, layer1, repo_path, session_dir, scout, remai
     return audit
 
 
+def resolve_aggregation_timeout(master=None, aggregation=None, route=None):
+    """Aggregation has its own budget; research harness defaults do not cap it."""
+    value = next((value for value in (master, aggregation, route, 7200) if value is not None), 7200)
+    if value <= 0:
+        raise ValueError("Aggregation timeout must be positive")
+    return value
+
+
 def run_layer3(
     *,
     provider: "harness_config.ResolvedProvider",
@@ -2349,6 +2357,7 @@ def update_manifest_layer3(
     result: LayerResult,
     provider: "harness_config.ResolvedProvider",
     codex_effort: str,
+    timeout: Optional[int] = None,
 ) -> Path:
     """Record a Layer-3-only run without disturbing retained Layers 1 and 2."""
     manifest_path = session_dir / "manifest.json"
@@ -2366,6 +2375,8 @@ def update_manifest_layer3(
             codex_effort if provider.harness == "codex" else provider.effort
         ),
     }
+    if timeout is not None:
+        manifest["config"].setdefault("timeout_seconds", {})["aggregator"] = timeout
     summary = manifest.setdefault("summary", {})
     summary["layer3_successes"] = int(result.success)
     summary["layer3_failures"] = int(not result.success)
@@ -2840,6 +2851,10 @@ def main() -> int:
                              "--codex-timeout / --sonnet-timeout / MOA_<NAME>_TIMEOUT). "
                              "Leave unset to use the per-agent defaults tuned to each "
                              "CLI's observed tail latency.")
+    parser.add_argument("--aggregator-timeout", type=int,
+                        default=_int_env("MOA_AGGREGATOR_TIMEOUT"),
+                        help="Total Layer 3 budget including recovery and final audit (default 7200 seconds). "
+                             "Overrides route timeouts; --timeout remains the master override.")
     parser.add_argument("--codex-timeout", type=int,
                         default=_int_env("MOA_CODEX_TIMEOUT"),
                         help="Wall-clock cap for codex calls, in seconds. Default "
@@ -3299,6 +3314,10 @@ def main() -> int:
             effort=args.aggregator_effort if levels else final_aggregator.effort,
         )
 
+        if args.aggregator_timeout is not None and args.aggregator_timeout <= 0:
+            print("ERROR: --aggregator-timeout must be positive", file=sys.stderr)
+            return 2
+
         # ---------- Phase: layer3 only (aggregate retained synthesis) ----------
         if args.phase == "layer3":
             manifest_path = session_dir / "manifest.json"
@@ -3316,14 +3335,10 @@ def main() -> int:
                 return 4
             if final_aggregator.harness == "codex":
                 ok, msg = codex_adapter.check_available()
-                default_timeout = (codex_timeout if args.timeout is not None or args.codex_timeout is not None
-                                   else _codex_effort_defaults[args.aggregator_effort])
             elif final_aggregator.harness == "claude":
                 ok, msg = claude_adapter.check_available()
-                default_timeout = sonnet_timeout
             elif final_aggregator.harness == "agy":
                 ok, msg = agy_adapter.check_available()
-                default_timeout = _int_env("MOA_AGY_TIMEOUT") or sonnet_timeout
             else:
                 print(
                     "ERROR: --phase layer3 supports aggregators on codex, claude or agy; "
@@ -3341,7 +3356,7 @@ def main() -> int:
             layer1 = load_layer_results_from_manifest(manifest_path, "layer1", session_dir)
             layer2 = load_layer_results_from_manifest(manifest_path, "layer2", session_dir)
             prior_layer3 = load_layer_results_from_manifest(manifest_path, "layer3", session_dir)
-            timeout = final_aggregator.timeout or default_timeout
+            timeout = resolve_aggregation_timeout(args.timeout, args.aggregator_timeout, final_aggregator.timeout)
             print(
                 f"[orchestrator] Layer 3: {final_aggregator.name} "
                 f"({final_aggregator.harness} @ {final_aggregator.model}, "
@@ -3359,7 +3374,7 @@ def main() -> int:
             )
             mark_redispatch_attempts([result], prior_layer3)
             update_manifest_layer3(
-                session_dir, result, final_aggregator, args.aggregator_effort
+                session_dir, result, final_aggregator, args.aggregator_effort, timeout=timeout
             )
             status = "OK" if result.success else "FAIL"
             print(
