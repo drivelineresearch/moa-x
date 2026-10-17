@@ -5,8 +5,7 @@ Thanks for wanting to contribute. This project is built to run inside
 works too, but the skill path is what we exercise most. PRs that complete
 the standalone scout workflow, add normalized usage/cost telemetry, strengthen
 provider capability checks, or harden adapters are especially welcome. The
-top-level README
-has the canonical, more specific priority list.
+priorities below describe the remaining gaps.
 
 ## Dev environment
 
@@ -14,7 +13,7 @@ has the canonical, more specific priority list.
 # 1. Install the external CLIs. Any auth the CLI itself supports
 #    works — subscription OAuth (what I use) or API key both fine.
 npm i -g @openai/codex                            && codex login
-curl -fsSL https://opencode.ai/install | bash     && opencode auth login  # GLM + Kimi
+curl -fsSL https://opencode.ai/install | bash     && opencode auth login  # Grok + DeepSeek Flash and optional routes
 # claude CLI: see https://docs.claude.com/en/docs/claude-code/quickstart
 
 # 2. Verify everything is wired up:
@@ -49,8 +48,8 @@ files are local data, not fixtures.
 3. `python3 harness/scripts/test_offline.py` must pass in CI.
 4. Describe the *why* in the PR body. A clean diff alone rarely
    tells the whole story for a reference harness.
-5. Update `README.md` and/or `CLAUDE.md` (agents also read it via
-   `AGENTS.md`) if behavior, install, or config surface changed.
+5. Update the relevant topic docs when behavior, install, or configuration
+   changes. Keep the README brief and CLAUDE.md / AGENTS.md equivalent.
 
 ## Where help is especially welcome
 
@@ -65,7 +64,7 @@ files are local data, not fixtures.
   the current dirty-safe check.
 - Add tested provider recipes for models such as DeepSeek, MiniMax, Grok, and
   Mistral. Include config, credential preflight, parser fixtures, and smoke-test
-  evidence; Qwen Token Plan is already built in.
+  evidence. Qwen, Moonshot and MiMo remain disabled for new launches.
 - Harden CLI compatibility and recovery: capability probes, real-world error
   fixtures, clearer diagnostics, and resume paths that preserve successful
   work. See `harness/scripts/adapters/` and `harness/scripts/run_moa.py`.

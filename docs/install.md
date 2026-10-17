@@ -113,7 +113,8 @@ The release includes a ready-to-install archive whose top-level directory is
 already named `mixture-of-agents/`:
 
 ```bash
-MOA_X_VERSION=v0.5.0
+mkdir -p ~/.claude/skills
+MOA_X_VERSION=v0.6.0
 curl -fsSL "https://github.com/drivelineresearch/moa-x/releases/download/${MOA_X_VERSION}/mixture-of-agents-${MOA_X_VERSION}.tar.gz" \
   | tar -xz -C ~/.claude/skills
 ```

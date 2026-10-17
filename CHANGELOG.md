@@ -5,8 +5,17 @@ versioning.
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-10-17
+
 ### Added
 
+- Task-based documentation index and focused agent guides for pipeline contracts,
+  interfaces, verification, and GitHub releases.
+
+- Evidence-first v2 planning with bounded repository scouting, structured
+  decisions, readiness gates, and an independent final answer check.
+- Native Muse Code and DeepSeek Harness routes with isolated configuration,
+  native authorization, model choices, and lab-specific artwork.
 - Optional MiniMax M3 and Muse Spark 1.3 Contributor proposers/reviewers through
   OpenCode Go, qualified with native research and broadcast-review calls.
 - Generated Meta/Muse and MiniMax portrait/full-body artwork matching the
@@ -21,6 +30,12 @@ versioning.
 
 ### Changed
 
+- Shorten the README and agent entry points with on-demand topic links. CLAUDE.md
+  and plain-Markdown AGENTS.md carry equivalent commands and constraints.
+
+- Fresh GitHub source snapshots for each run and an explicit repository-list refresh.
+- Expanded Thorough synthesis model/effort choices, a dedicated synthesis budget,
+  and output headroom for Fable.
 - Quick synthesis uses medium effort; native Codex aggregation honors the
   resolved provider/browser/Slack effort and records the actual selection.
 - Synthesis-only recovery reuses proposal/review checkpoints and retains prior
@@ -40,6 +55,7 @@ versioning.
 
 ### Fixed
 
+- Account-card controls, long model-list layout, and cold imports of native Muse metadata.
 - Preserve explicitly unverified missing-source findings without rejecting a
   reviewer's usable checks; verified/contradicted receipts stay strict.
 - Treat Slack task-only/no-repository instructions as context choices instead
