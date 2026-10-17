@@ -206,3 +206,26 @@ submitting repository or uploaded-file context. See the provider's
 [Go privacy policy](https://opencode.ai/v2/docs/console/go/#privacy).
 
 The browser/Slack `options.depth` selects Quick/Balanced/Thorough scouting and verification budgets as well as the roster. See the [pipeline policy table](evidence-pipeline.md#verify-and-adjudicate).
+
+### Aggregation budget and Fable effort
+
+Layer 3 has a separate 7200-second total budget, including research/recovery,
+one bounded structure repair and the final evidence audit. Research lane
+timeouts no longer cap synthesis. Precedence: master `--timeout`, then
+`--aggregator-timeout` / `MOA_AGGREGATOR_TIMEOUT`, then an explicit route
+timeout, then 7200 seconds. New Web UI jobs freeze `options.aggregator_timeout`
+(default 7200); the API accepts 60–21600 seconds. Older frozen jobs remain intact
+and use the new runner default when they have no explicit timeout.
+
+Fable exposes Low, Medium, High, Xhigh and Max intelligence/reasoning effort.
+New Thorough Fable selections start at High; explicit choices, retries and
+archived settings are preserved. Fable requests default to 128000 output tokens
+(unless `CLAUDE_CODE_MAX_OUTPUT_TOKENS` is explicitly configured) and receive a
+short instruction to reserve room for the final answer. Claude event streams
+retain progress and usage diagnostics on timeout; only terminal result events
+can supply the final structured payload.
+
+The October 17 failure hit the 64000-token allowance twice at Max, predominantly
+on thinking, before the wall-clock timeout. See Anthropic's
+[Fable long-output guidance](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-1#leave-room-for-long-outputs-at-xhigh-and-max-effort)
+and [CLI output-token setting](https://code.claude.com/docs/en/env-vars).

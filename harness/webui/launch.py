@@ -149,6 +149,10 @@ class LaunchService:
         if depth not in {"quick", "balanced", "thorough"}:
             raise LaunchError("Choose quick, balanced, or thorough depth.")
         options["depth"] = depth
+        budget = options.get("aggregator_timeout", 7200)
+        if type(budget) is not int or not 60 <= budget <= 21600:
+            raise LaunchError("Aggregation timeout must be 60 to 21600 seconds.")
+        options["aggregator_timeout"] = budget
         scoped = options.get("aggregator_options")
         if scoped is not None and not isinstance(scoped, dict):
             raise LaunchError("aggregator_options must be an object")
@@ -163,7 +167,7 @@ class LaunchService:
             levels = effort_options(row["harness"], model, row.get("effort") if model == row["model"] else None)
             effort = scoped.get("effort", (options.get("effort_overrides") or {}).get(requested_aggregator))
             if effort is None:
-                effort = levels[-1] if depth == "thorough" and levels else row.get("effort")
+                effort = ("high" if model.startswith("claude-fable-") else levels[-1]) if depth == "thorough" and levels else row.get("effort")
             if effort is not None and effort not in levels:
                 raise LaunchError(f"{requested_aggregator} does not support {effort} effort")
             if row["harness"] == "agy" and effort:

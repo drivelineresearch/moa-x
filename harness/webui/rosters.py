@@ -82,7 +82,7 @@ def resolve_roster(depth="balanced", *, effort_overrides=None, catalog=None):
                 name, settings.get("efforts", {}).get(name, row.get("effort"))
             )
             if settings.get("max_effort") and name not in overrides and row.get("effort_options"):
-                effort = row["effort_options"][-1]
+                effort = "high" if row["model"].startswith("claude-fable-") else row["effort_options"][-1]
             model = row["model"]
             if name in overrides and effort not in row.get("effort_options", []):
                 raise ValueError(f"{name} does not support {effort} effort.")

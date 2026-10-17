@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import os
 import signal
 import subprocess
 import sys
@@ -761,6 +762,40 @@ class RecoveryTests(unittest.TestCase):
             self.assertEqual(run_moa.main(), 4)
         call.assert_not_called()
 
+    def test_aggregation_budget_is_independent_and_explicit_overrides_win(self):
+        self.assertEqual(run_moa.resolve_aggregation_timeout(), 7200)
+        self.assertEqual(run_moa.resolve_aggregation_timeout(route=8000), 8000)
+        self.assertEqual(run_moa.resolve_aggregation_timeout(aggregation=9000, route=8000), 9000)
+        self.assertEqual(run_moa.resolve_aggregation_timeout(master=45, aggregation=9000, route=8000), 45)
+        with self.assertRaises(ValueError):
+            run_moa.resolve_aggregation_timeout(aggregation=0)
+
+    def test_claude_stream_only_accepts_terminal_result(self):
+        tool = json.dumps({"type": "assistant", "message": {"content": [{"type": "tool_result", "content": json.dumps({"structured_output": self.valid})}]}})
+        self.assertIsNone(claude._extract_structured_output(tool))
+        terminal = json.dumps({"type": "result", "structured_output": self.valid})
+        self.assertEqual(claude._extract_structured_output(tool + "\n" + terminal), self.valid)
+        error = json.dumps({"type": "result", "is_error": True, "result": "HTTP 429 quota exceeded"})
+        self.assertIsNone(claude._extract_structured_output(tool + "\n" + error))
+        self.assertIn("quota", claude._envelope_error(tool + "\n" + error))
+
+    def test_fable_has_output_headroom_and_preserves_operator_limit(self):
+        for limit in (None, "96000"):
+            process = Mock(returncode=0)
+            process.communicate.return_value = (json.dumps({"type": "result", "structured_output": self.valid}), "")
+            with patch.dict(os.environ, {}, clear=True), patch.object(claude.subprocess, "Popen", return_value=process) as popen:
+                if limit:
+                    os.environ["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] = limit
+                result = claude.run(prompt="fixture", schema_path=run_moa.PROPOSER_SCHEMA_PATH,
+                                    repo_path=self.root, model="claude-fable-5-1", reasoning_effort="max")
+            self.assertTrue(result.success)
+            expected = limit or "128000"
+            self.assertEqual(popen.call_args.kwargs["env"]["CLAUDE_CODE_MAX_OUTPUT_TOKENS"], expected)
+            self.assertIn(expected, process.communicate.call_args.kwargs["input"])
+            command = popen.call_args.args[0]
+            self.assertEqual(command[command.index("--output-format") + 1], "stream-json")
+            self.assertIn("--verbose", command)
+
     def test_cli_synthesis_accepts_gemini_and_maximum_codex_efforts(self):
         scout = self.session / "scout-brief.json"
         scout.write_text(json.dumps({"session_id": "fixture", "repo_path": str(self.root), "frozen_spec": "Review retained input."}))
@@ -786,7 +821,7 @@ class RecoveryTests(unittest.TestCase):
                 self.assertEqual(call.call_args.kwargs["provider"].model, model)
                 self.assertEqual(call.call_args.kwargs["provider"].effort, effort)
                 self.assertEqual(call.call_args.kwargs["codex_effort"], effort)
-                self.assertEqual(call.call_args.kwargs["timeout"], 2700)
+                self.assertEqual(call.call_args.kwargs["timeout"], 7200)
 
     def test_early_manifest_retains_final_identity_without_changing_shared_proposer(self):
         scout = self.session / "scout-brief.json"

@@ -88,7 +88,8 @@ Rule 2 is non-negotiable. Rule 1 is a strong recommendation.
   Luna with GLM 5.3 beside Astra so all four proposer lanes come from independent
   labs. Thorough synthesis defaults to Ultra and exposes all seven curated
   OpenAI models plus Argon, Opus and Fable, each with its full supported effort
-  range and maximum selected by default. Final-stage overrides are scoped to
+  range. Fable starts at High to leave room for its answer; other Thorough synthesis
+  routes select their maximum by default. Final-stage overrides are scoped to
   Layer 3; preserve frozen settings in active or archived jobs. Cursor is unsupported. DeepSeek V4.1 Flash is the sole curated DeepSeek route and is included
   in every refinement preset. The model defaults are
   Gemini 4 Argon High, Grok 4.7, GPT-6 Luna, DeepSeek V4.1 Flash, Claude Opus 5.5 (`claude-opus-5-5`),
