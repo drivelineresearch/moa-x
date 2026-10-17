@@ -287,6 +287,8 @@ def _check_assets(failures: list[str]) -> None:
         skill_dir / "scripts" / "adapters" / "muse.py",
         skill_dir / "scripts" / "adapters" / "deepseek.py",
         skill_dir / "scripts" / "adapters" / "native.py",
+        skill_dir / "scripts" / "adapters" / "muse_catalog.py",
+        skill_dir / "scripts" / "muse_models.py",
         skill_dir / "scripts" / "schemas" / "proposer.schema.json",
         skill_dir / "scripts" / "schemas" / "refiner.schema.json",
         skill_dir / "scripts" / "schemas" / "final-plan.schema.json",

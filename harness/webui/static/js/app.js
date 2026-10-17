@@ -84,7 +84,7 @@ function inferLabId(routeId, model = "", label = "") {
   if (/glm|zhipu/.test(signature)) return "zhipu";
   if (/gpt-|codex|openai/.test(signature)) return "openai";
   if (/minimax/.test(signature)) return "minimax";
-  if (/muse-spark/.test(signature)) return "meta";
+  if (/muse-(spark|wonder)/.test(signature)) return "meta";
   return "independent";
 }
 const DEPTH_PRESENTATION = Object.freeze({
@@ -348,7 +348,7 @@ function statusClass(provider) {
 }
 
 function statusCopy(provider) {
-  if (providerReady(provider)) return "Account ready";
+  if (providerReady(provider)) return provider.probe_level === "cached_catalog" ? "Catalog cached" : provider.probe_level === "catalog" ? "Catalog checked" : "Account detected";
   if (provider.installed) return "Needs attention";
   return "CLI missing";
 }
@@ -357,8 +357,8 @@ function renderMachineHealth() {
   const ready = state.providers.filter(providerReady).length;
   const signal = $("#machine-signal");
   signal.className = `signal-dot ${ready ? "is-good" : "is-bad"}`;
-  $("#machine-label").textContent = ready ? `${ready} provider${ready === 1 ? "" : "s"} ready` : "No providers ready";
-  $("#machine-detail").textContent = ready ? "Local accounts available" : "Open provider workbench";
+  $("#machine-label").textContent = ready ? `${ready} CLI account${ready === 1 ? "" : "s"} detected` : "No providers ready";
+  $("#machine-detail").textContent = ready ? "Local account checks passed" : "Open provider workbench";
 }
 
 function renderHealthRibbon() {
@@ -368,7 +368,7 @@ function renderHealthRibbon() {
     target.innerHTML = `<div class="health-cell is-error"><i></i><div><strong>No provider data</strong><small>Check the local server</small></div></div>`;
     return;
   }
-  target.innerHTML = state.providers.slice(0, 6).map((provider) => `
+  target.innerHTML = state.providers.map((provider) => `
     <div class="health-cell ${statusClass(provider)}">
       <i></i>
       <div>
@@ -384,9 +384,9 @@ function renderProviderSummary() {
   const installed = state.providers.filter((provider) => provider.installed).length;
   const models = state.providers.reduce((sum, provider) => sum + provider.models.length, 0);
   $("#provider-summary").innerHTML = `
-    <div class="summary-stat"><strong>${ready}</strong><span>Accounts ready for work</span></div>
+    <div class="summary-stat"><strong>${ready}</strong><span>Accounts with local access</span></div>
     <div class="summary-stat"><strong>${installed}</strong><span>CLIs installed on this machine</span></div>
-    <div class="summary-stat"><strong>${models || state.models.length}</strong><span>Discovered model choices</span></div>
+    <div class="summary-stat"><strong>${models || state.models.length}</strong><span>Configured model routes</span></div>
   `;
   $("#provider-summary").setAttribute("aria-busy", "false");
 }
@@ -394,6 +394,8 @@ function renderProviderSummary() {
 function renderProviders() {
   if (state.loading.providers) return;
   renderProviderSummary();
+  const accountNames = state.providers.map((provider) => provider.name).join(", ");
+  $("#local-auth-detail").textContent = `${accountNames} use credentials available to the operating-system user running this server. Checks inspect local account state and model catalogs where supported; they do not run paid inference. Model access is confirmed when a run succeeds.`;
   const target = $("#provider-grid");
   target.setAttribute("aria-busy", "false");
   if (!state.providers.length) {
@@ -408,7 +410,7 @@ function renderProviders() {
         route.lab_id || inferLabId(route.id, route.model, route.lab),
       )),
     )];
-    const visibleLabs = (routeLabs.length ? routeLabs : ["independent"]).slice(0, 4);
+    const visibleLabs = routeLabs.length ? routeLabs : ["independent"];
     return `
       <article class="provider-card" data-provider-id="${escapeHtml(provider.id)}">
         <aside class="provider-card-portrait">
@@ -429,7 +431,7 @@ function renderProviders() {
             <span class="status-tag ${providerReady(provider) ? "completed" : provider.installed ? "queued" : "failed"}">${escapeHtml(statusCopy(provider))}</span>
           </div>
           <p>${escapeHtml(provider.detail || (providerReady(provider)
-            ? "This provider can use the account already authenticated on the host."
+            ? "Local CLI account state is present; inference is checked by a run."
             : "Run a fresh capability check after installing or signing in with this CLI."))}</p>
           <dl class="provider-details">
             <div><dt>Version</dt><dd>${escapeHtml(provider.version)}</dd></div>

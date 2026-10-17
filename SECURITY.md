@@ -51,6 +51,6 @@ the machine hosting the Web UI are approved to process it.
 
 Reports out of scope (please take these upstream):
 
-- Vulnerabilities in the Codex / Claude / OpenCode / AGY CLIs themselves
+- Vulnerabilities in the underlying vendor CLIs themselves (including Codex, Claude, OpenCode, AGY, Muse Code and DeepSeek Harness)
 - Vulnerabilities in the underlying LLM APIs
 - Issues specific to auth state (subscription or API) managed by those CLIs

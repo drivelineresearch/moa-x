@@ -72,7 +72,7 @@ A route is a `{name, harness, model}` triple:
 
 - `name` is the stable route id and payload `agent_id`;
 - `harness` is the local CLI transport (`codex`, `claude`, `opencode`, `agy`,
-  or the legacy standalone `gemini` adapter);
+  `muse`, `deepseek`, or the legacy standalone `gemini` adapter);
 - `model` is the exact model id sent to that CLI.
 
 The producing model lab is a separate field. This distinction is

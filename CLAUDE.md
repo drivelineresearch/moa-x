@@ -90,7 +90,7 @@ Rule 2 is non-negotiable. Rule 1 is a strong recommendation.
   OpenAI models plus Argon, Opus and Fable, each with its full supported effort
   range. Fable starts at High to leave room for its answer; other Thorough synthesis
   routes select their maximum by default. Final-stage overrides are scoped to
-  Layer 3; preserve frozen settings in active or archived jobs. Cursor is unsupported. DeepSeek V4.1 Flash is the sole curated DeepSeek route and is included
+  Layer 3; preserve frozen settings in active or archived jobs. Cursor is unsupported. DeepSeek Flash is the curated DeepSeek family, with OpenCode Go and native transports, and is included
   in every refinement preset. The model defaults are
   Gemini 4 Argon High, Grok 4.7, GPT-6 Luna, DeepSeek V4.1 Flash, Claude Opus 5.5 (`claude-opus-5-5`),
   and `gpt-6.1-sol` at `xhigh` for synthesis. Fable 5.1 is an

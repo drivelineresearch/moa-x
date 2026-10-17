@@ -52,7 +52,7 @@ class NativeTests(unittest.TestCase):
         self.env = patch.dict(os.environ, {
             "MOA_MUSE_BIN": str(self.bin), "MOA_DEEPSEEK_BIN": str(self.bin),
             "MOA_TEST_RECORD": str(self.record), "MOA_TEST_TREE": TREE,
-            "DEEPSEEK_API_KEY": "offline-fixture", "MOA_TEST_CASE": "",
+            "META_API_KEY": "offline-fixture", "DEEPSEEK_API_KEY": "offline-fixture", "MOA_TEST_CASE": "",
         })
         self.env.start()
 
@@ -73,6 +73,62 @@ class NativeTests(unittest.TestCase):
             self.assertEqual(route_lab_id(name, p.model), lab)
             self.assertFalse(config.provider_is_retired(name, p.model))
         self.assertEqual(config._DEFAULT_REFINERS, ["deepseek-flash", "opus"])
+
+    def test_muse_model_modes_and_effort_limits(self):
+        from muse_models import MUSE_ROUTES
+        from model_efforts import effort_options
+        self.assertEqual(len(MUSE_ROUTES), 8)
+        self.assertEqual(len({item[0] for item in MUSE_ROUTES.values()}), 8)
+        for route, (model, label) in MUSE_ROUTES.items():
+            provider = config.resolve_provider(route, user_providers={})
+            self.assertEqual(provider.model, model)
+            self.assertEqual(route_lab_id(route, model), "meta")
+            self.assertTrue(config.provider_allows_role(route, "proposer", model))
+            levels = effort_options("muse", model)
+            self.assertNotIn("none", levels)
+            self.assertNotIn("ultra", levels)
+            self.assertEqual(levels[-1], "xhigh" if "1.2" in model else "max")
+        for model, expected in [("muse-wonder-full-1.0", "off"), ("muse-wonder-full-1.0-contributor", "on")]:
+            result = native.run("muse", prompt="fixture", repo_path=self.repo, model=model)
+            self.assertTrue(result.success)
+            argv = json.loads(self.record.read_text())["args"]
+            self.assertEqual(argv[argv.index("--contributor-mode") + 1], expected)
+
+    def test_unsupported_muse_effort_is_rejected_before_launch(self):
+        with patch.object(native.subprocess, "Popen") as launch:
+            for effort in ("none", "ultra"):
+                result = self.call("muse", reasoning_effort=effort)
+                self.assertFalse(result.success)
+                self.assertIn("Unsupported Muse reasoning effort", result.error_message)
+        launch.assert_not_called()
+
+    def test_muse_catalog_uses_native_query_and_fails_closed(self):
+        from adapters.muse_catalog import list_models
+        self.bin.write_text("""#!/usr/bin/env python3
+import sys,json,time,os
+for line in sys.stdin:
+ event=json.loads(line)
+ if 'id' not in event:continue
+ if event['method']=='initialize':result={}
+ else:
+  mode=os.environ.get('MOA_CATALOG_CASE','')
+  if mode=='hang':time.sleep(30)
+  result={'models':[{'modelId':'muse-wonder-full-1.0','variants':['high','max']}]} if mode!='bad' else {'models':'invalid'}
+ print(json.dumps({'jsonrpc':'2.0','id':event['id'],'result':result}),flush=True)
+""")
+        ok, models, detail = list_models(timeout_seconds=2)
+        self.assertTrue(ok, detail)
+        self.assertIn("muse-wonder-full-1.0", models)
+        with patch("adapters.muse_catalog.muse_auth", side_effect=RuntimeError("Muse credential lock exhausted the invocation deadline")):
+            cached_ok, cached_models, cached_detail = list_models(timeout_seconds=.1)
+        self.assertTrue(cached_ok)
+        self.assertEqual(cached_models, models)
+        self.assertIn("Cached", cached_detail)
+        for mode in ("bad", "hang"):
+            with patch.dict(os.environ, {"MOA_CATALOG_CASE": mode}):
+                started = native.time.monotonic()
+                self.assertFalse(list_models(timeout_seconds=.3)[0])
+                self.assertLess(native.time.monotonic() - started, 2)
 
     def test_tool_and_partial_events_cannot_become_results(self):
         for kind, text in [("muse", json.dumps({"payload_type": "run.output.delta", "payload": {"text": '{"ok":true}'}})),

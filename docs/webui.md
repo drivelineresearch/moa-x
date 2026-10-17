@@ -43,7 +43,9 @@ Flask's development server is only the fallback when Waitress is unavailable.
 ### Model depth and effort
 
 The route chooser only exposes an adjustable control when the underlying CLI
-can honor it safely. Codex and Claude use their native reasoning-effort flags.
+can honor it safely. Codex, Claude, Muse Code and DeepSeek Harness use their native reasoning-effort flags.
+Muse offers per-model tiers from Minimal through Max (older Spark 1.2 stops at Xhigh).
+CLI-accepted None and Ultra are not offered for Muse because these model routes do not support them.
 AGY Gemini Pro selects depth by changing the model suffix (for example,
 `gemini-4-argon-low` to `gemini-4-argon-high`), so the UI sends a model
 variant and never sends a conflicting AGY `--effort` flag. OpenCode variants
@@ -81,8 +83,8 @@ lab-independent from the OpenAI aggregator. GPT-6.1 Sol uses `medium` synthesis
 effort for Quick, `xhigh` for Balanced, and `ultra` for Thorough.
 
 Thorough’s final-model picker includes all seven selectable OpenAI models,
-Gemini 4 Argon, Opus 5.5 and Fable 5.1. Every choice starts at its maximum
-supported effort, with the complete range available on its slider. Luna stops
+Gemini 4 Argon, Opus 5.5 and Fable 5.1. Fable starts at High; other choices start at their maximum
+supported effort, with the complete range available on each slider. Luna stops
 at Max; Sol/Astra/Terra reach Ultra; Claude reaches Max; Argon reaches High.
 The [model and effort table](config.md#aggregator-alternatives) lists exact
 routes. Final settings are saved separately from proposal/review settings,
@@ -128,6 +130,21 @@ the current latency and predictability are strengths worth preserving.
 The worker inherits the server process's `HOME`, `PATH`, environment, CLI
 keychains, and authenticated accounts. It never copies API keys or OAuth
 tokens into the browser or SQLite.
+
+## Machine accounts and check results
+
+The account page derives its CLI list, model routes, lab names and portraits from
+the provider catalog. It lists every lab represented by an account, including
+Meta models served through OpenCode. Model counts describe configured routes,
+not a claim that every model the vendor sells has been discovered.
+
+**Account detected** means the local CLI has credential/account state.
+**Catalog checked** additionally means its model catalog was queried. These
+checks do not perform paid inference and do not guarantee model entitlement,
+available quota or a successful structured response. A successful run verifies
+that route at the recorded time. The browser never receives provider secrets.
+Native Muse rechecks its model catalog so new subscription choices can appear
+after signing in or upgrading. See [Muse models and modes](native-harnesses.md).
 
 ## Provider health alerts
 

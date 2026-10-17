@@ -1,3 +1,6 @@
+> Historical design snapshot. For the implemented interface and current provider
+> catalog, use [Web UI](../webui.md) and [configuration](../config.md).
+
 # MoA-X local Web UI — execution plan
 
 Status: implemented on `codex/flask-webui`

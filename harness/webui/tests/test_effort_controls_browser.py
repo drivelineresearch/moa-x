@@ -400,6 +400,22 @@ class EffortControlsBrowserTest(unittest.TestCase):
                         0,
                         label,
                     )
+                    if route == "/providers":
+                        footer = page.locator("#local-auth-detail").inner_text()
+                        for name in ("Muse Code", "DeepSeek Harness", "Codex", "Claude", "OpenCode", "Antigravity"):
+                            self.assertIn(name, footer)
+                        self.assertNotIn("Connected", footer)
+                        opencode_card = page.locator('[data-provider-id="opencode"]')
+                        self.assertEqual(opencode_card.locator(".provider-lab-stack img").count(), 5)
+                        self.assertIn("Meta", opencode_card.locator(".provider-details").inner_text())
+                        self.assertIn("5 model labs", opencode_card.locator(".provider-card-portrait").inner_text().lower())
+                    if route == "/new":
+                        for model_id in ("muse-native", "muse-native-contributor", "muse-wonder", "muse-wonder-contributor",
+                                         "muse-wonder-full", "muse-wonder-full-contributor", "muse-spark-12", "muse-spark-12-contributor"):
+                            choice = page.locator(f'input[name="proposer"][value="{model_id}"]')
+                            self.assertEqual(choice.count(), 1)
+                            self.assertNotIn("none", choice.locator("xpath=..").locator("[data-effort-range]").get_attribute("data-effort-values"))
+                            self.assertNotIn("ultra", choice.locator("xpath=..").locator("[data-effort-range]").get_attribute("data-effort-values"))
                     lab_images = page.locator('img[src*="/static/images/lab-"]')
                     self.assertGreater(lab_images.count(), 0, label)
                     self.assertTrue(

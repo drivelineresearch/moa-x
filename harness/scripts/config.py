@@ -38,6 +38,7 @@ The config.yaml schema is documented in harness/config.example.yaml.
 from __future__ import annotations
 
 import os
+from muse_models import MUSE_ROUTES
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -147,6 +148,9 @@ for _model in ("gpt-6-sol", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"):
         effort="max" if _model.endswith("-luna") else "ultra",
     )
 
+for _name, (_model, _label) in MUSE_ROUTES.items():
+    BUILTIN_PROVIDERS[_name] = ResolvedProvider(name=_name, harness="muse", model=_model, effort="high")
+
 PROVIDER_ALLOWED_ROLES: dict[str, frozenset[str]] = {
     "fable": frozenset({"aggregator"}),
     "minimax": frozenset({"proposer", "refiner"}),
@@ -158,6 +162,9 @@ PROVIDER_ALLOWED_ROLES: dict[str, frozenset[str]] = {
     "qwen-opencode": frozenset(),
     "deepseek": frozenset(),  # retired Pro route; archives retain its identity
 }
+
+for _name in MUSE_ROUTES:
+    PROVIDER_ALLOWED_ROLES[_name] = frozenset({"proposer", "refiner"})
 
 for _name in BUILTIN_PROVIDERS:
     if _name.startswith("codex-gpt-"):
