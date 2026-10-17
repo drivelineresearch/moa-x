@@ -94,7 +94,7 @@ LIVE_BLOCKED_ROUTES: dict[str, str] = {
 }
 
 EFFORT_OPTIONS = {
-    "muse": ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
+    "muse": ["minimal", "low", "medium", "high", "xhigh", "max"],
     "deepseek": ["low", "high", "max"],
     "codex": ["low", "medium", "high", "xhigh", "max", "ultra"],
     "claude": ["low", "medium", "high", "xhigh", "max"],
@@ -180,7 +180,7 @@ def probe_provider(provider_id: str) -> dict[str, Any]:
     started = time.monotonic()
     routes = _route_records(provider_id)
     models: list[dict[str, Any]] = [
-        {"id": route["model"], "name": route["name"]} for route in routes
+        {"id": route["model"], "name": route["name"], "lab_id": route["lab_id"]} for route in routes
     ]
     detail = "not installed"
     authenticated = False
@@ -219,7 +219,19 @@ def probe_provider(provider_id: str) -> dict[str, Any]:
                 f"{version or 'agy'}; persisted account ready; "
                 f"{len(discovered_models)} model variants available"
             )
-    if provider_id == "agy":
+    if installed and provider_id == "muse" and authenticated:
+        models_ok, native_models, model_detail = muse.list_models()
+        detail = model_detail
+        discovered_models = set(native_models) if models_ok else set()
+        authenticated = authenticated and models_ok
+    if provider_id == "muse":
+        routes = [
+            {**route, "available": authenticated and route["model"] in discovered_models,
+             "availability_detail": detail if route["model"] in discovered_models else
+                 f"{route['model']} is not listed by this Muse CLI account; recheck after signing in or upgrading"}
+            for route in routes
+        ]
+    elif provider_id == "agy":
         routes = [
             {
                 **route,
@@ -276,6 +288,7 @@ def probe_provider(provider_id: str) -> dict[str, Any]:
         "login_command": meta["login"],
         "uses_machine_account": True,
         "last_checked": datetime.now(UTC).isoformat(),
+        "probe_level": ("cached_catalog" if detail.startswith("Cached native catalog") else "catalog") if provider_id in {"opencode", "agy", "muse"} else "account",
         "probe_ms": round((time.monotonic() - started) * 1000),
     }
 

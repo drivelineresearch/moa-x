@@ -60,12 +60,10 @@ upstream alias change can update the served checkpoint again.
 
 ## Select the native routes
 
-After the prepared release is deployed, the Web UI lists **Muse Spark 1.3 · Muse
-Code** and **DeepSeek Flash · Native Harness** in their Meta and DeepSeek lab
+The Web UI lists the native Muse model choices and **DeepSeek Flash · Native Harness** in their Meta and DeepSeek lab
 groups, with authorization guidance until credentials are present. Each route
 keeps its lab's avatar and full-body illustration regardless of execution
-harness. Native efforts are Muse's eight CLI tiers and DeepSeek's `low`, `high`,
-and `max`. Custom provider definitions can also target `harness: muse` or
+harness. Muse efforts follow each model's supported Minimal–Max range (Spark 1.2 stops at Xhigh); DeepSeek supports `low`, `high`, and `max`. Custom provider definitions can also target `harness: muse` or
 `harness: deepseek`.
 
 ```bash
@@ -80,6 +78,44 @@ python3 harness/scripts/test_native.py
 Native subscriptions, API access and billing are separate from OpenCode Go.
 Credential presence is a local readiness hint; verify a live structured call
 after authorization before relying on a route.
+
+## Muse models, subscription and content modes
+
+The native Muse catalog exposes eight text-model choices:
+
+| Route | Model | Effort |
+|---|---|---|
+| `muse-native` | Spark 1.3 Standard | Minimal, Low, Medium, High, Xhigh, Max |
+| `muse-native-contributor` | Spark 1.3 Contributor | Minimal, Low, Medium, High, Xhigh, Max |
+| `muse-spark-12` | Spark 1.2 Standard | Minimal, Low, Medium, High, Xhigh |
+| `muse-spark-12-contributor` | Spark 1.2 Contributor | Minimal, Low, Medium, High, Xhigh |
+| `muse-wonder` | Wonder 1.0 Standard | Minimal, Low, Medium, High, Xhigh, Max |
+| `muse-wonder-contributor` | Wonder 1.0 Contributor | Minimal, Low, Medium, High, Xhigh, Max |
+| `muse-wonder-full` | Wonder Full 1.0 Standard | Minimal, Low, Medium, High, Xhigh, Max |
+| `muse-wonder-full-contributor` | Wonder Full 1.0 Contributor | Minimal, Low, Medium, High, Xhigh, Max |
+
+Every native route defaults to High and remains a proposer/refiner option.
+Existing defaults and archived route ids remain unchanged. `muse-native` still
+means Spark 1.3; Wonder Full is a distinct model, not Wonder at Max effort.
+
+[Power Usage or Maximum Usage](https://dev.meta.ai/docs/muse-code/subscriptions)
+includes Wonder Full. Subscription benefits attach to the Muse Code credential
+created by browser onboarding. Additional generic API keys use pay-as-you-go;
+`META_API_KEY` takes priority over browser login, so check that an environment
+key is not masking the upgraded account. Recheck Machine accounts after upgrading;
+if the CLI still has stale access, sign in again with `muse login`.
+
+The model picker labels Standard and Contributor explicitly. Standard mode does
+not use content for Meta model training. Contributor mode may use prompts and
+responses for training in exchange for more usage. The adapter explicitly passes
+`--contributor-mode off` for Standard routes and `on` for Contributor routes,
+so a subscription's default mode cannot silently change the selected route.
+See [Meta model availability](https://dev.meta.ai/docs/models).
+
+Native `model/list` visibility is a catalog check, not proof of paid inference
+or subscription entitlement. New models must pass live structured-output probes
+before being relied on. The installed CLI accepts None and Ultra as flag values,
+but its current Muse model catalog does not offer those tiers, so MoA-X omits them.
 
 ## Execution contract
 

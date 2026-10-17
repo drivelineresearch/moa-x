@@ -1,5 +1,7 @@
 """Reasoning controls supported by the current native model routes."""
 
+from muse_models import muse_efforts
+
 CODEX_EFFORTS = ("low", "medium", "high", "xhigh", "max", "ultra")
 CLAUDE_EFFORTS = ("low", "medium", "high", "xhigh", "max")
 GEMINI_EFFORTS = ("low", "medium", "high")
@@ -28,7 +30,7 @@ def effort_options(harness, model, configured_effort=None):
     if harness == "agy":
         return list(GEMINI_EFFORTS)
     if harness == "muse":
-        return ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]
+        return muse_efforts(model)
     if harness == "deepseek":
         return ["low", "high", "max"]
     return []

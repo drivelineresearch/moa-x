@@ -113,7 +113,7 @@ def available(kind: str) -> tuple[bool, str]:
         auth = muse_config_home() / "auth.json"
         authenticated = bool(os.environ.get("META_API_KEY")) or (auth.is_file() and auth.stat().st_size > 2)
         hint = "run muse login or muse auth set --api-key-stdin"
-    return authenticated, "native credential present (inference not yet verified)" if authenticated else f"Not authenticated: {hint}"
+    return authenticated, "Local credential detected; this check does not run inference" if authenticated else f"Not authenticated: {hint}"
 
 
 def terminal_answer(kind: str, stdout: str) -> tuple[str, Optional[str]]:
@@ -198,6 +198,10 @@ def run(kind: str, *, prompt: str, repo_path: Path, model: str,
     payload = None
     binary = os.environ.get(f"MOA_{kind.upper()}_BIN") or ("dsh" if kind == "deepseek" else "muse")
     try:
+        if kind == "muse" and reasoning_effort is not None:
+            from muse_models import muse_efforts
+            if reasoning_effort not in muse_efforts(model):
+                raise ValueError(f"Unsupported Muse reasoning effort {reasoning_effort!r} for {model}")
         with tempfile.TemporaryDirectory(prefix=f"moa-{kind}-") as tmp, ExitStack() as auth_stack:
             scratch = Path(tmp)
             with isolated_workspace(repo_path, scratch, allow_tools, started + timeout_seconds) as workspace:
@@ -220,6 +224,7 @@ def run(kind: str, *, prompt: str, repo_path: Path, model: str,
                            "-c", 'run.workflow_trigger_mode="off"']
                     if not allow_tools or not allow_webfetch:
                         cmd.append("--disable-web-tools")
+                    cmd += ["--contributor-mode", "on" if model.endswith("-contributor") else "off"]
                     if schema_path:
                         cmd += ["--output-schema", str(schema_path.resolve())]
                     if reasoning_effort:

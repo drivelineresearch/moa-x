@@ -6,7 +6,7 @@
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license">
   <img src="https://img.shields.io/badge/python-3.9%2B-blue.svg" alt="Python 3.9+">
   <img src="https://img.shields.io/badge/runner-Claude%20Code-8b5cf6.svg" alt="Claude Code">
-  <img src="https://img.shields.io/badge/harnesses-codex%20%7C%20claude%20%7C%20opencode%20%7C%20agy-informational" alt="supported CLIs">
+  <img src="https://img.shields.io/badge/harnesses-codex%20%7C%20claude%20%7C%20opencode%20%7C%20agy%20%7C%20muse%20%7C%20deepseek-informational" alt="supported CLIs">
 </p>
 
 
@@ -21,22 +21,26 @@ OpenAI `codex-luna` (`gpt-6-luna`) — reading the repo in
 parallel, doing their own web research, and each writing an independent
 plan. Two refiners—DeepSeek V4.1 Flash
 and Anthropic `claude-opus-5-5`—then refine in broadcast mode (every refiner
-sees every plan). The shipped defaults and all recommended Web UI modes run Layer 3
-through the recorded Codex path with `gpt-6.1-sol` at `xhigh` reasoning.
+sees every plan). The shipped defaults and recommended Web UI modes run Layer 3
+through the recorded Codex path with `gpt-6.1-sol`: `medium` for Quick,
+`xhigh` for Balanced and `ultra` for Thorough.
 Claude Opus 5.5 is also available as an aggregator, while Fable 5.1 is available
 only as a warning-gated, quota-heavy aggregator option.
 
 Run **inside Claude Code** as a skill, through the local Web UI, or by
 chatting with a configured Slack bot.
-Standalone Python works too. The harness ships curated routes across four
-execution harnesses (`codex`, `claude`, `opencode`, `agy`) and the roster — which models run at
+Standalone Python works too. The harness ships curated routes across six
+execution harnesses (`codex`, `claude`, `opencode`, `agy`, `muse`, `deepseek`) and the roster — which models run at
 which layer, and how many — is pure config. API-based auth and more
 providers are already supported. See "Contributions we'd prioritize" below
 for the remaining gaps.
 
 OpenCode Go powers Grok, DeepSeek V4.1 Flash, GLM and optional MiniMax/Muse routes.
 Qwen, Moonshot and MiMo are disabled for new launches; historical runs retain their model and lab attribution.
-The curated DeepSeek route is V4.1 Flash. Pro is excluded from new runs.
+The curated DeepSeek routes use Flash through OpenCode Go or the native DeepSeek Harness.
+Native Muse Code exposes Spark 1.2/1.3, Wonder and Wonder Full in Standard
+and Contributor modes; see [native models and subscription setup](docs/native-harnesses.md).
+DeepSeek Pro is excluded from new runs.
 
 ## TL;DR
 

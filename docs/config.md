@@ -28,7 +28,11 @@ Never commit `.env`, provider keys, or generated `harness/config.yaml`.
 | `muse-spark` | OpenCode | `opencode-go/muse-spark-1.3-contributor` | optional proposer/refiner | provider-managed |
 | `glm` | OpenCode | `opencode-go/glm-5.3` | proposer, refiner | provider-managed |
 | `deepseek-flash` | OpenCode | `opencode-go/deepseek-v4.1-flash` | proposer, refiner | provider-managed |
-| `muse-native` | Muse Code | `muse-spark-1.3` | optional proposer/refiner | adjustable; high default |
+| `muse-native` | Muse Code | `muse-spark-1.3` | optional proposer/refiner | minimal–max; high default |
+| `muse-native-contributor` | Muse Code | `muse-spark-1.3-contributor` | optional proposer/refiner | minimal–max; high default |
+| `muse-wonder` / `muse-wonder-contributor` | Muse Code | `muse-wonder-1.0` / `muse-wonder-1.0-contributor` | optional proposer/refiner | minimal–max; high default |
+| `muse-wonder-full` / `muse-wonder-full-contributor` | Muse Code | `muse-wonder-full-1.0` / `muse-wonder-full-1.0-contributor` | optional proposer/refiner | minimal–max; high default |
+| `muse-spark-12` / `muse-spark-12-contributor` | Muse Code | `muse-spark-1.2` / `muse-spark-1.2-contributor` | optional proposer/refiner | minimal–xhigh; high default |
 | `deepseek-native` | DeepSeek Harness | `deepseek-flash` | optional proposer/refiner | low/high/max; high default |
 | `sonnet` | Claude Code | `claude-sonnet-5-5` | proposer, refiner | adjustable; high default |
 | `opus` | Claude Code | `claude-opus-5-5` | proposer, refiner, aggregator | adjustable; high default |
@@ -136,11 +140,11 @@ plus Gemini 4 Argon, Claude Opus 5.5 and Fable 5.1:
 | `codex-gpt-5-6-luna` | GPT-5.6 Luna | low, medium, high, xhigh, max | max |
 | `agy-gemini-pro` | Gemini 4 Argon | low, medium, high (model slug) | high |
 | `opus` | Claude Opus 5.5 | low, medium, high, xhigh, max | max |
-| `fable` | Fable 5.1 | low, medium, high, xhigh, max | max |
+| `fable` | Fable 5.1 | low, medium, high, xhigh, max | high |
 
 The four additional Codex routes are synthesis-only. Quick and Balanced keep
-their existing picker and recommended efforts. Thorough defaults each final
-model to its highest supported setting; manual choices remain available.
+their existing picker and recommended efforts. Thorough defaults Fable to High and other final
+models to their highest supported setting; manual choices remain available.
 Model availability still depends on the authenticated native client/account.
 Catalog and effort support should be revalidated when clients change.
 

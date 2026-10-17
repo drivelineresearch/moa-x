@@ -1,12 +1,13 @@
 """Canonical model-lab identity metadata.
 
-The execution harness (Codex, Claude Code, OpenCode, or AGY) is transport.
+The execution harness is transport, including the native Muse and DeepSeek CLIs.
 It must never determine a model's visual identity or diversity attribution.
 Every UI and report consumer should use ``lab_id`` from this module instead.
 """
 from __future__ import annotations
 
 from typing import Any
+from muse_models import MUSE_ROUTES
 
 
 MODEL_LABS: dict[str, dict[str, str]] = {
@@ -186,6 +187,15 @@ for _model, _label in (
     }
 
 
+for _name, (_model, _label) in MUSE_ROUTES.items():
+    ROUTE_META[_name] = {
+        "label": _label + " · Muse Code", "lab_id": "meta",
+        "roles": ["proposer", "refiner"],
+        "usage_note": ("Contributor mode: prompts and responses may train Meta models."
+                       if _model.endswith("-contributor") else "Standard mode: content is not used to train Meta models."),
+    }
+
+
 def model_lab(lab_id: str | None) -> dict[str, str]:
     """Return a complete lab record with a safe independent fallback."""
     return MODEL_LABS.get(str(lab_id or "").lower(), MODEL_LABS["independent"])
@@ -209,7 +219,7 @@ def route_lab_id(route_id: str | None, model: str | None = None) -> str:
         (("deepseek",), "deepseek"),
         (("glm", "zhipu"), "zhipu"),
         (("minimax",), "minimax"),
-        (("muse-spark", "meta/"), "meta"),
+        (("muse-spark", "muse-wonder", "meta/"), "meta"),
     )
     for prefixes, lab_id in prefix_rules:
         if any(prefix in value for prefix in prefixes):

@@ -1,12 +1,13 @@
 # Install
 
 MoA-X runs inside **Claude Code** as a skill. You can also invoke the
-orchestrator directly from a shell. Either way, you need four vendor
-CLIs on your PATH, each authenticated. Any auth path the CLI itself
+orchestrator directly from a shell. Install the vendor
+CLIs required by your chosen roster on PATH, each authenticated. The default
+roster uses four CLIs; native Muse Code and DeepSeek Harness are optional. Any auth path the CLI itself
 supports is fine. Subscription (OAuth / keychain) is what I run;
 API-key auth works too.
 
-## 1. Install the four CLIs
+## 1. Install the default roster’s four CLIs
 
 ```bash
 # OpenAI codex

@@ -194,6 +194,23 @@ class WebUITest(unittest.TestCase):
         self.assertTrue(routes["agy-gemini-pro"]["available"])
         self.assertNotIn("agy-gemini-flash", routes)
 
+    def test_muse_catalog_checks_each_route_and_preserves_model_identity(self):
+        from muse_models import MUSE_ROUTES
+        visible = {model: {"modelId": model} for model, label in MUSE_ROUTES.values() if "full" not in model}
+        with patch.object(web_providers.shutil, "which", return_value="/bin/muse"), \
+             patch.object(web_providers, "_run", return_value=(True, "Muse Code fixture")), \
+             patch.object(web_providers.muse, "check_available", return_value=(True, "credential present")), \
+             patch.object(web_providers.muse, "list_models", return_value=(True, visible, "catalog checked")):
+            result = web_providers.probe_provider("muse")
+        self.assertEqual(result["probe_level"], "catalog")
+        self.assertEqual(len(result["routes"]), 8)
+        for route in result["routes"]:
+            self.assertEqual(route["available"], "full" not in route["model"])
+            self.assertEqual(route["lab_id"], "meta")
+        # Full Contributor must retain Full in its display label even when the CLI's label omits it.
+        row = next(row for row in result["routes"] if row["id"] == "muse-wonder-full-contributor")
+        self.assertIn("Wonder Full", row["name"])
+
     def test_browser_event_text_redacts_operator_identity_and_home_path(self):
         redacted = redact_event_text(
             "Logged in as operator@example.com; "
