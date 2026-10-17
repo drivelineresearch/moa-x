@@ -38,7 +38,10 @@ The config.yaml schema is documented in harness/config.example.yaml.
 from __future__ import annotations
 
 import os
-from muse_models import MUSE_ROUTES
+try:
+    from .muse_models import MUSE_ROUTES
+except ImportError:  # Standalone runner and installed skill layout.
+    from muse_models import MUSE_ROUTES
 import re
 from dataclasses import dataclass
 from pathlib import Path

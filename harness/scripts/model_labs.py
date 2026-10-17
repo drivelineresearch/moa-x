@@ -7,7 +7,10 @@ Every UI and report consumer should use ``lab_id`` from this module instead.
 from __future__ import annotations
 
 from typing import Any
-from muse_models import MUSE_ROUTES
+try:
+    from .muse_models import MUSE_ROUTES
+except ImportError:  # Standalone runner and installed skill layout.
+    from muse_models import MUSE_ROUTES
 
 
 MODEL_LABS: dict[str, dict[str, str]] = {

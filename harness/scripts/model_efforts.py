@@ -1,6 +1,9 @@
 """Reasoning controls supported by the current native model routes."""
 
-from muse_models import muse_efforts
+try:
+    from .muse_models import muse_efforts
+except ImportError:  # Standalone runner and installed skill layout.
+    from muse_models import muse_efforts
 
 CODEX_EFFORTS = ("low", "medium", "high", "xhigh", "max", "ultra")
 CLAUDE_EFFORTS = ("low", "medium", "high", "xhigh", "max")
