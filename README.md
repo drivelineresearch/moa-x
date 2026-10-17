@@ -1,239 +1,68 @@
-<p align="center">
-  <img src="docs/moa-x-header.png" alt="MoA-X — Slack, web and CLI requests; Luna interview; Gemini 4 Argon, Grok 4.7 and GPT-6 Luna proposals; DeepSeek V4.1 Flash and Opus 5.5 review; GPT-6.1 Sol synthesis" width="100%">
-</p>
+# MoA-X
 
 <p align="center">
-  <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license">
-  <img src="https://img.shields.io/badge/python-3.9%2B-blue.svg" alt="Python 3.9+">
-  <img src="https://img.shields.io/badge/runner-Claude%20Code-8b5cf6.svg" alt="Claude Code">
-  <img src="https://img.shields.io/badge/harnesses-codex%20%7C%20claude%20%7C%20opencode%20%7C%20agy%20%7C%20muse%20%7C%20deepseek-informational" alt="supported CLIs">
+  <img src="docs/moa-x-header.png" alt="MoA-X: independent proposals, broadcast review, and recorded synthesis" width="100%">
 </p>
 
+MoA-X turns a task into an implementation plan using models from different
+labs. Independent proposers research the task, broadcast reviewers check every
+proposal, and a recorded synthesis produces a plan with evidence, disagreements,
+and an independent final check.
 
+Use it through **Claude Code**, the **local Web UI**, or **Slack**. Repository
+context is optional for web and Slack requests; both accept reference uploads.
+Each run retains its outputs and a self-contained HTML report.
 
-A small, CLI-native take on the 2024
-[Mixture-of-Agents paper](https://arxiv.org/abs/2406.04692), pointed at
-a different job: producing **repo-grounded implementation plans** for
-coding agents instead of chat answers. The default roster puts proposers
-from three model labs to work — Google `agy-gemini-pro`
-(`gemini-4-argon-high`), xAI `grok` (`opencode-go/grok-4.7`), and
-OpenAI `codex-luna` (`gpt-6-luna`) — reading the repo in
-parallel, doing their own web research, and each writing an independent
-plan. Two refiners—DeepSeek V4.1 Flash
-and Anthropic `claude-opus-5-5`—then refine in broadcast mode (every refiner
-sees every plan). The shipped defaults and recommended Web UI modes run Layer 3
-through the recorded Codex path with `gpt-6.1-sol`: `medium` for Quick,
-`xhigh` for Balanced and `ultra` for Thorough.
-Claude Opus 5.5 is also available as an aggregator, while Fable 5.1 is available
-only as a warning-gated, quota-heavy aggregator option.
+## Get started
 
-Run **inside Claude Code** as a skill, through the local Web UI, or by
-chatting with a configured Slack bot.
-Standalone Python works too. The harness ships curated routes across six
-execution harnesses (`codex`, `claude`, `opencode`, `agy`, `muse`, `deepseek`) and the roster — which models run at
-which layer, and how many — is pure config. API-based auth and more
-providers are already supported. See "Contributions we'd prioritize" below
-for the remaining gaps.
-
-OpenCode Go powers Grok, DeepSeek V4.1 Flash, GLM and optional MiniMax/Muse routes.
-Qwen, Moonshot and MiMo are disabled for new launches; historical runs retain their model and lab attribution.
-The curated DeepSeek routes use Flash through OpenCode Go or the native DeepSeek Harness.
-Native Muse Code exposes Spark 1.2/1.3, Wonder and Wonder Full in Standard
-and Contributor modes; see [native models and subscription setup](docs/native-harnesses.md).
-DeepSeek Pro is excluded from new runs.
-
-## TL;DR
-
-```bash
-# 1. Install the CLIs (see docs/install.md for details)
-npm i -g @openai/codex               && codex login
-curl -fsSL https://opencode.ai/install | bash   # then: opencode auth login
-# claude CLI: https://docs.claude.com/en/docs/claude-code/quickstart
-# AGY/Antigravity: install/update Antigravity, run `agy install`, then sign in
-
-# 2. Install as a Claude Code skill
-cp -r harness ~/.claude/skills/mixture-of-agents
-
-# 3. Inside Claude Code, in any project
-/mixture-of-agents
-```
-
-## Local Web UI
-
-The Flask control room queues runs, streams phase events, shows local provider
-health, and indexes current and historical `.moa` sessions in SQLite. It uses
-the same `HOME`, `PATH`, environment, and authenticated CLI accounts as the
-server process; credentials are never copied into the browser or database.
-Tasks can run without a repository and may include up to 10 durable local
-file uploads (25 MB each). PDF, Markdown, common text formats, and locally
-OCRed images are copied into an isolated run snapshot, converted into one
-bounded Markdown context packet, and embedded in every proposer, refiner, and
-aggregator prompt. Local
-workspaces are optional. When repository context is useful, the GitHub picker
-can shallow-clone only an explicitly allowed GitHub owner through the
-machine's authenticated `gh` CLI. Browser-generated profile IDs
-remain in `localStorage`; profile names/settings, jobs, events, and history are
-retained in SQLite without adding a login system.
+Install and authenticate the provider CLIs in the [installation guide](docs/install.md).
+The default roster needs Codex, Claude Code, AGY, and OpenCode.
 
 ```bash
 git clone https://github.com/drivelineresearch/moa-x.git
 cd moa-x
+mkdir -p ~/.claude/skills
+cp -r harness ~/.claude/skills/mixture-of-agents
+python3 ~/.claude/skills/mixture-of-agents/scripts/install_deps.py
+```
+
+Inside Claude Code, run `/mixture-of-agents` and describe the task.
+The skill previews the brief and asks before dispatching paid model calls.
+See [usage](docs/usage.md) for the full workflow and standalone commands.
+
+For the local Web UI:
+
+```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements-web.txt
 MOA_WEBUI_GITHUB_OWNER=your-github-user-or-org \
   .venv/bin/python -m harness.webui
 ```
 
-Open `http://localhost:7340`. There is no frontend compilation step: the
-versioned HTML, CSS, JavaScript, and image assets are served directly by
-Flask/Waitress. The safe default bind is `127.0.0.1`. To opt into trusted-LAN
-access, set `MOA_WEBUI_HOST=0.0.0.0`; because the UI intentionally has no
-login, never expose that listener directly to the public internet. Set
-`MOA_WEBUI_PORT` to change the port and
-`MOA_WEBUI_WORKSPACE_ROOTS` (colon-separated on Linux/macOS) to bound backend
-path operations such as history import. New runs use Task only or an
-allowlisted GitHub repository. See [`docs/webui.md`](docs/webui.md)
-for clean-clone setup, Task-only storage, GitHub configuration, development,
-and the HTTP surface.
+Open `http://localhost:7340`. The UI reuses the server user's authenticated
+CLIs and has no login; keep the listener on localhost or a trusted network.
+Follow [Web UI setup](docs/webui.md) or [Slack setup](docs/slack.md) for those interfaces.
 
-AGY is the curated Google route and reuses the account already signed into
-`agy`; its live model probe determines which Gemini routes are available.
+## How it works
 
-## Architecture at a glance
+| Stage | Default CLI roster |
+|---|---|
+| Scout | Frozen request and bounded repository reconnaissance |
+| Propose | Gemini 4 Argon, Grok 4.7, GPT-6 Luna |
+| Review | DeepSeek V4.1 Flash and Claude Opus 5.5; each sees every proposal |
+| Synthesize | GPT-6.1 Sol at `xhigh`, followed by an independent final check |
 
-```
-Layer 0 — Scout brief           (frozen task + bounded repository reconnaissance)
-Layer 1 — Proposers (parallel)    default: Gemini 4 Argon + Grok 4.7 + GPT-6 Luna
-Layer 2 — Broadcast refiners      default: DeepSeek V4.1 Flash + Opus, each sees ALL proposals
-Layer 3 — Structured decisions    default: GPT-6.1 Sol, followed by independent final check
-```
+Rosters are configurable. Web and Slack offer Quick, Balanced, and Thorough
+presets; see [models and configuration](docs/config.md) and [architecture](docs/architecture.md).
+Runs commonly take 12–25 minutes; deeper runs and recovery can exceed 45 minutes.
 
-The roster is config-driven; every named route in the default pipeline comes
-from a deliberately named lab: Google, xAI, OpenAI, DeepSeek, and Anthropic. Optional OpenCode Go
-routes add Zhipu, MiniMax and Meta perspectives. The UI groups and illustrates routes by model lab, independently
-of the CLI used to execute them.
+## Explore
 
-Every run also writes a self-contained `.moa/<session>/report.html` — a
-zero-network visual post-mortem (3D pipeline, per-agent Gantt, proposer
-plans, refiner verdict matrix, an evidence-weighted living decision map,
-interactive final-step lineage, aggregated plan, and raw logs). Open it in a
-browser; details in
-[`docs/report.md`](docs/report.md).
+- [Documentation](docs/README.md) — choose a guide by task.
+- [Contributing](CONTRIBUTING.md) — development, checks, PRs, and contribution priorities.
+- [Agent guidance](AGENTS.md) — commands, constraints, and task-specific references.
+- [Releases](https://github.com/drivelineresearch/moa-x/releases) and [changelog](CHANGELOG.md) — v0.6.0 archives and release history.
+- [Security](SECURITY.md) — private vulnerability reporting.
 
-Capacity and transport failures receive bounded retries with backoff; malformed
-plan structures receive one tool-free repair. Attempts share a total deadline
-and retain distinct logs. See [provider recovery](docs/architecture.md#provider-recovery).
-
-Common runs take roughly 12–25 minutes; thorough or max-effort runs with retries
-can exceed 45 minutes. Each long lane has its own total recovery deadline, and
-the execution layers run sequentially. Use it for non-trivial
-architecture work, not one-line fixes. Background in
-[`docs/architecture.md`](docs/architecture.md).
-
-## Docs
-
-- [`docs/install.md`](docs/install.md): install the CLIs, verify, install as a Claude Code skill
-- [`docs/usage.md`](docs/usage.md): running via `/mixture-of-agents` (primary) or standalone
-- [`docs/webui.md`](docs/webui.md): local control-room setup, persistence, uploads, GitHub workspaces, security
-- [`docs/config.md`](docs/config.md): `.env` + `harness/config.yaml`, MOA_\* knob table, precedence, roster swaps
-- [`docs/architecture.md`](docs/architecture.md): the four layers, why broadcast, why this roster
-- [`docs/report.md`](docs/report.md): the self-contained HTML run report (`report.html`) — timeline, verdicts, evidence-weighted decision map, and exact lineage
-- [`docs/assets.md`](docs/assets.md): asset provenance, font policy, animation sources, and contribution rules
-- [`CONTRIBUTING.md`](CONTRIBUTING.md): dev setup, PR protocol, where help is welcome
-- [`SECURITY.md`](SECURITY.md): private vulnerability reports
-- [`CLAUDE.md`](CLAUDE.md) / [`AGENTS.md`](AGENTS.md): guidance for coding agents working on this repo (AGENTS.md points at CLAUDE.md)
-
-## Repo layout
-
-```
-README.md              this file
-CLAUDE.md              agent guidance for this repo
-AGENTS.md              pointer to CLAUDE.md for coding agents
-CONTRIBUTING.md        contributor guide
-CHANGELOG.md           release notes
-SECURITY.md            vulnerability reporting
-LICENSE                MIT
-.env.example           copy to .env to override harness defaults
-docs/                  longer-form docs by topic (+ brand images)
-harness/               orchestrator, adapters, prompts, schemas
-  SKILL.md             Claude Code skill manifest
-  README.md            skill-internal notes (lives with harness/ when copied into ~/.claude/skills/)
-  config.example.yaml  copy to harness/config.yaml to override defaults
-  prompts/             scout / proposer / refiner / aggregator
-  report/              HTML report template + embedded illustration assets
-  scripts/             orchestrator + adapters + deterministic decision map + report + tests
-  webui/               Flask control plane, SQLite store, worker, and frontend
-requirements-cli.txt   install/auth notes for the provider CLIs
-requirements-web.txt   optional Flask control-room dependencies
-```
-
-## Contributions we'd prioritize
-
-The core roster, named-provider system, API-key auth paths, bounded provider
-recovery, phase checkpoints, and HTML reporting are shipped. The highest-leverage
-remaining contributions are:
-
-- **A CLI-only raw-spec convenience command.** The Web UI can create a job
-  from a raw goal and drive every recorded phase. `run_moa.py` also handles
-  the proposer/refiner layers and recorded Layer 3 from a shell. The remaining
-  gap is a single non-Web CLI command that creates Layer 0 and drives all
-  phases without a parent session.
-- **Usage, quota, and cost observability.** Capture the token/usage metadata
-  each CLI exposes, normalize it into the manifest and HTML report, distinguish
-  subscription from metered runs, and make unknown cost explicit. A safe
-  budget control could stop later dispatches before a configured ceiling is
-  exceeded; it must not pretend it can undo an already-billed request.
-- **Tested provider recipes, not just model-name examples.** OpenCode Go
-  DeepSeek, GLM, Grok, MiniMax and Muse routes are built in.
-  Contributions for Mistral,
-  or another credible coding model should include a reproducible config,
-  credential preflight, captured parser fixtures, and an end-to-end smoke-test
-  result. Most should use the existing OpenCode adapter; discuss a
-  genuinely new harness in an issue first.
-- **CLI compatibility and recovery hardening.** Add version/capability probes,
-  fixture-based coverage for real failure envelopes, clearer auth/quota/model
-  diagnostics, and resumable recovery paths that avoid rerunning successful
-  agents after an interrupted session.
-
-API-key billing itself is no longer a missing feature: Codex supports API-key
-login, Claude accepts `ANTHROPIC_API_KEY`, and OpenCode routes provider keys.
-The missing layer is normalized usage and cost telemetry across those different
-billing modes.
-
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the PR protocol.
-
-## Status
-
-Active reference implementation, currently v0.5.0. The current default spans five model labs
-with three proposals, two independent reviewers, and one recorded synthesis. Offline CI covers
-configuration, schemas, adapters, checkpoint recovery, recorded Layer 3, and
-self-contained HTML report generation. Contributions are welcome; see
-[CONTRIBUTING.md](CONTRIBUTING.md), and release notes are in
-[CHANGELOG.md](CHANGELOG.md). Security reports go through
-[SECURITY.md](SECURITY.md).
-
-## License
-
-MIT; see [LICENSE](LICENSE). Copyright (c) 2026 Kyle Boddy.
-
-## Author
-
-Kyle Boddy.
-
-## Contributors
-
-[![Contributors](https://img.shields.io/github/contributors/drivelineresearch/moa-x?style=flat-square&logo=github&label=contributors)](https://github.com/drivelineresearch/moa-x/graphs/contributors)
-
-<p>
-  <a href="https://github.com/kyleboddy"><img src="https://github.com/kyleboddy.png?size=64" width="64" height="64" alt="@kyleboddy" title="@kyleboddy"></a>
-  <a href="https://github.com/mjfork"><img src="https://github.com/mjfork.png?size=64" width="64" height="64" alt="@mjfork" title="@mjfork"></a>
-  <a href="https://github.com/joewilsonai"><img src="https://github.com/joewilsonai.png?size=64" width="64" height="64" alt="@joewilsonai" title="@joewilsonai"></a>
-</p>
-
-### Slack
-
-Chat with the ensemble through an existing Slack bot: Luna interview, automatic
-model/depth selection, reference uploads, progress, cancellation and final results
-in the same thread. Setup and access rules: [docs/slack.md](docs/slack.md).
-
-New runs use a [bounded scout and evidence-first decision pipeline](docs/evidence-pipeline.md), including an independent final answer check.
+MIT © 2026 Kyle Boddy. See [LICENSE](LICENSE) and
+[contributors](https://github.com/drivelineresearch/moa-x/graphs/contributors).

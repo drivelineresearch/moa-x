@@ -1,183 +1,49 @@
-# CLAUDE.md: guidance for agents working on this repo
+# MoA-X
 
-## WHAT
+MoA-X produces evidence-backed implementation plans through independent
+proposals, broadcast review, and recorded synthesis. Model-lab diversity helps
+reviewers catch blind spots; execution harnesses and model labs are distinct.
 
-MoA-X is a Mixture-of-Agents reference harness. `harness/scripts/run_moa.py`
-orchestrates a config-driven roster of CLI proposers and broadcast
-refiners; the shipped default is Gemini Pro + Grok 4.7 + GPT-6 Luna proposers
-and DeepSeek V4.1 Flash + Claude Opus reviewers. Qwen routes retain archived
-identity but are disabled for new launches.
-Layer 0 accepts the parent brief and adds a bounded static repository scout for new runs. Layer 3 defaults to a recorded
-Codex subprocess on `gpt-6.1-sol` at `xhigh` reasoning (stable provider name
-`codex-sol`) through `--phase layer3`. Layer 3 adds `final-plan.md` plus a
-schema-validated `final-plan.json` provenance companion and refreshes the
-self-contained report's decision-lineage explorer.
+## Stack and layout
 
-- `harness/`: orchestrator, adapters, prompts, schemas, `report/`
-  (HTML report template + embedded illustration assets), and `webui/` (Flask
-  control plane, SQLite store, worker, and frontend). The CLI/skill assets are designed to be droppable
-  into `~/.claude/skills/mixture-of-agents/` as a Claude Code skill.
-- `docs/`: topic-by-topic docs. Read the relevant one before structural changes:
-  - `docs/install.md`: CLI install + skill install
-  - `docs/usage.md`: `/mixture-of-agents` flow + standalone
-  - `docs/config.md`: `.env` / `harness/config.yaml` precedence + knob table
-  - `docs/architecture.md`: the four layers, why broadcast, and why this roster
-  - `docs/report.md`: the self-contained HTML run report
-  - `docs/webui.md`: local control room, XDG storage, uploads, profiles,
-    allowlisted GitHub workspaces, and trusted-network boundary
-- `CONTRIBUTING.md`, `SECURITY.md`, `LICENSE`: community files.
+Python orchestrator, adapters, prompts, and schemas live in `harness/`.
+`harness/webui/` serves the buildless Flask UI; `harness/slack/` shares its queue.
+Human documentation starts at [docs/README.md](docs/README.md).
 
-## WHY
+## Commands
 
-The harness produces **repo-grounded implementation plans** via a
-cross-lab ensemble, not chat answers. The primary runner is Claude
-Code; the orchestrator runs fine from a shell, but that's the less
-well-trodden path. Cross-lab diversity at the refiner and aggregator
-layers is load-bearing: the whole design argument is that one lab's
-blind spots tend to get caught by another lab's model.
+| Task | Command |
+|---|---|
+| Credential-free baseline | `python3 harness/scripts/test_offline.py` |
+| Provider preflight, when running models | `python3 harness/scripts/install_deps.py` |
+| Complete verification | [docs/agent/verification.md](docs/agent/verification.md) |
 
-## HOW
+## Constraints
 
-```bash
-# Verify toolchain (config-aware: checks the harnesses your roster needs + auth)
-python3 harness/scripts/install_deps.py
+- Use branch → push → PR → merge; never push directly to main.
+- Keep tests offline and credential-free.
+- Keep session artifacts, runtime databases, credentials, and private config out of Git.
+- Preserve frozen model, effort, and provenance settings in existing runs.
+- When guidance conflicts with code or an approved plan, identify the conflict;
+  code takes precedence over plans, and plans over this file.
 
-# Offline tests (all must pass; no network, no external CLIs)
-python3 harness/scripts/test_offline.py
+<important if="editing providers, orchestration, schemas, or evidence">
+Keep shared recovery bounded, research read-only, and invalid evidence closed.
+Read [pipeline guidance](docs/agent/pipeline.md) before changing these contracts.
+</important>
 
-# Run the skill (inside Claude Code, from any project dir)
-/mixture-of-agents
-```
+<important if="editing web, Slack, reports, or artwork">
+Preserve effort-control behavior, model-lab identity, and self-contained reports.
+Read [interface guidance](docs/agent/interfaces.md) before changing these contracts.
+</important>
 
-PR workflow: branch → push → PR → merge. Never push to `main`. New
-tests must run offline so CI stays credential-free.
+## Read when needed
 
-## Hard rules
+- [Configuration](docs/config.md) — changing routes, defaults, or precedence.
+- [Verification](docs/agent/verification.md) — choosing checks for a change.
+- [Releasing](docs/agent/releases.md) — packaging and publishing a GitHub release.
+- [Contributing](CONTRIBUTING.md) — development setup and PR expectations.
 
-Rule 2 is non-negotiable. Rule 1 is a strong recommendation.
-
-1. **Recommend lab-independent refiners.** Layer 2 defaults to
-   `{deepseek-flash, opus}` and the default aggregator uses GPT-6.1 Sol at `xhigh`
-   under the stable `codex-sol` provider name. Both reviewers are
-   independent of the OpenAI aggregator and of the default proposer labs.
-   If changing the aggregator, reconsider
-   the reviewer roster so no refiner shares its harness/lab.
-   The harness no longer enforces this (the data model became neutral
-   when named providers landed — see `docs/architecture.md`); it's a
-   recommendation, and the orchestrator warns when a refiner shares the
-   aggregator's harness. If you change the default refiner set in a PR,
-   justify it in the PR body.
-2. **Don't commit `.moa/` session artifacts.** Already gitignored; just
-   don't fight it.
-
-## Soft defaults (open to change via PR)
-
-- **Auth follows the underlying CLI.** Codex supports persisted API-key login,
-  Claude accepts `ANTHROPIC_API_KEY`, and OpenCode reads provider keys
-  (`MOONSHOT_API_KEY`,
-  `FIREWORKS_API_KEY`, `QWEN_TOKEN_PLAN_API_KEY`, and others). The open gap is
-  complete cross-provider usage/cost telemetry and safe pre-dispatch budget controls, not
-  basic API-key authentication.
-- **Optional native Muse/DeepSeek routes** use `muse-native` and
-  `deepseek-native` for proposing and refinement. Their isolated configuration,
-  native authorization and tool-free repair contract are documented in
-  `docs/native-harnesses.md`. Defaults and frozen runs retain their existing routes.
-- **Default CLI roster is `[agy-gemini-pro, grok, codex-luna]` proposers,
-  `[deepseek-flash, opus]` refiners, and `codex-sol` aggregator at `xhigh`** using the
-  `{agy, codex, claude, opencode}` harnesses. The Web UI Thorough preset replaces
-  Luna with GLM 5.3 beside Astra so all four proposer lanes come from independent
-  labs. Thorough synthesis defaults to Ultra and exposes all seven curated
-  OpenAI models plus Argon, Opus and Fable, each with its full supported effort
-  range. Fable starts at High to leave room for its answer; other Thorough synthesis
-  routes select their maximum by default. Final-stage overrides are scoped to
-  Layer 3; preserve frozen settings in active or archived jobs. Cursor is unsupported. DeepSeek Flash is the curated DeepSeek family, with OpenCode Go and native transports, and is included
-  in every refinement preset. The model defaults are
-  Gemini 4 Argon High, Grok 4.7, GPT-6 Luna, DeepSeek V4.1 Flash, Claude Opus 5.5 (`claude-opus-5-5`),
-  and `gpt-6.1-sol` at `xhigh` for synthesis. Fable 5.1 is an
-  aggregator-only, warning-gated alternative and is never a proposer or
-  refiner. It is a default, not a cap—the roster is pure config (built-in names,
-  `providers:` in config.yaml, current Claude/OpenCode/Google routes
-  documented in `docs/config.md`, or the
-  `MOA_PROVIDER_<NAME>` env shorthand). OpenCode-backed routes use a
-  `provider/model` string, but a new *harness* needs its own adapter—open an
-  issue first. Stable provider names
-  such as `sonnet`, `opus`, `qwen`, and `deepseek-flash` are compatibility/configuration
-  identifiers; manifests and the Web UI record their resolved current model.
-
-## Config surface
-
-Precedence, highest first: CLI flags, then shell env, then `.env`,
-then `harness/config.yaml`, then built-in defaults. Loader lives at
-`harness/scripts/config.py`. Full knob table in `docs/config.md`.
-
-<!-- AGENT-MANAGED SECTION -->
-<!-- Lifecycle for entries below: (1) write the full why/detail into the relevant
-     doc or skill FIRST, (2) add a one-line RULE + one-clause tripwire + pointer
-     here, (3) once the entry is stable, graduate it into the human section above
-     and delete it here. Keep this section short — it's an inbox, not an archive. -->
-
-## Discovered patterns
-
-- **Evidence validation fails closed.** Reject a proposer before persistence
-  when its evidence cross-fields are invalid, and redact operator email/home
-  details from browser-visible worker logs. → `harness/scripts/run_moa.py`,
-  `harness/webui/store.py`.
-- **Scanned-PDF OCR is page-parallel but output-ordered.** Keep the
-  CPU-derived `MOA_ATTACHMENT_OCR_WORKERS` × Tesseract thread budget bounded,
-  serialize progress updates, and always reassemble text by PDF page number.
-  → `docs/webui.md`.
-- **Effort copy and controls are one UI contract.** If a roster row says
-  “Adjust,” selecting it must reveal an enabled control; fixed routes must say
-  “Fixed _level_ effort” or “Provider-managed effort.” Drive both from
-  `effortPresentation()` and never reuse the route's `data-effort-mode` marker
-  for the `fieldset[data-effort-control]` container; keep the Playwright
-  contract test green. → `docs/webui.md`.
-- **Model lab owns visual identity; execution harness never does.** Every
-  roster group, review node, live lane, health-card portrait, archived run,
-  and responsive state must resolve `lab_id` through
-  `harness/scripts/model_labs.py`. Unknown custom routes use the independent
-  lab fallback. Never add `provider-*` or harness-keyed `pixel-*` art.
-  → `docs/assets.md`.
-- **OpenCode dispatch follows the installed major version.** V2 uses a private
-  server, NDJSON, an independent disposable repository snapshot, and an explicit read-only
-  agent; V1 retains its original flags and permission file. →
-  `adapters/opencode.py`, `docs/architecture.md`.
-- **opencode model ids are `provider/model` strings.** Swap billing paths by
-  overriding the model string (`MOA_CUSTOM_MODEL=provider/model`), not by adding a
-  harness. → `docs/config.md`.
-- **Schema-invalid roots get one bounded repair pass, not a research retry.**
-  Root-shaped objects are retained for strict validation. Every provider can
-  repair the supplied object with all research tools disabled; attempts and
-  backoff share one provider deadline. → `harness/scripts/run_moa.py`.
-- **Google runs through AGY.** Live probes control route availability;
-  execution fails closed on plan mode + sandbox and reuses local CLI auth.
-  → `docs/architecture.md`.
-- **The HTML run report is a single self-contained file.** `report.py` inlines
-  `harness/report/template.html`, six editorial WebP illustrations, and the
-  session data — zero network requests (tests assert no external
-  `src=`/`href=`). The session JSON is embedded in a
-  `<script type="application/json">` with `</` → `<\/` so a `</script>` inside
-  a captured log can't terminate the tag early. → `docs/report.md`.
-
-### Shared provider recovery
-
-Automatic recovery belongs in `run_moa._run_with_recovery`, for all providers and
-roles including aggregation and self-MoA. Keep a single total per-provider
-deadline: at most three research calls with 5/15-second jittered backoff and one
-tool-free repair capped at 240 seconds. Permanent auth/access/billing/config
-failures and workspace mutations never retry. Record every attempt's log,
-harness, model, timing and outcome. The web/Slack worker must not multiply these
-attempts with another retry loop. AGY's native schema file must stay inside its
-isolated workspace; AGY/Gemini mechanical repairs use tool-free Claude Opus.
-OpenCode also prefers authenticated native Opus for mechanical repair, with its
-own tool-free backend as the fallback. A native helper rejected before producing
-any payload can fall back once for auth/access or local CLI/model compatibility,
-within the same 240-second repair window. Generated output, evidence failures,
-safety refusals and billing errors never trigger that switch. Internal errors inside HTTP 200 responses
-remain retryable; malformed plan-boundary recovery must preserve source literals.
-Run `python3 harness/scripts/test_recovery.py` with the existing offline tests.
-
-New v2 decisions use `final-plan-v2.schema.json`; archives retain v1. Read
-`docs/evidence-pipeline.md` before changing claim selection, receipts, the final
-audit, checkpoints or readiness. Run `test_scout.py` and `test_evidence_pipeline.py`
-alongside the existing offline/recovery/browser tests.
+CLAUDE.md is the guidance source; keep AGENTS.md equivalent plain Markdown,
+replacing conditional blocks with “When …” headings. Use ordinary links for
+on-demand detail; avoid eager imports.
