@@ -105,5 +105,5 @@ workspace-mutation and bounded recovery checks still apply.
 - [Muse Code](https://dev.meta.ai/docs/muse-code)
 - [Muse authentication](https://dev.meta.ai/docs/muse-code/auth)
 - [DeepSeek CLI](https://github.com/deepseek-ai/deepseek-harness/tree/master/apps/cli)
-- [DeepSeek headless authentication and events](https://github.com/deepseek-ai/deepseek-harness/tree/master/packages/app/headless)
+- [DeepSeek headless authentication and events](https://github.com/deepseek-ai/deepseek-harness/tree/master/packages/bundle/headless)
 - [DeepSeek 1017 update](https://api-docs.deepseek.com/updates/)
