@@ -5,6 +5,7 @@ import io
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -193,6 +194,15 @@ class WebUITest(unittest.TestCase):
         self.assertTrue(result["authenticated"])
         self.assertTrue(routes["agy-gemini-pro"]["available"])
         self.assertNotIn("agy-gemini-flash", routes)
+
+    def test_web_and_slack_import_in_a_fresh_process(self):
+        # Earlier tests import run_moa, which changes sys.path and can hide
+        # startup-only package-import errors in a deployed service.
+        env = {key: value for key, value in os.environ.items() if key != "PYTHONPATH"}
+        result = subprocess.run([sys.executable, "-c", "import harness.webui.app; import harness.slack.bot"],
+                                cwd=Path(__file__).resolve().parents[3], env=env,
+                                capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_muse_catalog_checks_each_route_and_preserves_model_identity(self):
         from muse_models import MUSE_ROUTES
