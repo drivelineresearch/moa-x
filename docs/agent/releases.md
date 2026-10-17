@@ -32,6 +32,8 @@ work after extraction. Copy the skill manifest to the archive root, adjusting
 its parent-docs link to docs/. Add root links for scripts, prompts, report,
 webui, slack, and config.example.yaml, each targeting its harness/ counterpart.
 These internal links preserve existing skill commands without duplicating code.
+Install into a fresh skill directory; move an older installation aside first
+because its real directories cannot be overwritten by directory symlinks.
 The full archive retains the original repository layout. Neither archive may
 include local configuration, credentials, session data, or caches.
 

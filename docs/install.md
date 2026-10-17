@@ -110,7 +110,9 @@ it prints the exact `login` command to run yourself.
 
 The main way to run MoA-X is `/mixture-of-agents` inside Claude Code.
 The release includes a ready-to-install archive whose top-level directory is
-already named `mixture-of-agents/`:
+already named `mixture-of-agents/`. Extract into a fresh directory. When
+upgrading, move the existing skill directory aside first and carry over any
+private configuration after installation.
 
 ```bash
 mkdir -p ~/.claude/skills
