@@ -199,7 +199,7 @@ class WebUITest(unittest.TestCase):
         visible = {model: {"modelId": model} for model, label in MUSE_ROUTES.values() if "full" not in model}
         with patch.object(web_providers.shutil, "which", return_value="/bin/muse"), \
              patch.object(web_providers, "_run", return_value=(True, "Muse Code fixture")), \
-             patch.object(web_providers.muse, "check_available", return_value=(True, "credential present")), \
+             patch.dict(web_providers.PROVIDER_META["muse"], {"probe": lambda: (True, "credential present")}), \
              patch.object(web_providers.muse, "list_models", return_value=(True, visible, "catalog checked")):
             result = web_providers.probe_provider("muse")
         self.assertEqual(result["probe_level"], "catalog")
