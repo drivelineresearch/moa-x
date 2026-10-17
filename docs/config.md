@@ -1,5 +1,11 @@
 # Configuration
 
+Optional `muse-native` (`harness: muse`, model `muse-spark-1.3`) and
+`deepseek-native` (`harness: deepseek`, model `deepseek-flash`) routes use the
+native vendor CLIs. See [native-harnesses.md](native-harnesses.md) for
+authorization, isolation and per-harness binary/timeout overrides. Existing
+OpenCode routes and default rosters keep their current identities.
+
 MoA-X resolves configuration in this order:
 
 1. runner CLI flags;
@@ -22,6 +28,8 @@ Never commit `.env`, provider keys, or generated `harness/config.yaml`.
 | `muse-spark` | OpenCode | `opencode-go/muse-spark-1.3-contributor` | optional proposer/refiner | provider-managed |
 | `glm` | OpenCode | `opencode-go/glm-5.3` | proposer, refiner | provider-managed |
 | `deepseek-flash` | OpenCode | `opencode-go/deepseek-v4.1-flash` | proposer, refiner | provider-managed |
+| `muse-native` | Muse Code | `muse-spark-1.3` | optional proposer/refiner | adjustable; high default |
+| `deepseek-native` | DeepSeek Harness | `deepseek-flash` | optional proposer/refiner | low/high/max; high default |
 | `sonnet` | Claude Code | `claude-sonnet-5-5` | proposer, refiner | adjustable; high default |
 | `opus` | Claude Code | `claude-opus-5-5` | proposer, refiner, aggregator | adjustable; high default |
 | `codex-sol` | Codex | `gpt-6.1-sol` | proposer, refiner, aggregator | adjustable; xhigh default |
@@ -84,7 +92,7 @@ effort flag.
 
 ## User-defined routes
 
-Supported harnesses are `codex`, `claude`, `opencode`, `agy`, and `gemini`.
+Supported harnesses are `codex`, `claude`, `opencode`, `agy`, `gemini`, `muse`, and `deepseek`.
 The loader rejects any other harness before dispatch.
 
 ```yaml

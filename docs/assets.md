@@ -44,6 +44,12 @@ harnesses such as OpenCode or AGY must never determine character identity.
 Unknown custom routes use the `independent` lab set. Do not reintroduce
 `provider-*` or harness-keyed `pixel-*` assets.
 
+The Meta/Muse and DeepSeek portraits were refreshed with the built-in image
+generator on 2026-10-17, retaining the characters' established identities and
+matching their existing full-body illustrations. Native and OpenCode routes
+share their respective lab portraits. The generation prompts are recorded in
+[artwork-prompts.md](artwork-prompts.md).
+
 When contributing new assets:
 
 - use work you created or have clear redistribution rights to;

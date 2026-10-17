@@ -1,5 +1,10 @@
 # Architecture
 
+Optional native vendor transports (`muse-native`, `deepseek-native`) follow the
+same shared validation and recovery boundary. Their isolated configuration,
+tool allowlists and authorization are documented in
+[native-harnesses.md](native-harnesses.md). Existing defaults remain unchanged.
+
 MoA-X adapts the 2024 Mixture-of-Agents method
 ([Wang et al., arXiv:2406.04692](https://arxiv.org/abs/2406.04692)) to
 repo-grounded implementation planning.

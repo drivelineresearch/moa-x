@@ -33,6 +33,7 @@ jobs:
         run: |
           python3 harness/scripts/test_offline.py
           python3 harness/scripts/test_opencode.py
+          python3 harness/scripts/test_native.py
           python3 harness/scripts/test_recovery.py
           python3 harness/scripts/test_scout.py
           python3 harness/scripts/test_evidence_pipeline.py

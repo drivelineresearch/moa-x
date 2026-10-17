@@ -99,6 +99,7 @@ from adapters import claude as claude_adapter  # noqa: E402
 from adapters import opencode as opencode_adapter  # noqa: E402
 from adapters import agy as agy_adapter  # noqa: E402
 from adapters import gemini as gemini_adapter  # noqa: E402
+from adapters import muse as muse_adapter, deepseek as deepseek_adapter  # noqa: E402
 from adapters.failures import Failure, classify_failure, failure_diagnostics  # noqa: E402
 from adapters.claude import TEMPERATURE_DIVERSITY_SHIM  # noqa: E402
 from attachments import AttachmentError, prepare_attachment_context  # noqa: E402
@@ -971,6 +972,10 @@ def _invoke_adapter(
                                prompt_file=session_dir / "prompts" / f"{log_file.stem}.md")
     if harness == "gemini":
         return gemini_adapter.run(**common)
+    if harness in {"muse", "deepseek"}:
+        adapter = muse_adapter if harness == "muse" else deepseek_adapter
+        return adapter.run(**common, reasoning_effort=effort,
+                           allow_tools=not repair, allow_webfetch=not repair)
     raise ValueError(f"unknown harness {harness!r}")
 
 
@@ -1259,6 +1264,14 @@ def _run_gemini(**kwargs: Any) -> LayerResult:
     return _run_with_recovery(harness="gemini", **kwargs)
 
 
+def _run_muse(*, reasoning_effort: Optional[str] = None, **kwargs: Any) -> LayerResult:
+    return _run_with_recovery(harness="muse", reasoning_effort=reasoning_effort, **kwargs)
+
+
+def _run_deepseek(*, reasoning_effort: Optional[str] = None, **kwargs: Any) -> LayerResult:
+    return _run_with_recovery(harness="deepseek", reasoning_effort=reasoning_effort, **kwargs)
+
+
 @dataclass(frozen=True)
 class WorkspaceSnapshot:
     digest: str
@@ -1488,7 +1501,8 @@ def _dispatch_provider(
     ``codex_effort``.
     """
     runners = {"codex": _run_codex, "claude": _run_sonnet,
-               "opencode": _run_opencode, "agy": _run_agy, "gemini": _run_gemini}
+               "opencode": _run_opencode, "agy": _run_agy, "gemini": _run_gemini,
+               "muse": _run_muse, "deepseek": _run_deepseek}
     schemas = {"proposer": PROPOSER_SCHEMA_PATH, "refiner-broadcast": REFINER_SCHEMA_PATH}
     harness = provider.harness
     if harness not in runners:
@@ -3387,6 +3401,8 @@ def main() -> int:
                 ok, msg = agy_adapter.check_available()
             elif harness == "gemini":
                 ok, msg = gemini_adapter.check_available()
+            elif harness in {"muse", "deepseek"}:
+                ok, msg = (muse_adapter if harness == "muse" else deepseek_adapter).check_available()
             else:
                 ok, msg = False, f"unknown harness {harness!r}"
             available[harness] = ok
@@ -3403,6 +3419,8 @@ def main() -> int:
             "opencode": _int_env("MOA_OPENCODE_TIMEOUT") or sonnet_timeout,
             "agy": _int_env("MOA_AGY_TIMEOUT") or sonnet_timeout,
             "gemini": _int_env("MOA_GEMINI_TIMEOUT") or sonnet_timeout,
+            "muse": _int_env("MOA_MUSE_TIMEOUT") or sonnet_timeout,
+            "deepseek": _int_env("MOA_DEEPSEEK_TIMEOUT") or sonnet_timeout,
         }
 
         started_at = time.time()

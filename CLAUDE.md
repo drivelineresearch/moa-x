@@ -78,6 +78,10 @@ Rule 2 is non-negotiable. Rule 1 is a strong recommendation.
   `FIREWORKS_API_KEY`, `QWEN_TOKEN_PLAN_API_KEY`, and others). The open gap is
   complete cross-provider usage/cost telemetry and safe pre-dispatch budget controls, not
   basic API-key authentication.
+- **Optional native Muse/DeepSeek routes** use `muse-native` and
+  `deepseek-native` for proposing and refinement. Their isolated configuration,
+  native authorization and tool-free repair contract are documented in
+  `docs/native-harnesses.md`. Defaults and frozen runs retain their existing routes.
 - **Default CLI roster is `[agy-gemini-pro, grok, codex-luna]` proposers,
   `[deepseek-flash, opus]` refiners, and `codex-sol` aggregator at `xhigh`** using the
   `{agy, codex, claude, opencode}` harnesses. The Web UI Thorough preset replaces

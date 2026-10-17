@@ -2947,7 +2947,10 @@ def test_opencode_schema_repair_is_bounded_and_offline() -> bool:
             and result.schema_valid
             and adapter_run.call_count == 2
             and repair_call["repo_path"] == session
-            and repair_call["timeout_seconds"] == 240
+            # Subtracting monotonic deadlines can round just below 240 on
+            # fresh CI hosts (for example, 239.99999999999997).
+            and 0 < repair_call["timeout_seconds"] <= 240
+            and abs(repair_call["timeout_seconds"] - 240) < 1e-6
             and repair_call["allow_webfetch"] is False
             and repair_call["allow_tools"] is False
             and "Do not research, browse" in repair_call["prompt"]
@@ -3072,13 +3075,17 @@ def test_claude_schema_repair_is_bounded_and_tool_free() -> bool:
             and result.schema_valid
             and adapter_run.call_count == 2
             and repair_call["repo_path"] == session
-            and repair_call["timeout_seconds"] == 240
+            and 0 < repair_call["timeout_seconds"] <= 240
+            and abs(repair_call["timeout_seconds"] - 240) < 1e-6
             and repair_call["allow_research"] is False
             and "Do not research, browse" in repair_call["prompt"]
             and "Never invent a file, line, URL, snippet, claim"
             in repair_call["prompt"]
         )
-        return _ok(ok, f"success={result.success} calls={adapter_run.call_count}")
+        return _ok(ok, f"success={result.success} calls={adapter_run.call_count} "
+                   f"schema_valid={result.schema_valid} repo_equal={repair_call['repo_path'] == session} "
+                   f"repair_timeout={repair_call['timeout_seconds']} allow_research={repair_call['allow_research']} "
+                   f"prompt_guards={('Do not research, browse' in repair_call['prompt'], 'Never invent a file, line, URL, snippet, claim' in repair_call['prompt'])}")
 
 
 def test_refiner_verification_repair_is_harness_independent() -> bool:
@@ -3822,7 +3829,10 @@ def test_report_generates_single_self_contained_file() -> bool:
         # model lab must be embedded in the portable HTML artifact.
         from model_labs import MODEL_LABS
         inlined = "<script>" in html and art_count == 6 + 2 * len(MODEL_LABS)
-        return _ok(not external and inlined and len(html) > 100_000,
+        favicon_match = _re.search(r'<link rel="icon" type="image/png" href="data:image/png;base64,([^"]+)">', html)
+        import base64
+        favicon_ok = bool(favicon_match and base64.b64decode(favicon_match[1]).startswith(b"\x89PNG\r\n\x1a\n"))
+        return _ok(not external and inlined and favicon_ok and len(html) > 100_000,
                    f"external_refs={external[:2]}, art={art_count}, bytes={len(html)}")
     finally:
         _shutil.rmtree(tmp, ignore_errors=True)

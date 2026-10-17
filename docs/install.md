@@ -93,6 +93,10 @@ trusted-network warning.
 
 ## 2. Verify
 
+Optional native Meta and DeepSeek transports are documented in
+[native-harnesses.md](native-harnesses.md). They have their own authorization
+and do not replace the default OpenCode Go routes.
+
 ```bash
 python3 harness/scripts/install_deps.py
 ```

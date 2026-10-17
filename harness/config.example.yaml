@@ -27,7 +27,8 @@ layers:
   skip_refinement: false
 
 # User-defined providers may use only supported harnesses:
-# codex, claude, opencode, agy, or gemini.
+# codex, claude, opencode, agy, gemini, muse, or deepseek.
+# Optional native routes: muse-native and deepseek-native. See docs/native-harnesses.md.
 #
 # providers:
 #   custom-reviewer:
