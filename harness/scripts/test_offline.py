@@ -2947,7 +2947,10 @@ def test_opencode_schema_repair_is_bounded_and_offline() -> bool:
             and result.schema_valid
             and adapter_run.call_count == 2
             and repair_call["repo_path"] == session
-            and repair_call["timeout_seconds"] == 240
+            # Subtracting monotonic deadlines can round just below 240 on
+            # fresh CI hosts (for example, 239.99999999999997).
+            and 0 < repair_call["timeout_seconds"] <= 240
+            and abs(repair_call["timeout_seconds"] - 240) < 1e-6
             and repair_call["allow_webfetch"] is False
             and repair_call["allow_tools"] is False
             and "Do not research, browse" in repair_call["prompt"]
