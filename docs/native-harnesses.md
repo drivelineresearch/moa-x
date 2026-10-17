@@ -94,6 +94,8 @@ The native Muse catalog exposes eight text-model choices:
 | `muse-wonder-full` | Wonder Full 1.0 Standard | Minimal, Low, Medium, High, Xhigh, Max |
 | `muse-wonder-full-contributor` | Wonder Full 1.0 Contributor | Minimal, Low, Medium, High, Xhigh, Max |
 
+This table follows the installed Muse Code catalog and live native probes;
+API-only limitations may differ from subscription routes.
 Every native route defaults to High and remains a proposer/refiner option.
 Existing defaults and archived route ids remain unchanged. `muse-native` still
 means Spark 1.3; Wonder Full is a distinct model, not Wonder at Max effort.

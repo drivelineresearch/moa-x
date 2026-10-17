@@ -16,7 +16,7 @@ _LAST_MODELS = {}
 
 
 def list_models(timeout_seconds=15):
-    """Return native model IDs and supported tiers, without reading API secrets."""
+    """Return native model IDs and supported tiers, without exporting credentials."""
     global _LAST_MODELS
     deadline = time.monotonic() + timeout_seconds
     binary = os.environ.get("MOA_MUSE_BIN") or "muse"
@@ -64,6 +64,8 @@ def list_models(timeout_seconds=15):
                         proc.stdin.write(b'{"jsonrpc":"2.0","method":"initialized","params":{}}\n')
                         proc.stdin.flush()
                         result = call(2, "model/list", {})
+                        if not isinstance(result, dict):
+                            raise ValueError("Invalid Muse model catalog result")
                         rows = result["models"]
                         if not isinstance(rows, list) or not all(isinstance(row, dict) and isinstance(row.get("modelId"), str) for row in rows):
                             raise ValueError("Invalid Muse model catalog")
