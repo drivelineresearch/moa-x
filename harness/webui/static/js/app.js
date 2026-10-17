@@ -404,7 +404,7 @@ function renderProviders() {
   }
   target.innerHTML = state.providers.map((provider, index) => {
     const listedModels = provider.routes?.length ? provider.routes : provider.models;
-    const modelNames = listedModels.map((model) => model.name || model.id).join(", ") || "Discovered at launch";
+    const modelNames = listedModels.map((model) => (model.name || model.id).replace(/ · (?:Muse Code|Native Harness)$/, "")).join(", ") || "Discovered at launch";
     const routeLabs = [...new Set(
       listedModels.map((route) => normalizeLabId(
         route.lab_id || inferLabId(route.id, route.model, route.lab),
@@ -436,8 +436,8 @@ function renderProviders() {
           <dl class="provider-details">
             <div><dt>Version</dt><dd>${escapeHtml(provider.version)}</dd></div>
             <div><dt>Authentication</dt><dd>${escapeHtml(provider.authMode)}</dd></div>
-            <div><dt>Models</dt><dd title="${escapeHtml(modelNames)}">${escapeHtml(modelNames)}</dd></div>
-            <div><dt>Model labs</dt><dd>${escapeHtml(visibleLabs.map((id) => labVisual(id).label).join(", "))}</dd></div>
+            <div class="provider-models"><dt>Models</dt><dd title="${escapeHtml(modelNames)}">${escapeHtml(modelNames)}</dd></div>
+            <div class="provider-model-labs"><dt>Model labs</dt><dd>${escapeHtml(visibleLabs.map((id) => labVisual(id).label).join(", "))}</dd></div>
           </dl>
           <div class="provider-foot">
             <small>${provider.last_checked ? `Checked ${escapeHtml(formatTime(provider.last_checked))}` : "Not checked this session"}</small>

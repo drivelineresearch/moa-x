@@ -1844,7 +1844,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); outline
 .provider-card:nth-child(odd) { padding-right: 34px; }
 .provider-card:nth-child(even) { padding-left: 34px; border-left: 1px solid var(--line); }
 .provider-card-head { display: flex; justify-content: space-between; gap: 20px; align-items: flex-start; }
-.provider-card-body { min-width: 0; }
+.provider-card-body { min-width: 0; display: flex; flex-direction: column; }
 .provider-card-head .eyebrow { margin-bottom: 5px; }
 .provider-card-portrait { margin: 0; }
 .provider-card-portrait > span {
@@ -1904,9 +1904,10 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); outline
   gap: 12px;
   margin: 22px 0 0;
 }
+.provider-models, .provider-model-labs { grid-column: 1 / -1; }
 .provider-details dt { color: var(--quiet); font-size: 11px; }
 .provider-details dd { margin: 3px 0 0; color: var(--dark); font-size: 13px; font-weight: 700; }
-.provider-foot { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-top: 22px; }
+.provider-foot { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-top: auto; padding-top: 22px; }
 .provider-foot small { color: var(--quiet); }
 .provider-setup { margin-top: 20px; padding-top: 17px; border-top: 1px solid var(--line); }
 .provider-setup summary {

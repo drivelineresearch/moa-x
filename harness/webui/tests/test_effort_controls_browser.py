@@ -405,6 +405,11 @@ class EffortControlsBrowserTest(unittest.TestCase):
                         for name in ("Muse Code", "DeepSeek Harness", "Codex", "Claude", "OpenCode", "Antigravity"):
                             self.assertIn(name, footer)
                         self.assertNotIn("Connected", footer)
+                        if viewport["width"] > 1000:
+                            bottoms = page.locator(".provider-foot button").evaluate_all("nodes=>nodes.map(n=>n.getBoundingClientRect().bottom)")
+                            for left, right in zip(bottoms[::2], bottoms[1::2]):
+                                self.assertLessEqual(abs(left - right), 1)
+                        self.assertNotIn("· Muse Code", page.locator('[data-provider-id="muse"] .provider-models').inner_text())
                         opencode_card = page.locator('[data-provider-id="opencode"]')
                         self.assertEqual(opencode_card.locator(".provider-lab-stack img").count(), 5)
                         self.assertIn("Meta", opencode_card.locator(".provider-details").inner_text())
