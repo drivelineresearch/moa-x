@@ -22,10 +22,22 @@ if str(SCRIPTS_DIR) not in sys.path:
 import config as harness_config  # noqa: E402
 from model_efforts import effort_options
 from model_labs import ROUTE_META, model_lab, route_lab_id  # noqa: E402
-from adapters import agy, claude, codex, opencode  # noqa: E402
+from adapters import agy, claude, codex, opencode, muse, deepseek  # noqa: E402
 
 
 PROVIDER_META = {
+    "muse": {
+        "label": "Muse Code", "lab": "Meta", "group": "Meta · Muse Code",
+        "binary": lambda: os.environ.get("MOA_MUSE_BIN") or "muse",
+        "probe": muse.check_available, "install": "See docs/native-harnesses.md",
+        "login": "muse login",
+    },
+    "deepseek": {
+        "label": "DeepSeek Harness", "lab": "DeepSeek", "group": "DeepSeek · Native Harness",
+        "binary": lambda: os.environ.get("MOA_DEEPSEEK_BIN") or "dsh",
+        "probe": deepseek.check_available, "install": "npm i -g @deepseek-ai/dsh@0.2.1-rc.2",
+        "login": "Set DEEPSEEK_API_KEY or save it in ~/.dsh/.env",
+    },
     "codex": {
         "label": "Codex",
         "lab": "OpenAI",
@@ -82,6 +94,8 @@ LIVE_BLOCKED_ROUTES: dict[str, str] = {
 }
 
 EFFORT_OPTIONS = {
+    "muse": ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
+    "deepseek": ["low", "high", "max"],
     "codex": ["low", "medium", "high", "xhigh", "max", "ultra"],
     "claude": ["low", "medium", "high", "xhigh", "max"],
     # AGY model slugs encode depth, so the UI changes the slug instead of

@@ -14,7 +14,7 @@ CLI flags passed to run_moa.py still override everything — they are
 parsed after this module populates os.environ.
 
 Harnesses supported by the built-in adapters are {codex, claude, opencode,
-agy, gemini}. Curated named routes are declared in
+agy, gemini, muse, deepseek}. Curated named routes are declared in
 ``BUILTIN_PROVIDERS`` below; user-defined entries in harness/config.yaml are
 layered on top.
 
@@ -72,9 +72,11 @@ _DEFAULT_BINS = {
     "claude": "claude",
     "agy": "agy",
     "gemini": "gemini",
+    "muse": "muse",
+    "deepseek": "dsh",
 }
 SUPPORTED_HARNESSES = frozenset(
-    {"codex", "claude", "opencode", "agy", "gemini"}
+    {"codex", "claude", "opencode", "agy", "gemini", "muse", "deepseek"}
 )
 
 
@@ -122,6 +124,8 @@ BUILTIN_PROVIDERS: dict[str, ResolvedProvider] = {
     "muse-spark":     ResolvedProvider(name="muse-spark", harness="opencode", model="opencode-go/muse-spark-1.3-contributor"),
     "glm":            ResolvedProvider(name="glm",            harness="opencode", model="opencode-go/glm-5.3"),
     "deepseek-flash": ResolvedProvider(name="deepseek-flash", harness="opencode", model="opencode-go/deepseek-v4.1-flash"),
+    "muse-native": ResolvedProvider(name="muse-native", harness="muse", model="muse-spark-1.3", effort="high"),
+    "deepseek-native": ResolvedProvider(name="deepseek-native", harness="deepseek", model="deepseek-flash", effort="high"),
     # Google runs through AGY, which reuses the account signed into the local
     # Antigravity CLI. Gemini Pro is part of the shipped proposer defaults.
     # AGY selects depth in the model slug itself (for example
@@ -147,6 +151,8 @@ PROVIDER_ALLOWED_ROLES: dict[str, frozenset[str]] = {
     "fable": frozenset({"aggregator"}),
     "minimax": frozenset({"proposer", "refiner"}),
     "muse-spark": frozenset({"proposer", "refiner"}),
+    "muse-native": frozenset({"proposer", "refiner"}),
+    "deepseek-native": frozenset({"proposer", "refiner"}),
     "kimi": frozenset(),
     "qwen": frozenset(),
     "qwen-opencode": frozenset(),
@@ -439,7 +445,7 @@ def _user_providers_from_yaml(cfg: dict[str, Any]) -> dict[str, dict]:
 # Harnesses a provider spec may target. Used to validate MOA_PROVIDER_* env
 # definitions loudly at parse time instead of failing deep in dispatch.
 _KNOWN_HARNESSES = frozenset(
-    {"codex", "claude", "opencode", "agy", "gemini"}
+    {"codex", "claude", "opencode", "agy", "gemini", "muse", "deepseek"}
 )
 
 

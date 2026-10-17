@@ -43,7 +43,7 @@ if TYPE_CHECKING:
     from config import LoadedConfig, ResolvedProvider
 
 
-ALL_HARNESSES = ("codex", "claude", "opencode", "agy", "gemini")
+ALL_HARNESSES = ("codex", "claude", "opencode", "agy", "gemini", "muse", "deepseek")
 
 
 def _check(label: str, cmd: list[str]) -> tuple[bool, str]:
@@ -128,6 +128,7 @@ def _check_needed_harnesses(loaded_cfg: "LoadedConfig", failures: list[str]) -> 
     from adapters import opencode as opencode_adapter
     from adapters import agy as agy_adapter
     from adapters import gemini as gemini_adapter
+    from adapters import muse as muse_adapter, deepseek as deepseek_adapter
 
     adapter_for = {
         "codex": codex_adapter,
@@ -135,8 +136,12 @@ def _check_needed_harnesses(loaded_cfg: "LoadedConfig", failures: list[str]) -> 
         "opencode": opencode_adapter,
         "agy": agy_adapter,
         "gemini": gemini_adapter,
+        "muse": muse_adapter,
+        "deepseek": deepseek_adapter,
     }
     install_hint = {
+        "muse": "install Muse Code, then muse login (see docs/native-harnesses.md)",
+        "deepseek": "npm i -g @deepseek-ai/dsh@0.2.1-rc.2; set DEEPSEEK_API_KEY (see docs/native-harnesses.md)",
         "codex":  "npm i -g @openai/codex && codex login",
         "claude": "see https://docs.claude.com/en/docs/claude-code/quickstart",
         "opencode": "curl -fsSL https://opencode.ai/install | bash  (then: opencode auth login, "
@@ -279,6 +284,9 @@ def _check_assets(failures: list[str]) -> None:
         skill_dir / "scripts" / "adapters" / "claude.py",
         skill_dir / "scripts" / "adapters" / "agy.py",
         skill_dir / "scripts" / "adapters" / "gemini.py",
+        skill_dir / "scripts" / "adapters" / "muse.py",
+        skill_dir / "scripts" / "adapters" / "deepseek.py",
+        skill_dir / "scripts" / "adapters" / "native.py",
         skill_dir / "scripts" / "schemas" / "proposer.schema.json",
         skill_dir / "scripts" / "schemas" / "refiner.schema.json",
         skill_dir / "scripts" / "schemas" / "final-plan.schema.json",

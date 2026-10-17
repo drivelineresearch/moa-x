@@ -1,5 +1,35 @@
 # Meta and MiniMax character artwork
 
+## Native harness portrait refresh, 2026-10-17
+
+Generated with the built-in image generator, one call per portrait. The existing
+`lab-meta-avatar.webp` and `lab-deepseek-avatar.webp` were identity/style
+references. Outputs were resized to 320 × 320 RGB WebP with metadata removed.
+Existing full-body artwork remains the identity-matched companion. These are
+original fictional lab characters, shared across native and OpenCode routes.
+
+Muse prompt: Create a new refreshed square chest-up editorial avatar for the
+Muse/Meta model-lab character in the reference. Preserve the original fictional
+character's identity: young adult woman, short tousled midnight blue hair,
+silver star hair clip, thin silver round glasses, warm natural skin and
+blue-grey eyes. Match detailed fantasy-tech hand-inked linework, delicate
+watercolor/gouache, warm ivory paper and thin inset frame. New composed,
+confident expression, slight three-quarter turn, silver and cobalt
+constellation-embroidered collar, and a small luminous geometric blue muse spark
+near her shoulder. Tight chest-up framing, head large and centered, readable at
+320px. No vendor logos, words, letters, watermark or collage.
+
+DeepSeek prompt: Create a new refreshed square chest-up editorial avatar for
+the DeepSeek model-lab character in the reference. Preserve the original
+fictional character's identity: young adult man, tousled dark navy hair, thin
+round steel glasses, thoughtful blue-grey eyes, warm natural skin, navy
+technical explorer's coat with muted orange piping and high ivory collar.
+Match detailed fantasy-tech hand-inked linework, delicate watercolor/gouache,
+warm ivory paper and thin inset frame. New thoughtful, calm, confident
+expression, slight three-quarter pose and a subtle luminous blue crystalline
+wave near one shoulder. Tight chest-up framing, head large and centered,
+readable at 320px. No vendor logos, words, letters, watermark or collage.
+
 Created with the built-in image generator on 2026-10-14. These are original
 fictional model-lab characters, not vendor logos or endorsements. The generated
 images were resized to the existing 320px avatar / 480px full-body contract,

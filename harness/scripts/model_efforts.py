@@ -27,4 +27,8 @@ def effort_options(harness, model, configured_effort=None):
         return list(CLAUDE_EFFORTS)
     if harness == "agy":
         return list(GEMINI_EFFORTS)
+    if harness == "muse":
+        return ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]
+    if harness == "deepseek":
+        return ["low", "high", "max"]
     return []

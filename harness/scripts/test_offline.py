@@ -3822,7 +3822,10 @@ def test_report_generates_single_self_contained_file() -> bool:
         # model lab must be embedded in the portable HTML artifact.
         from model_labs import MODEL_LABS
         inlined = "<script>" in html and art_count == 6 + 2 * len(MODEL_LABS)
-        return _ok(not external and inlined and len(html) > 100_000,
+        favicon_match = _re.search(r'<link rel="icon" type="image/png" href="data:image/png;base64,([^"]+)">', html)
+        import base64
+        favicon_ok = bool(favicon_match and base64.b64decode(favicon_match[1]).startswith(b"\x89PNG\r\n\x1a\n"))
+        return _ok(not external and inlined and favicon_ok and len(html) > 100_000,
                    f"external_refs={external[:2]}, art={art_count}, bytes={len(html)}")
     finally:
         _shutil.rmtree(tmp, ignore_errors=True)

@@ -77,6 +77,14 @@ MODEL_LABS: dict[str, dict[str, str]] = {
 
 
 ROUTE_META: dict[str, dict[str, Any]] = {
+    "muse-native": {
+        "label": "Muse Spark 1.3 · Muse Code", "lab_id": "meta",
+        "roles": ["proposer", "refiner"],
+    },
+    "deepseek-native": {
+        "label": "DeepSeek Flash · Native Harness", "lab_id": "deepseek",
+        "roles": ["proposer", "refiner"],
+    },
     "codex": {
         "label": "GPT-6 Astra",
         "lab_id": "openai",

@@ -774,6 +774,8 @@ def render_html(data: dict) -> str:
     # that happens to contain a later token string can't have that token
     # expanded into the embedded JSON.
     out = template.replace("__PAGE_TITLE__", "MoA-X — " + _esc(data.get("session_id", "run")))
+    favicon = "data:image/png;base64," + base64.b64encode((LAB_ASSET_DIR / "favicon.png").read_bytes()).decode("ascii")
+    out = out.replace("__REPORT_FAVICON__", favicon)
     out = out.replace("__DECISION_MAP_STYLE__", decision_map_style)
     out = out.replace("__DECISION_MAP_SCRIPT__", decision_map_script)
     out = out.replace("__REPORT_ASSET_JSON__", asset_json)

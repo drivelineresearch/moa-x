@@ -1,5 +1,8 @@
 # The HTML run report
 
+Each generated report embeds the Web UI's PNG favicon as a data URL. It works
+when the HTML is downloaded or opened locally and requires no server request.
+
 Every full MoA-X run ends by rendering a single, self-contained HTML
 report of the session to `.moa/<session>/report.html`. Open it in any
 browser — it needs no server and makes zero network requests. Everything
