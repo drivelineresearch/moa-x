@@ -2953,7 +2953,8 @@ def test_opencode_schema_repair_is_bounded_and_offline() -> bool:
             and "Do not research, browse" in repair_call["prompt"]
             and "Never invent a file, line, URL, snippet, claim" in repair_call["prompt"]
         )
-        return _ok(ok, f"success={result.success} calls={adapter_run.call_count}")
+        return _ok(ok, f"success={result.success} calls={adapter_run.call_count} "
+                   f"schema_valid={result.schema_valid} repair={repair_call!r}")
 
 
 def test_finalize_restores_proposer_step_emitted_at_root() -> bool:
