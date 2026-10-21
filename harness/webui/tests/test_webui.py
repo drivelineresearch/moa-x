@@ -12,13 +12,13 @@ import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from harness.scripts import attachments as attachment_module
 from harness.scripts import run_moa
 from harness.webui.app import _server_thread_count, create_app
 from harness.webui.github import _run_gh, parse_repo_pointer
-from harness.webui.monitoring import ProviderHealthMonitor
+from harness.webui.monitoring import ProviderHealthMonitor, capture_provider_issue
 from harness.webui import providers as web_providers
 from harness.webui import prompt_coach
 from harness.webui.store import redact_event_text
@@ -194,6 +194,55 @@ class WebUITest(unittest.TestCase):
         self.assertTrue(result["authenticated"])
         self.assertTrue(routes["agy-gemini-pro"]["available"])
         self.assertNotIn("agy-gemini-flash", routes)
+
+    def test_failed_agy_catalog_preserves_probe_cause_on_route(self):
+        with (
+            patch.dict(web_providers.PROVIDER_META["agy"], {"probe": lambda: (True, "account ready")}),
+            patch.object(web_providers.shutil, "which", return_value="/usr/bin/agy"),
+            patch.object(web_providers, "_run", return_value=(True, "agy 1.4.4")),
+            patch.object(web_providers.agy, "list_models", return_value=(False, [], "agy models exited 1: HTTP 503")),
+        ):
+            result = web_providers.probe_provider("agy")
+        self.assertFalse(result["authenticated"])
+        self.assertFalse(result["routes"][0]["available"])
+        self.assertEqual(result["routes"][0]["availability_detail"], result["detail"])
+        self.assertIn("HTTP 503", result["detail"])
+
+    def test_agy_preflight_failure_is_not_overwritten_by_another_catalog_probe(self):
+        with (
+            patch.dict(web_providers.PROVIDER_META["agy"], {"probe": lambda: (False, "agy models exited 1: HTTP 503")}),
+            patch.object(web_providers.shutil, "which", return_value="/usr/bin/agy"),
+            patch.object(web_providers, "_run", return_value=(True, "agy 1.4.4")),
+            patch.object(web_providers.agy, "list_models") as models,
+        ):
+            result = web_providers.probe_provider("agy")
+        models.assert_not_called()
+        self.assertFalse(result["authenticated"])
+        self.assertIn("HTTP 503", result["detail"])
+        self.assertEqual(result["routes"][0]["availability_detail"], result["detail"])
+
+    def test_opencode_alert_contains_route_failure_and_sentry_context(self):
+        with (
+            patch.dict(web_providers.PROVIDER_META["opencode"], {"probe": lambda: (True, "stored account")}),
+            patch.object(web_providers.shutil, "which", return_value="/usr/bin/opencode"),
+            patch.object(web_providers, "_run", return_value=(True, "opencode v2.0.32")),
+            patch.object(web_providers.opencode, "check_models_available", side_effect=lambda models: {
+                model: (False, "OpenCode model catalog exited 1: HTTP 503") for model in models
+            }),
+        ):
+            result = web_providers.probe_provider("opencode")
+        self.assertFalse(result["authenticated"])
+        self.assertIn("0/5 configured routes ready", result["detail"])
+        self.assertIn("HTTP 503", result["detail"])
+        scope, sdk = Mock(), Mock()
+        sdk.new_scope.return_value.__enter__ = Mock(return_value=scope)
+        sdk.new_scope.return_value.__exit__ = Mock(return_value=False)
+        with patch.dict(sys.modules, {"sentry_sdk": sdk}):
+            self.assertTrue(capture_provider_issue(result))
+        context = scope.set_context.call_args.args[1]
+        self.assertEqual(len(context["routes"]), 5)
+        self.assertTrue(all(not route["available"] for route in context["routes"]))
+        self.assertIn("HTTP 503", context["routes"][0]["availability_detail"])
 
     def test_web_and_slack_import_in_a_fresh_process(self):
         # Earlier tests import run_moa, which changes sys.path and can hide

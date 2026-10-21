@@ -103,6 +103,11 @@ def capture_provider_issue(provider: dict[str, Any]) -> bool:
                 "installed": bool(provider.get("installed")),
                 "last_checked": provider.get("last_checked"),
                 "version": provider.get("version"),
+                "routes": [
+                    {key: route.get(key) for key in
+                     ("id", "model", "available", "availability_detail")}
+                    for route in provider.get("routes", [])
+                ],
             },
         )
         event_id = sentry_sdk.capture_exception(error)

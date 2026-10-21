@@ -205,6 +205,23 @@ class OpenCodeV2Test(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 oc._cli_major_version()
 
+    def test_failed_catalog_preserves_terminal_error_and_stays_unavailable(self):
+        auth = SimpleNamespace(returncode=0, stdout='OpenCode Go', stderr='')
+        models = SimpleNamespace(returncode=1, stdout='', stderr='Loading models...\nHTTP 503 service unavailable')
+        with patch.object(oc.shutil, 'which', return_value='/usr/bin/opencode'), patch.object(oc, '_cli_major_version', return_value=2), patch.object(oc.subprocess, 'run', side_effect=[auth, models]):
+            status = oc.check_models_available(['opencode-go/grok-4.7'])
+        available, detail = status['opencode-go/grok-4.7']
+        self.assertFalse(available)
+        self.assertIn('catalog exited 1: HTTP 503 service unavailable', detail)
+        self.assertNotIn('Loading models', detail)
+
+    def test_catalog_timeout_preserves_timeout_cause(self):
+        auth = SimpleNamespace(returncode=0, stdout='OpenCode Go', stderr='')
+        with patch.object(oc.shutil, 'which', return_value='/usr/bin/opencode'), patch.object(oc, '_cli_major_version', return_value=2), patch.object(oc.subprocess, 'run', side_effect=[auth, oc.subprocess.TimeoutExpired(['opencode', 'models', '--standalone'], 25)]):
+            available, detail = oc.check_models_available(['opencode-go/grok-4.7'])['opencode-go/grok-4.7']
+        self.assertFalse(available)
+        self.assertIn('timed out after 25 seconds', detail)
+
     def test_version_probe_respects_a_short_invocation_budget(self):
         version = SimpleNamespace(returncode=0, stdout='opencode v2.0.0', stderr='')
         with patch.object(oc.subprocess, 'run', return_value=version) as call:

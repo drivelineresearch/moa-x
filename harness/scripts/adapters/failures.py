@@ -7,6 +7,17 @@ from dataclasses import dataclass
 from email.utils import parsedate_to_datetime
 
 
+def catalog_failure_detail(stdout: str, stderr: str) -> str:
+    """Keep the terminal catalog error rather than a CLI progress banner."""
+    for output in (stderr, stdout):
+        lines = [line.strip() for line in (output or "").splitlines()
+                 if line.strip() and not line.strip().lower().startswith(
+                     ("fetching available models", "loading models"))]
+        if lines:
+            return " ".join(lines)[-800:]
+    return "no error detail returned"
+
+
 @dataclass(frozen=True)
 class Failure:
     kind: str
