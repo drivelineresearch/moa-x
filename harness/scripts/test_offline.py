@@ -3579,6 +3579,19 @@ def test_agy_list_models_returns_slugs_without_display_names() -> bool:
         and "gemini-3.1-pro-high" in models
         and detail == "4 models available"
     )
+    for stdout, stderr, expected in (
+        ("", "Fetching available models...\nError: HTTP 503 service unavailable", "HTTP 503"),
+        ("Error: HTTP 401 unauthorized", "Fetching available models...\n", "HTTP 401"),
+        ("", "Fetching available models...\n", "no error detail returned"),
+    ):
+        failed = mock.Mock(returncode=1, stdout=stdout, stderr=stderr)
+        with (
+            mock.patch.object(agy_adapter.shutil, "which", return_value="/usr/bin/agy"),
+            mock.patch.object(agy_adapter.subprocess, "run", return_value=failed),
+        ):
+            failed_ok, failed_models, failed_detail = agy_adapter.list_models()
+        ok = ok and not failed_ok and not failed_models and expected in failed_detail
+        ok = ok and "Fetching available models" not in failed_detail
     return _ok(ok, f"models={models} detail={detail}")
 
 

@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Iterator, Optional
 
 from adapters import READ_ONLY_RULE, extract_json_from_text, remaining_timeout, drain_after_timeout, git_safe_env
+from adapters.failures import catalog_failure_detail
 
 _MIN_VERSION = (1, 1, 5)
 _VERSION_RE = re.compile(r"\b(\d+)\.(\d+)\.(\d+)\b")
@@ -86,7 +87,7 @@ def list_models(*, timeout_seconds: int = 20) -> tuple[bool, list[str], str]:
         if line.strip() and not line.lstrip().startswith(("#", "Usage:"))
     ]
     if proc.returncode != 0:
-        detail = (proc.stderr or proc.stdout or "no output").strip().splitlines()[0]
+        detail = catalog_failure_detail(proc.stdout, proc.stderr)
         return False, [], f"agy models exited {proc.returncode}: {detail}"
     if not models:
         return False, [], "agy models returned no model slugs (account may not be eligible)"

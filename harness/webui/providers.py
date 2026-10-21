@@ -208,6 +208,9 @@ def probe_provider(provider_id: str) -> dict[str, Any]:
         ready_count = sum(route["available"] for route in routes)
         authenticated = ready_count > 0
         detail = f"{ready_count}/{len(routes)} configured routes ready"
+        failed_route = next((route for route in routes if not route["available"]), None)
+        if failed_route:
+            detail += f"; {failed_route['model']}: {failed_route['availability_detail']}"
     if installed and provider_id == "agy":
         models_ok, discovered, model_detail = agy.list_models()
         if not models_ok:
@@ -238,7 +241,7 @@ def probe_provider(provider_id: str) -> dict[str, Any]:
                 "available": authenticated and route["model"] in discovered_models,
                 "availability_detail": (
                     detail
-                    if route["model"] in discovered_models
+                    if not authenticated or route["model"] in discovered_models
                     else f"{route['model']} is not available to this AGY account"
                 ),
             }

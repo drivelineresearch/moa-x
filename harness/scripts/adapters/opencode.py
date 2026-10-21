@@ -21,6 +21,7 @@ from typing import Iterable, Optional
 
 from adapters import READ_ONLY_RULE, extract_json_from_text, remaining_timeout, drain_after_timeout, git_safe_env
 from adapters.agy import AgyWorkspaceIsolationError, _isolated_git_workspace
+from adapters.failures import catalog_failure_detail
 
 # API-key env vars that authenticate at least one opencode provider without an
 # interactive `opencode auth login`. Presence of any one lets preflight pass
@@ -336,10 +337,11 @@ def check_models_available(models: Iterable[str]) -> dict[str, tuple[bool, str]]
                 capture_output=True, text=True, timeout=25,
             )
             if model_proc.returncode != 0:
-                return {model: (False, "OpenCode model catalog probe failed") for model in requested}
+                detail = catalog_failure_detail(model_proc.stdout, model_proc.stderr)
+                return {model: (False, f"OpenCode model catalog exited {model_proc.returncode}: {detail}") for model in requested}
             catalog = {line.split()[0] for line in model_proc.stdout.splitlines() if "/" in line}
-    except (RuntimeError, OSError, subprocess.TimeoutExpired):
-        return {model: (False, "OpenCode version/model catalog probe failed") for model in requested}
+    except (RuntimeError, OSError, subprocess.TimeoutExpired) as exc:
+        return {model: (False, f"OpenCode version/model catalog probe failed: {exc}") for model in requested}
 
     def ready(model: str) -> tuple[bool, str]:
         provider = model.split("/", 1)[0].lower()
