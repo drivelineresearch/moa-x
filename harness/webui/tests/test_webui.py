@@ -197,7 +197,7 @@ class WebUITest(unittest.TestCase):
 
     def test_failed_agy_catalog_preserves_probe_cause_on_route(self):
         with (
-            patch.dict(web_providers.PROVIDER_META["agy"], {"probe": lambda: (False, "failed")}),
+            patch.dict(web_providers.PROVIDER_META["agy"], {"probe": lambda: (True, "account ready")}),
             patch.object(web_providers.shutil, "which", return_value="/usr/bin/agy"),
             patch.object(web_providers, "_run", return_value=(True, "agy 1.4.4")),
             patch.object(web_providers.agy, "list_models", return_value=(False, [], "agy models exited 1: HTTP 503")),
@@ -207,6 +207,19 @@ class WebUITest(unittest.TestCase):
         self.assertFalse(result["routes"][0]["available"])
         self.assertEqual(result["routes"][0]["availability_detail"], result["detail"])
         self.assertIn("HTTP 503", result["detail"])
+
+    def test_agy_preflight_failure_is_not_overwritten_by_another_catalog_probe(self):
+        with (
+            patch.dict(web_providers.PROVIDER_META["agy"], {"probe": lambda: (False, "agy models exited 1: HTTP 503")}),
+            patch.object(web_providers.shutil, "which", return_value="/usr/bin/agy"),
+            patch.object(web_providers, "_run", return_value=(True, "agy 1.4.4")),
+            patch.object(web_providers.agy, "list_models") as models,
+        ):
+            result = web_providers.probe_provider("agy")
+        models.assert_not_called()
+        self.assertFalse(result["authenticated"])
+        self.assertIn("HTTP 503", result["detail"])
+        self.assertEqual(result["routes"][0]["availability_detail"], result["detail"])
 
     def test_opencode_alert_contains_route_failure_and_sentry_context(self):
         with (

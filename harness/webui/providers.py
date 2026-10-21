@@ -211,7 +211,7 @@ def probe_provider(provider_id: str) -> dict[str, Any]:
         failed_route = next((route for route in routes if not route["available"]), None)
         if failed_route:
             detail += f"; {failed_route['model']}: {failed_route['availability_detail']}"
-    if installed and provider_id == "agy":
+    if installed and provider_id == "agy" and authenticated:
         models_ok, discovered, model_detail = agy.list_models()
         if not models_ok:
             authenticated = False
