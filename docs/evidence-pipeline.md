@@ -82,6 +82,17 @@ can reduce readiness and confidence but never fabricates a source or inflates
 claim-level verification coverage. Unanimous proposal rejection is a supported
 result, without a fabricated actionable plan.
 
+The final check uses captured source receipts first and only retrieves additional
+source for missing factual premises. Validation sections describe future work;
+the auditor assesses their relevance without executing those commands, inspecting
+Git history/status, or repeating checks already supported by receipts. It stops
+after checking the essential premises rather than reopening planning.
+Carbon and Argon audit depth is capped at Low/Medium/High for
+Quick/Balanced/Thorough respectively, preserving an explicitly lower model
+variant. Proposal and broadcast-review depths are unchanged. The audit records
+its actual model variant and every attempt; an incomplete check still withholds
+readiness.
+
 ## Worker and reader contract
 
 Completed means the process finished. Ready means the structured decision and its

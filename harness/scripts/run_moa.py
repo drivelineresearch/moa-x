@@ -72,7 +72,7 @@ import time
 import traceback
 import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from time import sleep as retry_sleep
 from types import SimpleNamespace
@@ -2109,6 +2109,12 @@ def _audit_final_decisions(lineage, layer1, repo_path, session_dir, scout, remai
         _write_text_atomic(session_dir / "final-audit.md", "# Final evidence check\n\nNo actionable decisions were proposed; no model audit was required.\n")
         return audit
     provider = _select_auditor(aggregator, reviews, harness_config.load_provider_catalog())
+    if provider and provider.harness == "agy":
+        match = re.fullmatch(r"(gemini-4-(?:carbon|argon))-(low|medium|high)", provider.model)
+        if match:
+            levels = ("low", "medium", "high")
+            effort = levels[min(levels.index(match[2]), levels.index(pipeline.policy(scout)["audit_effort"]))]
+            provider = replace(provider, model=match[1] + "-" + effort, effort=effort)
     if not provider or remaining < 30:
         audit = {"success": False, "findings": [], "reason": "Independent audit unavailable within deadline"}
     else:
@@ -2128,7 +2134,12 @@ def _audit_final_decisions(lineage, layer1, repo_path, session_dir, scout, remai
             "No web-search quota. Check the load-bearing factual premises, whether the cited evidence actually "
             "supports the decision, any invented API/file behavior, ignored counterevidence, incompatible choices, "
             "and whether stated uncertainty is honest. A proposed change is not false merely because it is not "
-            "implemented yet. Return exactly one finding per step id, status supported/unverified/contradicted, "
+            "implemented yet. This is a bounded evidence check, not another planning or testing pass. "
+            "Use the captured source packet first; inspect additional source only for a missing factual premise. "
+            "Validation sections describe future work: assess their relevance, but do not execute their commands, "
+            "implement the plan, inspect Git history/status, or repeat checks already supported by receipts. "
+            "Stop once the essential premises for each decision are checked; do not pursue optional improvements. "
+            "Return exactly one concise finding per step id, status supported/unverified/contradicted, "
             "with the exact source_url or file:line or attachment:sha256:page inspected. If you cannot inspect "
             "the relevant source, say unverified. Budget at most 8 focused tool reads; prioritize these receipts. "
             "Do not rate models or writing style.\n<decisions>\n"

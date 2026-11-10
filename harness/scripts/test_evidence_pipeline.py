@@ -921,6 +921,32 @@ class EvidenceTests(unittest.TestCase):
         )
         self.assertIsNone(run_moa._select_auditor(aggregator, reviews[2:], catalog))
 
+    def test_google_audit_depth_preserves_upstream_settings_and_deadlines(self):
+        provider = run_moa.harness_config.ResolvedProvider(
+            "agy-gemini-pro", "agy", "gemini-4-carbon-high", effort="high"
+        )
+        for depth, expected, budget in [
+            ("quick", "low", 180), ("balanced", "medium", 240), ("thorough", "high", 360)
+        ]:
+            for requested in ("low", "high"):
+                upstream = run_moa.replace(provider, model="gemini-4-carbon-" + requested, effort=requested)
+                failure = run_moa.LayerResult(agent_id=upstream.name, layer=3, role="synthesis-auditor",
+                                             success=False, error="fixture timeout")
+                with self.subTest(depth=depth, requested=requested), \
+                     patch.object(run_moa, "_select_auditor", return_value=upstream), \
+                     patch.object(run_moa, "_run_with_recovery", return_value=failure) as native:
+                    audit = run_moa._audit_final_decisions(
+                        self.lineage, [self.proposer], self.repo, self.session, {"depth": depth}, 900,
+                        aggregator=run_moa.harness_config.ResolvedProvider("fable", "claude", "claude-fable-5-2"), reviews=[])
+                effort = requested if requested == "low" else expected
+                self.assertEqual(native.call_args.kwargs["model"], "gemini-4-carbon-" + effort)
+                self.assertEqual(native.call_args.kwargs["reasoning_effort"], effort)
+                self.assertEqual(native.call_args.kwargs["timeout"], budget)
+                self.assertEqual(upstream.model, "gemini-4-carbon-" + requested)
+                self.assertEqual(upstream.effort, requested)
+                self.assertFalse(audit["success"])
+                self.assertEqual(audit["model"], "gemini-4-carbon-" + effort)
+
     def test_worker_storage_error_after_spawn_reaps_process(self):
         import sys
 

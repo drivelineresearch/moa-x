@@ -190,6 +190,11 @@ Every CLI call runs in its own process group, and the runner compares per-path
 fingerprints so a concurrent lane is only associated with paths that actually
 changed during its interval.
 
+Structured AGY calls disable slash-command and skill expansion. Plan mode and
+sandboxing remain enabled without injecting the interactive `/plan` workflow,
+which otherwise asks for a plan artifact and user approval
+even when the harness requested an exact JSON evidence audit.
+
 ## Why CLI, not SDK
 
 The CLIs already own authentication, provider routing, retries, and
