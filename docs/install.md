@@ -51,8 +51,7 @@ you'd rather bill through an API key, each vendor CLI already handles
 that on its own; MoA-X defers to whatever auth state the CLI is in
 when you invoke it. Authentication is already delegated to those CLIs; the
 open gap is normalized usage/cost telemetry and safe pre-dispatch budget
-controls across their different billing modes. See the contribution-priorities
-section of the top-level README.
+controls across their different billing modes. See [contribution priorities](../CONTRIBUTING.md).
 
 Cursor is not a supported MoA-X execution harness. Use the curated Grok route
 through OpenCode and OpenAI routes through Codex.
@@ -60,9 +59,10 @@ through OpenCode and OpenAI routes through Codex.
 ### AGY model readiness
 
 Google providers reuse existing local AGY authentication; MoA-X never prompts
-for a key. Install AGY 1.1.5+, sign in interactively once, and verify
-`agy models`. `agy-gemini-pro` is the only curated Gemini route and is part
-of the default proposer roster. Live probes determine availability and fail
+for a key. Install AGY 1.1.5+ with native JSON schema and slash-command disabling
+support (1.5.5 was qualified for this release), sign in interactively once, and
+verify `agy models`. `agy-gemini-pro` uses Gemini 4 Carbon in the default
+proposer roster; `agy-gemini-argon` remains optional. Live probes determine availability and fail
 closed if the signed-in account does not expose it.
 
 ### Optional: Local Web UI and GitHub picker
@@ -116,17 +116,23 @@ private configuration after installation.
 
 ```bash
 mkdir -p ~/.claude/skills
-MOA_X_VERSION=v0.6.0
+MOA_X_VERSION=v0.7.0
 curl -fsSL "https://github.com/drivelineresearch/moa-x/releases/download/${MOA_X_VERSION}/mixture-of-agents-${MOA_X_VERSION}.tar.gz" \
   | tar -xz -C ~/.claude/skills
 ```
 
-Or clone the repository and copy `harness/` into your skills folder:
+For checksum verification, download both archives and `SHA256SUMS` from the
+[v0.7.0 release](https://github.com/drivelineresearch/moa-x/releases/tag/v0.7.0)
+into the same directory, then run:
 
 ```bash
-# From a clone of this repo:
-cp -r harness ~/.claude/skills/mixture-of-agents
+sha256sum --check SHA256SUMS
+# macOS: shasum -a 256 --check SHA256SUMS
 ```
+
+The skill archive includes the repository docs and compatibility links at its
+root. Copying only `harness/` omits that layout. For development from a source
+checkout, use the standalone commands below.
 
 Restart Claude Code. `/mixture-of-agents` should now autocomplete.
 See [`docs/usage.md`](usage.md) for what happens next.

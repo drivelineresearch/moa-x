@@ -1,22 +1,22 @@
 # Product image generation
 
-`docs/moa-x-header.png` is the README hero and current workflow graphic. Its
-text labels describe the Balanced default. Exact route IDs, disabled routes
-and the Thorough alternatives are maintained in [configuration](config.md).
-The older `docs/moa-x-workflow.png` is retained as historical artwork and is
-not embedded as the active product diagram.
+`docs/moa-x-header.png` is the public README banner, generated with the built-in
+image generator on 2026-11-10. Its original ink-and-watercolor illustration shows
+independent proposals, shared source review, synthesis, and a separate final
+check. Amber annotations preserve visible uncertainty. The image contains no
+model versions, provider logos, private data, or claims of automatic approval.
+Exact models and roles live in [configuration](config.md).
 
-## Header brief
+The older `docs/moa-x-workflow.png` is historical artwork. It is not the active
+product illustration.
 
-Create an original wide 3:1 charcoal banner with restrained colored paths
-converging into a white output line. Use clean geometric type and generous
-spacing. Prominent title: **MoA-X**. Subtitle: **Ask. Refine. Decide.**
-Caption: **Cross-lab plans, from chat to synthesis**.
+## Final generation prompt
 
-Show Slack / Web / CLI → Luna interview → Independent proposals → Broadcast
-review → One grounded plan. Proposal labels: Gemini 4 Argon, Grok 4.7, GPT-6
-Luna. Reviewer labels: DeepSeek V4.1 Flash and Claude Opus 5.5. Synthesis:
-GPT-6.1 Sol, xhigh synthesis. Add Quick · Balanced · Thorough. Qwen, Kimi and
-DeepSeek Pro must not appear in active lanes. Use descriptive text, not
-official vendor logos. No organizations, usernames, private URLs, workspace
-IDs, screenshots, internal issue text or embedded metadata.
+```text
+Use case: ads-marketing.
+Asset type: original README header illustration for the open-source developer tool MoA-X.
+Primary request: Create a refined, distinctive wide 3:1 product banner, approximately 2400 by 800 pixels. This is a brand-new illustration, not a screenshot or an edit. Show independent lines of reasoning becoming an evidence-backed implementation plan.
+Style/medium: editorial technical illustration, precise charcoal ink and fine watercolor/gouache on warm ivory paper, subtle paper grain, elegant restrained detail, contemporary engineering-publication art. Muted cobalt, teal, rust and small amber accents, ample quiet space. Crisp, professional, thoughtful.
+Composition: The left third contains beautiful clear black typography with the exact large title "MoA-X", followed by the two-line subtitle "Independent reasoning." and "Evidence first.". The right two thirds contain an isometric paper workspace: three distinct proposal sheets with separate colored pathways; a central shared review board connects and cross-checks them with source excerpts, small magnifying-glass and citation motifs; the paths converge toward one clean final plan sheet. Tiny checked and unresolved amber annotations suggest that disagreement and missing evidence remain visible. A final small independent inspection mark sits beyond the synthesis sheet. The three proposals must remain separate before shared review. Clear left-to-right visual progression, no tangled connector spaghetti. Illustration should feel like a coherent crafted scene, not generic floating SaaS cards.
+Text: Only the exact title and subtitle above. No other legible words, numbers, model names, software versions, logos, badges, provider names, tiny fake code, watermarks, or UI chrome. Source and plan content can be abstract short ink strokes. Do not imply unanimous agreement or automatic approval. Keep the whole illustration and typography inside generous margins. Flat ivory background across the complete image, no dark gradients or outer rounded card.
+```

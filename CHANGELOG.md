@@ -5,23 +5,41 @@ versioning.
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-11-10
+
+### Added
+
+- GPT-6.1 Terra and Daybreak Blue synthesis choices with Low–Ultra effort,
+  optional Claude Haiku 5.5 proposals/reviews, and an explicit Gemini 4 Argon
+  alternative alongside Carbon.
+
 ### Changed
 
-- Disable AGY slash-command expansion for structured requests so its native
-  interactive planning workflow cannot compete with the evidence-audit contract.
-  Keep plan mode and sandboxing, focus final audits on captured evidence, and cap
-  Google audit depth to Low/Medium/High for Quick/Balanced/Thorough. Upstream model
-  depths and existing audit deadlines are preserved.
+- New Google presets use Gemini 4 Carbon with Low, Medium and High variants.
+- The optional Fable aggregator uses Claude Fable 5.2, retaining its effort
+  controls, output budget and frozen historical model IDs.
+- Native catalogs were checked with AGY 1.5.5, Codex CLI 0.167.0 and Claude
+  Code 2.1.322; existing jobs retain their frozen settings.
 
-- Upgrade the optional Fable aggregator to Claude Fable 5.2, retaining the
-  existing effort controls, output budget and frozen historical model IDs.
+### Fixed
 
-- Refresh new Google presets to Gemini 4 Carbon with Low, Medium and High
-  depth variants; retain Gemini 4 Argon as an optional route.
-- Add GPT-6.1 Terra and Daybreak Blue synthesis choices with Low–Ultra effort,
-  and optional Claude Haiku 5.5 proposals and broadcast reviews.
-- Verify the native catalogs with AGY 1.5.5, Codex CLI 0.167.0 and Claude
-  Code 2.1.322; preserve the settings frozen in existing jobs.
+- Bound Carbon/Argon final-audit depth to Low/Medium/High for
+  Quick/Balanced/Thorough, preserving explicitly lower variants. Audits focus
+  on captured evidence and avoid reopening implementation or validation work.
+  Existing time caps, upstream depths and readiness gates are unchanged.
+- Disable AGY slash/skill expansion for structured calls while keeping plan
+  mode and sandboxing, preventing interactive planning instructions from
+  competing with the JSON audit contract.
+- Provider health preserves terminal catalog errors rather than progress
+  banners, retains initial AGY preflight failures, and reports individual
+  OpenCode route failures with monitoring context.
+
+### Documentation
+
+- Refresh the concise README, packaged-skill installation and checksum guidance.
+- Replace the header with original ink-and-watercolor artwork illustrating
+  independent reasoning, source review, synthesis and a final evidence check.
+  Its model-independent design and full generation prompt are documented.
 
 ## [0.6.0] — 2026-10-17
 
@@ -275,7 +293,8 @@ refiners. Qwen remains opt-in.
 - Switched the default GLM and Kimi routes to the `opencode-go` gateway while
   retaining direct-provider and Fireworks overrides.
 
-[Unreleased]: https://github.com/drivelineresearch/moa-x/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/drivelineresearch/moa-x/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/drivelineresearch/moa-x/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/drivelineresearch/moa-x/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/drivelineresearch/moa-x/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/drivelineresearch/moa-x/compare/v0.4.0...v0.4.1
