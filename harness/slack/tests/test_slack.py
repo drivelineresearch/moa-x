@@ -342,7 +342,7 @@ class SlackTest(unittest.TestCase):
         self.assertEqual(job["config"]["refiners"], ["deepseek-flash"])
         self.assertEqual(
             job["config"]["options"]["model_overrides"]["agy-gemini-pro"],
-            "gemini-4-argon-low",
+            "gemini-4-carbon-low",
         )
         self.assertIn("/moa-x/shared/runs/", c["data"]["dashboard"])
         self.assertTrue(self.store.profile_token_claimed(c["profile_id"]))

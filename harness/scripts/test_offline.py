@@ -3284,8 +3284,12 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
         "minimax": ("opencode", "opencode-go/minimax-m3"),
         "muse-spark": ("opencode", "opencode-go/muse-spark-1.3-contributor"),
         "deepseek-flash": ("opencode", "opencode-go/deepseek-v4.1-flash"),
-        "agy-gemini-pro": ("agy", "gemini-4-argon-high"),
+        "agy-gemini-pro": ("agy", "gemini-4-carbon-high"),
         "fable": ("claude", "claude-fable-5-1"),
+        "haiku": ("claude", "claude-haiku-5-5"),
+        "agy-gemini-argon": ("agy", "gemini-4-argon-high"),
+        "codex-gpt-6-1-terra": ("codex", "gpt-6.1-terra"),
+        "codex-gpt-daybreak-blue-latest": ("codex", "gpt-daybreak-blue-latest"),
     }
     routes_ok = all(
         name in by_id
@@ -3313,7 +3317,7 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
     )
     role_ok = (
         {item["id"] for item in models if "aggregator" in item["roles"]}
-        == {"codex-sol", "codex", "codex-luna", "codex-gpt-6-sol", "codex-gpt-5-6-sol", "codex-gpt-5-6-terra", "codex-gpt-5-6-luna", "agy-gemini-pro", "opus", "fable"}
+        == {"codex-sol", "codex", "codex-luna", "codex-gpt-6-sol", "codex-gpt-5-6-sol", "codex-gpt-5-6-terra", "codex-gpt-5-6-luna", "agy-gemini-pro", "agy-gemini-argon", "codex-gpt-6-1-terra", "codex-gpt-daybreak-blue-latest", "opus", "fable"}
         and by_id["fable"]["roles"] == ["aggregator"]
         and by_id["opus"]["roles"] == ["proposer", "refiner", "aggregator"]
         and by_id["muse-spark"]["roles"] == ["proposer", "refiner"]
@@ -3438,9 +3442,9 @@ def test_google_provider_builtins_are_default_and_resolve() -> bool:
             pass
     ok = (
         agy_pro.harness == "agy"
-        and agy_pro.model == "gemini-4-argon-high"
+        and agy_pro.model == "gemini-4-carbon-high"
         and agy_pro.effort == "high"
-        and agy_effort_override.model == "gemini-4-argon-high"
+        and agy_effort_override.model == "gemini-4-carbon-high"
         and agy_effort_override.effort == "high"
         and proposer_names == ["agy-gemini-pro", "grok", "codex-luna"]
         and refiner_names == ["deepseek-flash", "opus"]

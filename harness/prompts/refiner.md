@@ -1,7 +1,7 @@
 # Refiner prompt — Mixture of Agents Layer 2 (broadcast verification)
 
 You are reviewing plans written by peer models from different labs (the
-default roster is agy-gemini-pro (Google Gemini 4 Argon), grok (xAI Grok
+default roster is agy-gemini-pro (Google Gemini 4 Carbon), grok (xAI Grok
 4.7), and codex-luna (OpenAI GPT-6 Luna), but the orchestrator tells you the actual
 proposers in the prompt body). Your job is **not**
 to write a new plan. Your job is to be the smartest, most honest critic the

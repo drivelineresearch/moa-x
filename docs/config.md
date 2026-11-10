@@ -20,7 +20,8 @@ Never commit `.env`, provider keys, or generated `harness/config.yaml`.
 
 | Route | Execution harness | Model | Roles | Effort |
 |---|---|---|---|---|
-| `agy-gemini-pro` | AGY | `gemini-4-argon-high` | proposer, refiner, aggregator | model-depth selector |
+| `agy-gemini-pro` | AGY | `gemini-4-carbon-high` | proposer, refiner, aggregator | model-depth selector |
+| `agy-gemini-argon` | AGY | `gemini-4-argon-high` | optional proposer, refiner, aggregator | model-depth selector |
 | `grok` | OpenCode | `opencode-go/grok-4.7` | proposer, refiner | provider-managed |
 | `codex-luna` | Codex | `gpt-6-luna` | proposer, refiner, aggregator | adjustable; medium default |
 | `codex` | Codex | `gpt-6-astra` | proposer, refiner, aggregator | adjustable; high default |
@@ -36,6 +37,7 @@ Never commit `.env`, provider keys, or generated `harness/config.yaml`.
 | `deepseek-native` | DeepSeek Harness | `deepseek-flash` | optional proposer/refiner | low/high/max; high default |
 | `sonnet` | Claude Code | `claude-sonnet-5-5` | proposer, refiner | adjustable; high default |
 | `opus` | Claude Code | `claude-opus-5-5` | proposer, refiner, aggregator | adjustable; high default |
+| `haiku` | Claude Code | `claude-haiku-5-5` | optional proposer/refiner | adjustable; high default |
 | `codex-sol` | Codex | `gpt-6.1-sol` | proposer, refiner, aggregator | adjustable; xhigh default |
 | `fable` | Claude Code | `claude-fable-5-1` | aggregator only | adjustable; xhigh CLI default |
 
@@ -58,9 +60,9 @@ The browser and Slack share these server-side profiles:
 
 | Mode | Proposers | Refiners | Aggregator |
 |---|---|---|---|
-| Quick | Gemini 4 Argon `low`; Grok 4.7 | DeepSeek V4.1 Flash | GPT-6.1 Sol `medium` |
-| Balanced | Gemini 4 Argon `high`; Grok 4.7; GPT-6 Luna `medium` | DeepSeek V4.1 Flash; Opus `high` | GPT-6.1 Sol `xhigh` |
-| Thorough | Gemini 4 Argon `high`; Grok 4.7; GPT-6 Astra `high`; GLM 5.3 | DeepSeek V4.1 Flash; Opus `max` | GPT-6.1 Sol `ultra` |
+| Quick | Gemini 4 Carbon `low`; Grok 4.7 | DeepSeek V4.1 Flash | GPT-6.1 Sol `medium` |
+| Balanced | Gemini 4 Carbon `high`; Grok 4.7; GPT-6 Luna `medium` | DeepSeek V4.1 Flash; Opus `high` | GPT-6.1 Sol `xhigh` |
+| Thorough | Gemini 4 Carbon `high`; Grok 4.7; GPT-6 Astra `high`; GLM 5.3 | DeepSeek V4.1 Flash; Opus `max` | GPT-6.1 Sol `ultra` |
 
 Gemini Pro enters every mode for early web evidence. Grok enters every mode as
 an independent xAI proposer. DeepSeek V4.1 Flash is always a refiner; Opus joins
@@ -91,7 +93,7 @@ A catalog listing or synthetic response alone is insufficient.
 | `MOA_AGY_TIMEOUT` | Claude timeout | AGY wall-clock cap |
 
 AGY encodes depth in the model slug. MoA-X therefore changes
-`gemini-4-argon-low` / `gemini-4-argon-high` and never sends a conflicting
+`gemini-4-carbon-low` / `gemini-4-carbon-high` and never sends a conflicting
 effort flag.
 
 ## User-defined routes
@@ -126,27 +128,37 @@ unknown custom routes use the neutral independent-lab visual.
 
 ## Aggregator alternatives
 
-Thorough exposes all seven current selectable OpenAI models through Codex,
-plus Gemini 4 Argon, Claude Opus 5.5 and Fable 5.1:
+Thorough exposes all nine current selectable OpenAI models through Codex,
+plus Gemini 4 Carbon, Gemini 4 Argon, Claude Opus 5.5 and Fable 5.1:
 
 | Route | Model | Supported effort (lowest to highest) | Thorough default |
 |---|---|---|---|
 | `codex-sol` | GPT-6.1 Sol | low, medium, high, xhigh, max, ultra | ultra |
+| `codex-gpt-6-1-terra` | GPT-6.1 Terra | low, medium, high, xhigh, max, ultra | ultra |
+| `codex-gpt-daybreak-blue-latest` | Daybreak Blue | low, medium, high, xhigh, max, ultra | ultra |
 | `codex` | GPT-6 Astra | low, medium, high, xhigh, max, ultra | ultra |
 | `codex-gpt-6-sol` | GPT-6 Sol | low, medium, high, xhigh, max, ultra | ultra |
 | `codex-luna` | GPT-6 Luna | low, medium, high, xhigh, max | max |
 | `codex-gpt-5-6-sol` | GPT-5.6 Sol | low, medium, high, xhigh, max, ultra | ultra |
 | `codex-gpt-5-6-terra` | GPT-5.6 Terra | low, medium, high, xhigh, max, ultra | ultra |
 | `codex-gpt-5-6-luna` | GPT-5.6 Luna | low, medium, high, xhigh, max | max |
-| `agy-gemini-pro` | Gemini 4 Argon | low, medium, high (model slug) | high |
+| `agy-gemini-pro` | Gemini 4 Carbon | low, medium, high (model slug) | high |
+| `agy-gemini-argon` | Gemini 4 Argon | low, medium, high (model slug) | high |
 | `opus` | Claude Opus 5.5 | low, medium, high, xhigh, max | max |
 | `fable` | Fable 5.1 | low, medium, high, xhigh, max | high |
 
-The four additional Codex routes are synthesis-only. Quick and Balanced keep
+The six additional Codex routes are synthesis-only. Quick and Balanced keep
 their existing picker and recommended efforts. Thorough defaults Fable to High and other final
 models to their highest supported setting; manual choices remain available.
 Model availability still depends on the authenticated native client/account.
 Catalog and effort support should be revalidated when clients change.
+
+The November 10, 2026 refresh checked AGY 1.5.5, Codex CLI 0.167.0 and
+Claude Code 2.1.322 against their native account catalogs. Carbon replaces
+Argon in new presets; Argon remains an explicit alternative. New optional
+choices include GPT-6.1 Terra, Daybreak Blue and Haiku 5.5. Daybreak uses the
+provider's rolling `gpt-daybreak-blue-latest` identifier. Existing runs keep
+their frozen model IDs and effort settings.
 
 Browser/Slack launches freeze final settings under
 `options.aggregator_options: {model, effort}`. The worker applies them only

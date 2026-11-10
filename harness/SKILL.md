@@ -2,7 +2,7 @@
 name: mixture-of-agents
 description: |
   Run a non-trivial planning task through a layered ensemble of frontier models
-  from distinct labs (proposers Gemini 4 Argon high + Grok 4.7 + GPT-6 Luna;
+  from distinct labs (proposers Gemini 4 Carbon high + Grok 4.7 + GPT-6 Luna;
   refiners DeepSeek V4.1 Flash + Claude Opus 5.5 high) before producing a final implementation
   plan. The configured proposers run in parallel, broadcast refiners (each
   sees all proposals) verify and cross-check, then GPT-6.1 Sol at `xhigh`
@@ -31,7 +31,7 @@ allowed-tools:
 # Mixture of Agents
 
 Layered ensemble planning. The configured proposers — by default three
-frontier models from three different labs (Google's Gemini 4 Argon through
+frontier models from three different labs (Google's Gemini 4 Carbon through
 AGY, xAI's Grok 4.7 through OpenCode, and OpenAI's GPT-6 Luna through
 Codex) — each produce an independent plan grounded in real repo
 code AND aggressive web research, then the refiners (default
@@ -68,7 +68,7 @@ Layer 0 — Spec triage                      (parent Claude Code, in-place)
                    ↓
 Layer 1 — Proposers                        (3 parallel, headless, read-only)
    │
-   ├─ agy --model gemini-4-argon-high --mode plan --sandbox
+   ├─ agy --model gemini-4-carbon-high --mode plan --sandbox
    │     │   (Google research lane; live catalog-gated)
    │     └→ .moa/<session>/layer1/agy-gemini-pro-proposer.json
    │

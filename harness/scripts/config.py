@@ -120,6 +120,7 @@ BUILTIN_PROVIDERS: dict[str, ResolvedProvider] = {
     # explicitly, so aliases would make the UI and recorded provenance lie.
     "sonnet":         ResolvedProvider(name="sonnet",         harness="claude",   model="claude-sonnet-5-5", effort="high"),
     "opus":           ResolvedProvider(name="opus",           harness="claude",   model="claude-opus-5-5", effort="high"),
+    "haiku":          ResolvedProvider(name="haiku",          harness="claude",   model="claude-haiku-5-5", effort="high"),
     "kimi":           ResolvedProvider(name="kimi",           harness="opencode", model="opencode-go/kimi-k3"),
     "qwen":           ResolvedProvider(name="qwen",           harness="opencode", model="opencode-go/qwen3.8-max", timeout=900),
     "qwen-opencode":  ResolvedProvider(name="qwen-opencode",  harness="opencode", model="opencode-go/qwen3.8-max"),
@@ -133,10 +134,10 @@ BUILTIN_PROVIDERS: dict[str, ResolvedProvider] = {
     # Google runs through AGY, which reuses the account signed into the local
     # Antigravity CLI. Gemini Pro is part of the shipped proposer defaults.
     # AGY selects depth in the model slug itself (for example
-    # ``gemini-4-argon-high``), rather than with a separate --effort flag.
-    # Gemini Flash routes are intentionally not curated: Pro is the sole
-    # Google route exposed by MoA-X.
-    "agy-gemini-pro": ResolvedProvider(name="agy-gemini-pro", harness="agy",      model="gemini-4-argon-high", effort="high"),
+    # ``gemini-4-carbon-high``), rather than with a separate --effort flag.
+    # Gemini Flash routes are intentionally not curated.
+    "agy-gemini-pro": ResolvedProvider(name="agy-gemini-pro", harness="agy",      model="gemini-4-carbon-high", effort="high"),
+    "agy-gemini-argon": ResolvedProvider(name="agy-gemini-argon", harness="agy", model="gemini-4-argon-high", effort="high"),
     # Fable is a deliberately gated, quota-intensive synthesis route through
     # Claude Code. It is aggregator-only and never participates upstream.
     "fable":          ResolvedProvider(name="fable",          harness="claude",   model="claude-fable-5-1", effort="xhigh"),
@@ -144,7 +145,7 @@ BUILTIN_PROVIDERS: dict[str, ResolvedProvider] = {
 
 # Additional models selectable in the authenticated Codex catalog. These are
 # synthesis-only choices; the recommended proposal/review rosters stay intact.
-for _model in ("gpt-6-sol", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"):
+for _model in ("gpt-6.1-terra", "gpt-daybreak-blue-latest", "gpt-6-sol", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"):
     _name = "codex-" + _model.replace(".", "-")
     BUILTIN_PROVIDERS[_name] = ResolvedProvider(
         name=_name, harness="codex", model=_model,
@@ -156,6 +157,7 @@ for _name, (_model, _label) in MUSE_ROUTES.items():
 
 PROVIDER_ALLOWED_ROLES: dict[str, frozenset[str]] = {
     "fable": frozenset({"aggregator"}),
+    "haiku": frozenset({"proposer", "refiner"}),
     "minimax": frozenset({"proposer", "refiner"}),
     "muse-spark": frozenset({"proposer", "refiner"}),
     "muse-native": frozenset({"proposer", "refiner"}),

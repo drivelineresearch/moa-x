@@ -5,6 +5,15 @@ versioning.
 
 ## [Unreleased]
 
+### Changed
+
+- Refresh new Google presets to Gemini 4 Carbon with Low, Medium and High
+  depth variants; retain Gemini 4 Argon as an optional route.
+- Add GPT-6.1 Terra and Daybreak Blue synthesis choices with Low–Ultra effort,
+  and optional Claude Haiku 5.5 proposals and broadcast reviews.
+- Verify the native catalogs with AGY 1.5.5, Codex CLI 0.167.0 and Claude
+  Code 2.1.322; preserve the settings frozen in existing jobs.
+
 ## [0.6.0] — 2026-10-17
 
 ### Added

@@ -7,7 +7,7 @@
 #   sonnet         -> Claude Code / claude-sonnet-5-5 (high)
 #   opus           -> Claude Code / claude-opus-5-5 (high; aggregator-capable)
 #   fable          -> Claude Code / claude-fable-5-1 (xhigh; aggregator only)
-#   agy-gemini-pro -> AGY / gemini-4-argon-high
+#   agy-gemini-pro -> AGY / gemini-4-carbon-high
 #   grok           -> OpenCode Go / grok-4.7
 #   glm            -> OpenCode Go / glm-5.3 (Thorough proposer)
 #   minimax        -> OpenCode Go / minimax-m3 (optional proposer/refiner)

@@ -801,7 +801,7 @@ class RecoveryTests(unittest.TestCase):
         scout.write_text(json.dumps({"session_id": "fixture", "repo_path": str(self.root), "frozen_spec": "Review retained input."}))
         (self.session / "synthesis-input.md").write_text("Retained input.")
         for route, model, harness, effort in [
-            ("agy-gemini-pro", "gemini-4-argon-high", "agy", "high"),
+            ("agy-gemini-pro", "gemini-4-carbon-high", "agy", "high"),
             ("codex-sol", "gpt-6.1-sol", "codex", "ultra"),
             ("codex-luna", "gpt-6-luna", "codex", "max"),
             ("opus", "claude-opus-5-5", "claude", "max"),
