@@ -153,7 +153,7 @@ ROUTE_META: dict[str, dict[str, Any]] = {
         "roles": ["proposer", "refiner", "aggregator"],
     },
     "fable": {
-        "label": "Fable 5.1 1M Thinking",
+        "label": "Fable 5.2 1M Thinking",
         "lab_id": "anthropic",
         "roles": ["aggregator"],
     },

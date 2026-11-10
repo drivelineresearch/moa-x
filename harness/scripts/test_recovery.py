@@ -787,7 +787,7 @@ class RecoveryTests(unittest.TestCase):
                 if limit:
                     os.environ["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] = limit
                 result = claude.run(prompt="fixture", schema_path=run_moa.PROPOSER_SCHEMA_PATH,
-                                    repo_path=self.root, model="claude-fable-5-1", reasoning_effort="max")
+                                    repo_path=self.root, model="claude-fable-5-2", reasoning_effort="max")
             self.assertTrue(result.success)
             expected = limit or "128000"
             self.assertEqual(popen.call_args.kwargs["env"]["CLAUDE_CODE_MAX_OUTPUT_TOKENS"], expected)

@@ -140,7 +140,7 @@ BUILTIN_PROVIDERS: dict[str, ResolvedProvider] = {
     "agy-gemini-argon": ResolvedProvider(name="agy-gemini-argon", harness="agy", model="gemini-4-argon-high", effort="high"),
     # Fable is a deliberately gated, quota-intensive synthesis route through
     # Claude Code. It is aggregator-only and never participates upstream.
-    "fable":          ResolvedProvider(name="fable",          harness="claude",   model="claude-fable-5-1", effort="xhigh"),
+    "fable":          ResolvedProvider(name="fable",          harness="claude",   model="claude-fable-5-2", effort="xhigh"),
 }
 
 # Additional models selectable in the authenticated Codex catalog. These are

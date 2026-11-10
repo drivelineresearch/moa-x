@@ -39,7 +39,7 @@ Never commit `.env`, provider keys, or generated `harness/config.yaml`.
 | `opus` | Claude Code | `claude-opus-5-5` | proposer, refiner, aggregator | adjustable; high default |
 | `haiku` | Claude Code | `claude-haiku-5-5` | optional proposer/refiner | adjustable; high default |
 | `codex-sol` | Codex | `gpt-6.1-sol` | proposer, refiner, aggregator | adjustable; xhigh default |
-| `fable` | Claude Code | `claude-fable-5-1` | aggregator only | adjustable; xhigh CLI default |
+| `fable` | Claude Code | `claude-fable-5-2` | aggregator only | adjustable; xhigh CLI default |
 
 Cursor is not a supported harness. GLM 5.3 is the fourth proposer in the
 Thorough Web UI preset. DeepSeek V4.1 Flash is the sole curated DeepSeek route
@@ -129,7 +129,7 @@ unknown custom routes use the neutral independent-lab visual.
 ## Aggregator alternatives
 
 Thorough exposes all nine current selectable OpenAI models through Codex,
-plus Gemini 4 Carbon, Gemini 4 Argon, Claude Opus 5.5 and Fable 5.1:
+plus Gemini 4 Carbon, Gemini 4 Argon, Claude Opus 5.5 and Fable 5.2:
 
 | Route | Model | Supported effort (lowest to highest) | Thorough default |
 |---|---|---|---|
@@ -145,7 +145,7 @@ plus Gemini 4 Carbon, Gemini 4 Argon, Claude Opus 5.5 and Fable 5.1:
 | `agy-gemini-pro` | Gemini 4 Carbon | low, medium, high (model slug) | high |
 | `agy-gemini-argon` | Gemini 4 Argon | low, medium, high (model slug) | high |
 | `opus` | Claude Opus 5.5 | low, medium, high, xhigh, max | max |
-| `fable` | Fable 5.1 | low, medium, high, xhigh, max | high |
+| `fable` | Fable 5.2 | low, medium, high, xhigh, max | high |
 
 The six additional Codex routes are synthesis-only. Quick and Balanced keep
 their existing picker and recommended efforts. Thorough defaults Fable to High and other final
@@ -243,5 +243,5 @@ can supply the final structured payload.
 
 The October 17 failure hit the 64000-token allowance twice at Max, predominantly
 on thinking, before the wall-clock timeout. See Anthropic's
-[Fable long-output guidance](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-1#leave-room-for-long-outputs-at-xhigh-and-max-effort)
+[Fable long-output guidance](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-2#calibrate-effort)
 and [CLI output-token setting](https://code.claude.com/docs/en/env-vars).
