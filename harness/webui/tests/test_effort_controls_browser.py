@@ -222,10 +222,12 @@ class EffortControlsBrowserTest(unittest.TestCase):
             page.locator('[data-step-target="2"]').click()
             page.locator('[data-roster-step="4"]').click()
             aggregator_routes = page.locator('input[name="aggregator"]')
-            self.assertEqual(aggregator_routes.count(), 11)  # Ten curated plus the custom synthesis route.
+            self.assertEqual(aggregator_routes.count(), 14)
             self.assertEqual(page.locator('input[name="proposer"][value="custom-codex"], input[name="refiner"][value="custom-codex"]').count(), 0)
             for route_id, maximum, levels in [
                 ("codex-sol", "Ultra", 6), ("codex", "Ultra", 6),
+                ("codex-gpt-6-1-terra", "Ultra", 6), ("codex-gpt-daybreak-blue-latest", "Ultra", 6),
+                ("agy-gemini-argon", "High", 3),
                 ("codex-luna", "Max", 5), ("codex-gpt-6-sol", "Ultra", 6),
                 ("codex-gpt-5-6-sol", "Ultra", 6), ("codex-gpt-5-6-terra", "Ultra", 6),
                 ("codex-gpt-5-6-luna", "Max", 5), ("agy-gemini-pro", "High", 3),

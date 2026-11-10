@@ -183,8 +183,8 @@ class WebUITest(unittest.TestCase):
                 "list_models",
                 return_value=(
                     True,
-                    ["gemini-4-argon-high", "gemini-4-argon-low"],
-                    "2 models available",
+                    ["gemini-4-carbon-high", "gemini-4-carbon-low", "gemini-4-argon-high"],
+                    "3 models available",
                 ),
             ),
         ):
@@ -193,6 +193,7 @@ class WebUITest(unittest.TestCase):
         routes = {route["id"]: route for route in result["routes"]}
         self.assertTrue(result["authenticated"])
         self.assertTrue(routes["agy-gemini-pro"]["available"])
+        self.assertTrue(routes["agy-gemini-argon"]["available"])
         self.assertNotIn("agy-gemini-flash", routes)
 
     def test_failed_agy_catalog_preserves_probe_cause_on_route(self):
@@ -1580,9 +1581,9 @@ class WebUITest(unittest.TestCase):
         from harness.scripts.model_efforts import OPENAI_MODELS
         models = web_providers.model_catalog(probe=False)
         rows = [row for row in models if "aggregator" in row["roles"]
-                and (row["harness"] == "codex" or row["id"] in {"opus", "fable", "agy-gemini-pro"})]
+                and (row["harness"] == "codex" or row["id"] in {"opus", "fable", "agy-gemini-pro", "agy-gemini-argon"})]
         self.assertEqual({row["model"] for row in rows if row["harness"] == "codex"}, set(OPENAI_MODELS))
-        self.assertEqual(len(rows), 10)
+        self.assertEqual(len(rows), 13)
         for row in rows:
             with self.subTest(model=row["model"]):
                 response = self.client.post("/api/jobs", json={
@@ -1600,7 +1601,7 @@ class WebUITest(unittest.TestCase):
         for route, model, upstream, final in [
             ("codex", "gpt-6-astra", "high", "ultra"),
             ("opus", "claude-opus-5-5", "high", "max"),
-            ("agy-gemini-pro", "gemini-4-argon-high", "low", "medium"),
+            ("agy-gemini-pro", "gemini-4-carbon-high", "low", "medium"),
         ]:
             with self.subTest(route=route):
                 response = self.client.post("/api/jobs", json={

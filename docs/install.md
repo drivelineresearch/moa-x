@@ -33,7 +33,7 @@ opencode auth login    # interactive login
 #   export FIREWORKS_API_KEY=...  # only for explicitly configured custom routes
 ```
 
-The Balanced default roster uses Gemini 4 Argon, Grok 4.7, and GPT-6 Luna as
+The Balanced default roster uses Gemini 4 Carbon, Grok 4.7, and GPT-6 Luna as
 proposers; DeepSeek V4.1 Flash and Claude Opus 5.5 at `high` as refiners; and
 GPT-6.1 Sol at `xhigh` as the aggregator. That keeps the default lane
 lab-diverse across Google, xAI, OpenAI, DeepSeek, and Anthropic.

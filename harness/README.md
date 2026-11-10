@@ -1,7 +1,7 @@
 # mixture-of-agents
 
 Layered planning ensemble for Claude Code. The configured proposers — by
-default three models from three different labs (Google Gemini 4 Argon via
+default three models from three different labs (Google Gemini 4 Carbon via
 AGY, xAI Grok 4.7 via OpenCode, and OpenAI GPT-6 Luna via Codex) — read
 the repo, do heavy web research, and write independent plans. The refiners
 (DeepSeek V4.1 Flash + Claude Opus 5.5 high) then

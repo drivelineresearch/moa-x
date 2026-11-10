@@ -597,7 +597,7 @@ function modelsForRole(role) {
     if (Array.isArray(roles) && roles.length && !roles.includes(role)) return false;
     if (role === "aggregator") {
       return state.depthPreset === "thorough"
-        ? harness === "codex" || ["agy-gemini-pro", "opus", FABLE_ROUTE_ID].includes(id)
+        ? harness === "codex" || ["agy-gemini-pro", "agy-gemini-argon", "opus", FABLE_ROUTE_ID].includes(id)
         : ["codex-sol", "opus", FABLE_ROUTE_ID].includes(id);
     }
     return id !== FABLE_ROUTE_ID;
@@ -1274,7 +1274,7 @@ function validateStep(step) {
 }
 
 function coachModelLabel(model = {}) {
-  return model.fallback ? "Gemini 4 Argon · backup" : "GPT-6 Luna";
+  return model.fallback ? "Gemini 4 Carbon · backup" : "GPT-6 Luna";
 }
 
 function renderCoachProgress(stage) {

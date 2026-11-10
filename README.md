@@ -48,7 +48,7 @@ Follow [Web UI setup](docs/webui.md) or [Slack setup](docs/slack.md) for those i
 | Stage | Default CLI roster |
 |---|---|
 | Scout | Frozen request and bounded repository reconnaissance |
-| Propose | Gemini 4 Argon, Grok 4.7, GPT-6 Luna |
+| Propose | Gemini 4 Carbon, Grok 4.7, GPT-6 Luna |
 | Review | DeepSeek V4.1 Flash and Claude Opus 5.5; each sees every proposal |
 | Synthesize | GPT-6.1 Sol at `xhigh`, followed by an independent final check |
 

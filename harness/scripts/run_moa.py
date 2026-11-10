@@ -9,7 +9,7 @@ The roster is config-driven
 (harness/config.yaml + .env + built-in defaults); the default set is:
 
   Layer 1 (Proposers, parallel):
-    - agy-gemini-pro (gemini-4-argon-high, Google via AGY)
+    - agy-gemini-pro (gemini-4-carbon-high, Google via AGY)
     - grok             (grok-4.7, xAI via OpenCode Go)
     - codex-luna       (gpt-6-luna, OpenAI via Codex)
 

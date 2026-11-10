@@ -47,7 +47,7 @@ can honor it safely. Codex, Claude, Muse Code and DeepSeek Harness use their nat
 Muse offers per-model tiers from Minimal through Max (older Spark 1.2 stops at Xhigh).
 CLI-accepted None and Ultra are not offered for Muse because these model routes do not support them.
 AGY Gemini Pro selects depth by changing the model suffix (for example,
-`gemini-4-argon-low` to `gemini-4-argon-high`), so the UI sends a model
+`gemini-4-carbon-low` to `gemini-4-carbon-high`), so the UI sends a model
 variant and never sends a conflicting AGY `--effort` flag. OpenCode variants
 remain configured by their named route/model id.
 
@@ -69,9 +69,9 @@ and the strongest synthesis route in every run:
 
 | Mode | Proposers | Broadcast refiners | Aggregator |
 |---|---|---|---|
-| Quick | Gemini 4 Argon `low`; Grok 4.7 | DeepSeek V4.1 Flash | GPT-6.1 Sol `medium` |
-| Balanced | Gemini 4 Argon `high`; Grok 4.7; GPT-6 Luna `medium` | DeepSeek V4.1 Flash; Opus `high` | GPT-6.1 Sol `xhigh` |
-| Thorough | Gemini 4 Argon `high`; Grok 4.7; GPT-6 Astra `high`; GLM 5.3 | DeepSeek V4.1 Flash; Opus `max` | GPT-6.1 Sol `ultra` |
+| Quick | Gemini 4 Carbon `low`; Grok 4.7 | DeepSeek V4.1 Flash | GPT-6.1 Sol `medium` |
+| Balanced | Gemini 4 Carbon `high`; Grok 4.7; GPT-6 Luna `medium` | DeepSeek V4.1 Flash; Opus `high` | GPT-6.1 Sol `xhigh` |
+| Thorough | Gemini 4 Carbon `high`; Grok 4.7; GPT-6 Astra `high`; GLM 5.3 | DeepSeek V4.1 Flash; Opus `max` | GPT-6.1 Sol `ultra` |
 
 Gemini Pro stays in the proposal layer because it contributes a
 Google-native research lane before the ensemble converges. Grok contributes
@@ -82,10 +82,10 @@ from a distinct lab within its own layer, and all recommended refiners are
 lab-independent from the OpenAI aggregator. GPT-6.1 Sol uses `medium` synthesis
 effort for Quick, `xhigh` for Balanced, and `ultra` for Thorough.
 
-Thorough’s final-model picker includes all seven selectable OpenAI models,
-Gemini 4 Argon, Opus 5.5 and Fable 5.1. Fable starts at High; other choices start at their maximum
+Thorough’s final-model picker includes all nine selectable OpenAI models,
+Gemini 4 Carbon, Gemini 4 Argon, Opus 5.5 and Fable 5.1. Fable starts at High; other choices start at their maximum
 supported effort, with the complete range available on each slider. Luna stops
-at Max; Sol/Astra/Terra reach Ultra; Claude reaches Max; Argon reaches High.
+at Max; Sol/Astra/Terra reach Ultra; Claude reaches Max; Carbon reaches High.
 The [model and effort table](config.md#aggregator-alternatives) lists exact
 routes. Final settings are saved separately from proposal/review settings,
 so using the same model twice does not couple their effort controls. Existing

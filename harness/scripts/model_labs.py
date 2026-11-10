@@ -114,6 +114,11 @@ ROUTE_META: dict[str, dict[str, Any]] = {
         "lab_id": "anthropic",
         "roles": ["proposer", "refiner", "aggregator"],
     },
+    "haiku": {
+        "label": "Claude Haiku 5.5",
+        "lab_id": "anthropic",
+        "roles": ["proposer", "refiner"],
+    },
     "kimi": {
         "label": "Kimi K3",
         "lab_id": "moonshot",
@@ -138,6 +143,11 @@ ROUTE_META: dict[str, dict[str, Any]] = {
         "roles": ["proposer", "refiner"],
     },
     "agy-gemini-pro": {
+        "label": "Gemini 4 Carbon",
+        "lab_id": "google",
+        "roles": ["proposer", "refiner", "aggregator"],
+    },
+    "agy-gemini-argon": {
         "label": "Gemini 4 Argon",
         "lab_id": "google",
         "roles": ["proposer", "refiner", "aggregator"],
@@ -182,6 +192,7 @@ ROUTE_META: dict[str, dict[str, Any]] = {
 }
 
 for _model, _label in (
+    ("gpt-6.1-terra", "GPT-6.1 Terra"), ("gpt-daybreak-blue-latest", "Daybreak Blue"),
     ("gpt-6-sol", "GPT-6 Sol"), ("gpt-5.6-sol", "GPT-5.6 Sol"),
     ("gpt-5.6-terra", "GPT-5.6 Terra"), ("gpt-5.6-luna", "GPT-5.6 Luna"),
 ):

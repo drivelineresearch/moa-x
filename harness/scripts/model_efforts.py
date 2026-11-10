@@ -10,6 +10,8 @@ CLAUDE_EFFORTS = ("low", "medium", "high", "xhigh", "max")
 GEMINI_EFFORTS = ("low", "medium", "high")
 OPENAI_MODELS = {
     "gpt-6.1-sol": "GPT-6.1 Sol",
+    "gpt-6.1-terra": "GPT-6.1 Terra",
+    "gpt-daybreak-blue-latest": "Daybreak Blue",
     "gpt-6-astra": "GPT-6 Astra",
     "gpt-6-sol": "GPT-6 Sol",
     "gpt-6-luna": "GPT-6 Luna",
