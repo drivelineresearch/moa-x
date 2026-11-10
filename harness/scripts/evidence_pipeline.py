@@ -19,6 +19,7 @@ POLICIES = {
         "web_sources": 6,
         "packet_chars": 40000,
         "audit_seconds": 180,
+        "audit_effort": "low",
     },
     "balanced": {
         "checks": 20,
@@ -26,6 +27,7 @@ POLICIES = {
         "web_sources": 12,
         "packet_chars": 65000,
         "audit_seconds": 240,
+        "audit_effort": "medium",
     },
     "thorough": {
         "checks": 30,
@@ -33,6 +35,7 @@ POLICIES = {
         "web_sources": 24,
         "packet_chars": 100000,
         "audit_seconds": 360,
+        "audit_effort": "high",
     },
 }
 

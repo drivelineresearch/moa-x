@@ -3494,6 +3494,7 @@ def test_agy_cmd_is_fail_closed() -> bool:
         cmd[cmd.index("--mode") + 1] == "plan"
         and "--sandbox" in cmd
         and "--dangerously-skip-permissions" in cmd
+        and "--disable-slash-commands" in cmd
         and "--effort" not in cmd
     )
     return _ok(ok, f"cmd={cmd}")

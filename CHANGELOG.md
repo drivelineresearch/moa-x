@@ -7,6 +7,12 @@ versioning.
 
 ### Changed
 
+- Disable AGY slash-command expansion for structured requests so its native
+  interactive planning workflow cannot compete with the evidence-audit contract.
+  Keep plan mode and sandboxing, focus final audits on captured evidence, and cap
+  Google audit depth to Low/Medium/High for Quick/Balanced/Thorough. Upstream model
+  depths and existing audit deadlines are preserved.
+
 - Upgrade the optional Fable aggregator to Claude Fable 5.2, retaining the
   existing effort controls, output budget and frozen historical model IDs.
 

@@ -37,6 +37,7 @@ _REQUIRED_HELP_FLAGS = (
     "--dangerously-skip-permissions",
     "--json-schema",
     "--output-format",
+    "--disable-slash-commands",
 )
 
 
@@ -148,6 +149,7 @@ def _build_cmd(
         "--print", instruction,
         "--mode", "plan",
         "--sandbox",
+        "--disable-slash-commands",
         "--dangerously-skip-permissions",
         "--model", model,
         "--print-timeout", f"{max(1, math.ceil(timeout_seconds))}s",
@@ -389,7 +391,6 @@ def run(
                     # Headless mode rejects unapproved outside-workspace reads.
                     # Broad auto-approval would bypass that file-tool boundary.
                     cmd.remove("--dangerously-skip-permissions")
-                    cmd += ["--disable-slash-commands"]
                     # Native headless approval failures end the turn. Give the
                     # planner a usable file-tool path instead of prompting for
                     # shell commands or outside-workspace reads.
