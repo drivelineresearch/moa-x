@@ -37,7 +37,7 @@ The Balanced default roster uses Gemini 4 Carbon, Grok 4.7, and GPT-6 Luna as
 proposers; DeepSeek V4.1 Flash and Claude Opus 5.5 at `high` as refiners; and
 GPT-6.1 Sol at `xhigh` as the aggregator. That keeps the default lane
 lab-diverse across Google, xAI, OpenAI, DeepSeek, and Anthropic.
-Fable 5.1 1M at `xhigh` is an optional, quota-heavy Claude aggregator and
+Fable 5.2 1M at `xhigh` is an optional, quota-heavy Claude aggregator and
 is never eligible as a proposer or refiner.
 
 Grok and DeepSeek V4.1 Flash use OpenCode Go. The curated Qwen routes are

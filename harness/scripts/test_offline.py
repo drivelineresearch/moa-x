@@ -3285,7 +3285,7 @@ def test_webui_model_catalog_is_provider_grouped_and_current() -> bool:
         "muse-spark": ("opencode", "opencode-go/muse-spark-1.3-contributor"),
         "deepseek-flash": ("opencode", "opencode-go/deepseek-v4.1-flash"),
         "agy-gemini-pro": ("agy", "gemini-4-carbon-high"),
-        "fable": ("claude", "claude-fable-5-1"),
+        "fable": ("claude", "claude-fable-5-2"),
         "haiku": ("claude", "claude-haiku-5-5"),
         "agy-gemini-argon": ("agy", "gemini-4-argon-high"),
         "codex-gpt-6-1-terra": ("codex", "gpt-6.1-terra"),
@@ -3451,7 +3451,7 @@ def test_google_provider_builtins_are_default_and_resolve() -> bool:
         and defaults.aggregator is not None
         and defaults.aggregator.name == "codex-sol"
         and fable.harness == "claude"
-        and fable.model == "claude-fable-5-1"
+        and fable.model == "claude-fable-5-2"
         and harness_config.provider_allows_role("fable", "aggregator")
         and not harness_config.provider_allows_role(
             "custom-kimi", "refiner", "opencode-go/kimi-k3"
@@ -3459,13 +3459,13 @@ def test_google_provider_builtins_are_default_and_resolve() -> bool:
         and not harness_config.provider_allows_role("fable", "proposer")
         and not harness_config.provider_allows_role("fable", "refiner")
         and harness_config.provider_allows_role(
-            "custom-alias", "aggregator", "claude-fable-5-1"
+            "custom-alias", "aggregator", "claude-fable-5-2"
         )
         and not harness_config.provider_allows_role(
-            "custom-alias", "proposer", "claude-fable-5-1"
+            "custom-alias", "proposer", "claude-fable-5-2"
         )
         and not harness_config.provider_allows_role(
-            "custom-alias", "refiner", "claude-fable-5-1"
+            "custom-alias", "refiner", "claude-fable-5-2"
         )
         and gemini_removed
         and flash_removed
@@ -4452,7 +4452,7 @@ def test_layer3_fable_phase_uses_claude_and_writes_artifacts() -> bool:
             )
         ok = (
             result.success and result.schema_valid
-            and call.call_args.kwargs["model"] == "claude-fable-5-1"
+            and call.call_args.kwargs["model"] == "claude-fable-5-2"
             and call.call_args.kwargs["reasoning_effort"] == "xhigh"
             and (session / "final-plan.md").read_text() == markdown
             and json.loads((session / "final-plan.json").read_text()) == lineage

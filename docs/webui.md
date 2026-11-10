@@ -83,7 +83,7 @@ lab-independent from the OpenAI aggregator. GPT-6.1 Sol uses `medium` synthesis
 effort for Quick, `xhigh` for Balanced, and `ultra` for Thorough.
 
 Thorough’s final-model picker includes all nine selectable OpenAI models,
-Gemini 4 Carbon, Gemini 4 Argon, Opus 5.5 and Fable 5.1. Fable starts at High; other choices start at their maximum
+Gemini 4 Carbon, Gemini 4 Argon, Opus 5.5 and Fable 5.2. Fable starts at High; other choices start at their maximum
 supported effort, with the complete range available on each slider. Luna stops
 at Max; Sol/Astra/Terra reach Ultra; Claude reaches Max; Carbon reaches High.
 The [model and effort table](config.md#aggregator-alternatives) lists exact
@@ -96,7 +96,7 @@ choices, including custom aliases. Existing runs retain their historical model
 names and receipts. Native research and broadcast-review qualification are
 required before adding a model; a synthetic response alone is insufficient.
 
-Claude Opus 5.5 is available as a normal aggregator alternative. Fable 5.1 is
+Claude Opus 5.5 is available as a normal aggregator alternative. Fable 5.2 is
 available as an aggregator-only alternative. Selecting Fable opens a
 quota warning and requires the shared acknowledgement phrase before the radio
 selection is applied. This is intentionally only a warning shot—the phrase is

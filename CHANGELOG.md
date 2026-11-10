@@ -7,6 +7,9 @@ versioning.
 
 ### Changed
 
+- Upgrade the optional Fable aggregator to Claude Fable 5.2, retaining the
+  existing effort controls, output budget and frozen historical model IDs.
+
 - Refresh new Google presets to Gemini 4 Carbon with Low, Medium and High
   depth variants; retain Gemini 4 Argon as an optional route.
 - Add GPT-6.1 Terra and Daybreak Blue synthesis choices with Low–Ultra effort,
