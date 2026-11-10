@@ -64,10 +64,14 @@ When contributing new assets:
 
 ## README header
 
-`docs/moa-x-header.png` is the public product banner. It shows Slack/web/CLI
-input, the Luna interview, three default proposer routes, two broadcast
-reviewers, and GPT-6.1 Sol synthesis. Model/version labels are descriptive;
-provider logos and claims of endorsement are absent. Keep the README's alt
-text and the text roster accurate when replacing the image. The generation
-brief lives in [diagram-prompts.md](diagram-prompts.md). Generated imagery
-must contain no deployment URLs, accounts, workspace IDs or internal findings.
+`docs/moa-x-header.png` is the public product banner, generated with the built-in
+image generator on 2026-11-10. Its original ivory-paper, ink-and-watercolor
+illustration shows independent proposals, shared source review, synthesis, and
+a separate final check. Checked and amber unresolved annotations reflect the
+evidence-first workflow. Typography reads “MoA-X”, “Independent reasoning.” and
+“Evidence first.”; model versions and vendor logos are absent.
+
+The banner is distributed under the repository's MIT license. The final prompt
+is recorded in [diagram-prompts.md](diagram-prompts.md). Keep the README's alt
+text and text roster accurate when replacing it. Generated imagery must contain
+no deployment URLs, accounts, workspace IDs or internal findings.
